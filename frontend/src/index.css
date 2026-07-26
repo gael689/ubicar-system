@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* shadcn/ui — mapeados a paleta Ubicar Rent */
+    --background: 0 0% 100%;
+    --foreground: 210 38% 16%;          /* #1A2A3A */
+
+    --card: 0 0% 100%;
+    --card-foreground: 210 38% 16%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 38% 16%;
+
+    --primary: 213 56% 52%;             /* #407EC9 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 213 75% 96%;           /* #F0F6FD */
+    --secondary-foreground: 213 56% 52%;
+
+    --muted: 213 75% 96%;
+    --muted-foreground: 210 30% 55%;    /* #6B8CAE */
+
+    --accent: 210 62% 92%;
+    --accent-foreground: 213 56% 52%;
+
+    --destructive: 0 84% 53%;           /* #DC2626 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 210 68% 88%;              /* #D0E4F5 */
+    --input: 210 68% 88%;
+    --ring: 213 56% 52%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
+
+@layer components {
+  .input-base {
+    @apply block w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm
+           placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+}

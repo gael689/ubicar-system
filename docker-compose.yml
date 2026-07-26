@@ -1,0 +1,52 @@
+services:
+  # ─── Base de datos ───────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: ubicar_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ubicar
+      POSTGRES_PASSWORD: ubicar_dev_pass
+      POSTGRES_DB: ubicar_rent
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ubicar -d ubicar_rent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── Backend FastAPI ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ubicar_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://ubicar:ubicar_dev_pass@postgres:5432/ubicar_rent
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    volumes:
+      # Hot-reload: el código local se monta dentro del contenedor
+      - ./backend:/app
+      # Evitar que node_modules/venv del host pisen el contenedor
+      - /app/.venv
+      # Storage local persistente (fotos, documentos)
+      - ./storage_local:/app/storage_local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+
+volumes:
+  postgres_data:
