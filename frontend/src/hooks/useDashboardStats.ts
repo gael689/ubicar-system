@@ -10,7 +10,7 @@ export function useDashboardStats(fecha?: string) {
       const { data } = await api.get<ApiResponse<DashboardDetalle>>('/reportes/dashboard', { params });
       return data.data;
     },
-    refetchInterval: 15_000,
-    staleTime: 10_000,
+    refetchInterval: 120_000,
+    staleTime: 60_000,
   });
 }

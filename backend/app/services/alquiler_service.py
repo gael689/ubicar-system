@@ -124,10 +124,12 @@ class AlquilerService:
                 "checkout_antes_inicio",
                 "El checkout no puede ser anterior a la fecha de inicio de la reserva",
             )
-        ahora = datetime.now()
-        if checkout_dt > ahora.replace(minute=ahora.minute + 60 if ahora.minute < 0 else ahora.minute):
-            # permitir hasta 1h en el futuro (reloj desincronizado)
-            pass  # no bloqueamos, solo logueamos
+        vehiculo = reserva.vehiculo
+        if checkout_km < vehiculo.km_actual:
+            raise BusinessRuleError(
+                "km_invalidos",
+                f"El km de salida ({checkout_km}) no puede ser menor al km actual del vehículo ({vehiculo.km_actual})",
+            )
 
         warnings = []
         if not reserva.alquiler or not (reserva.alquiler.contrato_firmado if reserva.alquiler else False):
@@ -164,9 +166,9 @@ class AlquilerService:
                     monto=reserva.anticipo_monto,
                     medio_pago=reserva.anticipo_medio_pago or "efectivo",
                     con_factura=False,
-                    fecha=datetime.strptime(reserva.anticipo_fecha, "%Y-%m-%d").date() if reserva.anticipo_fecha else checkout_fecha,
+                    fecha=reserva.anticipo_fecha or checkout_fecha.isoformat(),
                     notas=f"Anticipo de reserva #{reserva.id}",
-                    usuario_id=usuario_id,
+                    cobrado_por=usuario_id,
                 )
                 self.db.add(pago_anticipo)
 
@@ -177,9 +179,9 @@ class AlquilerService:
                     monto=pago_inmediato.monto,
                     medio_pago=pago_inmediato.medio_pago,
                     con_factura=False,
-                    fecha=datetime.strptime(pago_inmediato.fecha, "%Y-%m-%d").date(),
+                    fecha=pago_inmediato.fecha,
                     notas=pago_inmediato.notas or f"Pago en checkout",
-                    usuario_id=usuario_id,
+                    cobrado_por=usuario_id,
                 )
                 self.db.add(pago_checkout)
 
@@ -303,9 +305,9 @@ class AlquilerService:
                     monto=pago_inmediato.monto,
                     medio_pago=pago_inmediato.medio_pago,
                     con_factura=False,
-                    fecha=datetime.strptime(pago_inmediato.fecha, "%Y-%m-%d").date(),
+                    fecha=pago_inmediato.fecha,
                     notas=pago_inmediato.notas or f"Cobro en check-in #{alquiler_id}",
-                    usuario_id=usuario_id,
+                    cobrado_por=usuario_id,
                 )
                 self.db.add(pago_checkin)
 
@@ -382,13 +384,16 @@ class AlquilerService:
         precio_anterior = reserva.precio_total
         tarifa_anterior_id = reserva.tarifa_aplicada_id
 
+        tarifa_no_encontrada = False
         try:
             nueva_tarifa = seleccionar_tarifa(nueva_duracion, tarifas_info)
             nuevo_precio = calcular_precio_total(nueva_duracion, nueva_tarifa)
             nueva_tarifa_id = nueva_tarifa.id
         except BusinessRuleError:
-            nueva_tarifa = None
-            nuevo_precio = None
+            # Sin tarifa configurada para la nueva duración: se conserva el precio
+            # y la tarifa anteriores en vez de anularlos (no se pierde la deuda).
+            tarifa_no_encontrada = True
+            nuevo_precio = precio_anterior
             nueva_tarifa_id = tarifa_anterior_id
 
         with self.db.begin_nested():
@@ -410,6 +415,7 @@ class AlquilerService:
                 "tarifa_nueva_id": nueva_tarifa_id,
                 "precio_anterior": float(precio_anterior or 0),
                 "precio_nuevo": float(nuevo_precio or 0),
+                "tarifa_no_encontrada": tarifa_no_encontrada,
                 "usuario_id": usuario_id,
             },
         )

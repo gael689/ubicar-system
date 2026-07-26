@@ -234,6 +234,7 @@ class ReservaRepo:
             .options(
                 joinedload(Reserva.vehiculo),
                 joinedload(Reserva.cliente),
+                joinedload(Reserva.alquiler),
             )
             .filter(
                 Reserva.fecha_inicio < fecha_fin,

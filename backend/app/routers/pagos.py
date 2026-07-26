@@ -72,7 +72,8 @@ def get_pagos_pendientes(
             continue
         
         monto_total = float(reserva.precio_total or 0) + float(reserva.cargo_late_checkout or 0) + float(a.cargo_excedente or 0)
-        monto_abonado = float(reserva.anticipo_monto or 0) + sum(float(p.monto) for p in a.pagos)
+        # El anticipo ya se registra como Pago al hacer el checkout: no sumarlo aparte.
+        monto_abonado = sum(float(p.monto) for p in a.pagos)
         saldo_pendiente = monto_total - monto_abonado
         
         if saldo_pendiente > 0:

@@ -248,11 +248,13 @@ def get_notificaciones(
     for a in alquileres_finalizados:
         r = a.reserva
         monto_total = float(r.precio_total or 0) + float(r.cargo_late_checkout or 0) + float(a.cargo_excedente or 0)
-        monto_abonado = float(r.anticipo_monto or 0) + sum(float(p.monto) for p in a.pagos)
+        # El anticipo ya se registra como Pago al hacer el checkout (ver AlquilerService.checkout),
+        # por lo que no debe sumarse aparte: sumarlo duplicaría el monto abonado.
+        monto_abonado = sum(float(p.monto) for p in a.pagos)
         saldo_pendiente = monto_total - monto_abonado
 
-        if saldo_pendiente > 0 and r.fecha_fin < hoy_str:
-            dias_vencido = (hoy - datetime.strptime(r.fecha_fin, "%Y-%m-%d").date()).days
+        if saldo_pendiente > 0 and r.fecha_fin < hoy:
+            dias_vencido = (hoy - r.fecha_fin).days
             urgencia = "alta" if dias_vencido > 3 else "media"
             
             items.append(NotificacionItem(

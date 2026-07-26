@@ -35,7 +35,7 @@
 | RES-08 | Estado PENDIENTE con aprobación | 🔴 | P1 | `confirmar()` es código muerto — las reservas nacen confirmadas |
 | RES-09 | Detectar solapamiento bloqueante | ✅ | — | `domain/solapamientos.py`, correcto |
 | RES-10 | Advertir solapamiento con pendiente | 🔴 | P2 | Inalcanzable: no existen reservas pendientes |
-| RES-11 | Extender alquiler activo | 🔴 | **P0** | Borra el precio si no hay tarifa; pisa el precio manual |
+| RES-11 | Extender alquiler activo | ✅ | — | **Arreglado 2026-07-25**: si no hay tarifa para la nueva duración, conserva el precio anterior en vez de anularlo |
 | RES-12 | ~~Marcar NO-SHOW~~ → **Late check-out con monto editable y nota** | ⬜ | P1 | D-17: no se crea el estado. Se resuelve como late check-out |
 | RES-12b | Cancelar: retener la seña completa | ⬜ | P1 | D-11: no se devuelve nada. Genera el asiento solo |
 | RES-13 | Reabrir reserva finalizada por error | ⬜ | P2 | |
@@ -56,9 +56,9 @@
 | CHK-02 | Check-out sobre reserva ya auto-activada | ✅ | — | Parche correcto ya implementado |
 | CHK-03 | Registrar km, combustible y limpieza de salida | ✅ | — | Selectores visuales, bien resueltos |
 | CHK-04 | Registrar garantía con tarjeta del cliente | ✅ | — | `GarantiaTarjetaSection`, muy bueno |
-| CHK-05 | Cobrar en el momento del check-out | 🔴 | **P0** | Error 500 — `Pago(usuario_id=)` no existe |
-| CHK-06 | Convertir el anticipo en pago | 🔴 | **P0** | Se cuenta dos veces la seña |
-| CHK-07 | Validar km >= km actual del vehículo | ⬜ | **P0** | Se puede retroceder el odómetro |
+| CHK-05 | Cobrar en el momento del check-out | ✅ | — | **Arreglado 2026-07-25**: `Pago(usuario_id=)` → `cobrado_por=` |
+| CHK-06 | Convertir el anticipo en pago | ✅ | — | **Arreglado 2026-07-25**: se dejó de sumar `anticipo_monto` donde ya existe el `Pago` del checkout |
+| CHK-07 | Validar km >= km actual del vehículo | ✅ | — | **Arreglado 2026-07-25**: `BusinessRuleError` si `checkout_km < vehiculo.km_actual` |
 | CHK-08 | Bloquear si no hay contrato firmado | 🟡 | P1 | Hoy es warning; decidido pasar a bloqueo |
 | CHK-09 | Bloquear si la licencia está vencida | ⬜ | P1 | |
 | CHK-10 | Bloquear si la VTV está vencida | ⬜ | P1 | Con override de dueño + motivo |
@@ -85,7 +85,7 @@
 | CIN-08 | Bonificar el excedente | ✅ | — | Con decisión y autor auditados |
 | CIN-09 | Exigir motivo al bonificar | ⬜ | P1 | Hoy es opcional |
 | CIN-10 | Reporte de excedentes bonificados | ⬜ | P2 | Fuga de ingresos sin visibilidad |
-| CIN-11 | Cobrar en el momento del check-in | 🔴 | **P0** | Mismo error 500 que CHK-05 |
+| CIN-11 | Cobrar en el momento del check-in | ✅ | — | **Arreglado 2026-07-25**, mismo fix que CHK-05 |
 | CIN-12 | Registrar combustible y limpieza de llegada | ✅ | — | Se registra... |
 | CIN-13 | **Generar gasto del vehículo por combustible faltante** | ⬜ | P1 | D-20: gasto del vehículo, no cargo al cliente |
 | CIN-14 | **Generar gasto del vehículo por limpieza** | ⬜ | P1 | Ídem |
@@ -247,7 +247,7 @@
 
 | ID | Caso de uso | Estado | Prio | Nota |
 |---|---|---|---|---|
-| NOT-01 | Campana con alertas en vivo | 🔴 | **P0** | El endpoint crashea (`date < str`) |
+| NOT-01 | Campana con alertas en vivo | ✅ | — | **Arreglado 2026-07-25**: se corrigió el tipo de comparación. Verificado en vivo con datos reales (aparece `pago_pendiente` sin crashear) |
 | NOT-02 | **Envío automático de alertas** | 🔴 | **P0** | El scheduler nunca arrancó — sólo hace `print()` |
 | NOT-03 | Un solo motor de reglas | 🔴 | P1 | Hay dos sistemas paralelos y divergentes |
 | NOT-04 | Persistir notificaciones | ⬜ | P1 | Hoy se computan al abrir la campana |
@@ -363,22 +363,34 @@
 | P3 | 15 | Deseable |
 | 🔵 Web | 18 | Dependen del sistema de reservas online |
 
-**Los 12 P0** (arreglar primero, son todos correcciones acotadas):
+**Los 12 P0** (arreglar primero, son todos correcciones acotadas).
 
-| ID | Qué |
-|---|---|
-| CIN-02 | No se puede registrar una devolución tardía |
-| CIN-03 | El excedente se mide contra la hora equivocada |
-| CHK-05 / CIN-11 | Cobrar en check-out o check-in devuelve error 500 |
-| CHK-06 | El anticipo se cuenta dos veces |
-| CHK-07 | El kilometraje puede retroceder |
-| PRE-01 | La tarifa semanal se multiplica por día |
-| RES-11 | Extender sin tarifa borra el precio |
-| EST-02 / EST-03 | El reloj finaliza alquileres que nunca volvieron |
-| FIN-04 | Borrar un pago no revierte la cuenta corriente |
-| NOT-01 | El endpoint de notificaciones crashea |
-| NOT-02 | El scheduler de alertas nunca arrancó |
-| NOT-14 | La alerta de auto no devuelto es inalcanzable |
+**✅ Resueltos (2026-07-25), probados en vivo contra la base de datos real:**
+
+| ID | Qué | Arreglo |
+|---|---|---|
+| CHK-05 / CIN-11 | Cobrar en check-out o check-in devuelve error 500 | `Pago(usuario_id=)` → `cobrado_por=` (3 sitios) + se dejó de pasar `date` a un campo `String` |
+| CHK-06 | El anticipo se cuenta dos veces | `notificaciones.py` y `pagos.py` dejaron de sumar `anticipo_monto` donde ya existe el `Pago` del checkout |
+| CHK-07 | El kilometraje puede retroceder | `BusinessRuleError` si `checkout_km < vehiculo.km_actual` |
+| RES-11 | Extender sin tarifa borra el precio | Conserva `precio_total` anterior en vez de anularlo, con log de la situación |
+| NOT-01 | El endpoint de notificaciones crashea | `date < str` corregido a `date < date`; verificado con `pago_pendiente` real sin crashear |
+
+**⬜ Pendientes** — requieren cambios más grandes (estado nuevo, UI, o rediseño de tarifas):
+
+| ID | Qué | Nota |
+|---|---|---|
+| CIN-02 | No se puede registrar una devolución tardía | Requiere separar la sincronización horaria de la finalización real (estado `VENCIDA`) |
+| CIN-03 | El excedente se mide contra la hora equivocada | **Decisión D-18 ya tomada** (modelo 24hs estricto): la fórmula de cálculo es correcta, falta que `hora_fin` se derive de `hora_inicio` en el formulario de reserva |
+| PRE-01 | La tarifa semanal se multiplica por día | Necesita el rediseño de tarifas de la Fase 1 (`precio_por_dia` explícito) |
+| EST-02 / EST-03 | El reloj finaliza alquileres que nunca volvieron | Requiere el estado `VENCIDA` — mismo trabajo que CIN-02 |
+| FIN-04 | Borrar un pago no revierte la cuenta corriente | Requiere el rediseño del ledger de cuenta corriente (Fase 1) |
+| NOT-02 | El scheduler de alertas nunca arrancó | Requiere el motor de notificaciones de la Fase 2 |
+| NOT-14 | La alerta de auto no devuelto es inalcanzable | Se resuelve junto con CIN-02/EST-02 |
+
+**Además, corregidos en este mismo batch aunque no estaban en la lista original de 12:**
+- Código muerto eliminado en la validación de fecha futura del checkout (`alquiler_service.py`)
+- N+1 del calendario: `joinedload(Reserva.alquiler)` agregado a `find_para_ocupacion`
+- Dashboard: `refetchInterval` de 15s → 2min (240 ejecuciones/hora por usuario contra un endpoint pesado)
 
 ---
 
