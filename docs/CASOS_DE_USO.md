@@ -77,13 +77,13 @@
 |---|---|---|---|---|
 | CIN-01 | Registrar devolución en horario | ✅ | — | |
 | CIN-02 | **Registrar devolución tardía** | ✅ | — | **Arreglado 2026-07-26**: nuevo estado `vencida`. Verificado en vivo con service real: confirmada→activa→vencida→check-in exitoso→finalizada |
-| CIN-03 | Calcular excedente contra la hora correcta | 🔴 | **P0** | Usa `hora_inicio` sobre `fecha_fin`; ignora `hora_fin` |
+| CIN-03 | Calcular excedente contra la hora correcta | ✅ | — | **Arreglado 2026-07-26**: `hora_fin` se deriva de `hora_inicio` en `ReservaModal.tsx` (D-18), la fórmula de `control_24hs.py` ya era correcta |
 | CIN-04 | Aplicar período de gracia | ✅ | — | 40 min; industria usa 29-30 |
 | CIN-05 | Cobrar excedente por hora | ✅ | — | 3× tarifa/24 |
 | CIN-06 | Cobrar día completo pasado el umbral | 🟡 | P2 | Umbral 12 hs vs 2 hs de la industria — recalibrar a ~6 |
 | CIN-07 | Cobrar día completo si pisa la reserva siguiente | ⬜ | P2 | El dato ya existe, no se usa |
 | CIN-08 | Bonificar el excedente | ✅ | — | Con decisión y autor auditados |
-| CIN-09 | Exigir motivo al bonificar | ⬜ | P1 | Hoy es opcional |
+| CIN-09 | Exigir motivo al bonificar | ✅ | — | **Arreglado 2026-07-26**: obligatorio en el schema (`CheckinCreate`), no sólo en el frontend |
 | CIN-10 | Reporte de excedentes bonificados | ⬜ | P2 | Fuga de ingresos sin visibilidad |
 | CIN-11 | Cobrar en el momento del check-in | ✅ | — | **Arreglado 2026-07-25**, mismo fix que CHK-05 |
 | CIN-12 | Registrar combustible y limpieza de llegada | ✅ | — | Se registra... |
@@ -385,7 +385,9 @@
 |---|---|---|
 | PRE-01 | La tarifa semanal se multiplica por día | Necesita el rediseño de tarifas de la Fase 1 (`precio_por_dia` explícito) |
 
-**Nota sobre CIN-03** (el excedente medido contra la hora equivocada): con la decisión D-18 (modelo 24hs estricto) la fórmula de `control_24hs.py` resultó ser correcta — lo que faltaba era que `hora_fin` se derive de `hora_inicio` en el formulario de reserva. Ese es un cambio de UI, sigue pendiente (no es un fix de backend).
+**✅ CIN-03 resuelto (2026-07-26):** con la decisión D-18 (modelo 24hs estricto), la fórmula de `control_24hs.py` ya era correcta — lo que faltaba era que `hora_fin` se derive de `hora_inicio` en el formulario de reserva. `ReservaModal.tsx` ahora bloquea ese campo (`horaFin = horaInicio`, disabled) y muestra una nota explicando que el "Late Checkout acordado" (ya existente) es la única excepción.
+
+**✅ D-19 implementado (2026-07-26):** las 4 opciones de contracargo al check-in (completo / parcial / **1 día más** / **medio día más** / **monto manual** / bonificado) descritas en `docs/DECISIONES.md`. Nuevos valores en `DecisionExcedente` (`un_dia_mas`, `medio_dia_mas`, `monto_manual`), nuevo campo `monto_manual` en `CheckinCreate`, y validación a nivel de schema (no sólo frontend) para exigir motivo al bonificar y monto al elegir "monto manual". Probado en vivo con el service real: 1 día = tarifa diaria completa, medio día = exactamente la mitad, monto manual = el importe indicado tal cual.
 
 **Otros bugs P0 pendientes que dependen de piezas más grandes:**
 

@@ -137,4 +137,7 @@ class TipoServicio(str, Enum):
 class DecisionExcedente(str, Enum):
     COBRAR_COMPLETO = "cobrar_completo"
     COBRAR_PARCIAL = "cobrar_parcial"
-    NO_COBRAR = "no_cobrar"
+    UN_DIA_MAS = "un_dia_mas"        # D-19: contracargo preestablecido de 1 día
+    MEDIO_DIA_MAS = "medio_dia_mas"  # D-19: contracargo preestablecido de medio día
+    MONTO_MANUAL = "monto_manual"    # D-19: importe negociado puntual
+    NO_COBRAR = "no_cobrar"          # bonificado — requiere motivo

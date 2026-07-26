@@ -403,7 +403,13 @@ export interface DashboardStats {
 
 // ─── Fase 3: Reservas ─────────────────────────────────────────────────────────
 
-export type DecisionExcedente = 'cobrar_completo' | 'cobrar_parcial' | 'no_cobrar';
+export type DecisionExcedente =
+  | 'cobrar_completo'
+  | 'cobrar_parcial'
+  | 'un_dia_mas'
+  | 'medio_dia_mas'
+  | 'monto_manual'
+  | 'no_cobrar';
 
 export interface VehiculoResumen {
   id: number;
@@ -574,6 +580,7 @@ export interface CheckinCreate {
   checkin_estado_limpieza?: string | null;
   decision_excedente: DecisionExcedente;
   horas_a_cobrar?: number | null;
+  monto_manual?: number | null;
   motivo_bonificacion?: string | null;
   garantia_estado?: string | null;
   garantia_monto_devuelto?: number | null;

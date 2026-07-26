@@ -41,6 +41,9 @@ interface Props {
 const DECISION_OPTIONS: { value: DecisionExcedente; label: string; desc: string }[] = [
   { value: 'cobrar_completo', label: 'Cobrar completo', desc: 'Aplicar el monto sugerido por el sistema' },
   { value: 'cobrar_parcial',  label: 'Cobrar parcial',  desc: 'Ingresar la cantidad de horas a cobrar' },
+  { value: 'un_dia_mas',      label: '1 día más',       desc: 'Cobrar una jornada completa de tarifa' },
+  { value: 'medio_dia_mas',   label: 'Medio día más',   desc: 'Cobrar media jornada de tarifa' },
+  { value: 'monto_manual',    label: 'Monto manual',    desc: 'Ingresar un importe negociado puntual' },
   { value: 'no_cobrar',       label: 'No cobrar',       desc: 'Bonificar el excedente (requiere motivo)' },
 ];
 
@@ -72,6 +75,7 @@ export function CheckinModal({
   const [registradoEnTiempoReal, setRegistradoEnTiempoReal] = useState(true);
   const [decision, setDecision] = useState<DecisionExcedente>('cobrar_completo');
   const [horasACobrar, setHorasACobrar] = useState('');
+  const [montoManual, setMontoManual] = useState('');
   const [motivo, setMotivo] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewExcedente | null>(null);
@@ -127,6 +131,9 @@ export function CheckinModal({
     if (decision === 'cobrar_parcial' && horasACobrar) {
       return parseFloat(horasACobrar) * parseFloat(preview.tarifa_hora_excedente.toString());
     }
+    if (decision === 'un_dia_mas') return parseFloat(preview.tarifa_diaria.toString());
+    if (decision === 'medio_dia_mas') return parseFloat(preview.tarifa_diaria.toString()) / 2;
+    if (decision === 'monto_manual' && montoManual) return parseFloat(montoManual);
     return 0;
   })();
   const totalACobrarAhora = saldoBase + excedentePorCobrar;
@@ -156,6 +163,10 @@ export function CheckinModal({
       setLocalError('Ingrese la cantidad de horas a cobrar');
       return;
     }
+    if (decision === 'monto_manual' && (!montoManual || parseFloat(montoManual) <= 0)) {
+      setLocalError('Ingrese el importe a cobrar');
+      return;
+    }
     if (decision === 'no_cobrar' && !motivo.trim()) {
       setLocalError('Ingrese un motivo para bonificar el excedente');
       return;
@@ -175,6 +186,7 @@ export function CheckinModal({
       checkin_estado_limpieza: limpieza,
       decision_excedente: decision,
       horas_a_cobrar: decision === 'cobrar_parcial' ? parseFloat(horasACobrar) : null,
+      monto_manual: decision === 'monto_manual' ? parseFloat(montoManual) : null,
       motivo_bonificacion: decision === 'no_cobrar' ? motivo : null,
       registrado_en_tiempo_real: registradoEnTiempoReal,
       garantia_estado: garantiaTipo && garantiaTipo !== 'no_aplica' ? garantiaEstado : undefined,
@@ -473,6 +485,20 @@ export function CheckinModal({
                     step={0.5}
                     className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     placeholder={`Máx: ${preview.horas_excedidas}`}
+                  />
+                </div>
+              )}
+              {decision === 'monto_manual' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Importe a cobrar ($) *</label>
+                  <input
+                    type="number"
+                    value={montoManual}
+                    onChange={e => setMontoManual(e.target.value)}
+                    min={0}
+                    step={100}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    placeholder="Ej: 25000"
                   />
                 </div>
               )}

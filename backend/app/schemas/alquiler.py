@@ -41,6 +41,7 @@ class CheckinCreate(BaseModel):
     checkin_estado_limpieza: str | None = None
     decision_excedente: DecisionExcedente
     horas_a_cobrar: Decimal | None = None
+    monto_manual: Decimal | None = None
     motivo_bonificacion: str | None = None
     garantia_estado: str | None = None
     garantia_monto_devuelto: Decimal | None = None
@@ -52,6 +53,12 @@ class CheckinCreate(BaseModel):
         if self.decision_excedente == DecisionExcedente.COBRAR_PARCIAL:
             if self.horas_a_cobrar is None or self.horas_a_cobrar <= 0:
                 raise ValueError("Para cobro parcial, horas_a_cobrar debe ser > 0")
+        if self.decision_excedente == DecisionExcedente.MONTO_MANUAL:
+            if self.monto_manual is None or self.monto_manual <= 0:
+                raise ValueError("Para monto manual, monto_manual debe ser > 0")
+        if self.decision_excedente == DecisionExcedente.NO_COBRAR:
+            if not self.motivo_bonificacion or not self.motivo_bonificacion.strip():
+                raise ValueError("Para bonificar el excedente se requiere un motivo")
         return self
 
 

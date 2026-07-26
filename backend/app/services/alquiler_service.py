@@ -218,6 +218,7 @@ class AlquilerService:
         decision_excedente: DecisionExcedente,
         usuario_id: int,
         horas_a_cobrar: Decimal | None = None,
+        monto_manual: Decimal | None = None,
         motivo_bonificacion: str | None = None,
         registrado_en_tiempo_real: bool = True,
         checkin_estado_limpieza: str | None = None,
@@ -265,6 +266,8 @@ class AlquilerService:
             decision=decision_excedente,
             resultado=resultado,
             horas_a_cobrar=horas_a_cobrar,
+            monto_manual=monto_manual,
+            tarifa_diaria=tarifa_diaria,
         )
 
         # Determinar nuevo estado del vehículo
@@ -444,16 +447,33 @@ class AlquilerService:
         decision: DecisionExcedente,
         resultado: ResultadoExcedente,
         horas_a_cobrar: Decimal | None,
+        monto_manual: Decimal | None = None,
+        tarifa_diaria: Decimal | None = None,
     ) -> tuple[Decimal, Decimal | None, bool]:
         """
         Calcula (cargo_excedente, horas_cobradas, excedente_bonificado)
-        según la decisión del admin.
+        según la decisión del admin (D-19: el cargo sugerido es una
+        sugerencia, no un automatismo — el operador decide qué se cobró).
         """
         if decision == DecisionExcedente.NO_COBRAR:
             return Decimal("0"), Decimal("0"), True
 
         if decision == DecisionExcedente.COBRAR_COMPLETO:
             return resultado.cargo_sugerido, Decimal(str(resultado.horas_excedidas)), False
+
+        if decision == DecisionExcedente.UN_DIA_MAS:
+            return (tarifa_diaria or Decimal("0")), None, False
+
+        if decision == DecisionExcedente.MEDIO_DIA_MAS:
+            return (tarifa_diaria or Decimal("0")) / 2, None, False
+
+        if decision == DecisionExcedente.MONTO_MANUAL:
+            if monto_manual is None or monto_manual <= 0:
+                raise BusinessRuleError(
+                    "monto_manual_invalido",
+                    "Para monto manual se debe indicar un importe (> 0)",
+                )
+            return monto_manual, None, False
 
         # COBRAR_PARCIAL
         if horas_a_cobrar is None or horas_a_cobrar <= 0:

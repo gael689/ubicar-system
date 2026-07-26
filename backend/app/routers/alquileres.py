@@ -138,6 +138,7 @@ def checkin(
             decision_excedente=payload.decision_excedente,
             usuario_id=current_user.id,
             horas_a_cobrar=payload.horas_a_cobrar,
+            monto_manual=payload.monto_manual,
             motivo_bonificacion=payload.motivo_bonificacion,
             registrado_en_tiempo_real=payload.registrado_en_tiempo_real,
             checkin_estado_limpieza=payload.checkin_estado_limpieza,

@@ -40,7 +40,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const [fechaInicio, setFechaInicio]         = useState(reserva?.fecha_inicio ?? initialFechaInicio ?? today());
   const [horaInicio, setHoraInicio]           = useState(reserva ? formatTime(reserva.hora_inicio) : '10:00');
   const [fechaFin, setFechaFin]               = useState(reserva?.fecha_fin ?? '');
-  const [horaFin, setHoraFin]                 = useState(reserva ? formatTime(reserva.hora_fin) : '10:00');
+  // D-18: el auto se devuelve a la misma hora en que se entrega — hora_fin se
+  // deriva de hora_inicio, no es un campo libre. La única excepción es un
+  // "late checkout acordado" (más abajo), que define hora_devolucion_acordada.
+  const horaFin = horaInicio;
   const [lugarEntrega, setLugarEntrega]       = useState(reserva?.lugar_entrega ?? '');
   const [lugarDevolucion, setLugarDevolucion] = useState(reserva?.lugar_devolucion ?? '');
   const [notas, setNotas]                     = useState(reserva?.notas ?? '');
@@ -367,9 +370,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               <div className="flex gap-2">
                 <input type="date" value={fechaFin} min={fechaInicio} onChange={e => setFechaFin(e.target.value)}
                   className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50" required />
-                <input type="time" value={horaFin} onChange={e => setHoraFin(e.target.value)}
-                  className="w-24 px-2 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+                <input type="time" value={horaFin} disabled title="Se devuelve a la misma hora en que se entrega"
+                  className="w-24 px-2 py-2.5 rounded-lg border border-slate-200 bg-slate-100 text-slate-500 text-sm cursor-not-allowed" />
               </div>
+              <p className="text-xs text-slate-400">Misma hora que la entrega. Si acuerdan una devolución más tarde, activá "Late Checkout acordado" abajo.</p>
             </div>
           </div>
 
