@@ -45,6 +45,7 @@ class CuentaCorrienteService:
         pago_id: int | None = None,
         echeq_id: int | None = None,
         multa_id: int | None = None,
+        recibo_id: int | None = None,
     ) -> MovimientoCuentaCorriente:
         if monto is None or monto <= 0:
             raise ValueError("El monto del movimiento debe ser > 0")
@@ -68,6 +69,7 @@ class CuentaCorrienteService:
             pago_id=pago_id,
             echeq_id=echeq_id,
             multa_id=multa_id,
+            recibo_id=recibo_id,
             creado_por=creado_por,
         )
         self.db.add(mov)
@@ -97,6 +99,12 @@ class CuentaCorrienteService:
             saldo_posterior=nuevo_saldo,
             alquiler_id=original.alquiler_id,
             reserva_id=original.reserva_id,
+            # Se propagan las mismas FK que el original (menos pago_id, que se
+            # desvincula más abajo) para que el historial por multa/echeq/recibo
+            # incluya también el contra-asiento, no sólo el movimiento original.
+            echeq_id=original.echeq_id,
+            multa_id=original.multa_id,
+            recibo_id=original.recibo_id,
             creado_por=creado_por,
         )
         self.db.add(contra)

@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, Plus, Pencil, Trash2, X, Save, FileWarning } from 'lucide-react';
+import { AlertTriangle, Plus, Pencil, Trash2, X, Save, FileWarning, CheckCircle2, Gift } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { useMultas } from '@/hooks/useMultas';
 import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR } from '@/lib/constants';
-import type { Multa, EstadoMulta } from '@/types';
-import { cn } from '@/lib/utils';
+import type { Multa, EstadoMultaEditable } from '@/types';
+import { cn, extractError } from '@/lib/utils';
 
 interface Props {
   clienteId: number;
@@ -22,17 +24,22 @@ function formatMoney(v: string | number) {
   return `$${parseFloat(String(v)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 }
 
-const ESTADOS: EstadoMulta[] = ['pendiente', 'imputada', 'cobrada', 'apelando'];
+// "cobrada"/"bonificada" no son editables a mano: sólo se llega vía los
+// botones de resolución (que generan el movimiento de cuenta corriente).
+const ESTADOS: EstadoMultaEditable[] = ['pendiente', 'imputada', 'apelando'];
 
 export function MultasTab({ clienteId }: Props) {
-  const { listMultas, crearMulta, actualizarMulta, eliminarMulta, loading, error } = useMultas();
+  const { listMultas, crearMulta, actualizarMulta, eliminarMulta, resolverMulta, loading, error } = useMultas();
   const [multas, setMultas] = useState<Multa[]>([]);
   const [total, setTotal] = useState(0);
   const [editando, setEditando] = useState<number | null>(null);
-  const [estadoEdit, setEstadoEdit] = useState<EstadoMulta>('pendiente');
+  const [estadoEdit, setEstadoEdit] = useState<EstadoMultaEditable>('pendiente');
   const [notasEdit, setNotasEdit] = useState('');
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [cobrarId, setCobrarId] = useState<number | null>(null);
+  const [bonificarId, setBonificarId] = useState<number | null>(null);
+  const [resolviendo, setResolviendo] = useState(false);
 
   // Form nueva multa
   const [form, setForm] = useState({
@@ -56,6 +63,36 @@ export function MultasTab({ clienteId }: Props) {
     await actualizarMulta(multa.id, { estado: estadoEdit, notas: notasEdit || undefined });
     setEditando(null);
     cargar();
+  };
+
+  const handleCobrar = async () => {
+    if (!cobrarId) return;
+    setResolviendo(true);
+    try {
+      await resolverMulta(cobrarId, { decision: 'cobrada' });
+      toast.success('Multa marcada como cobrada');
+      setCobrarId(null);
+      cargar();
+    } catch (err) {
+      toast.error(extractError(err));
+    } finally {
+      setResolviendo(false);
+    }
+  };
+
+  const handleBonificar = async (motivo: string) => {
+    if (!bonificarId) return;
+    setResolviendo(true);
+    try {
+      await resolverMulta(bonificarId, { decision: 'bonificada', motivo });
+      toast.success('Multa bonificada');
+      setBonificarId(null);
+      cargar();
+    } catch (err) {
+      toast.error(extractError(err));
+    } finally {
+      setResolviendo(false);
+    }
   };
 
   const handleCrear = async (e: React.FormEvent) => {
@@ -193,7 +230,7 @@ export function MultasTab({ clienteId }: Props) {
                     <FormField label="Estado">
                       <select
                         value={estadoEdit}
-                        onChange={e => setEstadoEdit(e.target.value as EstadoMulta)}
+                        onChange={e => setEstadoEdit(e.target.value as EstadoMultaEditable)}
                         className="input-base"
                       >
                         {ESTADOS.map(s => (
@@ -234,12 +271,25 @@ export function MultasTab({ clienteId }: Props) {
                       <p className="text-xs text-muted-foreground">Contrato #{m.alquiler_id}</p>
                     )}
                     {m.notas && <p className="text-xs text-muted-foreground italic">{m.notas}</p>}
+                    {m.estado === 'bonificada' && m.motivo_bonificacion && (
+                      <p className="text-xs text-muted-foreground italic">Motivo: {m.motivo_bonificacion}</p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span className="text-base font-bold text-foreground">{formatMoney(m.monto)}</span>
+                    {m.estado === 'imputada' && (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => setCobrarId(m.id)}>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Cobrada
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setBonificarId(m.id)}>
+                          <Gift className="h-3.5 w-3.5 text-muted-foreground" /> Bonificar
+                        </Button>
+                      </>
+                    )}
                     <Button variant="ghost" size="sm" onClick={() => {
                       setEditando(m.id);
-                      setEstadoEdit(m.estado);
+                      setEstadoEdit(m.estado === 'cobrada' || m.estado === 'bonificada' ? 'pendiente' : m.estado);
                       setNotasEdit(m.notas ?? '');
                     }}>
                       <Pencil className="h-3.5 w-3.5" />
@@ -270,6 +320,26 @@ export function MultasTab({ clienteId }: Props) {
             cargar();
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={cobrarId !== null}
+        onOpenChange={open => !open && setCobrarId(null)}
+        title="Marcar multa como cobrada"
+        description="El cliente pagó la multa: se genera el crédito que cancela el débito en su cuenta corriente."
+        confirmLabel="Marcar cobrada"
+        loading={resolviendo}
+        onConfirm={handleCobrar}
+      />
+
+      <MotivoDialog
+        open={bonificarId !== null}
+        onOpenChange={open => !open && setBonificarId(null)}
+        title="Bonificar multa"
+        description="Se le perdona la multa al cliente: el débito se anula con un contra-asiento en su cuenta corriente."
+        confirmLabel="Bonificar"
+        loading={resolviendo}
+        onConfirm={handleBonificar}
       />
     </Card>
   );

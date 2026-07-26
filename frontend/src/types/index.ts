@@ -120,6 +120,7 @@ export interface EcheqUpdate {
   estado?: EstadoEcheq;
   notas?: string | null;
   fecha_cobro?: string | null;
+  motivo_rechazo?: string; // requerido si estado='rechazado' (422 si falta)
 }
 
 // ─── Cuentas Corrientes ───────────────────────────────────────────────────────
@@ -152,6 +153,7 @@ export interface MovimientoCC {
   pago_id?: number | null;
   echeq_id?: number | null;
   multa_id?: number | null;
+  recibo_id?: number | null;
   anulado?: boolean;
   anulado_por_movimiento_id?: number | null;
   creado_por?: number | null;
@@ -167,6 +169,42 @@ export interface MovimientoCCCreate {
   fecha_vencimiento?: string | null;
   alquiler_id?: number | null;
   reserva_id?: number | null;
+}
+
+// ─── Recibos ──────────────────────────────────────────────────────────────────
+
+export type MedioPagoRecibo = 'efectivo' | 'transferencia' | 'tarjeta' | 'cheque' | 'echeq';
+export type EstadoRecibo = 'emitido' | 'anulado';
+
+export interface Recibo {
+  id: number;
+  numero: number;
+  prefijo: string;
+  cliente_id: number;
+  cuenta_corriente_id: number;
+  movimiento_cc_id: number;
+  fecha: string;
+  monto: string;
+  medio_pago: MedioPagoRecibo;
+  concepto: string;
+  saldo_anterior: string;
+  saldo_posterior: string;
+  estado: EstadoRecibo;
+  motivo_anulacion: string | null;
+  anulado_por: number | null;
+  anulado_en: string | null;
+  archivo_key: string | null;
+  creado_por: number;
+  created_at: string;
+  cliente?: { id: number; nombre_completo: string; dni_cuit: string } | null;
+}
+
+export interface ReciboCreate {
+  cliente_id: number;
+  fecha: string;
+  monto: number;
+  medio_pago: MedioPagoRecibo;
+  concepto: string;
 }
 
 // ─── Caja ─────────────────────────────────────────────────────────────────────
@@ -671,7 +709,11 @@ export interface OcupacionResponse {
 
 // ─── Multas ──────────────────────────────────────────────────────────────────
 
-export type EstadoMulta = 'pendiente' | 'imputada' | 'cobrada' | 'apelando';
+export type EstadoMulta = 'pendiente' | 'imputada' | 'cobrada' | 'bonificada' | 'apelando';
+// Estados alcanzables por PATCH libre — "cobrada"/"bonificada" sólo se llega
+// vía POST /multas/{id}/resolver (genera el movimiento de cuenta corriente).
+export type EstadoMultaEditable = 'pendiente' | 'imputada' | 'apelando';
+export type DecisionMulta = 'cobrada' | 'bonificada';
 
 export interface Multa {
   id: number;
@@ -688,6 +730,9 @@ export interface Multa {
   notas: string | null;
   activo: boolean;
   created_at: string;
+  motivo_bonificacion: string | null;
+  resuelto_por: number | null;
+  resuelto_en: string | null;
   vehiculo?: { id: number; patente: string; marca: string; modelo: string } | null;
   cliente?: { id: number; nombre_completo: string; dni_cuit: string } | null;
 }
@@ -705,12 +750,17 @@ export interface MultaCreate {
 }
 
 export interface MultaUpdate {
-  estado?: EstadoMulta;
+  estado?: EstadoMultaEditable;
   monto?: number;
   cliente_id?: number | null;
   alquiler_id?: number | null;
   descripcion?: string | null;
   notas?: string | null;
+}
+
+export interface ResolverMultaPayload {
+  decision: DecisionMulta;
+  motivo?: string; // requerido si decision === 'bonificada'
 }
 
 export interface BusquedaMultaResult {

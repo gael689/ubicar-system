@@ -125,6 +125,7 @@ export const ESTADO_MULTA_LABEL: Record<string, string> = {
   pendiente: 'Pendiente',
   imputada: 'Imputada',
   cobrada: 'Cobrada',
+  bonificada: 'Bonificada',
   apelando: 'Apelando',
 };
 
@@ -132,7 +133,26 @@ export const ESTADO_MULTA_COLOR: Record<string, string> = {
   pendiente: 'bg-warning/15 text-warning border-warning/30',
   imputada: 'bg-primary/15 text-primary border-primary/30',
   cobrada: 'bg-success/15 text-success border-success/30',
+  bonificada: 'bg-muted/40 text-muted-foreground border-border',
   apelando: 'bg-muted/40 text-muted-foreground border-border',
+};
+
+export const ESTADO_RECIBO_LABEL: Record<string, string> = {
+  emitido: 'Emitido',
+  anulado: 'Anulado',
+};
+
+export const ESTADO_RECIBO_COLOR: Record<string, string> = {
+  emitido: 'bg-success/15 text-success border-success/30',
+  anulado: 'bg-danger/15 text-danger border-danger/30',
+};
+
+export const MEDIO_PAGO_RECIBO_LABEL: Record<string, string> = {
+  efectivo: 'Efectivo',
+  transferencia: 'Transferencia',
+  tarjeta: 'Tarjeta',
+  cheque: 'Cheque',
+  echeq: 'E-cheq',
 };
 
 // ─── Navegación ──────────────────────────────────────────────────────────────

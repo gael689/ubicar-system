@@ -1,15 +1,17 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, AlertTriangle, Plus, Pencil, Trash2, Save, X, User, FileWarning } from 'lucide-react';
+import { Search, AlertTriangle, Plus, Pencil, Trash2, Save, User, FileWarning, CheckCircle2, Gift } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { useMultas } from '@/hooks/useMultas';
 import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR } from '@/lib/constants';
-import type { Multa, BusquedaMultaResult, EstadoMulta, MultaCreate } from '@/types';
-import { cn } from '@/lib/utils';
+import type { Multa, BusquedaMultaResult, EstadoMulta, EstadoMultaEditable, MultaCreate } from '@/types';
+import { cn, extractError } from '@/lib/utils';
 
 function formatDate(iso: string) {
   const [y, m, d] = iso.split('-');
@@ -19,11 +21,15 @@ function formatMoney(v: string | number) {
   return `$${parseFloat(String(v)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 }
 
-const ESTADOS: EstadoMulta[] = ['pendiente', 'imputada', 'cobrada', 'apelando'];
-const ESTADO_FILTROS = [{ value: '', label: 'Todos' }, ...ESTADOS.map(e => ({ value: e, label: ESTADO_MULTA_LABEL[e] }))];
+const ESTADOS: EstadoMultaEditable[] = ['pendiente', 'imputada', 'apelando'];
+const ESTADO_FILTROS: { value: string; label: string }[] = [
+  { value: '', label: 'Todos' },
+  ...(['pendiente', 'imputada', 'cobrada', 'bonificada', 'apelando'] as EstadoMulta[])
+    .map(e => ({ value: e, label: ESTADO_MULTA_LABEL[e] })),
+];
 
 export function MultasPage() {
-  const { loading, error, buscarResponsable, crearMulta, actualizarMulta, eliminarMulta, listMultas } = useMultas();
+  const { loading, error, buscarResponsable, crearMulta, actualizarMulta, eliminarMulta, resolverMulta, listMultas } = useMultas();
 
   // ── Buscador ──────────────────────────────────────────────────────────────
   const [busPatente, setBusPatente] = useState('');
@@ -44,9 +50,12 @@ export function MultasPage() {
 
   // ── Edición inline ────────────────────────────────────────────────────────
   const [editando, setEditando] = useState<number | null>(null);
-  const [estadoEdit, setEstadoEdit] = useState<EstadoMulta>('pendiente');
+  const [estadoEdit, setEstadoEdit] = useState<EstadoMultaEditable>('pendiente');
   const [notasEdit, setNotasEdit] = useState('');
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [cobrarId, setCobrarId] = useState<number | null>(null);
+  const [bonificarId, setBonificarId] = useState<number | null>(null);
+  const [resolviendo, setResolviendo] = useState(false);
 
   const cargarMultas = useCallback(async () => {
     const res = await listMultas({
@@ -107,6 +116,36 @@ export function MultasPage() {
     await actualizarMulta(m.id, { estado: estadoEdit, notas: notasEdit || undefined });
     setEditando(null);
     cargarMultas();
+  };
+
+  const handleCobrar = async () => {
+    if (!cobrarId) return;
+    setResolviendo(true);
+    try {
+      await resolverMulta(cobrarId, { decision: 'cobrada' });
+      toast.success('Multa marcada como cobrada');
+      setCobrarId(null);
+      cargarMultas();
+    } catch (err) {
+      toast.error(extractError(err));
+    } finally {
+      setResolviendo(false);
+    }
+  };
+
+  const handleBonificar = async (motivo: string) => {
+    if (!bonificarId) return;
+    setResolviendo(true);
+    try {
+      await resolverMulta(bonificarId, { decision: 'bonificada', motivo });
+      toast.success('Multa bonificada');
+      setBonificarId(null);
+      cargarMultas();
+    } catch (err) {
+      toast.error(extractError(err));
+    } finally {
+      setResolviendo(false);
+    }
   };
 
   return (
@@ -264,6 +303,10 @@ export function MultasPage() {
         )}
       </Card>
 
+      {error && (
+        <div className="rounded-lg bg-danger/10 border border-danger/20 p-3 text-sm text-danger">{error}</div>
+      )}
+
       {/* ── Lista global ──────────────────────────────────────────────────── */}
       <Card className="p-5 space-y-4">
         <div className="flex flex-wrap items-center gap-3 justify-between">
@@ -313,7 +356,7 @@ export function MultasPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-muted-foreground">Estado</label>
-                        <select value={estadoEdit} onChange={e => setEstadoEdit(e.target.value as EstadoMulta)} className="input-base">
+                        <select value={estadoEdit} onChange={e => setEstadoEdit(e.target.value as EstadoMultaEditable)} className="input-base">
                           {ESTADOS.map(s => <option key={s} value={s}>{ESTADO_MULTA_LABEL[s]}</option>)}
                         </select>
                       </div>
@@ -350,12 +393,25 @@ export function MultasPage() {
                       {m.descripcion && <p className="text-xs text-muted-foreground">{m.descripcion}</p>}
                       {m.alquiler_id && <p className="text-xs text-muted-foreground">Contrato #{m.alquiler_id}</p>}
                       {m.notas && <p className="text-xs text-muted-foreground italic">{m.notas}</p>}
+                      {m.estado === 'bonificada' && m.motivo_bonificacion && (
+                        <p className="text-xs text-muted-foreground italic">Motivo: {m.motivo_bonificacion}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="font-bold text-foreground">{formatMoney(m.monto)}</span>
+                      {m.estado === 'imputada' && (
+                        <>
+                          <Button variant="outline" size="sm" onClick={() => setCobrarId(m.id)}>
+                            <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Cobrada
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => setBonificarId(m.id)}>
+                            <Gift className="h-3.5 w-3.5 text-muted-foreground" /> Bonificar
+                          </Button>
+                        </>
+                      )}
                       <Button variant="ghost" size="sm" onClick={() => {
                         setEditando(m.id);
-                        setEstadoEdit(m.estado);
+                        setEstadoEdit(m.estado === 'cobrada' || m.estado === 'bonificada' ? 'pendiente' : m.estado);
                         setNotasEdit(m.notas ?? '');
                       }}>
                         <Pencil className="h-3.5 w-3.5" />
@@ -387,6 +443,26 @@ export function MultasPage() {
             cargarMultas();
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={cobrarId !== null}
+        onOpenChange={open => !open && setCobrarId(null)}
+        title="Marcar multa como cobrada"
+        description="El cliente pagó la multa: se genera el crédito que cancela el débito en su cuenta corriente."
+        confirmLabel="Marcar cobrada"
+        loading={resolviendo}
+        onConfirm={handleCobrar}
+      />
+
+      <MotivoDialog
+        open={bonificarId !== null}
+        onOpenChange={open => !open && setBonificarId(null)}
+        title="Bonificar multa"
+        description="Se le perdona la multa al cliente: el débito se anula con un contra-asiento en su cuenta corriente."
+        confirmLabel="Bonificar"
+        loading={resolviendo}
+        onConfirm={handleBonificar}
       />
     </div>
   );

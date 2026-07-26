@@ -209,16 +209,16 @@
 | FIN-08 | **Fecha de vencimiento por movimiento** | ✅ | — | **Hecho 2026-07-26**: se calcula solo desde la condición (`domain/cuenta_corriente.py`), o se puede fijar a mano |
 | FIN-09 | Aging de deuda (0-30 / 31-60 / 61-90 / +90) | ⬜ | P1 | El dato (`fecha_vencimiento`) ya existe; falta la vista agrupada en la UI |
 | FIN-10 | Límite de crédito por cliente | 🟡 | P2 | Campo `limite_credito` ya existe en el modelo; falta la alerta al superarlo |
-| FIN-11 | Asientos automáticos desde alquiler/pago/multa | 🟡 | P1 | **Arreglado 2026-07-26**: checkout, anticipo, cobros en checkout/check-in y excedente ya generan asiento automático (ledger completo, confirmado con el usuario — pendiente ok final de Franco/Martín, ver `VALIDAR_CON_DUENOS.md`). Falta sólo el de **multa** |
+| FIN-11 | Asientos automáticos desde alquiler/pago/multa/recibo | ✅ | — | **Hecho 2026-07-26**: checkout, anticipo, cobros, excedente, multa y ahora **recibo** generan asiento automático (ledger completo, pendiente ok final de Franco/Martín, ver `VALIDAR_CON_DUENOS.md`) |
 | FIN-12 | Anular movimiento con contra-asiento | ✅ | — | **Hecho 2026-07-26**: `POST /cuentas-corrientes/movimientos/{id}/anular`. El borrado de un pago en cta. cte. ahora anula el movimiento automáticamente en vez de bloquear |
 | FIN-13 | **Echeq vinculado al cliente** | ✅ | — | **Hecho 2026-07-26**: `cliente_id` (migración 020). `contraparte` sigue como texto libre para emitidos/proveedores |
 | FIN-14 | **Echeq con importe y fecha de pago** | ✅ | — | **Hecho 2026-07-26**: `fecha_cobro` (fecha pactada) separada de `fecha_acreditacion` (cuándo entró la plata de verdad) |
-| FIN-15 | Ciclo completo del echeq | ✅ | — | **Completado 2026-07-26**: rechazo revierte el crédito con contra-asiento (exige `motivo_rechazo`), baja lógica también revierte |
+| FIN-15 | Ciclo completo del echeq | ✅ | — | **Completado 2026-07-26**: rechazo revierte el crédito con contra-asiento (exige `motivo_rechazo`), baja lógica también revierte. **Bug de frontend corregido el mismo día**: el backend exigía `motivo_rechazo` desde que se escribió, pero la pantalla de Echeqs nunca lo pedía — todo intento de rechazar un echeq desde la UI daba 422. Ahora usa `MotivoDialog` |
 | FIN-16 | Echeq genera movimiento en cuenta corriente | ✅ | — | **Hecho 2026-07-26**: recibido con `cliente_id` genera crédito automático al entrar en cartera |
 | FIN-17 | Cartera de echeqs por mes | ⬜ | P2 | Saber con qué plata se cuenta |
-| FIN-18 | **Recibos con PDF estético** | ⬜ | P1 | Ver RCB-* |
+| FIN-18 | **Recibos con PDF estético** | ✅ | — | **Hecho 2026-07-26**: ver RCB-* |
 | FIN-19 | Facturas / comprobantes | ⬜ | P1 | Hoy sólo un booleano `con_factura` |
-| FIN-20 | Multa imputada genera deuda | ✅ | — | **Hecho 2026-07-26**: imputar genera débito automático. Nuevo `POST /multas/{id}/resolver` (cobrada → crédito · bonificada → contra-asiento, motivo obligatorio) |
+| FIN-20 | Multa imputada genera deuda | ✅ | — | **Hecho 2026-07-26**: imputar genera débito automático. `POST /multas/{id}/resolver` (cobrada → crédito · bonificada → contra-asiento, motivo obligatorio). **Frontend agregado 2026-07-26**: el endpoint existía desde antes pero no había botón — ahora hay dos ("Cobrada"/"Bonificar") en la ficha del cliente y en la pantalla global de Multas |
 | FIN-21 | Reportes de ingresos y flota | ✅ | — | |
 | FIN-22 | Separar facturado / no facturado en reportes | ⬜ | P1 | |
 | FIN-23 | Facturación electrónica AFIP | ⬜ | P3 | Diferido; dejar los campos preparados |
@@ -227,21 +227,21 @@
 
 | ID | Caso de uso | Estado | Prio | Nota |
 |---|---|---|---|---|
-| RCB-01 | Generar recibo por monto y cliente | ⬜ | P1 | |
-| RCB-02 | Numeración correlativa segura | ⬜ | P1 | Secuencia de base, no `MAX+1` |
-| RCB-03 | Recibo "a cuenta" | ⬜ | P1 | El caso más común |
-| RCB-04 | Recibo imputado a deudas puntuales | ⬜ | P1 | Propuesta FIFO editable |
-| RCB-05 | Excedente queda como saldo a favor | ⬜ | P1 | |
-| RCB-06 | Medios de pago múltiples en un recibo | ⬜ | P2 | Parte efectivo + parte transferencia |
-| RCB-07 | Monto en letras | ⬜ | P1 | Le da carácter de recibo |
-| RCB-08 | Saldo anterior → pago → saldo actual | ⬜ | P1 | Lo que el cliente quiere ver |
-| RCB-09 | Párrafo de agradecimiento fijo | ⬜ | P1 | Pre-escrito, como el cotizador |
-| RCB-10 | Descargar PDF | ⬜ | P1 | |
-| RCB-11 | Enviar por email | ⬜ | P2 | Resend ya está |
-| RCB-12 | Anular con contra-recibo | ⬜ | P1 | Nunca borrar |
-| RCB-13 | Recibo de seña | ⬜ | P2 | Misma plantilla, otra variante |
+| RCB-01 | Generar recibo por monto y cliente | ✅ | — | **Hecho 2026-07-26**: tab "Recibos" en la ficha de cliente |
+| RCB-02 | Numeración correlativa segura | ✅ | — | **Hecho 2026-07-26**: secuencia `recibos_numero_seq` (migración 022), nunca `MAX+1` |
+| RCB-03 | Recibo "a cuenta" | ✅ | — | **Hecho 2026-07-26**: genera un crédito contra el saldo general, mismo mecanismo que pago/echeq |
+| RCB-04 | Recibo imputado a deudas puntuales | ⬜ | P1 | **Deliberadamente afuera de esta versión** — ver `docs/VALIDAR_CON_DUENOS.md` punto 4 |
+| RCB-05 | Excedente queda como saldo a favor | ✅ | — | **Hecho 2026-07-26**: es automático — el crédito siempre baja el saldo general, si supera la deuda queda negativo (a favor, D-01) |
+| RCB-06 | Medios de pago múltiples en un recibo | ⬜ | P2 | **Deliberadamente afuera** — un recibo, un medio de pago. Ver `docs/VALIDAR_CON_DUENOS.md` punto 4 |
+| RCB-07 | Monto en letras | ✅ | — | **Hecho 2026-07-26**: `domain/monto_letras.py`, 7 tests unitarios |
+| RCB-08 | Saldo anterior → pago → saldo actual | ✅ | — | **Hecho 2026-07-26**: se guarda en la fila y se imprime en el PDF |
+| RCB-09 | Párrafo de agradecimiento fijo | ✅ | — | **Hecho 2026-07-26**: texto exacto de D-15, no editable |
+| RCB-10 | Descargar PDF | ✅ | — | **Hecho 2026-07-26**: `GET /recibos/{id}/pdf`, botón en el tab |
+| RCB-11 | Enviar por email | ⬜ | P2 | Resend ya está, pero no se armó el botón (deshabilitado) todavía |
+| RCB-12 | Anular con contra-recibo | ✅ | — | **Hecho 2026-07-26**: nunca se borra — pasa a `estado='anulado'` + contra-asiento en la CC (motivo obligatorio, 422 si falta), mismo patrón que la multa bonificada |
+| RCB-13 | Recibo de seña | ⬜ | P2 | Misma plantilla, otra variante — no armado todavía |
 | RCB-14 | Recibo de devolución de garantía | ⬜ | P2 | Ídem |
-| RCB-15 | Pipeline de PDF server-side | ⬜ | P1 | Base también para contratos y facturas |
+| RCB-15 | Pipeline de PDF server-side | ✅ | — | **Hecho 2026-07-26**: ReportLab (no WeasyPrint — necesita GTK+, no disponible en Windows). Contratos/facturas/presupuestos todavía sin migrar a este pipeline |
 
 ## NOT — Alertas y notificaciones
 

@@ -48,14 +48,14 @@ Los conceptos del rubro que el modelo de datos todavía no conoce y que van a ha
 | Reservas / Alquileres | ✅ 1.000+ líneas | ✅ | Todo | El corazón, sano |
 | Ocupación | ✅ | ✅ timeline + agenda | Reservas | Muy bueno |
 | Dashboard | ✅ | ✅ | Reportes | Bueno |
-| Multas | ✅ | ✅ global + por cliente | Cliente, Alquiler | ⚠️ No llega a CC |
+| Multas | ✅ | ✅ global + por cliente, con resolución cobrada/bonificada | Cliente, Alquiler, CC | Sólido (2026-07-26) |
 | Servicios/Mantenimiento | ✅ | ✅ | Vehículo (km) | Bueno |
 | Caja / Pagos | ✅ | ✅ | Alquiler, CC | ⚠️ Ver 2.4 |
 | Echeqs | ⚠️ mínimo | ✅ | **nada** | 🔴 Isla |
 | Cuentas Corrientes | ⚠️ básico | ✅ | Cliente, Pagos | 🔴 Sin ledger |
 | Notificaciones | ⚠️ computed | ✅ campana | — | 🔴 Ver 2.1 |
 | Reportes | ✅ | ✅ | Pagos, Gastos | Bueno |
-| Recibos | ❌ no existe | ❌ | — | 🔴 A construir |
+| Recibos | ✅ (versión simplificada, sin imputación FIFO) | ✅ tab en Cliente | Cliente, CC | Hecho 2026-07-26, ver 3.6 |
 | Facturas / Comprobantes | ❌ no existe | ❌ | — | 🔴 A construir |
 | Cotizador | ❌ sin BD | ✅ frontend puro | **nada** | Isla deliberada |
 | Contratos | ❌ TODO | ❌ placeholder | Alquiler | 🔴 Bloqueante |
@@ -382,6 +382,15 @@ Automático: asiento HABER en la CC + registro en Caja del día
 
 Esto también resuelve el `contrato_pdf.py` y el `presupuesto_pdf.py` que hoy están vacíos (14 y 7 líneas): un solo pipeline de PDF server-side para recibos, contratos, facturas y presupuestos.
 
+**✅ Hecho (2026-07-26), migración 022 — versión simplificada.** Tabla `recibos` (numeración vía `recibos_numero_seq`, nunca `MAX+1`, con `prefijo='R'` preparado para el día que haya más de un punto de emisión — D-14), `ReciboService` (`crear`, `anular`, `generar_pdf`), router `POST /recibos`, `GET /recibos/{id}/pdf`, `POST /recibos/{id}/anular`. PDF con ReportLab: logo, monto en letras (`domain/monto_letras.py`, nuevo, 7 tests), saldo anterior→pago→saldo actual, párrafo de agradecimiento fijo (D-15, texto exacto). Emitir genera el crédito vía `CuentaCorrienteService` (mismo mecanismo que pago/echeq/multa); anular revierte con contra-asiento y exige motivo (422 si falta), igual que la multa bonificada. Frontend: tab "Recibos" en la ficha de cliente (emitir, listar, descargar PDF, anular).
+
+**Deliberadamente afuera de esta versión** (a validar con los dueños, ver `docs/VALIDAR_CON_DUENOS.md`):
+- **`medios_pago` mixto** (parte efectivo + parte transferencia en un mismo recibo) — hoy es un solo `medio_pago` por recibo. Si el cliente paga con dos medios, hoy son dos recibos.
+- **`recibo_imputaciones` / imputación FIFO contra deudas puntuales** — el recibo de hoy hace lo mismo que un pago o un echeq: genera un crédito contra el saldo general de la cuenta. No permite elegir "este recibo cancela el Alquiler #142" específicamente. Es coherente con cómo ya funcionan pagos y echeqs (ninguno de los dos imputa tampoco), pero es menos de lo que describía el plan original.
+- **Envío por email** — el botón "Descargar PDF" es la acción principal (D-16); no se armó el botón deshabilitado con Resend por ahora.
+
+De paso, aprovechando el mismo patrón D-19 (motivo obligatorio + contra-asiento), se armó el frontend de **resolución de multas** (botones "Cobrada"/"Bonificar" en `MultasTab` y en la página global de Multas — el backend ya existía desde antes pero la UI nunca lo llamaba) y se corrigió el **rechazo de echeq**, que hoy pedía `motivo_rechazo` en el backend pero el frontend nunca lo enviaba (todo intento de rechazar un echeq desde la UI daba 422). Ver `components/shared/MotivoDialog.tsx`, nuevo componente reusado en los tres flujos.
+
 ### 3.7 Cambios de modelo — Cliente (datos fiscales)
 
 Necesarios para facturar y para operar cuenta corriente con empresas:
@@ -394,8 +403,8 @@ Necesarios para facturar y para operar cuenta corriente con empresas:
 |---|---|---|
 | Checkout confirmado con precio total | DEBE por el total del alquiler, condición del cliente, vencimiento calculado | ✅ Hecho |
 | Pago registrado | HABER por el monto | ✅ Hecho |
-| **Recibo emitido** | **HABER + imputación a las deudas seleccionadas + entrada en Caja del día** | ⬜ Módulo Recibos, sección 3.6 |
-| **Recibo anulado** | **Contra-asiento DEBE + contra-recibo, nunca borrado** | ⬜ Módulo Recibos |
+| **Recibo emitido** | HABER contra el saldo general (sin imputación a deudas puntuales — ver 3.6) | ✅ Hecho (versión simplificada) |
+| **Recibo anulado** | Contra-asiento DEBE, nunca se borra ni edita | ✅ Hecho |
 | Echeq recibido en cartera | HABER diferido | ✅ Hecho |
 | Echeq rechazado | DEBE (revierte) + alerta alta | ✅ Hecho (la alerta es Fase 2) |
 | Multa cambia a `imputada` | DEBE por el monto | ✅ Hecho |
@@ -814,8 +823,8 @@ Aunque todavía no esté definida: catálogo de flota por categoría con fotos, 
 | `notificaciones` | Alertas | 🔴 |
 | `preferencias_notificacion` | Alertas | 🟡 |
 | `comprobantes` | Finanzas | 🔴 |
-| `recibos` | Finanzas | 🔴 |
-| `recibo_imputaciones` | Finanzas | 🔴 |
+| `recibos` | Finanzas | ✅ Hecho 2026-07-26 (migración 022, versión simplificada) |
+| `recibo_imputaciones` | Finanzas | 🔴 No construida — depende de si se valida la imputación FIFO (ver 3.6) |
 | `auditoria` | Transversal | 🟠 |
 | `categorias` | Web | 🔴 |
 | `sucursales` | Web | 🔴 |
@@ -869,16 +878,16 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 
 ### 💰 Fase 1 — Finanzas conectadas + reglas de negocio (3-4 semanas)
 16. ✅ Rediseñar cuenta corriente como ledger inmutable (`saldo_posterior`, `condicion`, `fecha_vencimiento`, anulación, FKs) — hecho 2026-07-26 (migración 019). Ver detalle abajo
-17. Echeq: `cliente_id` + `fecha_pago` + ciclo de vida completo + generación de movimiento en CC
-18. Automatismos de asientos (checkout → débito, pago → crédito, multa → débito, etc.)
+17. ✅ Echeq: `cliente_id` + ciclo de vida completo + generación de movimiento en CC — hecho 2026-07-26 (migración 020). Frontend: rechazo ahora exige motivo (ver 3.6-bis)
+18. ✅ Automatismos de asientos (checkout → débito, pago → crédito, multa → débito, recibo → crédito) — hecho 2026-07-26
 19. Datos fiscales del cliente + **empresa vs particular** (contactos con puesto, formulario condicional)
 20. **Conductor ≠ pagador** en la reserva — prerequisito para imputar multas en empresas
 21. **Rediseño de tarifas**: `precio_por_dia` explícito, por vehículo **y** por categoría, bandas configurables
 22. **Descuentos auditados** (precio de lista vs cobrado, motivo, autorizado por) + **con/sin factura** en la reserva
 23. **Estados nuevos**: `VENCIDA`, `NO_SHOW`, `CERRADA` + política de seña en cancelación y no-show
 24. **Cargos de cierre**: combustible faltante, limpieza, liquidación de garantía contra los cargos
-25. **Pipeline de PDF server-side** (WeasyPrint/ReportLab) — base para recibos, facturas, contratos y presupuestos
-26. **Módulo de Recibos** — numeración, imputación FIFO, PDF con agradecimiento, descarga + envío por email
+25. ✅ **Pipeline de PDF server-side** (ReportLab) — hecho 2026-07-26, usado por Recibos. Contratos/facturas/presupuestos todavía sin migrar a este pipeline
+26. ✅ **Módulo de Recibos** — hecho 2026-07-26, versión simplificada (ver 3.6-bis): numeración vía secuencia + PDF + monto en letras + descarga. **Imputación FIFO y medios de pago mixtos quedaron afuera** — a validar con los dueños si hace falta
 27. Módulo Comprobantes/Facturas (carga manual + PDF + vínculo a CC)
 28. UI: ledger con Debe/Haber/Saldo + aging · grilla de tarifas · liquidación en el check-in · panel de estado en la reserva
 
@@ -955,9 +964,9 @@ Cuando el modelo esté estabilizado, generar en Mermaid (versionados junto al c�
 | 11 | **Política de cancelación** | Definir. Va en el contrato y en la web |
 | 12 | **Buffer entre alquileres** | Sugerido: 2-3 horas para limpieza y revisión |
 | 13 | ~~**Proveedor de auth**~~ | ✅ **Decidido: Clerk.** Fase 3.5 |
-| 14 | **Numeración de recibos** | ¿Arrancan en 1 o continúan una numeración de papel existente? ¿Un punto de venta o varios? |
-| 15 | **Texto de agradecimiento del recibo** | Fijo y pre-escrito, como el cotizador. Definir la redacción con ellos |
-| 16 | **¿El recibo se manda por email desde el sistema o se descarga y se manda a mano?** | Ambos. Descarga siempre; email como opción (Resend ya está) |
+| 14 | ~~**Numeración de recibos**~~ | ✅ **Decidido e implementado:** arranca en `00001`, secuencia de Postgres. Ver 3.6 |
+| 15 | ~~**Texto de agradecimiento del recibo**~~ | ✅ **Decidido e implementado:** texto fijo, ver PDF en 3.6 |
+| 16 | ~~**¿El recibo se manda por email o se descarga y se manda a mano?**~~ | ✅ **Decidido:** se descarga (implementado). Email queda pendiente, sin botón todavía |
 
 ---
 
@@ -973,7 +982,7 @@ Cuando el modelo esté estabilizado, generar en Mermaid (versionados junto al c�
 | Auth sigue en bypass al exponer la web | Crítico | Clerk adelantado a Fase 3.5, antes de contratos y de la web |
 | Migrar a Clerk rompe los `usuario_id` históricos | Medio | Mapeo explícito Clerk→`usuarios` + backfill; no borrar la tabla local |
 | Recalcular el saldo de CC con datos históricos ya cargados | Medio | Asiento de "saldo inicial" por cliente, no recalcular hacia atrás |
-| Recibos con numeración duplicada por concurrencia | Medio | Secuencia en base (no `MAX(numero)+1`) + constraint único sobre `(punto_venta, numero)` |
+| ~~Recibos con numeración duplicada por concurrencia~~ | Medio | ✅ Resuelto — secuencia `recibos_numero_seq` + constraint único, migración 022 |
 
 ---
 
@@ -987,7 +996,7 @@ Cuando el modelo esté estabilizado, generar en Mermaid (versionados junto al c�
 3. Los echeqs son una isla sin cliente, sin cuenta corriente y sin ciclo de vida
 4. La cuenta corriente es un número mutable, no un libro auditable
 5. No existe el contrato, que es lo que bloquea la entrega legal del auto
-6. No hay forma de darle un comprobante al cliente cuando paga — ni recibo, ni factura
+6. ~~No hay forma de darle un comprobante al cliente cuando paga~~ — ✅ Recibo resuelto 2026-07-26 (versión simplificada, ver 3.6). Factura sigue sin existir
 7. El endpoint público de disponibilidad devuelve datos incorrectos
 8. Faltan las cuatro entidades que la web necesita: categorías, sucursales, adicionales y precios por calendario
 9. Todo se sigue grabando con un usuario ficticio

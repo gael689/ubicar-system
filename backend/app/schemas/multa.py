@@ -5,6 +5,10 @@ from pydantic import BaseModel
 
 
 DecisionMulta = Literal["cobrada", "bonificada"]
+# "cobrada"/"bonificada" sólo se alcanzan vía POST /resolver (generan el
+# movimiento de cuenta corriente correspondiente) — un PATCH directo a esos
+# estados dejaría el ledger desincronizado, por eso no son válidos acá.
+EstadoMultaEditable = Literal["pendiente", "imputada", "apelando"]
 
 
 class ResolverMultaRequest(BaseModel):
@@ -25,7 +29,7 @@ class MultaCreate(BaseModel):
 
 
 class MultaUpdate(BaseModel):
-    estado: str | None = None
+    estado: EstadoMultaEditable | None = None
     monto: Decimal | None = None
     cliente_id: int | None = None
     alquiler_id: int | None = None

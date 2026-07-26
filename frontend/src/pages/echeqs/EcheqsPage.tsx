@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useEcheqs, useCrearEcheq, useActualizarEcheq } from '@/hooks/useEcheqs';
 import { formatCurrency, formatDate, extractError } from '@/lib/utils';
 import { ESTADO_ECHEQ_LABEL, ESTADO_ECHEQ_COLOR } from '@/lib/constants';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import type { Echeq, EstadoEcheq } from '@/types';
 
 const ESTADOS_TRANSICION: Record<string, EstadoEcheq[]> = {
@@ -32,7 +33,7 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-function EcheqCard({ e, onEstado }: { e: Echeq; onEstado: (id: number, estado: EstadoEcheq) => void }) {
+function EcheqCard({ e, onEstado }: { e: Echeq; onEstado: (echeq: Echeq, estado: EstadoEcheq) => void }) {
   const [showMenu, setShowMenu] = useState(false);
   const transiciones = ESTADOS_TRANSICION[e.estado] ?? [];
 
@@ -75,7 +76,7 @@ function EcheqCard({ e, onEstado }: { e: Echeq; onEstado: (id: number, estado: E
                   {transiciones.map(est => (
                     <button
                       key={est}
-                      onClick={() => { onEstado(e.id, est); setShowMenu(false); }}
+                      onClick={() => { onEstado(e, est); setShowMenu(false); }}
                       className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent text-foreground"
                     >
                       {ESTADO_ECHEQ_LABEL[est] ?? est}
@@ -108,6 +109,7 @@ export function EcheqsPage() {
   const [tab, setTab] = useState<'recibido' | 'emitido'>('recibido');
   const [estadoFiltro, setEstadoFiltro] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [rechazando, setRechazando] = useState<Echeq | null>(null);
 
   const { data: echeqs = [], isLoading, refetch, isFetching } = useEcheqs({
     tipo: tab,
@@ -139,10 +141,25 @@ export function EcheqsPage() {
     }
   }
 
-  async function handleEstado(id: number, estado: EstadoEcheq) {
+  async function handleEstado(echeq: Echeq, estado: EstadoEcheq) {
+    if (estado === 'rechazado') {
+      setRechazando(echeq);
+      return;
+    }
     try {
-      await actualizar.mutateAsync({ id, payload: { estado } });
+      await actualizar.mutateAsync({ id: echeq.id, payload: { estado } });
       toast.success('Estado actualizado');
+    } catch (err) {
+      toast.error(extractError(err));
+    }
+  }
+
+  async function handleRechazar(motivo: string) {
+    if (!rechazando) return;
+    try {
+      await actualizar.mutateAsync({ id: rechazando.id, payload: { estado: 'rechazado', motivo_rechazo: motivo } });
+      toast.success('Echeq rechazado');
+      setRechazando(null);
     } catch (err) {
       toast.error(extractError(err));
     }
@@ -299,6 +316,16 @@ export function EcheqsPage() {
           </div>
         )}
       </div>
+
+      <MotivoDialog
+        open={rechazando !== null}
+        onOpenChange={open => !open && setRechazando(null)}
+        title="Rechazar echeq"
+        description="El banco rechazó el cheque. Si había generado un crédito en la cuenta corriente del cliente, se revierte con un contra-asiento."
+        confirmLabel="Rechazar"
+        loading={actualizar.isPending}
+        onConfirm={handleRechazar}
+      />
     </div>
   );
 }

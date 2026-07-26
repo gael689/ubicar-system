@@ -61,7 +61,9 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 **Contexto:** con el ledger completo funcionando, la pregunta natural es si una multa imputada a un cliente debería sumarse como deuda en su cuenta corriente automáticamente (como ya está documentado en `docs/PLAN_MAESTRO.md` sección 3.8), o si prefieren manejarlo aparte (cobrando la multa por fuera, sin mezclarla con el alquiler).
 
-**Estado:** ⬜ Todavía no implementado. Se preguntará/decidirá cuando se retome el módulo de Multas dentro de esta misma línea de trabajo.
+**Qué se decidió (sin preguntar, por ser consistente con el punto 1):** sí, imputar una multa a un cliente (`estado='imputada'`) genera un débito automático, igual que el checkout. Resolverla tiene exactamente dos salidas — **cobrada** (genera el crédito que cancela el débito) o **bonificada** (se le perdona, contra-asiento, con motivo obligatorio) — nunca queda en un estado intermedio ambiguo.
+
+**Estado:** ✅ Implementado y probado (2026-07-26): backend (migración 021) más el frontend, que hasta esta sesión no tenía ningún botón para llamarlo — cargar una multa como "imputada" sí generaba el débito, pero no había forma de marcarla "cobrada" o "bonificada" desde la pantalla, sólo un desplegable de estado libre que además no distinguía las dos salidas. Ahora hay dos botones ("Cobrada" / "Bonificar") en la ficha del cliente y en la pantalla global de Multas. **Pendiente el ok de Franco/Martín** sobre si quieren que la multa efectivamente aparezca mezclada en la misma cuenta corriente que el alquiler, o si prefieren llevarla aparte.
 
 ---
 
@@ -72,6 +74,22 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 **Por qué se avisa igual:** si en algún momento quieren que una garantía ejecutada (por daños, por ejemplo) sí aparezca como un cargo en la cuenta corriente del cliente, es una extensión simple de lo que ya existe — pero cambiaría la naturaleza de "garantía" de depósito neutro a cargo real. Vale la pena que lo sepan de antemano.
 
 **Estado:** 🟢 Decisión técnica de bajo impacto, no requiere validación urgente — se las avisa por transparencia.
+
+---
+
+## 4. Recibos — versión simplificada, sin imputación a deudas puntuales
+
+**Contexto:** el plan original (`docs/PLAN_MAESTRO.md` sección 3.6) describía un recibo con **medios de pago mixtos** (parte efectivo + parte transferencia en un mismo recibo) y una tabla `recibo_imputaciones` para que el operador elija **a qué deuda puntual** se aplica el pago (ese alquiler, esa multa), con sugerencia automática FIFO (la deuda más vieja primero).
+
+**Qué se construyó en su lugar:** un recibo con **un solo medio de pago**, que genera un crédito contra el **saldo general** de la cuenta corriente del cliente — exactamente el mismo mecanismo que ya usan un pago o un echeq recibido. No permite elegir "este recibo cancela el Alquiler #142 puntualmente"; sólo baja el saldo total.
+
+**Por qué se hizo así:** es consistente con cómo ya funciona el resto del ledger (ningún pago ni echeq imputa tampoco — todos son créditos contra el saldo general), y evita construir una lógica de imputación nueva sin tener claro si hace falta. Es la opción más simple que no rompe nada.
+
+**Qué se pierde con esta simplificación:**
+- Si un cliente paga con dos medios distintos en el momento (parte efectivo, parte transferencia), hoy hacen falta **dos recibos**, no uno.
+- No queda registrado en el sistema "este pago específico canceló esa deuda específica" — sólo que el saldo bajó. Para la mayoría de los casos (el cliente debe un monto y paga ese monto) da exactamente el mismo resultado. Para casos de pagos parciales contra múltiples deudas simultáneas, el saldo general sigue siendo correcto, pero no hay trazabilidad de "a qué se aplicó cada peso".
+
+**Estado:** ✅ Implementado (versión simplificada) y probado 2026-07-26. **Pendiente el ok de Franco/Martín:** si en la operación real hace falta el recibo con medios mixtos o la imputación a deudas puntuales, es una extensión sobre lo ya construido (no hay que rehacer el módulo), pero conviene confirmar si realmente se usa así en el día a día antes de invertir el tiempo.
 
 ---
 

@@ -21,7 +21,7 @@
 **No entra en el MVP.** Los comprobantes se cargan manualmente con su PDF adjunto.
 Los campos `cae` y `cae_vencimiento` se dejan preparados en la tabla `comprobantes` para no migrar después.
 
-### D-14 · Numeración de recibos ✅ DECIDIDO
+### D-14 · Numeración de recibos ✅ DECIDIDO — ✅ IMPLEMENTADO (2026-07-26)
 **Arranca en `00001` y avanza.** No es un comprobante fiscal — es un respaldo para el cliente.
 
 > **Aclaración sobre "punto de venta":** era un concepto de facturación AFIP (el `0001-` de `0001-00000042` identifica desde qué sucursal o caja se emitió). Como el recibo no es fiscal, no hace falta. **Formato: `RECIBO N° 00001`.**
@@ -30,15 +30,21 @@ Los campos `cae` y `cae_vencimiento` se dejan preparados en la tabla `comprobant
 
 **Técnico:** secuencia de base de datos, nunca `MAX(numero)+1`, con constraint único. Si dos personas generan un recibo al mismo tiempo, no se duplica el número.
 
-### D-15 · Texto de agradecimiento del recibo ✅ DECIDIDO
+**Implementado tal cual:** secuencia `recibos_numero_seq` (migración 022) + columna `prefijo` con default `"R"`. Ver `docs/PLAN_MAESTRO.md` sección 3.6.
+
+### D-15 · Texto de agradecimiento del recibo ✅ DECIDIDO — ✅ IMPLEMENTADO (2026-07-26)
 
 > *Gracias por elegir Ubicar Rent. Su confianza es lo que nos impulsa a seguir mejorando el servicio día a día. Quedamos a su disposición para su próximo alquiler.*
 
 El texto es **fijo y pre-escrito**, no editable por el operador — misma decisión que se tomó para el cotizador: siempre la voz de Ubicar Rent.
 
-### D-16 · Envío del recibo ✅ DECIDIDO
+**Implementado tal cual** en `backend/app/services/recibo_pdf.py` — texto exacto de arriba, sin variación.
+
+### D-16 · Envío del recibo ✅ DECIDIDO — ✅ IMPLEMENTADO (descarga), pendiente (email)
 **Se descarga y se manda a mano por WhatsApp.** Botón "Descargar PDF" como acción principal.
 Email queda **pendiente pero probable** — se deja el botón preparado y deshabilitado, con Resend ya integrado por detrás.
+
+**Implementado:** descarga vía `GET /recibos/{id}/pdf`, botón en el tab Recibos del cliente. **No implementado:** el botón de email deshabilitado — se agrega cuando se retome esa fase.
 
 ---
 

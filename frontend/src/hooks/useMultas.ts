@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import api from '@/lib/api';
-import type { ApiResponse, PaginatedResponse, Multa, MultaCreate, MultaUpdate, BusquedaMultaResult } from '@/types';
+import type { ApiResponse, PaginatedResponse, Multa, MultaCreate, MultaUpdate, BusquedaMultaResult, ResolverMultaPayload } from '@/types';
 
 export function useMultas() {
   const [loading, setLoading] = useState(false);
@@ -93,5 +93,20 @@ export function useMultas() {
     }
   }, []);
 
-  return { loading, error, listMultas, buscarResponsable, crearMulta, actualizarMulta, eliminarMulta };
+  const resolverMulta = useCallback(async (id: number, payload: ResolverMultaPayload): Promise<Multa> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data } = await api.post<ApiResponse<Multa>>(`/multas/${id}/resolver`, payload);
+      return data.data;
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || 'Error al resolver la multa';
+      setError(typeof msg === 'string' ? msg : msg?.message || 'Error');
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { loading, error, listMultas, buscarResponsable, crearMulta, actualizarMulta, eliminarMulta, resolverMulta };
 }
