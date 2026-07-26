@@ -62,7 +62,7 @@ class AlquilerService:
         alquiler = self.get(alquiler_id)
         reserva = alquiler.reserva
 
-        if reserva.estado != EstadoReserva.ACTIVA.value:
+        if reserva.estado not in (EstadoReserva.ACTIVA.value, EstadoReserva.VENCIDA.value):
             raise BusinessRuleError("estado_invalido", "El alquiler no está activo")
 
         hora_devolucion = reserva.hora_devolucion_acordada or reserva.hora_inicio
@@ -232,8 +232,12 @@ class AlquilerService:
         alquiler = self.get(alquiler_id)
         reserva = alquiler.reserva
 
-        if reserva.estado != EstadoReserva.ACTIVA.value:
-            raise ConflictError(f"estado_invalido|La reserva no está activa (estado: {reserva.estado})")
+        # Acepta 'activa' (checkin dentro de término) y 'vencida' (devolución
+        # tardía: la sincronización automática la pasó a vencida porque pasó
+        # la hora de fin, pero el auto sigue sin volver). Ver
+        # ReservaService.sincronizar_estados_por_horario.
+        if reserva.estado not in (EstadoReserva.ACTIVA.value, EstadoReserva.VENCIDA.value):
+            raise ConflictError(f"estado_invalido|La reserva no está activa ni vencida (estado: {reserva.estado})")
 
         checkin_dt = datetime.combine(checkin_fecha, checkin_hora)
         checkout_dt = datetime.combine(alquiler.checkout_fecha, alquiler.checkout_hora)
@@ -349,8 +353,10 @@ class AlquilerService:
         alquiler = self.get(alquiler_id)
         reserva = alquiler.reserva
 
-        if reserva.estado != EstadoReserva.ACTIVA.value:
-            raise ConflictError(f"estado_invalido|El alquiler debe estar activo para extenderse (estado: {reserva.estado})")
+        # También se puede extender una reserva 'vencida': el cliente puede pedir
+        # más tiempo después de la hora pactada, sin haber devuelto el auto todavía.
+        if reserva.estado not in (EstadoReserva.ACTIVA.value, EstadoReserva.VENCIDA.value):
+            raise ConflictError(f"estado_invalido|El alquiler debe estar activo o vencido para extenderse (estado: {reserva.estado})")
 
         nueva_fin_dt = datetime.combine(nueva_fecha_fin, nueva_hora_fin)
         fin_actual_dt = datetime.combine(reserva.fecha_fin, reserva.hora_fin)
@@ -396,6 +402,13 @@ class AlquilerService:
             nuevo_precio = precio_anterior
             nueva_tarifa_id = tarifa_anterior_id
 
+        # Si la reserva estaba 'vencida' y la nueva fecha/hora de fin queda en el
+        # futuro, vuelve a 'activa' (ya no está fuera de término). Si la nueva
+        # fecha sigue siendo pasada (caso raro), se mantiene 'vencida'.
+        nuevo_estado = reserva.estado
+        if reserva.estado == EstadoReserva.VENCIDA.value and nueva_fin_dt > datetime.now():
+            nuevo_estado = EstadoReserva.ACTIVA.value
+
         with self.db.begin_nested():
             self.reserva_repo.update(
                 reserva,
@@ -403,6 +416,7 @@ class AlquilerService:
                 hora_fin=nueva_hora_fin,
                 tarifa_aplicada_id=nueva_tarifa_id,
                 precio_total=nuevo_precio,
+                estado=nuevo_estado,
             )
 
         logger.info(
@@ -502,7 +516,7 @@ class AlquilerService:
         for r in reservas:
             if excluir_reserva_id and r.id == excluir_reserva_id:
                 continue
-            if r.estado in ("confirmada", "activa"):
+            if r.estado in ("confirmada", "activa", "vencida"):
                 ventanas.append(
                     VentanaReserva(
                         id=r.id,

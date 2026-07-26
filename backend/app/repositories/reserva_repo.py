@@ -172,7 +172,11 @@ class ReservaRepo:
         """
         q = self.db.query(Reserva).filter(
             Reserva.vehiculo_id == vehiculo_id,
-            Reserva.estado.in_([EstadoReserva.CONFIRMADA.value, EstadoReserva.ACTIVA.value]),
+            Reserva.estado.in_([
+                EstadoReserva.CONFIRMADA.value,
+                EstadoReserva.ACTIVA.value,
+                EstadoReserva.VENCIDA.value,
+            ]),
         )
         if excluir_id is not None:
             q = q.filter(Reserva.id != excluir_id)
@@ -180,7 +184,7 @@ class ReservaRepo:
 
     def find_activas_para_vehiculo(self, vehiculo_id: int) -> list[Reserva]:
         """
-        Reservas pendientes, confirmadas y activas de un vehículo.
+        Reservas pendientes, confirmadas, activas y vencidas de un vehículo.
         Usado en D4 (inactivación de vehículo).
         """
         return (
@@ -192,6 +196,7 @@ class ReservaRepo:
                     EstadoReserva.PENDIENTE.value,
                     EstadoReserva.CONFIRMADA.value,
                     EstadoReserva.ACTIVA.value,
+                    EstadoReserva.VENCIDA.value,
                 ]),
             )
             .order_by(Reserva.fecha_inicio)
@@ -217,6 +222,7 @@ class ReservaRepo:
                     EstadoReserva.PENDIENTE.value,
                     EstadoReserva.CONFIRMADA.value,
                     EstadoReserva.ACTIVA.value,
+                    EstadoReserva.VENCIDA.value,
                 ]),
             )
             .all()
@@ -243,6 +249,7 @@ class ReservaRepo:
                     EstadoReserva.PENDIENTE.value,
                     EstadoReserva.CONFIRMADA.value,
                     EstadoReserva.ACTIVA.value,
+                    EstadoReserva.VENCIDA.value,
                     EstadoReserva.FINALIZADA.value,
                 ]),
             )

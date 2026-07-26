@@ -22,6 +22,7 @@ class EstadoReserva(str, Enum):
     PENDIENTE = "pendiente"
     CONFIRMADA = "confirmada"
     ACTIVA = "activa"
+    VENCIDA = "vencida"  # pasó fecha_fin/hora_fin y el auto no volvió (sin checkin)
     FINALIZADA = "finalizada"
     CANCELADA = "cancelada"
 

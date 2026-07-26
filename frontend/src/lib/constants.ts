@@ -37,6 +37,7 @@ export const ESTADO_RESERVA_LABEL: Record<EstadoReserva, string> = {
   pendiente: 'Pendiente',
   confirmada: 'Confirmada',
   activa: 'Activa',
+  vencida: 'Vencida',
   finalizada: 'Finalizada',
   cancelada: 'Cancelada',
 };
@@ -45,6 +46,7 @@ export const ESTADO_RESERVA_COLOR: Record<EstadoReserva, string> = {
   pendiente: 'bg-warning/15 text-warning border-warning/30',
   confirmada: 'bg-primary/15 text-primary border-primary/30',
   activa: 'bg-success/15 text-success border-success/30',
+  vencida: 'bg-danger/15 text-danger border-danger/30 animate-pulse',
   finalizada: 'bg-muted/40 text-muted-foreground border-border',
   cancelada: 'bg-danger/15 text-danger border-danger/30',
 };

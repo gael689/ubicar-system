@@ -11,6 +11,7 @@ import { ReservaInfoModal } from '../reservas/ReservaInfoModal';
 const ESTADO_COLORS_EVENTO: Record<string, string> = {
   confirmada: 'bg-blue-500 border-blue-600 text-white',
   activa: 'bg-emerald-500 border-emerald-600 text-white',
+  vencida: 'bg-red-600 border-red-700 text-white animate-pulse',
   finalizada: 'bg-slate-500 border-slate-600 text-white',
   cancelada: 'bg-red-500 border-red-600 text-white line-through opacity-90',
 };
@@ -18,6 +19,7 @@ const ESTADO_COLORS_EVENTO: Record<string, string> = {
 const ESTADO_COLORS_BADGE: Record<string, string> = {
   confirmada: 'bg-blue-100 text-blue-800',
   activa: 'bg-emerald-100 text-emerald-800',
+  vencida: 'bg-red-100 text-red-800',
   finalizada: 'bg-slate-200 text-slate-700',
   cancelada: 'bg-red-100 text-red-800 line-through',
 };
@@ -25,6 +27,7 @@ const ESTADO_COLORS_BADGE: Record<string, string> = {
 const ESTADO_ICONS: Record<string, React.ReactNode> = {
   confirmada: <CheckCircle2 className="w-3.5 h-3.5" />,
   activa: <Car className="w-3.5 h-3.5" />,
+  vencida: <AlertCircle className="w-3.5 h-3.5" />,
   finalizada: <Flag className="w-3.5 h-3.5" />,
   cancelada: <XCircle className="w-3.5 h-3.5" />,
 };
@@ -727,6 +730,7 @@ function AgendaView({
                         key={i}
                         className={`w-1.5 h-1.5 rounded-full ${
                           isSelected ? 'bg-white/70' :
+                          ev.estado === 'vencida' ? 'bg-red-600' :
                           ev.estado === 'activa' ? 'bg-emerald-500' :
                           ev.estado === 'confirmada' ? 'bg-blue-500' : 'bg-slate-400'
                         }`}
@@ -790,6 +794,7 @@ function AgendaView({
                 )}
                 {/* Color indicator */}
                 <div className={`w-1 self-stretch rounded-full ${
+                  ev.estado === 'vencida' ? 'bg-red-600' :
                   ev.estado === 'activa' ? 'bg-emerald-500' :
                   ev.estado === 'confirmada' ? 'bg-blue-500' :
                   ev.estado === 'finalizada' ? 'bg-slate-400' : 'bg-red-400'

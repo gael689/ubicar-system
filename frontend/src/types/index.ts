@@ -13,6 +13,7 @@ export type EstadoReserva =
   | 'pendiente'
   | 'confirmada'
   | 'activa'
+  | 'vencida'
   | 'finalizada'
   | 'cancelada';
 

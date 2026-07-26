@@ -15,7 +15,8 @@ from app.domain.ventana import VentanaReserva
 
 
 # Estados que bloquean nuevas reservas
-ESTADOS_BLOQUEANTES = {"confirmada", "activa"}
+# "vencida" bloquea igual que "activa": el auto sigue afuera, no volvió.
+ESTADOS_BLOQUEANTES = {"confirmada", "activa", "vencida"}
 
 # Estados que solo generan advertencia
 ESTADOS_ADVERTENCIA = {"pendiente"}

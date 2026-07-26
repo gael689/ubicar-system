@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, field_validator
 
 
-EstadoReservaLiteral = Literal["pendiente", "confirmada", "activa", "finalizada", "cancelada"]
+EstadoReservaLiteral = Literal["pendiente", "confirmada", "activa", "vencida", "finalizada", "cancelada"]
 
 
 # ── Schemas de vehículo/cliente embebidos en respuesta ───────────────────────

@@ -89,22 +89,26 @@ def get_notificaciones(
             url_destino="/reservas",
         ))
 
-    # ── 2. Checkins pendientes (reservas activas con fecha_fin ya pasada) ──
+    # ── 2. Checkins pendientes (reservas vencidas: pasó la hora de devolución y el auto no volvió) ──
     alquileres_vencidos = (
         db.query(Alquiler)
         .join(Reserva, Reserva.id == Alquiler.reserva_id)
-        .filter(
-            Reserva.estado == "activa",
-            Reserva.fecha_fin < hoy,
-        )
+        .filter(Reserva.estado == "vencida")
         .all()
     )
     for a in alquileres_vencidos:
         r = a.reserva
+        vencimiento_dt = datetime.combine(r.fecha_fin, r.hora_fin)
+        atraso = ahora - vencimiento_dt
+        horas_atraso = int(atraso.total_seconds() // 3600)
         items.append(NotificacionItem(
             tipo="checkin_pendiente",
-            titulo="Checkin pendiente",
-            descripcion=f"Alquiler #{a.id} — {r.vehiculo.patente if r.vehiculo else '?'} — venció {r.fecha_fin}",
+            titulo="Devolución vencida",
+            descripcion=(
+                f"Alquiler #{a.id} — {r.vehiculo.patente if r.vehiculo else '?'} — "
+                f"{r.cliente.nombre_completo if r.cliente else '?'} — "
+                f"venció {r.fecha_fin} {r.hora_fin.strftime('%H:%M')} ({horas_atraso}h de atraso)"
+            ),
             urgencia="alta",
             entidad_tipo="alquiler",
             entidad_id=a.id,

@@ -62,7 +62,7 @@ def dashboard_stats(
     # 1. Entregas programadas / realizadas hoy (Check-in / Checkout para cliente)
     entregas_hoy = db.query(Reserva).filter(
         Reserva.fecha_inicio == hoy_date,
-        Reserva.estado.in_(["confirmada", "activa", "finalizada"])
+        Reserva.estado.in_(["confirmada", "activa", "vencida", "finalizada"])
     ).all()
     for r in entregas_hoy:
         c = db.get(Cliente, r.cliente_id)
@@ -83,20 +83,25 @@ def dashboard_stats(
             "reserva_id": r.id
         })
 
-    # 2. Devoluciones programadas / realizadas hoy (Check-out / Checkin para cliente)
+    # 2. Devoluciones programadas / realizadas / vencidas hoy (Check-out / Checkin para cliente)
     devoluciones_hoy = db.query(Reserva).filter(
         Reserva.fecha_fin == hoy_date,
-        Reserva.estado.in_(["activa", "finalizada"])
+        Reserva.estado.in_(["activa", "vencida", "finalizada"])
     ).all()
     for r in devoluciones_hoy:
         c = db.get(Cliente, r.cliente_id)
         v = db.get(Vehiculo, r.vehiculo_id)
         hora_prog = r.hora_fin.strftime("%H:%M") if r.hora_fin else "00:00"
-        
+
         alq = db.query(Alquiler).filter(Alquiler.reserva_id == r.id).first()
         hora_real = alq.checkin_hora.strftime("%H:%M") if alq and alq.checkin_hora else None
-        
-        estado_texto = "Devolución prog." if r.estado == "activa" else "Devolución recibida"
+
+        if r.estado == "activa":
+            estado_texto = "Devolución prog."
+        elif r.estado == "vencida":
+            estado_texto = "Devolución vencida"
+        else:
+            estado_texto = "Devolución recibida"
         flujo_del_dia.append({
             "tipo": "devolucion",
             "hora": hora_real if hora_real else hora_prog,
@@ -205,7 +210,7 @@ def reporte_flota(
             db.query(Reserva)
             .filter(
                 Reserva.vehiculo_id == v.id,
-                Reserva.estado.in_(["activa", "finalizada"]),
+                Reserva.estado.in_(["activa", "vencida", "finalizada"]),
                 Reserva.fecha_inicio <= fecha_hasta,
                 Reserva.fecha_fin >= fecha_desde,
             )

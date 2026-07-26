@@ -19,7 +19,7 @@ class Reserva(Base):
     lugar_devolucion: Mapped[str] = mapped_column(String(255), nullable=False)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
     estado: Mapped[str] = mapped_column(
-        Enum("pendiente", "confirmada", "activa", "finalizada", "cancelada", name="estado_reserva"),
+        Enum("pendiente", "confirmada", "activa", "vencida", "finalizada", "cancelada", name="estado_reserva"),
         nullable=False,
         default="pendiente",
     )
@@ -66,7 +66,18 @@ class Reserva(Base):
 
     @property
     def alquiler_estado(self) -> str | None:
-        return self.alquiler.estado if self.alquiler else None
+        """
+        "activo" mientras el alquiler tiene checkout pero no checkin (el auto está afuera).
+        "finalizado" una vez registrado el checkin. None si no hay alquiler (reserva sin checkout).
+
+        Nota: el modelo Alquiler no tiene columna `estado` propia — se deriva de checkin_fecha.
+        Antes de este fix, este property intentaba leer `self.alquiler.estado` (columna inexistente),
+        lo que lanzaba AttributeError silenciado por Pydantic (default None) y dejaba el botón de
+        Check-in sin poder mostrarse nunca en el frontend, para ningún alquiler.
+        """
+        if not self.alquiler:
+            return None
+        return "finalizado" if self.alquiler.checkin_fecha is not None else "activo"
 
     # ── Índices compuestos ────────────────────────────────────────────────────
     __table_args__ = (

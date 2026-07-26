@@ -61,27 +61,35 @@ class ReservaService:
         )
 
     def sincronizar_estados_por_horario(self):
-        """Actualiza el estado de las reservas basándose en el tiempo actual."""
+        """
+        Actualiza el estado de las reservas basándose en el tiempo actual.
+
+        Importante: esta sincronización NUNCA finaliza un alquiler. Sólo un
+        check-in real (AlquilerService.checkin) puede pasar una reserva a
+        'finalizada'. Antes, pasada la hora de fin la reserva saltaba directo
+        a 'finalizada' sin que el auto hubiera vuelto, y como checkin() exige
+        estado 'activa', quedaba IMPOSIBLE registrar una devolución tardía.
+        Ahora pasa a 'vencida' — el auto sigue afuera, pero el check-in ya
+        puede hacerse sobre ese estado (ver AlquilerService.checkin).
+        """
         now = datetime.now()
         current_date = now.date()
         current_time = now.time()
 
-        # Confirmada -> Activa (si ya pasó la fecha_inicio + hora_inicio)
-        # Activa -> Finalizada (si ya pasó la fecha_fin + hora_fin)
         with self.db.begin_nested():
-            # Confirmada a Activa
+            # Confirmada -> Activa (ya pasó la fecha_inicio + hora_inicio)
             self.db.query(Reserva).filter(
                 Reserva.estado == EstadoReserva.CONFIRMADA.value,
-                (Reserva.fecha_inicio < current_date) | 
+                (Reserva.fecha_inicio < current_date) |
                 ((Reserva.fecha_inicio == current_date) & (Reserva.hora_inicio <= current_time))
             ).update({"estado": EstadoReserva.ACTIVA.value}, synchronize_session=False)
 
-            # Activa a Finalizada
+            # Activa -> Vencida (ya pasó la fecha_fin + hora_fin y no hubo checkin)
             self.db.query(Reserva).filter(
                 Reserva.estado == EstadoReserva.ACTIVA.value,
-                (Reserva.fecha_fin < current_date) | 
+                (Reserva.fecha_fin < current_date) |
                 ((Reserva.fecha_fin == current_date) & (Reserva.hora_fin <= current_time))
-            ).update({"estado": EstadoReserva.FINALIZADA.value}, synchronize_session=False)
+            ).update({"estado": EstadoReserva.VENCIDA.value}, synchronize_session=False)
         self.db.commit()
 
     # ── Crear reserva ─────────────────────────────────────────────────────────
@@ -464,7 +472,8 @@ class ReservaService:
         reservas = self.reserva_repo.list(vehiculo_id=vehiculo_id, page=1, page_size=9999)[0]
         ventanas = []
         for r in reservas:
-            if r.estado in ("pendiente", "confirmada", "activa"):
+            # "vencida" ocupa el vehículo tanto como "activa": el auto sigue afuera.
+            if r.estado in ("pendiente", "confirmada", "activa", "vencida"):
                 ventanas.append(
                     VentanaReserva(
                         id=r.id,

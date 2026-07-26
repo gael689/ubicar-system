@@ -109,7 +109,7 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   const sinAlquiler = !reserva.alquiler_id;
   const conAlquilerActivo = reserva.alquiler_id && reserva.alquiler_estado === 'activo';
   const cancelable = reserva.estado === 'confirmada' && sinAlquiler;
-  const editable = reserva.estado === 'confirmada' || reserva.estado === 'activa';
+  const editable = reserva.estado === 'confirmada' || reserva.estado === 'activa' || reserva.estado === 'vencida';
   const puedeCheckout = sinAlquiler && reserva.estado !== 'cancelada' && reserva.estado !== 'finalizada';
   const puedeCheckin = conAlquilerActivo;
   const puedeExtender = conAlquilerActivo;
@@ -120,7 +120,10 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   const fmtHora = (s: string) => s.slice(0, 5);
 
   const hoy = new Date();
-  const checkinVencido = reserva.estado === 'activa' && fechaFin < hoy && conAlquilerActivo;
+  // 'vencida' es el estado autoritativo que calcula el backend (pasó la hora de
+  // devolución y el auto no volvió). Antes se aproximaba en el cliente con
+  // estado==='activa' && fechaFin<hoy, lo que dependía del reloj del navegador.
+  const checkinVencido = reserva.estado === 'vencida';
   const checkoutVencido = reserva.estado === 'confirmada' && fechaInicio < hoy;
 
   return (

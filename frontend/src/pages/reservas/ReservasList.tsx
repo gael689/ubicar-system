@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useReservas } from '@/hooks/useReservas';
 import api from '@/lib/api';
@@ -13,6 +13,7 @@ const ESTADOS: { value: EstadoReserva | ''; label: string }[] = [
   { value: '', label: 'Todos los estados' },
   { value: 'confirmada', label: 'Confirmada' },
   { value: 'activa', label: 'Activa' },
+  { value: 'vencida', label: 'Vencida' },
   { value: 'finalizada', label: 'Finalizada' },
   { value: 'cancelada', label: 'Cancelada' },
 ];
@@ -20,6 +21,7 @@ const ESTADOS: { value: EstadoReserva | ''; label: string }[] = [
 const ESTADO_COLORS: Record<string, string> = {
   confirmada: 'bg-blue-100 text-blue-800 border-blue-200',
   activa: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  vencida: 'bg-red-100 text-red-800 border-red-300 animate-pulse',
   finalizada: 'bg-slate-200 text-slate-800 border-slate-300',
   cancelada: 'bg-red-100 text-red-800 border-red-200',
 };
@@ -27,20 +29,22 @@ const ESTADO_COLORS: Record<string, string> = {
 const ESTADO_ICONS: Record<string, React.ReactNode> = {
   confirmada: <CheckCircle2 className="w-3.5 h-3.5" />,
   activa: <Car className="w-3.5 h-3.5" />,
+  vencida: <AlarmClockOff className="w-3.5 h-3.5" />,
   finalizada: <Flag className="w-3.5 h-3.5" />,
   cancelada: <XCircle className="w-3.5 h-3.5" />,
 };
 
 export function ReservasList() {
-  const today = new Date().toISOString().split('T')[0];
-
+  // Reservas "vencidas": pasó la hora de devolución y el auto no volvió.
+  // Antes esto se aproximaba filtrando 'activa' + fecha_fin < hoy en el cliente;
+  // ahora el backend ya calcula el estado 'vencida' de forma autoritativa.
   const { data: pendingCheckouts = [] } = useQuery({
     queryKey: ['reservas', 'pending-checkout-alerts'],
     queryFn: async () => {
       const { data } = await api.get<PaginatedResponse<Reserva>>('/reservas', {
-        params: { estado: 'activa', page_size: 50, page: 1 },
+        params: { estado: 'vencida', page_size: 50, page: 1 },
       });
-      return data.data.filter(r => r.fecha_fin < today);
+      return data.data;
     },
     staleTime: 120_000,
     refetchOnWindowFocus: false,

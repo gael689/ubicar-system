@@ -172,9 +172,15 @@ Casos que hoy no se distinguen:
 
 ## 4. Check-in (devolución) — el núcleo del problema
 
-### 4.1 🔴 CRÍTICO — El check-in tardío es imposible de registrar
+### 4.1 ✅ RESUELTO (2026-07-26) — El check-in tardío era imposible de registrar
 
-Esta es la cadena completa:
+**Arreglado con el estado `VENCIDA`** (migración `017_estado_reserva_vencida`). `sincronizar_estados_por_horario()` ya no finaliza reservas — sólo un check-in real lo hace. `checkin()` y `extender()` aceptan `activa` o `vencida`. Verificado en vivo con el service real: `confirmada → activa → vencida → check-in exitoso → finalizada`, y también `vencida → extender a fecha futura → vuelve a activa`.
+
+**Pendiente todavía:** el estado `CERRADA` (finalizada + sin saldo) descrito más abajo **no se implementó** en este batch — sigue siendo sólo una propuesta de diseño.
+
+Queda el detalle histórico del análisis original, para contexto:
+
+Esta es la cadena completa (como estaba antes del fix):
 
 **Paso 1.** `reserva_service.py`, `sincronizar_estados_por_horario()` — se ejecuta en **cada listado de reservas**, o sea todo el tiempo:
 

@@ -76,7 +76,7 @@
 | ID | Caso de uso | Estado | Prio | Nota |
 |---|---|---|---|---|
 | CIN-01 | Registrar devolución en horario | ✅ | — | |
-| CIN-02 | **Registrar devolución tardía** | 🔴 | **P0** | **Imposible.** La reserva ya se auto-finalizó y el check-in la rechaza |
+| CIN-02 | **Registrar devolución tardía** | ✅ | — | **Arreglado 2026-07-26**: nuevo estado `vencida`. Verificado en vivo con service real: confirmada→activa→vencida→check-in exitoso→finalizada |
 | CIN-03 | Calcular excedente contra la hora correcta | 🔴 | **P0** | Usa `hora_inicio` sobre `fecha_fin`; ignora `hora_fin` |
 | CIN-04 | Aplicar período de gracia | ✅ | — | 40 min; industria usa 29-30 |
 | CIN-05 | Cobrar excedente por hora | ✅ | — | 3× tarifa/24 |
@@ -104,12 +104,12 @@
 | ID | Caso de uso | Estado | Prio | Nota |
 |---|---|---|---|---|
 | EST-01 | Confirmada → Activa al llegar la hora | 🟡 | P1 | Se activa sin check-out; ensucia métricas |
-| EST-02 | **Activa → Vencida si no volvió** | ⬜ | **P0** | El estado no existe; hoy pasa a Finalizada |
-| EST-03 | Sólo un check-in real finaliza el alquiler | ⬜ | **P0** | Hoy lo finaliza el reloj |
+| EST-02 | **Activa → Vencida si no volvió** | ✅ | — | **Arreglado 2026-07-26**: migración 017, enum `estado_reserva` con valor `vencida` |
+| EST-03 | Sólo un check-in real finaliza el alquiler | ✅ | — | **Arreglado 2026-07-26**: `sincronizar_estados_por_horario()` ya no pasa a `finalizada`, sólo a `vencida` |
 | EST-04 | Estado CERRADA (finalizada + sin saldo) | ⬜ | P2 | Evita recalcular deudas todo el tiempo |
 | EST-05 | Estados del vehículo automáticos | ✅ | — | `domain/transiciones.py`, correcto |
 | EST-06 | Estado "en transición" (<4 hs a la próxima) | ✅ | — | Buen detalle |
-| EST-07 | Vehículo trabado en "alquilado" si no hay check-in | 🔴 | P1 | Consecuencia de CIN-02 |
+| EST-07 | Vehículo trabado en "alquilado" si no hay check-in | ✅ | — | Resuelto junto con EST-02/EST-03: el check-in ahora corre normalmente sobre `vencida` |
 | EST-08 | Bloqueo de vehículo por fechas (mantenimiento) | ⬜ | P2 | Hoy sólo `fuera_de_servicio` sin fechas |
 
 ## PRE — Precios y tarifas
@@ -260,7 +260,7 @@
 | NOT-11 | Vencimiento de cuenta corriente T-3 y T-0 | ⬜ | P1 | |
 | NOT-12 | Deuda vencida con escalamiento | ⬜ | P1 | +1, +7, +15, +30 días |
 | NOT-13 | Entregas y devoluciones de hoy | 🟡 | P1 | Existe en el dashboard, no como alerta |
-| NOT-14 | **Auto no devuelto** | 🔴 | **P0** | La regla existe pero es inalcanzable (ver EST-02) |
+| NOT-14 | **Auto no devuelto** | ✅ | — | **Arreglado 2026-07-26**: ahora filtra `estado == 'vencida'` directo, con horas de atraso calculadas |
 | NOT-15 | Documentos por vencer (30/15/7/1) | 🟡 | P1 | Sólo 30 días, y no se envía |
 | NOT-16 | Licencia de cliente por vencer | 🔴 | P1 | Sólo en el módulo huérfano |
 | NOT-17 | Service próximo / vencido | ✅ | — | Se detecta; no se envía |
@@ -363,9 +363,9 @@
 | P3 | 15 | Deseable |
 | 🔵 Web | 18 | Dependen del sistema de reservas online |
 
-**Los 12 P0** (arreglar primero, son todos correcciones acotadas).
+**Los 12 P0** (arreglar primero, son todos correcciones acotadas). **11 de 12 ya están resueltos.**
 
-**✅ Resueltos (2026-07-25), probados en vivo contra la base de datos real:**
+**✅ Resueltos (2026-07-25 / 2026-07-26), probados en vivo contra la base de datos real:**
 
 | ID | Qué | Arreglo |
 |---|---|---|
@@ -374,23 +374,36 @@
 | CHK-07 | El kilometraje puede retroceder | `BusinessRuleError` si `checkout_km < vehiculo.km_actual` |
 | RES-11 | Extender sin tarifa borra el precio | Conserva `precio_total` anterior en vez de anularlo, con log de la situación |
 | NOT-01 | El endpoint de notificaciones crashea | `date < str` corregido a `date < date`; verificado con `pago_pendiente` real sin crashear |
+| **CIN-02** | **No se puede registrar una devolución tardía** | Nuevo estado `vencida` (migración 017). `sincronizar_estados_por_horario()` ya no finaliza, sólo pasa a vencida; `checkin()` acepta activa **o** vencida |
+| **EST-02 / EST-03** | **El reloj finalizaba alquileres que nunca volvieron** | Mismo fix que CIN-02 — la finalización real sólo ocurre con un check-in |
+| **EST-07** | **Vehículo trabado en "alquilado"** | Resuelto: el check-in ya puede ejecutarse sobre `vencida` |
+| **NOT-14** | **La alerta de auto no devuelto era inalcanzable** | Ahora filtra `estado == 'vencida'` con horas de atraso calculadas en la descripción |
 
-**⬜ Pendientes** — requieren cambios más grandes (estado nuevo, UI, o rediseño de tarifas):
+**⬜ Pendiente** — el único que sigue abierto de los 12 originales:
 
 | ID | Qué | Nota |
 |---|---|---|
-| CIN-02 | No se puede registrar una devolución tardía | Requiere separar la sincronización horaria de la finalización real (estado `VENCIDA`) |
-| CIN-03 | El excedente se mide contra la hora equivocada | **Decisión D-18 ya tomada** (modelo 24hs estricto): la fórmula de cálculo es correcta, falta que `hora_fin` se derive de `hora_inicio` en el formulario de reserva |
 | PRE-01 | La tarifa semanal se multiplica por día | Necesita el rediseño de tarifas de la Fase 1 (`precio_por_dia` explícito) |
-| EST-02 / EST-03 | El reloj finaliza alquileres que nunca volvieron | Requiere el estado `VENCIDA` — mismo trabajo que CIN-02 |
+
+**Nota sobre CIN-03** (el excedente medido contra la hora equivocada): con la decisión D-18 (modelo 24hs estricto) la fórmula de `control_24hs.py` resultó ser correcta — lo que faltaba era que `hora_fin` se derive de `hora_inicio` en el formulario de reserva. Ese es un cambio de UI, sigue pendiente (no es un fix de backend).
+
+**Otros bugs P0 pendientes que dependen de piezas más grandes:**
+
+| ID | Qué | Nota |
+|---|---|---|
 | FIN-04 | Borrar un pago no revierte la cuenta corriente | Requiere el rediseño del ledger de cuenta corriente (Fase 1) |
 | NOT-02 | El scheduler de alertas nunca arrancó | Requiere el motor de notificaciones de la Fase 2 |
-| NOT-14 | La alerta de auto no devuelto es inalcanzable | Se resuelve junto con CIN-02/EST-02 |
+
+**🆕 Hallazgo nuevo, no estaba en el catálogo original (2026-07-26):**
+
+El botón de Check-in **nunca aparecía en la lista de reservas**, para ningún alquiler, en ningún caso — un bug independiente y más fundamental que CIN-02. La condición en `ReservasList.tsx:300` (`r.alquiler_id && r.alquiler_estado === 'activo'`) dependía de `Reserva.alquiler_estado`, una property que intentaba leer `self.alquiler.estado` — una columna que **no existe** en el modelo `Alquiler`. Eso lanzaba `AttributeError`, silenciado por el default de Pydantic (`alquiler_estado: str | None = None`), así que el campo **siempre** viajaba como `null` sin que nadie lo notara. Además había una **definición duplicada** de la misma property más abajo en el archivo, que pisaba silenciosamente cualquier arreglo hecho en la primera. Arreglado: se unificó en una sola property que deriva `"activo"`/`"finalizado"` de `alquiler.checkin_fecha`. Verificado en vivo: antes del fix devolvía `null` con un alquiler abierto; después, `"activo"`.
 
 **Además, corregidos en este mismo batch aunque no estaban en la lista original de 12:**
 - Código muerto eliminado en la validación de fecha futura del checkout (`alquiler_service.py`)
 - N+1 del calendario: `joinedload(Reserva.alquiler)` agregado a `find_para_ocupacion`
 - Dashboard: `refetchInterval` de 15s → 2min (240 ejecuciones/hora por usuario contra un endpoint pesado)
+- `extender()` sobre una reserva `vencida` ahora vuelve a `activa` si la nueva fecha queda en el futuro (evita que quede "vencida" para siempre tras extenderla)
+- Descubierto: **todas las migraciones de Alembic están en `.gitignore`** (`backend/alembic/versions/*.py`), incluidas las 16 existentes de antes de esta sesión. Sólo la migración 017 de este batch se agregó a git de forma forzada (`git add -f`) para que el estado `vencida` sea reproducible en otro entorno. Vale revisar esa regla del `.gitignore` — probablemente sea un descuido, no una decisión.
 
 ---
 
