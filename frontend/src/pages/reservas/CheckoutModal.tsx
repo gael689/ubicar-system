@@ -42,16 +42,29 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
   const [descripcion, setDescripcion] = useState('');
   const [registradoEnTiempoReal, setRegistradoEnTiempoReal] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [cargoCheckoutTardio, setCargoCheckoutTardio] = useState('');
+  const [motivoCheckoutTardio, setMotivoCheckoutTardio] = useState('');
 
   const garantia = reserva.garantia_tipo && reserva.garantia_tipo !== 'no_aplica'
     ? reserva.garantia_tipo
     : null;
+
+  // D-17: no hay estado NO_SHOW — si el auto sale más tarde de lo previsto,
+  // se ofrece un cargo editable con motivo obligatorio (no automático).
+  const inicioPrevisto = new Date(`${reserva.fecha_inicio}T${reserva.hora_inicio}`);
+  const checkoutReal = fecha && hora ? new Date(`${fecha}T${hora}`) : null;
+  const esCheckoutTardio = !!checkoutReal && checkoutReal > inicioPrevisto;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLocalError(null);
 
     if (!km) { setLocalError('Ingrese el kilometraje actual'); return; }
+    const cargo = cargoCheckoutTardio ? parseFloat(cargoCheckoutTardio) : 0;
+    if (cargo > 0 && !motivoCheckoutTardio.trim()) {
+      setLocalError('Cobrar un cargo por checkout tardío requiere un motivo.');
+      return;
+    }
 
     try {
       await checkout(reserva.id, {
@@ -62,7 +75,9 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
         checkout_descripcion: descripcion || null,
         registrado_en_tiempo_real: registradoEnTiempoReal,
         checkout_estado_limpieza: limpieza,
-      } as any);
+        cargo_checkout_tardio: cargo,
+        motivo_checkout_tardio: cargo > 0 ? motivoCheckoutTardio.trim() : null,
+      });
       onSuccess();
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
@@ -204,6 +219,36 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
               placeholder="Estado del vehículo al entregarse al cliente..."
             />
           </div>
+
+          {esCheckoutTardio && (
+            <div className="space-y-2 rounded-xl bg-amber-50 border border-amber-200 p-3">
+              <p className="text-xs font-semibold text-amber-800">
+                ⚠ El auto sale más tarde de lo previsto (reserva a las {reserva.hora_inicio.slice(0, 5)}). No hay estado de "no-show" — si corresponde, se puede cargar un monto con su motivo.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Cargo (opcional)</label>
+                  <input
+                    type="number" min={0} step={100}
+                    value={cargoCheckoutTardio}
+                    onChange={e => setCargoCheckoutTardio(e.target.value)}
+                    placeholder="0"
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground">Motivo (obligatorio si hay cargo)</label>
+                  <input
+                    type="text"
+                    value={motivoCheckoutTardio}
+                    onChange={e => setMotivoCheckoutTardio(e.target.value)}
+                    placeholder="Ej: vuelo demorado, no es responsabilidad nuestra"
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <input

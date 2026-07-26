@@ -713,6 +713,8 @@ export interface CheckoutCreate {
   registrado_en_tiempo_real?: boolean;
   checkout_estado_limpieza?: string;
   pago_inmediato?: PagoInmediato;
+  cargo_checkout_tardio?: number;
+  motivo_checkout_tardio?: string | null;
 }
 
 export interface CheckinCreate {

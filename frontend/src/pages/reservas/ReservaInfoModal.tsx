@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Car, User, Calendar, MapPin, Clock, DollarSign, Pencil, XCircle, Flag, TrendingUp, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useReservas } from '@/hooks/useReservas';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
+import { extractError } from '@/lib/utils';
 import type { Reserva, ApiResponse } from '@/types';
 import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
 import { ReservaModal } from './ReservaModal';
@@ -17,11 +20,12 @@ interface Props {
 }
 
 export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props) {
-  const { cancelarReserva } = useReservas();
+  const { cancelarReserva, loading: cancelando } = useReservas();
   const [editOpen, setEditOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [extenderOpen, setExtenderOpen] = useState(false);
+  const [cancelarOpen, setCancelarOpen] = useState(false);
 
   const { data: reserva, isLoading, refetch } = useQuery({
     queryKey: ['reserva', reservaId],
@@ -37,13 +41,13 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
     onClose();
   };
 
-  const handleCancelar = async () => {
-    if (!confirm('¿Cancelar esta reserva?')) return;
+  const handleCancelar = async (motivo: string) => {
     try {
-      await cancelarReserva(reservaId);
+      await cancelarReserva(reservaId, motivo);
+      setCancelarOpen(false);
       handleSuccess();
-    } catch (e) {
-      alert('No se pudo cancelar la reserva');
+    } catch (err) {
+      toast.error(extractError(err));
     }
   };
 
@@ -288,7 +292,7 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
             )}
             {cancelable && (
               <button
-                onClick={handleCancelar}
+                onClick={() => setCancelarOpen(true)}
                 className="flex-1 px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-sm font-medium transition-colors flex items-center justify-center gap-1.5"
               >
                 <XCircle className="h-3.5 w-3.5" /> Cancelar
@@ -297,6 +301,16 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
           </div>
         </div>
       </div>
+
+      <MotivoDialog
+        open={cancelarOpen}
+        onOpenChange={setCancelarOpen}
+        title="Cancelar reserva"
+        description="La seña, si la hay, no se devuelve — queda registrada como ingreso. El motivo es obligatorio."
+        confirmLabel="Cancelar reserva"
+        loading={cancelando}
+        onConfirm={handleCancelar}
+      />
     </div>
   );
 }

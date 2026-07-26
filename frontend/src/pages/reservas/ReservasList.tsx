@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useReservas } from '@/hooks/useReservas';
 import api from '@/lib/api';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
+import { extractError } from '@/lib/utils';
 import type { Reserva, EstadoReserva, PaginatedResponse } from '@/types';
 import { ReservaModal } from './ReservaModal';
 import { CheckoutModal } from './CheckoutModal';
@@ -80,12 +83,17 @@ export function ReservasList() {
     loadReservas().catch(() => {});
   }, [loadReservas]);
 
-  const handleCancelar = async (id: number) => {
-    if (!confirm('¿Cancelar esta reserva?')) return;
+  const [cancelarId, setCancelarId] = useState<number | null>(null);
+
+  const handleCancelar = async (motivo: string) => {
+    if (!cancelarId) return;
     try {
-      await cancelarReserva(id);
+      await cancelarReserva(cancelarId, motivo);
+      setCancelarId(null);
       await loadReservas();
-    } catch {/* errors shown in hook */}
+    } catch (err) {
+      toast.error(extractError(err));
+    }
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -282,7 +290,7 @@ export function ReservasList() {
                             Editar
                           </button>
                           <button
-                            onClick={() => handleCancelar(r.id)}
+                            onClick={() => setCancelarId(r.id)}
                             className="px-3 py-1.5 rounded bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-colors"
                           >
                             Cancelar
@@ -394,6 +402,16 @@ export function ReservasList() {
           onSuccess={() => { setExtenderReserva(null); loadReservas(); }}
         />
       )}
+
+      <MotivoDialog
+        open={cancelarId !== null}
+        onOpenChange={open => !open && setCancelarId(null)}
+        title="Cancelar reserva"
+        description="La seña, si la hay, no se devuelve — queda registrada como ingreso. El motivo es obligatorio."
+        confirmLabel="Cancelar reserva"
+        loading={loading}
+        onConfirm={handleCancelar}
+      />
     </div>
   );
 }

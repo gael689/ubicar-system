@@ -124,11 +124,11 @@ export function useReservas() {
   );
 
   const cancelarReserva = useCallback(
-    async (id: number): Promise<Reserva> => {
+    async (id: number, motivo: string): Promise<Reserva> => {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await api.post<ApiResponse<Reserva>>(`/reservas/${id}/cancelar`);
+        const { data } = await api.post<ApiResponse<Reserva>>(`/reservas/${id}/cancelar`, { motivo });
         return data.data;
       } catch (err: any) {
         const detail = err?.response?.data?.detail;

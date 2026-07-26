@@ -30,6 +30,16 @@ class CheckoutCreate(BaseModel):
     garantia_monto: Decimal | None = None
     registrado_en_tiempo_real: bool = True
     pago_inmediato: PagoInmediato | None = None
+    # D-17: late check-out (no hay estado NO_SHOW) — monto editable + motivo obligatorio
+    cargo_checkout_tardio: Decimal = Decimal("0")
+    motivo_checkout_tardio: str | None = None
+
+    @model_validator(mode="after")
+    def _validar_motivo_checkout_tardio(self):
+        if self.cargo_checkout_tardio and self.cargo_checkout_tardio > 0:
+            if not self.motivo_checkout_tardio or not self.motivo_checkout_tardio.strip():
+                raise ValueError("Cobrar un cargo por checkout tardío requiere un motivo")
+        return self
 
 
 class CheckinCreate(BaseModel):
@@ -98,6 +108,8 @@ class AlquilerResponse(BaseModel):
     checkout_combustible: int
     checkout_descripcion: str | None
     checkout_registrado_en_tiempo_real: bool
+    cargo_checkout_tardio: Decimal = Decimal("0")
+    motivo_checkout_tardio: str | None = None
     # Checkin
     checkin_fecha: date | None
     checkin_hora: time | None

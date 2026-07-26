@@ -25,6 +25,12 @@ class Alquiler(Base):
     checkout_estado_limpieza: Mapped[str | None] = mapped_column(
         SAEnum("limpio", "sucio", "requiere_lavado_profundo", name="estado_limpieza"), nullable=True
     )
+    # D-17: "late check-out" en vez de un estado NO_SHOW — si el auto sale
+    # más tarde de lo previsto (reserva.hora_inicio vs el checkout real),
+    # monto editable + nota obligatoria. Mismo patrón que cargo_late_checkout
+    # (que existe en Reserva) pero para la entrega, no la devolución.
+    cargo_checkout_tardio: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    motivo_checkout_tardio: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── Checkin ───────────────────────────────────────────────────────────────
     checkin_fecha: Mapped[date | None] = mapped_column(Date(), nullable=True)

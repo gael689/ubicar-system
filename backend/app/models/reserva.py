@@ -50,6 +50,10 @@ class Reserva(Base):
     descuento_autorizado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     con_factura: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
 
+    # Política de cancelación (D-11): motivo obligatorio, la seña no se
+    # devuelve — el service genera el asiento correspondiente.
+    motivo_cancelacion: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # D2 solapamiento con pendientes
     bloqueada_por_solape: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
 

@@ -23,6 +23,7 @@ from app.models.cliente import Cliente, ConductorAdicional
 from app.models.tarifa import Tarifa
 from app.repositories.reserva_repo import ReservaRepo
 from app.repositories.alquiler_repo import AlquilerRepo
+from app.services.cuenta_corriente_service import CuentaCorrienteService
 
 
 class ReservaService:
@@ -30,6 +31,7 @@ class ReservaService:
         self.db = db
         self.reserva_repo = ReservaRepo(db)
         self.alquiler_repo = AlquilerRepo(db)
+        self.cc_service = CuentaCorrienteService(db)
 
     # ── Lectura ───────────────────────────────────────────────────────────────
 
@@ -439,16 +441,46 @@ class ReservaService:
 
     # ── Cancelar reserva ──────────────────────────────────────────────────────
 
-    def cancelar(self, id: int, usuario_id: int) -> Reserva:
-        """Cancela una reserva pendiente o confirmada."""
+    def cancelar(self, id: int, usuario_id: int, motivo: str) -> Reserva:
+        """
+        Cancela una reserva pendiente o confirmada.
+
+        D-11: la seña (anticipo) no se devuelve — si había una cargada, se
+        registra como ingreso (débito por cancelación + crédito por lo ya
+        cobrado, que se cancelan entre sí en el saldo pero quedan en el
+        historial de la cuenta corriente). Motivo obligatorio.
+        """
         reserva = self.get(id)
         if reserva.estado not in (EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value):
             raise ConflictError(f"estado_invalido|No se puede cancelar una reserva en estado '{reserva.estado}'")
+        if not motivo or not motivo.strip():
+            raise BusinessRuleError("motivo_requerido", "Cancelar una reserva requiere un motivo")
 
         era_confirmada = reserva.estado == EstadoReserva.CONFIRMADA.value
 
         with self.db.begin_nested():
-            self.reserva_repo.update(reserva, estado=EstadoReserva.CANCELADA.value)
+            if reserva.anticipo_monto and reserva.anticipo_monto > 0:
+                fecha_hoy = date.today()
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="debito",
+                    concepto=f"Cancelación de reserva #{reserva.id} — seña retenida (no reembolsable)",
+                    monto=reserva.anticipo_monto,
+                    fecha=fecha_hoy,
+                    creado_por=usuario_id,
+                    reserva_id=reserva.id,
+                )
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="credito",
+                    concepto=f"Seña ya abonada — reserva #{reserva.id} ({reserva.anticipo_medio_pago or 'medio no especificado'})",
+                    monto=reserva.anticipo_monto,
+                    fecha=reserva.anticipo_fecha or fecha_hoy,
+                    creado_por=usuario_id,
+                    reserva_id=reserva.id,
+                )
+
+            self.reserva_repo.update(reserva, estado=EstadoReserva.CANCELADA.value, motivo_cancelacion=motivo)
 
             # Actualizar estado del vehículo si era confirmada
             if era_confirmada:

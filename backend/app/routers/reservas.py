@@ -18,6 +18,7 @@ from app.schemas.reserva import (
     ReservaUpdate,
     ReservaResponse,
     ReasignarRequest,
+    CancelarReservaRequest,
     SolapeWarning,
 )
 from app.services.reserva_service import ReservaService
@@ -207,17 +208,19 @@ def confirmar_reserva(
 @router.post("/{reserva_id}/cancelar")
 def cancelar_reserva(
     reserva_id: int,
+    payload: CancelarReservaRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
+    """D-11: la seña no se devuelve, motivo obligatorio."""
     svc = ReservaService(db)
     try:
-        reserva = svc.cancelar(reserva_id, current_user.id)
+        reserva = svc.cancelar(reserva_id, current_user.id, payload.motivo)
         db.commit()
     except ConflictError as e:
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except (NotFoundError, BusinessRuleError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return ok(ReservaResponse.model_validate(reserva), "Reserva cancelada")
 
 
@@ -266,6 +269,8 @@ def checkout(
             garantia_tipo=payload.garantia_tipo,
             garantia_monto=payload.garantia_monto,
             pago_inmediato=payload.pago_inmediato,
+            cargo_checkout_tardio=payload.cargo_checkout_tardio,
+            motivo_checkout_tardio=payload.motivo_checkout_tardio,
         )
         db.commit()
     except ConflictError as e:

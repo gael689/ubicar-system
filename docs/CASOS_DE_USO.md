@@ -36,8 +36,8 @@
 | RES-09 | Detectar solapamiento bloqueante | ✅ | — | `domain/solapamientos.py`, correcto |
 | RES-10 | Advertir solapamiento con pendiente | 🔴 | P2 | Inalcanzable: no existen reservas pendientes |
 | RES-11 | Extender alquiler activo | ✅ | — | **Arreglado 2026-07-25**: si no hay tarifa para la nueva duración, conserva el precio anterior en vez de anularlo |
-| RES-12 | ~~Marcar NO-SHOW~~ → **Late check-out con monto editable y nota** | ⬜ | P1 | D-17: no se crea el estado. Se resuelve como late check-out |
-| RES-12b | Cancelar: retener la seña completa | ⬜ | P1 | D-11: no se devuelve nada. Genera el asiento solo |
+| RES-12 | ~~Marcar NO-SHOW~~ → **Late check-out con monto editable y nota** | ✅ | — | **Hecho 2026-07-26** (migración 027): `Alquiler.cargo_checkout_tardio`/`motivo_checkout_tardio` — mismo patrón que `cargo_late_checkout` (devolución) pero para la entrega. `CheckoutModal.tsx` detecta si el checkout es más tarde que `reserva.hora_inicio` y ofrece el campo, motivo obligatorio si hay cargo |
+| RES-12b | Cancelar: retener la seña completa | ✅ | — | **Hecho 2026-07-26** (migración 027): motivo obligatorio (422 si falta). Si había anticipo, genera un débito (cargo por cancelación) + crédito (seña ya cobrada) — se cancelan en el saldo pero quedan en el historial de la cuenta corriente |
 | RES-13 | Reabrir reserva finalizada por error | ⬜ | P2 | |
 | RES-14 | Marcar con factura / sin factura | ✅ | — | **Hecho 2026-07-26** (migración 026): `Reserva.con_factura`, declaración de la reserva completa (`Pago.con_factura` sigue existiendo aparte, por cobro individual) |
 | RES-15 | Separar quién paga de quién maneja | ✅ | — | **Hecho 2026-07-26** (migración 024): `Reserva.conductor_id` nullable → si no se define, el cliente es el conductor (sin cambios). `MultaService.buscar_responsable()` ya devuelve ambos (cliente que paga + conductor real) |

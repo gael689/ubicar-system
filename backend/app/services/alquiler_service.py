@@ -90,6 +90,8 @@ class AlquilerService:
         garantia_tipo: str | None = None,
         garantia_monto: Decimal | None = None,
         pago_inmediato: PagoInmediato | None = None,
+        cargo_checkout_tardio: Decimal = Decimal("0"),
+        motivo_checkout_tardio: str | None = None,
     ) -> tuple[Alquiler, list[dict]]:
         """
         Registra el checkout de una reserva confirmada.
@@ -157,6 +159,8 @@ class AlquilerService:
                 cargo_excedente=Decimal("0"),
                 excedente_bonificado=False,
                 decidido_por=usuario_id,
+                cargo_checkout_tardio=cargo_checkout_tardio,
+                motivo_checkout_tardio=motivo_checkout_tardio,
             )
             self.alquiler_repo.create(alquiler)
             self.db.flush()  # Para obtener alquiler.id
@@ -165,7 +169,11 @@ class AlquilerService:
             # un débito automático en la cuenta corriente del cliente,
             # exista o no un pago inmediato. Cualquier cobro (abajo) genera
             # el crédito que lo cancela — total o parcialmente.
-            monto_facturado = (reserva.precio_total or Decimal("0")) + (reserva.cargo_late_checkout or Decimal("0"))
+            monto_facturado = (
+                (reserva.precio_total or Decimal("0"))
+                + (reserva.cargo_late_checkout or Decimal("0"))
+                + (cargo_checkout_tardio or Decimal("0"))
+            )
             if monto_facturado > 0:
                 self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,

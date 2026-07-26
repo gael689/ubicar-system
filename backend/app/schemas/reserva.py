@@ -96,6 +96,18 @@ class ReasignarRequest(BaseModel):
     vehiculo_id_nuevo: int
 
 
+class CancelarReservaRequest(BaseModel):
+    """D-11: la seña no se devuelve, motivo obligatorio para la auditoría."""
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_no_vacio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("El motivo de cancelación es obligatorio")
+        return v
+
+
 # ── Warning de solapamiento ───────────────────────────────────────────────────
 
 class SolapeWarning(BaseModel):
@@ -134,6 +146,7 @@ class ReservaResponse(BaseModel):
     descuento_motivo: str | None = None
     descuento_autorizado_por: int | None = None
     con_factura: bool = False
+    motivo_cancelacion: str | None = None
     # D2 solape
     bloqueada_por_solape: bool
     # Garantía
