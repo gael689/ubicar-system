@@ -36,26 +36,47 @@ class ClienteService:
     def update(self, id: int, data: ClienteUpdate) -> Cliente:
         cliente = self.get_by_id(id)
 
-        # Validar DNI único si lo están cambiando
-        # NOTA: ClienteUpdate no permite cambiar dni_cuit según schema, pero por las dudas
-        # si en el futuro se añade, se debe validar acá. Por ahora no hay dni_cuit en update.
-        
         update_data = data.model_dump(exclude_none=True)
+
+        # Validar DNI/CUIT único si lo están cambiando
+        nuevo_dni = update_data.get("dni_cuit")
+        if nuevo_dni and nuevo_dni != cliente.dni_cuit:
+            existente = self.repo.get_by_dni(nuevo_dni)
+            if existente and existente.id != cliente.id:
+                raise ConflictError(f"Ya existe un cliente con el DNI/CUIT {nuevo_dni}")
+
         for field, value in update_data.items():
             setattr(cliente, field, value)
-            
-        return self.repo.update(cliente)
+
+        self.repo.db.commit()
+        self.repo.db.refresh(cliente)
+        return cliente
 
     def deactivate(self, id: int) -> Cliente:
         cliente = self.get_by_id(id)
-        
-        # Validar que no tenga alquileres activos ni reservas (Simulación para Fase 2)
-        # TODO: Implementar validación real cuando exista Fase 3
-        # if cliente.alquileres_activos or cliente.reservas_pendientes:
-        #    raise BusinessRuleError("No se puede dar de baja un cliente con reservas o alquileres activos")
-        
+
+        # No permitir dar de baja un cliente con reservas/alquileres en curso
+        # (pendiente, confirmada, activa o vencida — el auto puede estar afuera).
+        from app.models.reserva import Reserva
+        tiene_reservas_activas = (
+            self.repo.db.query(Reserva)
+            .filter(
+                Reserva.cliente_id == id,
+                Reserva.estado.in_(["pendiente", "confirmada", "activa", "vencida"]),
+            )
+            .first()
+            is not None
+        )
+        if tiene_reservas_activas:
+            raise BusinessRuleError(
+                "cliente_con_reservas_activas",
+                "No se puede dar de baja un cliente con reservas o alquileres en curso",
+            )
+
         cliente.activo = False
-        return self.repo.update(cliente)
+        self.repo.db.commit()
+        self.repo.db.refresh(cliente)
+        return cliente
 
     # --- Conductores Adicionales ---
 

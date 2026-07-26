@@ -147,12 +147,12 @@
 | CLI-05 | Varios contactos por empresa | ⬜ | P2 | Quién firma ≠ quién paga ≠ quién recibe facturas |
 | CLI-06 | Datos fiscales (razón social, IVA, domicilio) | ⬜ | P1 | Necesario para facturar |
 | CLI-07 | Validar dígito verificador del CUIT | ⬜ | P2 | |
-| CLI-08 | **Corregir un DNI/CUIT mal cargado** | ⬜ | P1 | `ClienteUpdate` no lo permite |
-| CLI-09 | Cambiar tipo particular ↔ empresa | ⬜ | P2 | Hoy obliga a crear ficha nueva |
-| CLI-10 | **Cargar número y categoría de licencia** | 🔴 | P1 | Las columnas existen pero no están en el schema — inalcanzables |
+| CLI-08 | **Corregir un DNI/CUIT mal cargado** | ✅ | — | **Arreglado 2026-07-26**: `ClienteUpdate` acepta `dni_cuit`, valida unicidad excluyéndose a sí mismo |
+| CLI-09 | Cambiar tipo particular ↔ empresa | ✅ | — | **Arreglado 2026-07-26**: `ClienteUpdate.tipo` ahora editable (de paso, junto con CLI-08) |
+| CLI-10 | **Cargar número y categoría de licencia** | ✅ | — | **Arreglado 2026-07-26**: `licencia_numero`/`licencia_categoria` expuestos en `ClienteBase`/`ClienteUpdate` |
 | CLI-11 | Impedir cliente sin licencia | ⬜ | P1 | Hoy acepta `""` |
 | CLI-12 | Conductores adicionales | ✅ | — | |
-| CLI-13 | Impedir baja con alquiler activo | 🔴 | P1 | Hay un TODO sin implementar |
+| CLI-13 | Impedir baja con alquiler activo | ✅ | — | **Arreglado 2026-07-26**: bloquea si tiene reservas en `pendiente/confirmada/activa/vencida` |
 | CLI-14 | Lista negra | ⬜ | P2 | Hoy nada impide realquilarle a quien no pagó |
 | CLI-15 | Fecha de nacimiento / edad mínima | ⬜ | P2 | |
 | CLI-16 | Antigüedad de licencia | ⬜ | P3 | |
@@ -397,6 +397,8 @@
 **🆕 Hallazgo nuevo, no estaba en el catálogo original (2026-07-26):**
 
 El botón de Check-in **nunca aparecía en la lista de reservas**, para ningún alquiler, en ningún caso — un bug independiente y más fundamental que CIN-02. La condición en `ReservasList.tsx:300` (`r.alquiler_id && r.alquiler_estado === 'activo'`) dependía de `Reserva.alquiler_estado`, una property que intentaba leer `self.alquiler.estado` — una columna que **no existe** en el modelo `Alquiler`. Eso lanzaba `AttributeError`, silenciado por el default de Pydantic (`alquiler_estado: str | None = None`), así que el campo **siempre** viajaba como `null` sin que nadie lo notara. Además había una **definición duplicada** de la misma property más abajo en el archivo, que pisaba silenciosamente cualquier arreglo hecho en la primera. Arreglado: se unificó en una sola property que deriva `"activo"`/`"finalizado"` de `alquiler.checkin_fecha`. Verificado en vivo: antes del fix devolvía `null` con un alquiler abierto; después, `"activo"`.
+
+**🆕 Segundo hallazgo nuevo (2026-07-26):** `PATCH /clientes/{id}` y `DELETE /clientes/{id}` (baja lógica) **nunca funcionaron**. `cliente_service.py` llamaba `self.repo.update(cliente)`, pero `ClienteRepository` — que hereda de `BaseRepository` — no tiene (ni heredó) ningún método `update()`. Eso lanza `AttributeError`, no capturado por ningún exception handler registrado en `main.py`, así que cualquier edición o baja de un cliente devolvía un 500 crudo. Se revisó el resto de los repos que heredan de `BaseRepository` (`documento_repo`, `gasto_repo`, `tarifa_repo`, `vehiculo_repo`) y ninguno de sus servicios llama a `self.repo.update()` — usan el patrón de `vehiculo_service.py` (`setattr` + `self.db.commit()` + `refresh()` directo). Arreglado: `cliente_service.py` sigue el mismo patrón que `vehiculo_service.py`, sin necesitar tocar el repositorio. Verificado en vivo con 6 casos (crear, editar licencia, corregir DNI, rechazar DNI duplicado, dar de baja sin reservas, bloquear baja con reserva activa) — los 6 pasaron.
 
 **Además, corregidos en este mismo batch aunque no estaban en la lista original de 12:**
 - Código muerto eliminado en la validación de fecha futura del checkout (`alquiler_service.py`)

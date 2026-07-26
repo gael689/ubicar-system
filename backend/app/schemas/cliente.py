@@ -28,7 +28,9 @@ class ClienteBase(BaseModel):
     dni_cuit: str = ""
     telefono: str = ""
     email: str | None = None
+    licencia_numero: str | None = None
     licencia_vencimiento: str = ""
+    licencia_categoria: str | None = None
     tipo: TipoCliente = "particular"
     es_frecuente: bool = False
     notas: str | None = None
@@ -46,9 +48,13 @@ class ClienteCreate(ClienteBase):
 
 class ClienteUpdate(BaseModel):
     nombre_completo: str | None = None
+    dni_cuit: str | None = None
     telefono: str | None = None
     email: str | None = None
+    licencia_numero: str | None = None
     licencia_vencimiento: str | None = None
+    licencia_categoria: str | None = None
+    tipo: TipoCliente | None = None
     es_frecuente: bool | None = None
     notas: str | None = None
     activo: bool | None = None
