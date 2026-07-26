@@ -46,6 +46,7 @@ class CuentaCorrienteService:
         echeq_id: int | None = None,
         multa_id: int | None = None,
         recibo_id: int | None = None,
+        comprobante_id: int | None = None,
     ) -> MovimientoCuentaCorriente:
         if monto is None or monto <= 0:
             raise ValueError("El monto del movimiento debe ser > 0")
@@ -70,6 +71,7 @@ class CuentaCorrienteService:
             echeq_id=echeq_id,
             multa_id=multa_id,
             recibo_id=recibo_id,
+            comprobante_id=comprobante_id,
             creado_por=creado_por,
         )
         self.db.add(mov)
@@ -105,6 +107,7 @@ class CuentaCorrienteService:
             echeq_id=original.echeq_id,
             multa_id=original.multa_id,
             recibo_id=original.recibo_id,
+            comprobante_id=original.comprobante_id,
             creado_por=creado_por,
         )
         self.db.add(contra)

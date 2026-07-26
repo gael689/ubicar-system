@@ -61,6 +61,7 @@ class MovimientoCuentaCorriente(Base):
     echeq_id: Mapped[int | None] = mapped_column(ForeignKey("echeqs.id"), nullable=True)
     multa_id: Mapped[int | None] = mapped_column(ForeignKey("multas.id"), nullable=True)
     recibo_id: Mapped[int | None] = mapped_column(ForeignKey("recibos.id"), nullable=True)
+    comprobante_id: Mapped[int | None] = mapped_column(ForeignKey("comprobantes.id"), nullable=True)
 
     anulado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     anulado_por_movimiento_id: Mapped[int | None] = mapped_column(

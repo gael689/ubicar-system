@@ -217,7 +217,7 @@
 | FIN-16 | Echeq genera movimiento en cuenta corriente | ✅ | — | **Hecho 2026-07-26**: recibido con `cliente_id` genera crédito automático al entrar en cartera |
 | FIN-17 | Cartera de echeqs por mes | ⬜ | P2 | Saber con qué plata se cuenta |
 | FIN-18 | **Recibos con PDF estético** | ✅ | — | **Hecho 2026-07-26**: ver RCB-* |
-| FIN-19 | Facturas / comprobantes | ⬜ | P1 | Hoy sólo un booleano `con_factura` |
+| FIN-19 | Facturas / comprobantes | ✅ | — | **Hecho 2026-07-26** (migración 029, D-05): tabla `comprobantes` — carga manual con PDF, sin AFIP. `factura_a/b/c`/`remito` no generan asiento nuevo (el checkout ya facturó el débito); `nota_credito`/`nota_debito` sí generan crédito/débito. Baja lógica (`estado='anulada'` + contra-asiento si correspondía). Tab "Comprobantes" en la ficha del cliente |
 | FIN-20 | Multa imputada genera deuda | ✅ | — | **Hecho 2026-07-26**: imputar genera débito automático. `POST /multas/{id}/resolver` (cobrada → crédito · bonificada → contra-asiento, motivo obligatorio). **Frontend agregado 2026-07-26**: el endpoint existía desde antes pero no había botón — ahora hay dos ("Cobrada"/"Bonificar") en la ficha del cliente y en la pantalla global de Multas |
 | FIN-21 | Reportes de ingresos y flota | ✅ | — | |
 | FIN-22 | Separar facturado / no facturado en reportes | ⬜ | P1 | |

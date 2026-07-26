@@ -310,6 +310,13 @@ Pedido: *"lugar para poner facturas"*. Hoy sólo existe `pago.con_factura: bool`
 
 **Alcance recomendado ahora:** carga manual + adjuntar PDF + vincular al alquiler y a la CC. **No** integrar con AFIP en esta etapa — es un proyecto en sí mismo (certificados, homologación, WSFE). Dejar los campos `cae` preparados para no migrar después.
 
+**✅ Hecho (2026-07-26), migración 029.** Implementado tal cual arriba, con dos ajustes deliberados:
+- **`tipo` no incluye `recibo`** — el módulo de Recibos ya es una tabla aparte con su propio pipeline completo (numeración + PDF + ledger, sección 3.6); incluirlo acá hubiera duplicado sin necesidad.
+- **`numero`/`punto_venta` son `String` de carga libre**, no una secuencia propia — a diferencia de `recibos`, un comprobante fiscal documenta algo emitido *fuera* del sistema (facturación externa, AFIP eventualmente), así que el número es el que ya trae el papel/PDF real, no uno que genere Ubicar Rent.
+- **Sólo `nota_credito`/`nota_debito` generan un movimiento nuevo** en la cuenta corriente (crédito/débito respectivamente) — `factura_a/b/c` y `remito` sólo documentan un cargo que el ledger completo ya facturó automáticamente al checkout; generarles un segundo asiento habría duplicado la deuda.
+
+Carga manual con PDF vía `multipart/form-data` (mismo patrón que Documentos), tab "Comprobantes" en la ficha del cliente. Baja lógica: `estado='anulada'` + motivo obligatorio; si había generado un movimiento, se revierte con contra-asiento (mismo patrón que recibo/multa).
+
 ### 3.6 Nuevo módulo — Recibos
 
 Caso de uso real: *el cliente cancela un monto, o va pagando de a poco.* Se entra al sistema, se elige el cliente, se pone el monto, se genera el recibo, se descarga y se le manda.
@@ -894,7 +901,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 24. ✅ **Cargos de cierre**: combustible faltante y limpieza — hecho 2026-07-26 (migración 028, D-20). **Van como gasto del vehículo por defecto, no como cargo al cliente** — corregido en la misma tarea después de implementarlo mal la primera vez (ver `docs/CASOS_DE_USO.md` CIN-13/14 y la memoria del proyecto). La "liquidación de garantía contra los cargos" ya existía de antes (`garantia_estado`/`garantia_monto_devuelto`, decisión manual del operador) — no se tocó
 25. ✅ **Pipeline de PDF server-side** (ReportLab) — hecho 2026-07-26, usado por Recibos. Contratos/facturas/presupuestos todavía sin migrar a este pipeline
 26. ✅ **Módulo de Recibos** — hecho 2026-07-26, versión simplificada (ver 3.6-bis): numeración vía secuencia + PDF + monto en letras + descarga. **Imputación FIFO y medios de pago mixtos quedaron afuera** — a validar con los dueños si hace falta
-27. Módulo Comprobantes/Facturas (carga manual + PDF + vínculo a CC)
+27. ✅ Módulo Comprobantes/Facturas (carga manual + PDF + vínculo a CC) — hecho 2026-07-26 (migración 029, FIN-19)
 28. UI: ledger con Debe/Haber/Saldo + aging · grilla de tarifas · liquidación en el check-in · panel de estado en la reserva
 
 ### 🔔 Fase 2 — Alertas y Notificaciones (2 semanas)
