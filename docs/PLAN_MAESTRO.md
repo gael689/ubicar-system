@@ -889,7 +889,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 19. ✅ Datos fiscales del cliente + **empresa vs particular** (contactos con puesto, formulario condicional) — hecho 2026-07-26 (migración 023). Ver detalle abajo
 20. ✅ **Conductor ≠ pagador** en la reserva — hecho 2026-07-26 (migración 024). `Reserva.conductor_id` (nullable, apunta a `conductores_adicionales` del propio cliente); si es NULL, el cliente es quien maneja (comportamiento de siempre). `MultaService.buscar_responsable()` ahora devuelve también el conductor real, no sólo el cliente que paga. Selector en `ReservaModal.tsx`, visible sólo si el cliente tiene conductores adicionales cargados
 21. ✅ **Rediseño de tarifas — primera etapa**: categoría como entidad nueva (D-08), `precio_por_dia` explícito por vehículo **y** por categoría — hecho 2026-07-26 (migración 025). Ver detalle abajo. **Sin calendario/estacionalidad todavía** (`tarifas_calendario` con prioridades queda para la Fase 5, cuando la reserva pase a ser por categoría en la web)
-22. **Descuentos auditados** (precio de lista vs cobrado, motivo, autorizado por) + **con/sin factura** en la reserva
+22. ✅ **Descuentos auditados** (precio de lista vs cobrado, motivo, autorizado por) + **con/sin factura** en la reserva — hecho 2026-07-26 (migración 026, PRE-10/RES-14)
 23. **Estados nuevos**: `VENCIDA`, `NO_SHOW`, `CERRADA` + política de seña en cancelación y no-show
 24. **Cargos de cierre**: combustible faltante, limpieza, liquidación de garantía contra los cargos
 25. ✅ **Pipeline de PDF server-side** (ReportLab) — hecho 2026-07-26, usado por Recibos. Contratos/facturas/presupuestos todavía sin migrar a este pipeline

@@ -42,6 +42,14 @@ class Reserva(Base):
     tarifa_aplicada_id: Mapped[int | None] = mapped_column(ForeignKey("tarifas.id"), nullable=True)
     precio_total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
+    # Descuentos auditados (Fase 1, ítem 22): precio_lista es lo que salió de
+    # la tarifa; si precio_total termina siendo distinto, es un descuento (o
+    # recargo) manual que exige motivo y queda registrado quién lo autorizó.
+    precio_lista: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    descuento_motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    descuento_autorizado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    con_factura: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+
     # D2 solapamiento con pendientes
     bloqueada_por_solape: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
 
@@ -63,7 +71,7 @@ class Reserva(Base):
     vehiculo: Mapped["Vehiculo"] = relationship("Vehiculo")
     cliente: Mapped["Cliente"] = relationship("Cliente")
     conductor: Mapped["ConductorAdicional"] = relationship("ConductorAdicional")
-    usuario: Mapped["Usuario"] = relationship("Usuario")
+    usuario: Mapped["Usuario"] = relationship("Usuario", foreign_keys=[usuario_id])
     tarifa_aplicada: Mapped["Tarifa"] = relationship("Tarifa", foreign_keys=[tarifa_aplicada_id])
     alquiler: Mapped["Alquiler"] = relationship("Alquiler", back_populates="reserva", uselist=False)
 

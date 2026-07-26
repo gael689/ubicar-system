@@ -587,6 +587,10 @@ export interface Reserva {
   // Precio y tarifa
   tarifa_aplicada_id: number | null;
   precio_total: string | null;
+  precio_lista?: string | null;
+  descuento_motivo?: string | null;
+  descuento_autorizado_por?: number | null;
+  con_factura?: boolean;
   // D2 solape
   bloqueada_por_solape: boolean;
   // Garantía
@@ -634,6 +638,8 @@ export interface ReservaCreate {
   anticipo_monto?: number | null;
   anticipo_fecha?: string | null;
   anticipo_medio_pago?: string | null;
+  con_factura?: boolean;
+  descuento_motivo?: string | null;
 }
 
 export interface ReservaUpdate {

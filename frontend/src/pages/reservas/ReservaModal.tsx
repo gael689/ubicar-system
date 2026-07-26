@@ -108,10 +108,20 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const [precioTotal, setPrecioTotal]   = useState<number | ''>(initialPrecioTotal || '');
   const [precioPorDia, setPrecioPorDia] = useState<number | ''>(initialPrecioPorDia || '');
+  const [conFactura, setConFactura] = useState(reserva?.con_factura ?? false);
+  const [descuentoMotivo, setDescuentoMotivo] = useState(reserva?.descuento_motivo ?? '');
   const lastEditedRef = useRef<'dia' | 'total'>('dia');
 
+  // Verificar si el vehículo tiene check-out pendiente (activo = auto fue entregado pero no devuelto)
+  const vehiculosActivos = (vehiculosData?.data ?? []).filter(
+    v => v.activo && ['disponible', 'reservado', 'en_transicion', 'alquilado'].includes(v.estado)
+  );
+  const vehiculoSeleccionado = vehiculosActivos.find(v => v.id.toString() === vehiculoId);
+  const tieneCheckoutPendiente = vehiculoSeleccionado?.estado === 'alquilado';
+  const categoriaId = vehiculoSeleccionado?.categoria_id ?? null;
+
   // Tarifas del vehículo seleccionado
-  const { data: tarifasData } = useQuery({
+  const { data: tarifasVehiculo, isLoading: cargandoTarifasVehiculo } = useQuery({
     queryKey: ['tarifas', vehiculoId],
     queryFn: async () => {
       const res = await api.get<ApiResponse<Tarifa[]>>(`/vehiculos/${vehiculoId}/tarifas`);
@@ -121,12 +131,20 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     staleTime: 60_000,
   });
 
-  // Verificar si el vehículo tiene check-out pendiente (activo = auto fue entregado pero no devuelto)
-  const vehiculosActivos = (vehiculosData?.data ?? []).filter(
-    v => v.activo && ['disponible', 'reservado', 'en_transicion', 'alquilado'].includes(v.estado)
-  );
-  const vehiculoSeleccionado = vehiculosActivos.find(v => v.id.toString() === vehiculoId);
-  const tieneCheckoutPendiente = vehiculoSeleccionado?.estado === 'alquilado';
+  // Tarifas de la categoría del vehículo (D-08): si no tiene tarifa propia,
+  // usa la de su categoría — ver domain/tarifas.py::seleccionar_tarifa.
+  const { data: tarifasCategoria, isLoading: cargandoTarifasCategoria } = useQuery({
+    queryKey: ['tarifas-categoria', categoriaId],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<Tarifa[]>>(`/categorias/${categoriaId}/tarifas`);
+      return res.data.data;
+    },
+    enabled: !!categoriaId,
+    staleTime: 60_000,
+  });
+
+  const tarifasData = [...(tarifasVehiculo ?? []), ...(tarifasCategoria ?? [])];
+  const cargandoTarifas = cargandoTarifasVehiculo || (!!categoriaId && cargandoTarifasCategoria);
 
   useEffect(() => {
     if (duracionDias > 0) {
@@ -168,6 +186,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     ? (duracionDias < 7 ? 'diaria' : duracionDias < 30 ? 'semanal' : 'mensual')
     : null;
   const tarifasDisponibles = (tarifasData ?? []).filter(t => t.activo);
+  // La específica del vehículo gana sobre la de categoría (D-08), igual que en el backend.
+  const tarifaRecomendada = tarifasDisponibles.find(t => t.tipo === tipoRecomendado && t.vehiculo_id != null)
+    ?? tarifasDisponibles.find(t => t.tipo === tipoRecomendado);
+  const precioListaEstimado = tarifaRecomendada ? parseFloat(tarifaRecomendada.monto) * duracionDias : null;
+  const hayDescuentoManual = precioListaEstimado !== null && precioTotal !== '' && Math.round(precioTotal) !== Math.round(precioListaEstimado);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -184,6 +207,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     }
     if (!precioTotal) {
       setLocalError('La cotización es obligatoria. Ingrese el precio total o por día.');
+      return;
+    }
+    if (!isEdit && hayDescuentoManual && !descuentoMotivo.trim()) {
+      setLocalError(`El precio cargado difiere del precio de lista ($${precioListaEstimado?.toLocaleString('es-AR')}) — indique el motivo de la diferencia.`);
       return;
     }
     if (garantiaTipo !== 'no_aplica' && !garantiaMonto) {
@@ -254,6 +281,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           anticipo_monto: estadoPago === 'anticipo' ? parseFloat(anticipoMonto as string) : (estadoPago === 'pagado' ? parseFloat(precioTotal as string) : null),
           anticipo_fecha: estadoPago !== 'pendiente' ? anticipoFecha : null,
           anticipo_medio_pago: estadoPago !== 'pendiente' ? anticipoMedioPago : null,
+          con_factura: conFactura,
+          descuento_motivo: hayDescuentoManual ? descuentoMotivo.trim() : null,
         };
         const { reserva: r, warnings: w } = await createReserva(payload);
         if (w.length > 0) setWarnings(w);
@@ -457,8 +486,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 )}
               </div>
             )}
-            {vehiculoId && tarifasDisponibles.length === 0 && tarifasData !== undefined && (
-              <p className="text-xs text-slate-400 italic">Este vehículo no tiene tarifas cargadas.</p>
+            {vehiculoId && tarifasDisponibles.length === 0 && !cargandoTarifas && (
+              <p className="text-xs text-slate-400 italic">Este vehículo no tiene tarifas cargadas (ni propias ni de su categoría).</p>
             )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -491,6 +520,24 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             {duracionDias === 0 && (
               <p className="text-xs text-slate-500 italic">Configure las fechas para calcular la cotización.</p>
             )}
+            {!isEdit && hayDescuentoManual && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  ⚠ El precio cargado difiere del precio de lista (${precioListaEstimado?.toLocaleString('es-AR')}). Indicá el motivo — queda auditado.
+                </p>
+                <textarea
+                  value={descuentoMotivo}
+                  onChange={e => setDescuentoMotivo(e.target.value)}
+                  rows={2}
+                  placeholder="Ej: cliente frecuente, descuento autorizado por gerencia"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none"
+                />
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input type="checkbox" checked={conFactura} onChange={e => setConFactura(e.target.checked)} className="accent-indigo-600" />
+              Con factura
+            </label>
             <div className="space-y-3 pt-2 border-t border-slate-200">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-600">Forma de pago esperada (opcional)</label>

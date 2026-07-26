@@ -137,6 +137,8 @@ class ReservaService:
         anticipo_fecha: date | None = None,
         anticipo_medio_pago: str | None = None,
         conductor_id: int | None = None,
+        con_factura: bool = False,
+        descuento_motivo: str | None = None,
         usuario_id: int = 0,
     ) -> tuple[Reserva, list[dict]]:
         """
@@ -194,17 +196,32 @@ class ReservaService:
         # 5. Hora de devolución acordada: default = hora_inicio (mismo horario del checkout)
         hora_dev = hora_devolucion_acordada or hora_inicio
 
-        # Calcular tarifa y precio si no viene manual
+        # Calcular el precio de lista (el que sale de la tarifa) SIEMPRE que
+        # haya una tarifa configurada, exista o no un precio_total manual —
+        # es lo único que permite auditar un descuento después (ítem 22).
         tarifa_id = None
+        precio_lista: Decimal | None = None
+        duracion = calcular_duracion_dias(fecha_inicio, fecha_fin)
+        tarifas_info, categoria_id = self._cargar_tarifas_info(vehiculo_id)
+        try:
+            tarifa = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
+            precio_lista = calcular_precio_total(duracion, tarifa)
+            tarifa_id = tarifa.id
+        except BusinessRuleError:
+            pass
+
         if precio_total is None:
-            duracion = calcular_duracion_dias(fecha_inicio, fecha_fin)
-            tarifas_info, categoria_id = self._cargar_tarifas_info(vehiculo_id)
-            try:
-                tarifa = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
-                precio_total = calcular_precio_total(duracion, tarifa)
-                tarifa_id = tarifa.id
-            except BusinessRuleError:
-                pass
+            precio_total = precio_lista
+
+        descuento_autorizado_por = None
+        if precio_lista is not None and precio_total is not None and precio_total != precio_lista:
+            if not descuento_motivo or not descuento_motivo.strip():
+                raise BusinessRuleError(
+                    "descuento_sin_motivo",
+                    f"El precio cargado (${precio_total}) difiere del precio de lista "
+                    f"(${precio_lista}) — hace falta un motivo para la diferencia",
+                )
+            descuento_autorizado_por = usuario_id
 
         # 6. Crear reserva (ya CONFIRMADA directamente)
         with self.db.begin_nested():
@@ -223,6 +240,10 @@ class ReservaService:
                 late_checkout=late_checkout,
                 cargo_late_checkout=cargo_late_checkout,
                 precio_total=precio_total,
+                precio_lista=precio_lista,
+                descuento_motivo=descuento_motivo,
+                descuento_autorizado_por=descuento_autorizado_por,
+                con_factura=con_factura,
                 tarifa_aplicada_id=tarifa_id,
                 garantia_tipo=garantia_tipo,
                 garantia_monto=garantia_monto,

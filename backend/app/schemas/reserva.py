@@ -68,6 +68,8 @@ class ReservaCreate(BaseModel):
     anticipo_monto: Decimal | None = None
     anticipo_fecha: date | None = None
     anticipo_medio_pago: str | None = None
+    con_factura: bool = False
+    descuento_motivo: str | None = None
 
 
 class ReservaUpdate(BaseModel):
@@ -128,6 +130,10 @@ class ReservaResponse(BaseModel):
     # Precio y tarifa
     tarifa_aplicada_id: int | None
     precio_total: Decimal | None
+    precio_lista: Decimal | None = None
+    descuento_motivo: str | None = None
+    descuento_autorizado_por: int | None = None
+    con_factura: bool = False
     # D2 solape
     bloqueada_por_solape: bool
     # Garantía

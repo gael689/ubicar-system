@@ -39,7 +39,7 @@
 | RES-12 | ~~Marcar NO-SHOW~~ → **Late check-out con monto editable y nota** | ⬜ | P1 | D-17: no se crea el estado. Se resuelve como late check-out |
 | RES-12b | Cancelar: retener la seña completa | ⬜ | P1 | D-11: no se devuelve nada. Genera el asiento solo |
 | RES-13 | Reabrir reserva finalizada por error | ⬜ | P2 | |
-| RES-14 | Marcar con factura / sin factura | ⬜ | P1 | Sólo existe a nivel de cada pago |
+| RES-14 | Marcar con factura / sin factura | ✅ | — | **Hecho 2026-07-26** (migración 026): `Reserva.con_factura`, declaración de la reserva completa (`Pago.con_factura` sigue existiendo aparte, por cobro individual) |
 | RES-15 | Separar quién paga de quién maneja | ✅ | — | **Hecho 2026-07-26** (migración 024): `Reserva.conductor_id` nullable → si no se define, el cliente es el conductor (sin cambios). `MultaService.buscar_responsable()` ya devuelve ambos (cliente que paga + conductor real) |
 | RES-16 | Registrar conductores autorizados del alquiler | ⬜ | P2 | Hoy sólo a nivel de ficha del cliente |
 | RES-17 | Ver desglose del precio, no sólo el total | ⬜ | P1 | |
@@ -125,8 +125,8 @@
 | PRE-07 | Carga por precio/día o por total de la banda | ⬜ | P1 | Es lo que evita PRE-01 |
 | PRE-08 | Ver el descuento implícito entre bandas | ⬜ | P2 | |
 | PRE-09 | Precio manual negociado | 🟡 | P1 | Se puede, pero sin registro de quién ni por qué |
-| PRE-10 | Descuento con motivo y autorización | ⬜ | P1 | |
-| PRE-11 | Reporte de descuentos por usuario | ⬜ | P2 | |
+| PRE-10 | Descuento con motivo y autorización | ✅ | — | **Hecho 2026-07-26** (migración 026): `Reserva.precio_lista` (lo que sale de la tarifa) se guarda siempre que hay tarifa configurada, aunque se cargue un `precio_total` manual. Si difieren, exige `descuento_motivo` (422 si falta) y registra `descuento_autorizado_por` (el usuario que crea la reserva) |
+| PRE-11 | Reporte de descuentos por usuario | ⬜ | P2 | El dato ya existe (`precio_lista` vs `precio_total` + `descuento_autorizado_por`), falta el reporte agregado |
 | PRE-12 | Congelar el precio al confirmar | 🟡 | P1 | Se guarda, pero `extender()` lo recalcula |
 | PRE-13 | Snapshot de la tarifa aplicada | ⬜ | P2 | Para poder explicar un precio dos años después |
 | PRE-14 | Precio distinto con y sin factura | ⬜ | P1 | |

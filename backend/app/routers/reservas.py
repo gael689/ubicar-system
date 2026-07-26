@@ -117,6 +117,8 @@ def create_reserva(
             anticipo_monto=payload.anticipo_monto,
             anticipo_fecha=payload.anticipo_fecha,
             anticipo_medio_pago=payload.anticipo_medio_pago,
+            con_factura=payload.con_factura,
+            descuento_motivo=payload.descuento_motivo,
             usuario_id=current_user.id,
         )
         db.commit()
