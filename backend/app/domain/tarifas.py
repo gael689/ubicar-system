@@ -84,5 +84,14 @@ def seleccionar_tarifa(
 
 
 def calcular_precio_total(duracion_dias: int, tarifa: TarifaInfo) -> Decimal:
-    """Calcula el precio total del alquiler: días × monto de la tarifa."""
+    """
+    Calcula el precio total del alquiler: días × monto de la tarifa.
+
+    `tarifa.monto` es SIEMPRE un precio por día, para cualquier tipo
+    (diaria/semanal/mensual) — la banda sólo decide qué precio por día
+    aplica según la duración (PRE-01, ver docs/VALIDAR_CON_DUENOS.md).
+    No es el precio total del período: no hay prorrateo. Un alquiler de
+    10 días con tarifa semanal de $25.000/día cuesta $250.000, no
+    "una semana completa + 3 días sueltos".
+    """
     return Decimal(str(duracion_dias)) * tarifa.monto

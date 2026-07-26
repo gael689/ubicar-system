@@ -22,6 +22,15 @@ const TIPO_LABEL: Record<string, string> = {
   mensual: 'Mensual',
 };
 
+// El monto SIEMPRE es un precio por día — la banda sólo decide para qué
+// duración aplica. No es "precio total de la semana/mes": el sistema no
+// prorratea, multiplica días × monto tal cual (ver domain/tarifas.py).
+const TIPO_HINT: Record<string, string> = {
+  diaria: 'Precio por día para alquileres de menos de 7 días',
+  semanal: 'Precio por día (no el total de la semana) para alquileres de 7 a 29 días',
+  mensual: 'Precio por día (no el total del mes) para alquileres de 30 días o más',
+};
+
 interface Props {
   vehiculoId: number;
 }
@@ -104,6 +113,7 @@ export function TarifasTab({ vehiculoId }: Props) {
 
       {formOpen && (
         <TarifaFormInline
+          activas={activas}
           onSubmit={(data) => {
             createTarifa.mutate(data, { onSuccess: () => setFormOpen(false) });
           }}
@@ -138,9 +148,12 @@ function TarifaRow({ tarifa, onDelete, inactive }: { tarifa: Tarifa; onDelete?: 
         <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
           {TIPO_LABEL[tarifa.tipo]}
         </span>
-        <span className="text-sm font-semibold text-foreground tabular-nums">
-          {formatCurrency(tarifa.monto)}
-        </span>
+        <div>
+          <span className="text-sm font-semibold text-foreground tabular-nums">
+            {formatCurrency(tarifa.monto)} / día
+          </span>
+          <p className="text-[11px] text-muted-foreground">{TIPO_HINT[tarifa.tipo]}</p>
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <span className="text-xs text-muted-foreground">
@@ -157,10 +170,12 @@ function TarifaRow({ tarifa, onDelete, inactive }: { tarifa: Tarifa; onDelete?: 
 }
 
 function TarifaFormInline({
+  activas,
   onSubmit,
   onCancel,
   loading,
 }: {
+  activas: Tarifa[];
   onSubmit: (data: TarifaCreate) => void;
   onCancel: () => void;
   loading: boolean;
@@ -175,41 +190,60 @@ function TarifaFormInline({
     onSubmit({ tipo, monto: montoNum });
   };
 
+  // Alerta suave (no bloquea) si el precio por día de una banda larga no es
+  // menor al de una más corta — suele indicar que cargaron el total del
+  // período en vez del precio por día. "El sistema informa, la persona decide".
+  const montoNum = Number(monto);
+  const referencia: Record<string, string> = { semanal: 'diaria', mensual: 'semanal' };
+  const tipoReferencia = referencia[tipo];
+  const tarifaReferencia = tipoReferencia ? activas.find(t => t.tipo === tipoReferencia) : undefined;
+  const advertencia = tarifaReferencia && montoNum > 0 && montoNum >= Number(tarifaReferencia.monto)
+    ? `El precio por día de "${TIPO_LABEL[tipo]}" (${formatCurrency(montoNum)}) no es menor al de "${TIPO_LABEL[tipoReferencia]}" (${formatCurrency(tarifaReferencia.monto)}). ¿Seguro que no cargaste el precio total del período en vez del precio por día?`
+    : null;
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3 rounded-lg border border-dashed border-primary/40 p-4 bg-primary/5">
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Tipo</label>
-        <select
-          value={tipo}
-          onChange={e => setTipo(e.target.value as TarifaCreate['tipo'])}
-          className="block w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-        >
-          <option value="diaria">Diaria</option>
-          <option value="semanal">Semanal</option>
-          <option value="mensual">Mensual</option>
-        </select>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/40 p-4 bg-primary/5">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Tipo</label>
+          <select
+            value={tipo}
+            onChange={e => setTipo(e.target.value as TarifaCreate['tipo'])}
+            className="block w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+          >
+            <option value="diaria">Diaria</option>
+            <option value="semanal">Semanal</option>
+            <option value="mensual">Mensual</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Precio por día ($)</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={monto}
+            onChange={e => setMonto(e.target.value)}
+            placeholder="25000"
+            className="block w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+            required
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={loading}>
+            {loading ? 'Guardando…' : 'Guardar'}
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Cancelar
+          </Button>
+        </div>
       </div>
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Monto ($)</label>
-        <input
-          type="number"
-          min="1"
-          step="1"
-          value={monto}
-          onChange={e => setMonto(e.target.value)}
-          placeholder="25000"
-          className="block w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-          required
-        />
-      </div>
-      <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={loading}>
-          {loading ? 'Guardando…' : 'Guardar'}
-        </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-          Cancelar
-        </Button>
-      </div>
+      <p className="text-xs text-muted-foreground">{TIPO_HINT[tipo]}</p>
+      {advertencia && (
+        <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-md px-2 py-1.5">
+          ⚠ {advertencia}
+        </p>
+      )}
     </form>
   );
 }

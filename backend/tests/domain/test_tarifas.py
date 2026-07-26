@@ -122,3 +122,13 @@ class TestCalcularPrecioTotal:
     def test_siete_dias_tarifa_semanal(self):
         t = tarifa(1, TipoTarifa.SEMANAL, 25000)
         assert calcular_precio_total(7, t) == Decimal("175000")
+
+    def test_no_prorratea_semanal_diez_dias(self):
+        """PRE-01: monto es precio POR DÍA, sin prorrateo — 10 días de tarifa
+        semanal a $25.000/día son $250.000, no "una semana + 3 días sueltos"."""
+        t = tarifa(1, TipoTarifa.SEMANAL, 25000)
+        assert calcular_precio_total(10, t) == Decimal("250000")
+
+    def test_no_prorratea_mensual_cuarenta_dias(self):
+        t = tarifa(1, TipoTarifa.MENSUAL, 18000)
+        assert calcular_precio_total(40, t) == Decimal("720000")

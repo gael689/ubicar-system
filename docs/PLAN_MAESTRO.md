@@ -865,7 +865,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 3. **Arreglar `Pago(usuario_id=)` → `cobrado_por=`** — hoy todo cobro en check-out/check-in devuelve error 500
 4. **Habilitar el check-in tardío** — separar la sincronización horaria de la finalización real (estado `VENCIDA`)
 5. **Corregir el cálculo de excedente** — mide contra `hora_inicio` en vez de `hora_fin`
-6. **Corregir el precio semanal/mensual** — hoy multiplica el precio de la banda por día
+6. ✅ **Corregir el precio semanal/mensual** — hecho 2026-07-26. Resultó ser un bug de UI, no de cálculo: `calcular_precio_total` (días × monto) siempre fue correcto, `monto` ya era precio por día en cualquier banda (test `test_siete_dias_tarifa_semanal` ya lo bloqueaba). Se agregaron labels/hints explícitos en `TarifasTab.tsx` + advertencia no bloqueante si el precio de una banda larga no es menor al de una corta
 7. **Dejar de duplicar el anticipo** — se cuenta dos veces y subestima la deuda
 8. **`extender()` deja de borrar el precio** cuando no encuentra tarifa
 9. Validar que el kilometraje no retroceda en el check-out

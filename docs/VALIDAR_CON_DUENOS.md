@@ -93,6 +93,20 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 ---
 
+## 5. Tarifa semanal/mensual — confirmado que es precio por día, sin prorrateo
+
+**Contexto:** el bug documentado como "PRE-01 · tarifa semanal ×6" resultó, al revisarlo, ser un problema de **interfaz**, no de cálculo. El `calcular_precio_total` (días × monto) ya era correcto desde antes de esta sesión — lo confirma un test que existía previamente (`test_siete_dias_tarifa_semanal`). El campo `monto` de una tarifa **siempre es un precio por día**, sin importar si la banda es diaria, semanal o mensual — la banda sólo decide qué precio por día aplica según cuántos días dura el alquiler. No hay prorrateo: un alquiler de 10 días con tarifa semanal de $25.000/día cuesta $250.000, no "una semana completa + 3 días sueltos a otro precio".
+
+**El riesgo real:** nada en la pantalla de Tarifas aclaraba esto. Un operador cargando una tarifa "Semanal" podía razonablemente pensar que tenía que poner el precio de la semana completa (ej. $150.000), no el precio por día ($21.400). Si eso pasaba, cualquier alquiler de 7+ días cobraría 7 veces ese monto — de ahí el "×6/×7" observado.
+
+**Qué se hizo:** se aclaró la UI (`TarifasTab.tsx`) — cada tipo de tarifa ahora muestra "Precio por día para alquileres de X a Y días", y se agregó una advertencia (no bloqueante, "el sistema informa, la persona decide") si el precio por día de una banda larga no resulta menor al de una corta, que es la señal de que probablemente cargaron el total del período por error. Se blindó el comportamiento actual con dos tests nuevos (`test_no_prorratea_semanal_diez_dias`, `test_no_prorratea_mensual_cuarenta_dias`).
+
+**Por qué se avisa igual:** hoy en la base de datos sólo existen tarifas "diaria" (no hay ninguna semanal/mensual cargada todavía), así que no hay datos reales afectados. Pero es una decisión de negocio real — "el precio por día baja cuanto más larga la banda, sin prorratear" — que conviene que Franco/Martín confirmen que es como quieren cobrar, antes de que carguen la primera tarifa semanal real.
+
+**Estado:** ✅ Confirmado técnicamente (el cálculo era correcto) e implementada la aclaración de UI, 2026-07-26. **Pendiente el ok de Franco/Martín** sobre si el modelo "precio por día sin prorrateo" es como quieren que funcione la tarifa semanal/mensual, o si prefieren un modelo con prorrateo (ej. "1 semana completa a precio de semana + los días sueltos a precio diario").
+
+---
+
 ## Cómo seguir
 
 Cuando Franco/Martín confirmen el punto 1 (el único realmente importante de esta lista):

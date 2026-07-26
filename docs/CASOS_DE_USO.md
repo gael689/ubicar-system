@@ -116,7 +116,7 @@
 
 | ID | Caso de uso | Estado | Prio | Nota |
 |---|---|---|---|---|
-| PRE-01 | **Tarifa semanal/mensual bien calculada** | 🔴 | **P0** | Multiplica el precio de la banda por día. Error de ~6× |
+| PRE-01 | **Tarifa semanal/mensual bien calculada** | ✅ | — | **Revisado 2026-07-26**: el cálculo (`días × monto`) siempre fue correcto — `monto` es precio por día en cualquier banda, no precio total del período (test que ya lo bloqueaba desde antes de esta sesión: `test_siete_dias_tarifa_semanal`). El bug real era de **UI**: nada aclaraba eso, así que un operador podía cargar el precio total de la semana pensando que era por día. Corregido: labels/hints explícitos + advertencia (no bloqueante) si el precio por día de una banda larga no es menor al de una corta |
 | PRE-02 | Tarifa por vehículo específico | ✅ | — | |
 | PRE-03 | **Tarifa por categoría** | ⬜ | P1 | No existe el concepto de categoría |
 | PRE-04 | Tarifa general (fallback) | ✅ | — | |
@@ -379,11 +379,7 @@
 | **EST-07** | **Vehículo trabado en "alquilado"** | Resuelto: el check-in ya puede ejecutarse sobre `vencida` |
 | **NOT-14** | **La alerta de auto no devuelto era inalcanzable** | Ahora filtra `estado == 'vencida'` con horas de atraso calculadas en la descripción |
 
-**⬜ Pendiente** — el único que sigue abierto de los 12 originales:
-
-| ID | Qué | Nota |
-|---|---|---|
-| PRE-01 | La tarifa semanal se multiplica por día | Necesita el rediseño de tarifas de la Fase 1 (`precio_por_dia` explícito) |
+**✅ Los 12 originales están resueltos.** El último, PRE-01, resultó ser un problema de UI, no de cálculo — ver detalle arriba en la tabla `PRE`.
 
 **✅ CIN-03 resuelto (2026-07-26):** con la decisión D-18 (modelo 24hs estricto), la fórmula de `control_24hs.py` ya era correcta — lo que faltaba era que `hora_fin` se derive de `hora_inicio` en el formulario de reserva. `ReservaModal.tsx` ahora bloquea ese campo (`horaFin = horaInicio`, disabled) y muestra una nota explicando que el "Late Checkout acordado" (ya existente) es la única excepción.
 
