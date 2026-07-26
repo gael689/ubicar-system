@@ -66,6 +66,13 @@ class Alquiler(Base):
     decidido_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     motivo_bonificacion: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ── Cargos de cierre (Fase 1, ítem 24) ────────────────────────────────────
+    # Montos editables por el operador — no hay capacidad de tanque por
+    # vehículo (decisión explícita: el nivel de combustible es sólo visual,
+    # no se calculan litros). El nivel checkout/checkin ya documenta el motivo.
+    cargo_combustible: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    cargo_limpieza: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+
     # ── Contrato ──────────────────────────────────────────────────────────────
     contrato_firmado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     contrato_url: Mapped[str | None] = mapped_column(Text, nullable=True)

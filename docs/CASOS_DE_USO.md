@@ -87,8 +87,8 @@
 | CIN-10 | Reporte de excedentes bonificados | ⬜ | P2 | Fuga de ingresos sin visibilidad |
 | CIN-11 | Cobrar en el momento del check-in | ✅ | — | **Arreglado 2026-07-25**, mismo fix que CHK-05 |
 | CIN-12 | Registrar combustible y limpieza de llegada | ✅ | — | Se registra... |
-| CIN-13 | **Generar gasto del vehículo por combustible faltante** | ⬜ | P1 | D-20: gasto del vehículo, no cargo al cliente |
-| CIN-14 | **Generar gasto del vehículo por limpieza** | ⬜ | P1 | Ídem |
+| CIN-13 | **Generar gasto del vehículo por combustible faltante** | ✅ | — | **Hecho 2026-07-26**: botón "Generar gasto" en el check-in, pre-carga tipo `combustible`, monto a criterio (sin capacidad de tanque), nota con el detalle. Usa el módulo de Gastos que ya existía |
+| CIN-14 | **Generar gasto del vehículo por limpieza** | ✅ | — | **Hecho 2026-07-26**: ídem, tipo `lavado` |
 | CIN-14b | **Km recorridos visibles en historial de cliente y vehículo** | ⬜ | P1 | D-21: el dato ya se captura, falta exponerlo |
 | CIN-15 | **Cobrar daños nuevos** | ⬜ | P2 | Depende de DAN-01 |
 | CIN-16 | Liquidar la garantía contra los cargos | ⬜ | P1 | El enum existe, el cálculo no |
@@ -303,7 +303,7 @@
 | CFG-03 | Multiplicador de hora excedente | ⬜ | P2 | |
 | CFG-04 | Umbral de día completo | ⬜ | P2 | |
 | CFG-05 | Buffer entre alquileres | ⬜ | P2 | |
-| CFG-06 | Cargos fijos (limpieza, combustible) | ⬜ | P2 | |
+| CFG-06 | ~~Cargos fijos (limpieza, combustible)~~ | ❌ | — | **D-20 lo descarta explícitamente**: "no se calculan litros ni se estima el monto: el importe se carga a mano". No hay que construir esto |
 | CFG-07 | Umbrales de aviso | ⬜ | P2 | |
 | CFG-08 | Política de no-show y cancelación | ⬜ | P2 | |
 | CFG-09 | Límites de descuento por rol | ⬜ | P3 | |

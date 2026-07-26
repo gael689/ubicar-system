@@ -276,6 +276,8 @@ class AlquilerService:
         garantia_estado: str | None = None,
         garantia_monto_devuelto: Decimal | None = None,
         pago_inmediato: PagoInmediato | None = None,
+        cargo_combustible: Decimal = Decimal("0"),
+        cargo_limpieza: Decimal = Decimal("0"),
     ) -> Alquiler:
         """
         Registra el checkin con la decisión de cobro de excedente (D6 granular).
@@ -353,6 +355,8 @@ class AlquilerService:
                 excedente_bonificado=excedente_bonificado,
                 decidido_por=usuario_id,
                 motivo_bonificacion=motivo_bonificacion,
+                cargo_combustible=cargo_combustible,
+                cargo_limpieza=cargo_limpieza,
             )
             self.reserva_repo.update(reserva, estado=EstadoReserva.FINALIZADA.value)
 
@@ -365,6 +369,26 @@ class AlquilerService:
                     tipo="debito",
                     concepto=f"Excedente alquiler #{reserva.id} — check-in ({decision_excedente.value})",
                     monto=cargo_excedente,
+                    fecha=checkin_fecha,
+                    creado_por=usuario_id,
+                    alquiler_id=alquiler_id,
+                    reserva_id=reserva.id,
+                )
+
+            # Cargos de cierre (ítem 24): combustible faltante y limpieza,
+            # ambos montos editables por el operador — un solo débito conjunto.
+            cargos_cierre = (cargo_combustible or Decimal("0")) + (cargo_limpieza or Decimal("0"))
+            if cargos_cierre > 0:
+                partes = []
+                if cargo_combustible and cargo_combustible > 0:
+                    partes.append(f"combustible ${cargo_combustible}")
+                if cargo_limpieza and cargo_limpieza > 0:
+                    partes.append(f"limpieza ${cargo_limpieza}")
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="debito",
+                    concepto=f"Cargos de cierre alquiler #{reserva.id} — {', '.join(partes)}",
+                    monto=cargos_cierre,
                     fecha=checkin_fecha,
                     creado_por=usuario_id,
                     alquiler_id=alquiler_id,

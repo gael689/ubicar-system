@@ -677,6 +677,8 @@ export interface Alquiler {
   checkout_combustible: number;
   checkout_descripcion: string | null;
   checkout_registrado_en_tiempo_real: boolean;
+  cargo_checkout_tardio?: string;
+  motivo_checkout_tardio?: string | null;
   // Checkin
   checkin_fecha: string | null;
   checkin_hora: string | null;
@@ -691,6 +693,8 @@ export interface Alquiler {
   excedente_bonificado: boolean;
   decidido_por: number | null;
   motivo_bonificacion: string | null;
+  cargo_combustible?: string;
+  cargo_limpieza?: string;
   // Contrato
   contrato_firmado: boolean;
   contrato_url: string | null;
@@ -732,6 +736,8 @@ export interface CheckinCreate {
   garantia_monto_devuelto?: number | null;
   registrado_en_tiempo_real?: boolean;
   pago_inmediato?: PagoInmediato;
+  cargo_combustible?: number;
+  cargo_limpieza?: number;
 }
 
 export interface PreviewExcedente {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Flag } from 'lucide-react';
+import { Flag, Wrench } from 'lucide-react';
 import { useAlquileres } from '@/hooks/useAlquileres';
+import { useCreateGasto } from '@/hooks/useGastos';
 import type { CheckinCreate, DecisionExcedente, PreviewExcedente, Reserva } from '@/types';
 import { useDebounce } from '@/hooks/useDebounce';
 import { usePagosPendientes } from '@/hooks/usePagos';
@@ -65,6 +66,11 @@ export function CheckinModal({
 }: Props) {
   const { checkin, previewExcedente, getAlquiler, loading: alquilerLoading, error } = useAlquileres();
   const { data: pagosPendientes } = usePagosPendientes();
+  const createGasto = useCreateGasto(reserva.vehiculo_id);
+  const [gastoCombustibleMonto, setGastoCombustibleMonto] = useState('');
+  const [gastoLimpiezaMonto, setGastoLimpiezaMonto] = useState('');
+  const [gastoCombustibleHecho, setGastoCombustibleHecho] = useState(false);
+  const [gastoLimpiezaHecho, setGastoLimpiezaHecho] = useState(false);
 
   const [fecha, setFecha] = useState(todayStr());
   const [hora, setHora] = useState(reserva.hora_fin.slice(0, 5));
@@ -82,6 +88,8 @@ export function CheckinModal({
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [garantiaEstado, setGarantiaEstado] = useState('devuelta');
   const [garantiaMontoDevuelto, setGarantiaMontoDevuelto] = useState(garantiaMonto ?? '');
+  const [cargoCombustible, setCargoCombustible] = useState('');
+  const [cargoLimpieza, setCargoLimpieza] = useState('');
   const [cobrarAhora, setCobrarAhora] = useState(false);
   const [pagoMonto, setPagoMonto] = useState<number | ''>('');
   const [pagoMedio, setPagoMedio] = useState('efectivo');
@@ -136,7 +144,8 @@ export function CheckinModal({
     if (decision === 'monto_manual' && montoManual) return parseFloat(montoManual);
     return 0;
   })();
-  const totalACobrarAhora = saldoBase + excedentePorCobrar;
+  const totalCargosCierre = (parseFloat(cargoCombustible) || 0) + (parseFloat(cargoLimpieza) || 0);
+  const totalACobrarAhora = saldoBase + excedentePorCobrar + totalCargosCierre;
 
   const formatMoney = (v: string | number | undefined) =>
     v !== undefined ? `$${parseFloat(v.toString()).toLocaleString('es-AR')}` : '$0';
@@ -148,6 +157,26 @@ export function CheckinModal({
     if (checked && pagoMonto === '') {
       setPagoMonto(totalACobrarAhora > 0 ? totalACobrarAhora : '');
     }
+  }
+
+  // D-20: combustible/limpieza van como gasto del vehículo por defecto, NO
+  // como cargo al cliente. Sólo un caso puntual amerita cobrárselo — por eso
+  // el campo de "cobrar al cliente" existe pero está aparte y sin preseleccionar.
+  async function handleGenerarGasto(tipo: 'combustible' | 'lavado', monto: string) {
+    const montoNum = parseFloat(monto);
+    if (!montoNum || montoNum <= 0) return;
+    await createGasto.mutateAsync({
+      tipo,
+      descripcion: tipo === 'combustible'
+        ? `Combustible faltante en check-in — alquiler #${reserva.id}`
+        : `Limpieza en check-in — alquiler #${reserva.id}`,
+      monto: montoNum,
+      medio_pago: 'efectivo',
+      fecha,
+      notas: `Salió ${combustibleCheckout ?? '?'}%, volvió ${combustible}% (combustible) / estado limpieza: ${limpieza}`,
+    });
+    if (tipo === 'combustible') setGastoCombustibleHecho(true);
+    else setGastoLimpiezaHecho(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -197,6 +226,8 @@ export function CheckinModal({
         fecha: pagoFecha,
         notas: pagoNotas || null,
       } : undefined,
+      cargo_combustible: parseFloat(cargoCombustible) || 0,
+      cargo_limpieza: parseFloat(cargoLimpieza) || 0,
     };
 
     try {
@@ -288,6 +319,12 @@ export function CheckinModal({
                   <span>{formatMoney(excedentePorCobrar)}</span>
                 </div>
               )}
+              {totalCargosCierre > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>+ Combustible/limpieza cobrado al cliente (excepcional)</span>
+                  <span>{formatMoney(totalCargosCierre)}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -376,6 +413,46 @@ export function CheckinModal({
                 </button>
               ))}
             </div>
+            {combustibleCheckout != null && combustible < combustibleCheckout && (
+              <div className="rounded-xl bg-muted/50 border border-border p-3 space-y-2">
+                <p className="text-[11px] text-muted-foreground">
+                  D-20: el combustible faltante va como <strong>gasto del vehículo</strong>, no como cargo al cliente. No hay capacidad de tanque cargada — es un monto a criterio, no un cálculo por litros.
+                </p>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Monto del gasto</label>
+                    <input
+                      type="number" min={0} step={100}
+                      value={gastoCombustibleMonto}
+                      onChange={e => setGastoCombustibleMonto(e.target.value)}
+                      placeholder="0"
+                      disabled={gastoCombustibleHecho}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={gastoCombustibleHecho || createGasto.isPending || !gastoCombustibleMonto}
+                    onClick={() => handleGenerarGasto('combustible', gastoCombustibleMonto)}
+                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-accent text-foreground text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    <Wrench className="h-3.5 w-3.5" /> {gastoCombustibleHecho ? 'Gasto generado ✓' : 'Generar gasto'}
+                  </button>
+                </div>
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Caso excepcional: cobrarle al cliente en vez de gasto del vehículo</summary>
+                  <div className="mt-2 space-y-1">
+                    <input
+                      type="number" min={0} step={100}
+                      value={cargoCombustible}
+                      onChange={e => setCargoCombustible(e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                </details>
+              </div>
+            )}
           </div>
 
           {/* Limpieza */}
@@ -397,6 +474,46 @@ export function CheckinModal({
                 </button>
               ))}
             </div>
+            {limpieza !== 'limpio' && (
+              <div className="rounded-xl bg-muted/50 border border-border p-3 space-y-2">
+                <p className="text-[11px] text-muted-foreground">
+                  D-20: la limpieza también va como <strong>gasto del vehículo</strong>, no como cargo al cliente.
+                </p>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Monto del gasto</label>
+                    <input
+                      type="number" min={0} step={100}
+                      value={gastoLimpiezaMonto}
+                      onChange={e => setGastoLimpiezaMonto(e.target.value)}
+                      placeholder="0"
+                      disabled={gastoLimpiezaHecho}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={gastoLimpiezaHecho || createGasto.isPending || !gastoLimpiezaMonto}
+                    onClick={() => handleGenerarGasto('lavado', gastoLimpiezaMonto)}
+                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-accent text-foreground text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    <Wrench className="h-3.5 w-3.5" /> {gastoLimpiezaHecho ? 'Gasto generado ✓' : 'Generar gasto'}
+                  </button>
+                </div>
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Caso excepcional: cobrarle al cliente en vez de gasto del vehículo</summary>
+                  <div className="mt-2 space-y-1">
+                    <input
+                      type="number" min={0} step={100}
+                      value={cargoLimpieza}
+                      onChange={e => setCargoLimpieza(e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                </details>
+              </div>
+            )}
           </div>
 
           {/* Resolución de garantía */}

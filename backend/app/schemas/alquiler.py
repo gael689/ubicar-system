@@ -57,6 +57,9 @@ class CheckinCreate(BaseModel):
     garantia_monto_devuelto: Decimal | None = None
     registrado_en_tiempo_real: bool = True
     pago_inmediato: PagoInmediato | None = None
+    # Cargos de cierre (Fase 1, ítem 24): montos editables, sin auto-cálculo
+    cargo_combustible: Decimal = Decimal("0")
+    cargo_limpieza: Decimal = Decimal("0")
 
     @model_validator(mode="after")
     def validar_cobro_parcial(self) -> "CheckinCreate":
@@ -124,6 +127,8 @@ class AlquilerResponse(BaseModel):
     excedente_bonificado: bool
     decidido_por: int | None
     motivo_bonificacion: str | None
+    cargo_combustible: Decimal = Decimal("0")
+    cargo_limpieza: Decimal = Decimal("0")
     # Contrato
     contrato_firmado: bool
     contrato_url: str | None

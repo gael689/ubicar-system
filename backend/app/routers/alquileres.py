@@ -145,6 +145,8 @@ def checkin(
             garantia_estado=payload.garantia_estado,
             garantia_monto_devuelto=payload.garantia_monto_devuelto,
             pago_inmediato=payload.pago_inmediato,
+            cargo_combustible=payload.cargo_combustible,
+            cargo_limpieza=payload.cargo_limpieza,
         )
         db.commit()
     except ConflictError as e:
