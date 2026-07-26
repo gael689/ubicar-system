@@ -280,6 +280,14 @@ El rechazo es el caso que más plata cuesta y hoy no está contemplado en ningú
 
 **Vista de Echeqs pedida:** listado con columnas **Importe · Fecha de pago · Cliente · Banco · Estado · Días restantes**, agrupable por vencimiento, con totalizador de "cartera de echeqs por mes" — que es lo que se necesita para saber con qué plata se cuenta.
 
+**✅ Backend hecho (2026-07-26), migración 020.** `cliente_id`, `proveedor_nombre` (para emitidos), `fecha_acreditacion`, `motivo_rechazo`, `cuenta_corriente_id`, `movimiento_cc_id`, `activo`, `creado_por`, `created_at`. No se agregó `cuit_librador` (dato de menor prioridad, se suma cuando haga falta) ni `fecha_pago` como campo separado — `fecha_cobro` (ya existía) cumple ese rol.
+
+Ciclo implementado en `routers/echeqs.py`: `recibido` + `cliente_id` → **crédito automático** al crear (vía `CuentaCorrienteService`). `rechazado` → **contra-asiento automático** que revierte el crédito, exige `motivo_rechazo` a nivel de API (422 si falta). Nuevo `DELETE /echeqs/{id}` (baja lógica — antes **no existía ninguna forma** de dar de baja un echeq) que también revierte el crédito si estaba vigente. `depositado`/`endosado`/`cobrado` no generan movimiento nuevo — el crédito ya se registró al entrar en cartera, sólo cambia el estado y `fecha_acreditacion`.
+
+**Pendiente:** la vista de Echeqs con las columnas pedidas y el totalizador mensual (UI, no backend) — sección 3.9 más abajo. El automatismo para `emitido` (echeqs que la empresa entrega a un proveedor) no se tocó — sólo afecta a un proveedor, no a la cuenta corriente de un cliente propio.
+
+Verificado en vivo vía HTTP real: echeq recibido de un cliente generó el crédito exacto; intentar rechazar sin motivo dio 422; rechazar con motivo revirtió el saldo a su valor anterior exacto; dar de baja un segundo echeq (sin rechazarlo) también revirtió su crédito; el listado por defecto excluye los dados de baja.
+
 ### 3.5 Nuevo módulo — Comprobantes / Facturas
 
 Pedido: *"lugar para poner facturas"*. Hoy sólo existe `pago.con_factura: bool`.

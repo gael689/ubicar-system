@@ -211,10 +211,10 @@
 | FIN-10 | Límite de crédito por cliente | 🟡 | P2 | Campo `limite_credito` ya existe en el modelo; falta la alerta al superarlo |
 | FIN-11 | Asientos automáticos desde alquiler/pago/multa | 🟡 | P1 | **Arreglado 2026-07-26**: checkout, anticipo, cobros en checkout/check-in y excedente ya generan asiento automático (ledger completo, confirmado con el usuario — pendiente ok final de Franco/Martín, ver `VALIDAR_CON_DUENOS.md`). Falta sólo el de **multa** |
 | FIN-12 | Anular movimiento con contra-asiento | ✅ | — | **Hecho 2026-07-26**: `POST /cuentas-corrientes/movimientos/{id}/anular`. El borrado de un pago en cta. cte. ahora anula el movimiento automáticamente en vez de bloquear |
-| FIN-13 | **Echeq vinculado al cliente** | ⬜ | P1 | Hoy `contraparte` es texto libre |
-| FIN-14 | **Echeq con importe y fecha de pago** | 🟡 | P1 | Falta separar fecha de pago de fecha de acreditación |
-| FIN-15 | Ciclo completo del echeq | 🟡 | P1 | **2026-07-26**: se arregló que el ciclo funcionara en absoluto (ver hallazgo abajo). Sigue faltando el caso de rechazo con contra-asiento (Fase 1) |
-| FIN-16 | Echeq genera movimiento en cuenta corriente | ⬜ | P1 | |
+| FIN-13 | **Echeq vinculado al cliente** | ✅ | — | **Hecho 2026-07-26**: `cliente_id` (migración 020). `contraparte` sigue como texto libre para emitidos/proveedores |
+| FIN-14 | **Echeq con importe y fecha de pago** | ✅ | — | **Hecho 2026-07-26**: `fecha_cobro` (fecha pactada) separada de `fecha_acreditacion` (cuándo entró la plata de verdad) |
+| FIN-15 | Ciclo completo del echeq | ✅ | — | **Completado 2026-07-26**: rechazo revierte el crédito con contra-asiento (exige `motivo_rechazo`), baja lógica también revierte |
+| FIN-16 | Echeq genera movimiento en cuenta corriente | ✅ | — | **Hecho 2026-07-26**: recibido con `cliente_id` genera crédito automático al entrar en cartera |
 | FIN-17 | Cartera de echeqs por mes | ⬜ | P2 | Saber con qué plata se cuenta |
 | FIN-18 | **Recibos con PDF estético** | ⬜ | P1 | Ver RCB-* |
 | FIN-19 | Facturas / comprobantes | ⬜ | P1 | Hoy sólo un booleano `con_factura` |

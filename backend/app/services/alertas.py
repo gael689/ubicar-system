@@ -46,11 +46,16 @@ def obtener_alertas(db: Session) -> list[dict]:
             "entidad_tipo": "cliente",
         })
 
-    # Echeqs próximos (7 días)
+    # Echeqs próximos (7 días) — D-19/DECISIONES.md: en producción esto pasa
+    # a ser T-2 días vía el motor de notificaciones (Fase 2), no 7.
     fecha_limite_echeq = hoy + timedelta(days=7)
     echeqs = (
         db.query(Echeq)
-        .filter(Echeq.fecha_cobro <= fecha_limite_echeq, Echeq.estado == "pendiente")
+        .filter(
+            Echeq.fecha_cobro <= fecha_limite_echeq,
+            Echeq.estado == "en_cartera",
+            Echeq.activo == True,
+        )
         .all()
     )
     for echeq in echeqs:
