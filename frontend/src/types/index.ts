@@ -591,6 +591,7 @@ export interface Reserva {
   descuento_motivo?: string | null;
   descuento_autorizado_por?: number | null;
   con_factura?: boolean;
+  motivo_cancelacion?: string | null;
   // D2 solape
   bloqueada_por_solape: boolean;
   // Garantía

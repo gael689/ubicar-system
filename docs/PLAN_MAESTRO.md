@@ -902,7 +902,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 25. ✅ **Pipeline de PDF server-side** (ReportLab) — hecho 2026-07-26, usado por Recibos. Contratos/facturas/presupuestos todavía sin migrar a este pipeline
 26. ✅ **Módulo de Recibos** — hecho 2026-07-26, versión simplificada (ver 3.6-bis): numeración vía secuencia + PDF + monto en letras + descarga. **Imputación FIFO y medios de pago mixtos quedaron afuera** — a validar con los dueños si hace falta
 27. ✅ Módulo Comprobantes/Facturas (carga manual + PDF + vínculo a CC) — hecho 2026-07-26 (migración 029, FIN-19)
-28. UI: ledger con Debe/Haber/Saldo + aging · grilla de tarifas · liquidación en el check-in · panel de estado en la reserva
+28. ✅ UI: ledger con Debe/Haber/Saldo + aging (`CuentaCorrienteTab.tsx`) · grilla de tarifas (`/flota/categorias`) · liquidación en el check-in (`CheckinModal.tsx`) · panel de estado en la reserva (`ReservaInfoModal.tsx`, mejorado no rediseñado) — hecho 2026-07-26, FIN-09/UI-07/UI-08/UI-10. **Fase 1 completa.**
 
 ### 🔔 Fase 2 — Alertas y Notificaciones (2 semanas)
 29. Tabla `notificaciones` + deduplicación + auto-resolución

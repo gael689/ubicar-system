@@ -55,6 +55,24 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
 
   const saldo = cc?.saldo ?? 0;
 
+  // Aging de deuda (FIN-09): sólo débitos vigentes (no anulados) con
+  // fecha_vencimiento pasada. Cada movimiento tiene su propio vencimiento
+  // (calculado según la condición de pago), no es un aging "por cliente".
+  const hoy = new Date();
+  const aging = { d0_30: 0, d31_60: 0, d61_90: 0, d90mas: 0 };
+  for (const m of movimientos) {
+    if (m.tipo !== 'debito' || m.anulado || !m.fecha_vencimiento) continue;
+    const venc = new Date(m.fecha_vencimiento);
+    const diasVencido = Math.floor((hoy.getTime() - venc.getTime()) / 86400000);
+    if (diasVencido <= 0) continue;
+    const monto = Number(m.monto);
+    if (diasVencido <= 30) aging.d0_30 += monto;
+    else if (diasVencido <= 60) aging.d31_60 += monto;
+    else if (diasVencido <= 90) aging.d61_90 += monto;
+    else aging.d90mas += monto;
+  }
+  const totalVencido = aging.d0_30 + aging.d31_60 + aging.d61_90 + aging.d90mas;
+
   return (
     <div className="space-y-4">
       {/* Saldo */}
@@ -80,6 +98,22 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
             Movimiento manual
           </button>
         </div>
+
+        {totalVencido > 0 && (
+          <div className="mt-4 pt-4 border-t border-border grid grid-cols-4 gap-2">
+            {[
+              { label: '0-30 días', value: aging.d0_30, color: 'text-warning' },
+              { label: '31-60 días', value: aging.d31_60, color: 'text-orange-600' },
+              { label: '61-90 días', value: aging.d61_90, color: 'text-danger' },
+              { label: '+90 días', value: aging.d90mas, color: 'text-danger font-bold' },
+            ].map(b => (
+              <div key={b.label} className="rounded-lg bg-muted/40 p-2 text-center">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{b.label}</p>
+                <p className={`text-sm font-semibold ${b.color}`}>{formatCurrency(b.value)}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* Formulario */}

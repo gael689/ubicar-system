@@ -195,6 +195,11 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
               <p className="text-sm font-medium text-foreground">
                 {reserva.cliente?.nombre_completo ?? `Cliente ${reserva.cliente_id}`}
               </p>
+              {reserva.conductor && (
+                <p className="text-xs text-muted-foreground">
+                  Conductor: {reserva.conductor.nombre_completo}
+                </p>
+              )}
             </div>
           </div>
 
@@ -236,13 +241,31 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Precio total</p>
                 <p className="text-sm font-bold text-success">
                   ${parseFloat(reserva.precio_total).toLocaleString('es-AR')}
+                  {reserva.con_factura && (
+                    <span className="ml-2 align-middle inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      Con factura
+                    </span>
+                  )}
                 </p>
+                {reserva.precio_lista && parseFloat(reserva.precio_lista) !== parseFloat(reserva.precio_total) && (
+                  <p className="text-xs text-amber-600">
+                    Precio de lista: ${parseFloat(reserva.precio_lista).toLocaleString('es-AR')}
+                    {reserva.descuento_motivo && ` — ${reserva.descuento_motivo}`}
+                  </p>
+                )}
                 {reserva.anticipo_monto && (
                   <p className="text-xs text-muted-foreground">
                     Anticipo: ${parseFloat(reserva.anticipo_monto).toLocaleString('es-AR')} ({reserva.anticipo_medio_pago})
                   </p>
                 )}
               </div>
+            </div>
+          )}
+
+          {reserva.estado === 'cancelada' && reserva.motivo_cancelacion && (
+            <div className="rounded-lg bg-danger/10 border border-danger/20 p-3">
+              <p className="text-xs font-semibold text-danger uppercase tracking-wide mb-1">Motivo de cancelación</p>
+              <p className="text-sm text-foreground whitespace-pre-wrap">{reserva.motivo_cancelacion}</p>
             </div>
           )}
 

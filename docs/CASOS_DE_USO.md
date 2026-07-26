@@ -207,7 +207,7 @@
 | FIN-06 | Cuenta corriente por cliente | ✅ | — | **Arreglado 2026-07-26**: ahora es un ledger — `saldo_posterior` en cada movimiento, nunca se edita a mano |
 | FIN-07 | **Condición de pago (contado / 15 / 30 / 60 / 90)** | ✅ | — | **Hecho 2026-07-26**: campo `condicion` por movimiento y `condicion_pago` default por cuenta |
 | FIN-08 | **Fecha de vencimiento por movimiento** | ✅ | — | **Hecho 2026-07-26**: se calcula solo desde la condición (`domain/cuenta_corriente.py`), o se puede fijar a mano |
-| FIN-09 | Aging de deuda (0-30 / 31-60 / 61-90 / +90) | ⬜ | P1 | El dato (`fecha_vencimiento`) ya existe; falta la vista agrupada en la UI |
+| FIN-09 | Aging de deuda (0-30 / 31-60 / 61-90 / +90) | ✅ | — | **Hecho 2026-07-26**: `CuentaCorrienteTab.tsx` agrupa los débitos vigentes vencidos por bucket, calculado en el frontend a partir de `fecha_vencimiento` (sin endpoint nuevo) |
 | FIN-10 | Límite de crédito por cliente | 🟡 | P2 | Campo `limite_credito` ya existe en el modelo; falta la alerta al superarlo |
 | FIN-11 | Asientos automáticos desde alquiler/pago/multa/recibo | ✅ | — | **Hecho 2026-07-26**: checkout, anticipo, cobros, excedente, multa y ahora **recibo** generan asiento automático (ledger completo, pendiente ok final de Franco/Martín, ver `VALIDAR_CON_DUENOS.md`) |
 | FIN-12 | Anular movimiento con contra-asiento | ✅ | — | **Hecho 2026-07-26**: `POST /cuentas-corrientes/movimientos/{id}/anular`. El borrado de un pago en cta. cte. ahora anula el movimiento automáticamente en vez de bloquear |
@@ -319,8 +319,8 @@
 | UI-04 | **Menú más chico** | ⬜ | P2 | 9 items → 6 grupos |
 | UI-05 | **Más filas visibles en Reservas** | ⬜ | P2 | Sidebar auto-colapsado + filtros plegables |
 | UI-06 | Toggle de densidad | ⬜ | P3 | |
-| UI-07 | Panel de estado en la ficha de reserva | ⬜ | P1 | Qué pasa y qué hacer, sin cruzar pantallas |
-| UI-08 | Liquidación completa en el check-in | ⬜ | P1 | |
+| UI-07 | Panel de estado en la ficha de reserva | 🟡 | P1 | **Mejorado 2026-07-26**: `ReservaInfoModal.tsx` ahora muestra conductor (si es distinto del cliente), precio de lista vs cobrado + motivo del descuento, badge "con factura", y motivo de cancelación. No es un rediseño completo (eso sigue siendo Fase 3) |
+| UI-08 | Liquidación completa en el check-in | ✅ | — | **Hecho 2026-07-26**: el "Resumen financiero" de `CheckinModal.tsx` ya incluía saldo base + excedente; ahora también suma cargos de cierre cobrados al cliente (caso excepcional, D-20) |
 | UI-09 | Semáforo de validaciones en el check-out | ⬜ | P1 | |
 | UI-10 | Grilla de tarifas por categoría y banda | 🟡 | P1 | **Hecho 2026-07-26** en versión simple (lista expandible por categoría en `/flota/categorias`, no una grilla categoría×banda todavía) |
 | UI-11 | Búsqueda global (Cmd+K) | ⬜ | P3 | |
