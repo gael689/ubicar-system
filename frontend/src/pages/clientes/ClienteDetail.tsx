@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { LicenciaBadge } from '@/components/clientes/LicenciaBadge';
 import { ClienteFormDialog } from '@/components/clientes/ClienteFormDialog';
 import { ConductoresTab } from '@/components/clientes/ConductoresTab';
+import { ContactosTab } from '@/components/clientes/ContactosTab';
 import { ClienteHistorial } from '@/components/clientes/ClienteHistorial';
 import { ClienteDocumentosTab } from '@/components/clientes/ClienteDocumentosTab';
 import { TarjetaTab } from '@/components/clientes/TarjetaTab';
@@ -21,6 +22,7 @@ import { RecibosTab } from '@/components/clientes/RecibosTab';
 
 import { useCliente, useDeactivateCliente, useReactivateCliente } from '@/hooks/useClientes';
 import { formatDate } from '@/lib/utils';
+import { CONDICION_IVA_LABEL, CONDICION_PAGO_LABEL } from '@/lib/constants';
 
 export function ClienteDetail() {
   const { id } = useParams<{ id: string }>();
@@ -149,6 +151,9 @@ export function ClienteDetail() {
           {cliente.tipo !== 'empresa' && (
             <TabsTrigger value="conductores">Conductores</TabsTrigger>
           )}
+          {cliente.tipo === 'empresa' && (
+            <TabsTrigger value="contactos">Contactos</TabsTrigger>
+          )}
           <TabsTrigger value="historial">Historial</TabsTrigger>
           <TabsTrigger value="tarjeta">Tarjeta</TabsTrigger>
           <TabsTrigger value="multas">Multas</TabsTrigger>
@@ -169,13 +174,29 @@ export function ClienteDetail() {
               <Field label="Email" value={cliente.email ?? '—'} />
               <Field label="Tipo" value={cliente.tipo === 'empresa' ? 'Empresa' : 'Particular'} />
               <Field label="Cliente frecuente" value={cliente.es_frecuente ? 'Sí' : 'No'} />
-              {cliente.tipo !== 'empresa' && (
+              {cliente.tipo === 'empresa' ? (
+                <>
+                  <Field label="Razón social" value={cliente.razon_social ?? '—'} />
+                  <Field label="Condición IVA" value={cliente.condicion_iva ? CONDICION_IVA_LABEL[cliente.condicion_iva] : '—'} />
+                </>
+              ) : (
                 <>
                   <Field label="Licencia N°" value={cliente.licencia_numero} />
                   <Field label="Categoría" value={cliente.licencia_categoria} />
                   <Field label="Vencimiento licencia" value={formatDate(cliente.licencia_vencimiento)} />
+                  <Field label="Fecha de nacimiento" value={cliente.fecha_nacimiento ? formatDate(cliente.fecha_nacimiento) : '—'} />
+                  <Field label="Licencia desde" value={cliente.licencia_desde ? formatDate(cliente.licencia_desde) : '—'} />
+                  <Field label="País de licencia" value={cliente.licencia_pais ?? '—'} />
                 </>
               )}
+              <Field label="Domicilio" value={cliente.domicilio ?? '—'} />
+              <Field label="Localidad" value={cliente.localidad ?? '—'} />
+              <Field label="Provincia" value={cliente.provincia ?? '—'} />
+              <Field label="Código postal" value={cliente.codigo_postal ?? '—'} />
+              <Field
+                label="Condición de pago"
+                value={cliente.condicion_pago_default ? CONDICION_PAGO_LABEL[cliente.condicion_pago_default] : '—'}
+              />
               <Field label="Alta en el sistema" value={formatDate(cliente.created_at.split('T')[0])} />
               {cliente.notas && (
                 <div className="sm:col-span-2 py-1.5 border-b border-border/50">
@@ -194,6 +215,12 @@ export function ClienteDetail() {
         {cliente.tipo !== 'empresa' && (
           <TabsContent value="conductores">
             <ConductoresTab clienteId={cliente.id} />
+          </TabsContent>
+        )}
+
+        {cliente.tipo === 'empresa' && (
+          <TabsContent value="contactos">
+            <ContactosTab clienteId={cliente.id} />
           </TabsContent>
         )}
 

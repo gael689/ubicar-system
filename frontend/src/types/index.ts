@@ -384,6 +384,7 @@ export interface ConductorAdicional {
   dni?: string;
   licencia_numero?: string;
   licencia_vencimiento: string;
+  activo: boolean;
 }
 
 export interface ConductorAdicionalCreate {
@@ -393,7 +394,41 @@ export interface ConductorAdicionalCreate {
   licencia_vencimiento: string;
 }
 
-export interface Cliente {
+export type CondicionIva = 'responsable_inscripto' | 'monotributo' | 'consumidor_final' | 'exento';
+
+export interface ClienteContacto {
+  id: number;
+  cliente_id: number;
+  nombre: string;
+  puesto?: string | null;
+  telefono?: string | null;
+  email?: string | null;
+  activo: boolean;
+  created_at: string;
+}
+
+export interface ClienteContactoCreate {
+  nombre: string;
+  puesto?: string | null;
+  telefono?: string | null;
+  email?: string | null;
+}
+
+// Campos fiscales, compartidos por Cliente/ClienteCreate/ClienteUpdate.
+export interface ClienteDatosFiscales {
+  razon_social?: string | null;
+  condicion_iva?: CondicionIva | null;
+  domicilio?: string | null;
+  localidad?: string | null;
+  provincia?: string | null;
+  codigo_postal?: string | null;
+  fecha_nacimiento?: string | null;
+  licencia_pais?: string | null;
+  licencia_desde?: string | null;
+  condicion_pago_default?: CondicionPago | null;
+}
+
+export interface Cliente extends ClienteDatosFiscales {
   id: number;
   nombre_completo: string;
   dni_cuit: string;
@@ -408,9 +443,10 @@ export interface Cliente {
   activo: boolean;
   created_at: string;
   conductores_adicionales: ConductorAdicional[];
+  contactos: ClienteContacto[];
 }
 
-export interface ClienteCreate {
+export interface ClienteCreate extends ClienteDatosFiscales {
   nombre_completo: string;
   dni_cuit: string;
   telefono: string;
@@ -421,11 +457,12 @@ export interface ClienteCreate {
   notas?: string | null;
 }
 
-export interface ClienteUpdate {
+export interface ClienteUpdate extends ClienteDatosFiscales {
   nombre_completo?: string;
   telefono?: string;
   email?: string | null;
   licencia_vencimiento?: string;
+  tipo?: 'particular' | 'empresa';
   es_frecuente?: boolean;
   notas?: string | null;
 }

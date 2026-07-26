@@ -397,6 +397,12 @@ Necesarios para facturar y para operar cuenta corriente con empresas:
 
 `razon_social`, `condicion_iva` (`responsable_inscripto`/`monotributo`/`consumidor_final`/`exento`), `domicilio`, `localidad`, `provincia`, `codigo_postal`, `fecha_nacimiento` (edad mínima de conductor), `licencia_pais`, `licencia_desde` (antigüedad mínima), `condicion_pago_default`.
 
+**✅ Hecho (2026-07-26), migración 023.** Los 10 campos de arriba, todos nullable — se completan con el tiempo, no bloquean el alta rápida. Además, nueva tabla `cliente_contactos` (`nombre`, `puesto`, `telefono`, `email`, baja lógica) para que una empresa pueda tener varios contactos con roles distintos (CLI-04/05). `ClienteFormDialog.tsx` ahora es condicional: empresa ve razón social + condición IVA; particular ve fecha de nacimiento + país/antigüedad de licencia. Ambos ven domicilio/localidad/provincia/código postal + condición de pago default.
+
+**Validaciones de negocio (edad mínima, antigüedad de licencia) todavía NO implementadas** — sólo se agregaron los campos (CLI-15/16). Falta decidir los mínimos con Franco/Martín y aplicarlos al crear la reserva.
+
+**De paso, bug corregido:** `ConductorAdicional` se borraba en duro (`db.delete()`) pese a que la regla "nunca eliminar" ya estaba establecida — se agregó `activo` y la baja pasó a ser lógica, igual que el resto de las entidades.
+
 ### 3.8 Nuevos automatismos (lo que hace que todo esté conectado)
 
 | Evento | Asiento automático en CC | Estado |
@@ -880,7 +886,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 16. ✅ Rediseñar cuenta corriente como ledger inmutable (`saldo_posterior`, `condicion`, `fecha_vencimiento`, anulación, FKs) — hecho 2026-07-26 (migración 019). Ver detalle abajo
 17. ✅ Echeq: `cliente_id` + ciclo de vida completo + generación de movimiento en CC — hecho 2026-07-26 (migración 020). Frontend: rechazo ahora exige motivo (ver 3.6-bis)
 18. ✅ Automatismos de asientos (checkout → débito, pago → crédito, multa → débito, recibo → crédito) — hecho 2026-07-26
-19. Datos fiscales del cliente + **empresa vs particular** (contactos con puesto, formulario condicional)
+19. ✅ Datos fiscales del cliente + **empresa vs particular** (contactos con puesto, formulario condicional) — hecho 2026-07-26 (migración 023). Ver detalle abajo
 20. **Conductor ≠ pagador** en la reserva — prerequisito para imputar multas en empresas
 21. **Rediseño de tarifas**: `precio_por_dia` explícito, por vehículo **y** por categoría, bandas configurables
 22. **Descuentos auditados** (precio de lista vs cobrado, motivo, autorizado por) + **con/sin factura** en la reserva

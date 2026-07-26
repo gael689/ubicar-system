@@ -137,6 +137,21 @@ export const ESTADO_MULTA_COLOR: Record<string, string> = {
   apelando: 'bg-muted/40 text-muted-foreground border-border',
 };
 
+export const CONDICION_IVA_LABEL: Record<string, string> = {
+  responsable_inscripto: 'Responsable Inscripto',
+  monotributo: 'Monotributo',
+  consumidor_final: 'Consumidor Final',
+  exento: 'Exento',
+};
+
+export const CONDICION_PAGO_LABEL: Record<string, string> = {
+  contado: 'Contado',
+  cta_cte_15: 'Cta. Cte. 15 días',
+  cta_cte_30: 'Cta. Cte. 30 días',
+  cta_cte_60: 'Cta. Cte. 60 días',
+  cta_cte_90: 'Cta. Cte. 90 días',
+};
+
 export const ESTADO_RECIBO_LABEL: Record<string, string> = {
   emitido: 'Emitido',
   anulado: 'Anulado',

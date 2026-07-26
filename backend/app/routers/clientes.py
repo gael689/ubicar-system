@@ -6,7 +6,8 @@ from app.core.responses import ok, paginated
 from app.models.usuario import Usuario
 from app.schemas.cliente import (
     ClienteCreate, ClienteUpdate, ClienteResponse,
-    ConductorAdicionalCreate, ConductorAdicionalResponse
+    ConductorAdicionalCreate, ConductorAdicionalResponse,
+    ClienteContactoCreate, ClienteContactoResponse,
 )
 from app.services.cliente_service import ClienteService
 
@@ -77,10 +78,11 @@ def delete_cliente(
 @router.get("/{cliente_id}/conductores")
 def list_conductores(
     cliente_id: int,
+    incluir_inactivos: bool = Query(False, description="Si true, incluye los dados de baja"),
     service: ClienteService = Depends(get_cliente_service),
     _: Usuario = Depends(get_current_user),
 ):
-    conductores = service.get_conductores(cliente_id)
+    conductores = service.get_conductores(cliente_id, incluir_inactivos=incluir_inactivos)
     return ok([ConductorAdicionalResponse.model_validate(c) for c in conductores])
 
 @router.post("/{cliente_id}/conductores", status_code=status.HTTP_201_CREATED)
@@ -93,22 +95,6 @@ def add_conductor(
     conductor = service.add_conductor(cliente_id, payload)
     return ok(ConductorAdicionalResponse.model_validate(conductor), "Conductor adicional agregado")
 
-@router.delete("/conductores/{conductor_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_conductor(
-    conductor_id: int,
-    service: ClienteService = Depends(get_cliente_service),
-    _: Usuario = Depends(get_current_user),
-):
-    """Elimina permanentemente un conductor adicional."""
-    # Notice: we route to /conductores/{id} and not /clientes/... for simplicity of deletion
-    # It requires adding `/conductores` to the prefix if not already mapped correctly, 
-    # but since it's on this APIRouter, it will become `/clientes/conductores/{conductor_id}`.
-    # To fix this mismatch (we want `/api/v1/conductores/{id}` but this router is prefixed `/clientes`),
-    # we can just use `/clientes/conductores/{conductor_id}` OR register it properly.
-    # Let's map it as `@router.delete("/{cliente_id}/conductores/{conductor_id}")` to keep the prefix intact.
-    pass
-
-# We redefine the delete correctly to fit the router prefix:
 @router.delete("/{cliente_id}/conductores/{conductor_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_conductor(
     cliente_id: int,
@@ -116,5 +102,38 @@ def delete_conductor(
     service: ClienteService = Depends(get_cliente_service),
     _: Usuario = Depends(get_current_user),
 ):
-    """Elimina permanentemente un conductor adicional."""
+    """Baja lógica."""
     service.delete_conductor(conductor_id)
+
+
+# --- Contactos (empresas) ---
+
+@router.get("/{cliente_id}/contactos")
+def list_contactos(
+    cliente_id: int,
+    incluir_inactivos: bool = Query(False, description="Si true, incluye los dados de baja"),
+    service: ClienteService = Depends(get_cliente_service),
+    _: Usuario = Depends(get_current_user),
+):
+    contactos = service.get_contactos(cliente_id, incluir_inactivos=incluir_inactivos)
+    return ok([ClienteContactoResponse.model_validate(c) for c in contactos])
+
+@router.post("/{cliente_id}/contactos", status_code=status.HTTP_201_CREATED)
+def add_contacto(
+    cliente_id: int,
+    payload: ClienteContactoCreate,
+    service: ClienteService = Depends(get_cliente_service),
+    _: Usuario = Depends(get_current_user),
+):
+    contacto = service.add_contacto(cliente_id, payload)
+    return ok(ClienteContactoResponse.model_validate(contacto), "Contacto agregado")
+
+@router.delete("/{cliente_id}/contactos/{contacto_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_contacto(
+    cliente_id: int,
+    contacto_id: int,
+    service: ClienteService = Depends(get_cliente_service),
+    _: Usuario = Depends(get_current_user),
+):
+    """Baja lógica."""
+    service.delete_contacto(contacto_id)

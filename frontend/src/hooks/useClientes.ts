@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { extractError } from '@/lib/utils';
-import type { ApiResponse, PaginatedResponse, Cliente, ClienteCreate, ClienteUpdate } from '@/types';
+import type { ApiResponse, PaginatedResponse, Cliente, ClienteCreate, ClienteUpdate, ClienteContacto, ClienteContactoCreate } from '@/types';
 
 export interface ConductorAdicional {
   id: number;
@@ -11,6 +11,7 @@ export interface ConductorAdicional {
   dni?: string;
   licencia_numero?: string;
   licencia_vencimiento: string;
+  activo: boolean;
 }
 
 export interface ConductorAdicionalCreate {
@@ -36,6 +37,7 @@ const KEYS = {
   details: () => [...KEYS.all, 'detail'] as const,
   detail: (id: number) => [...KEYS.details(), id] as const,
   conductores: (clienteId: number) => [...KEYS.all, 'conductores', clienteId] as const,
+  contactos: (clienteId: number) => [...KEYS.all, 'contactos', clienteId] as const,
 };
 
 export function useClientes(filters: ClienteFilters = {}) {
@@ -160,6 +162,48 @@ export function useDeleteConductor(clienteId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEYS.conductores(clienteId) });
       toast.success('Conductor eliminado');
+    },
+    onError: (err) => toast.error(extractError(err)),
+  });
+}
+
+// --- Contactos (empresas) ---
+
+export function useContactos(clienteId: number) {
+  return useQuery({
+    queryKey: KEYS.contactos(clienteId),
+    queryFn: async () => {
+      const { data } = await api.get<ApiResponse<ClienteContacto[]>>(`/clientes/${clienteId}/contactos`);
+      return data.data;
+    },
+    enabled: !!clienteId,
+  });
+}
+
+export function useAddContacto(clienteId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: ClienteContactoCreate) => {
+      const { data } = await api.post<ApiResponse<ClienteContacto>>(`/clientes/${clienteId}/contactos`, body);
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEYS.contactos(clienteId) });
+      toast.success('Contacto agregado');
+    },
+    onError: (err) => toast.error(extractError(err)),
+  });
+}
+
+export function useDeleteContacto(clienteId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (contactoId: number) => {
+      await api.delete(`/clientes/${clienteId}/contactos/${contactoId}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEYS.contactos(clienteId) });
+      toast.success('Contacto eliminado');
     },
     onError: (err) => toast.error(extractError(err)),
   });

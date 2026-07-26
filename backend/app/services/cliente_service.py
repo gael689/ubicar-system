@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
-from app.models.cliente import Cliente, ConductorAdicional
+from app.models.cliente import Cliente, ConductorAdicional, ClienteContacto
 from app.repositories.cliente_repo import ClienteRepository
-from app.schemas.cliente import ClienteCreate, ClienteUpdate, ConductorAdicionalCreate
+from app.schemas.cliente import ClienteCreate, ClienteUpdate, ConductorAdicionalCreate, ClienteContactoCreate
 
 
 class ClienteService:
@@ -80,13 +80,13 @@ class ClienteService:
 
     # --- Conductores Adicionales ---
 
-    def get_conductores(self, cliente_id: int) -> list[ConductorAdicional]:
+    def get_conductores(self, cliente_id: int, incluir_inactivos: bool = False) -> list[ConductorAdicional]:
         self.get_by_id(cliente_id) # Verifica que el cliente exista
-        return self.repo.get_conductores_by_cliente(cliente_id)
+        return self.repo.get_conductores_by_cliente(cliente_id, incluir_inactivos=incluir_inactivos)
 
     def add_conductor(self, cliente_id: int, data: ConductorAdicionalCreate) -> ConductorAdicional:
         self.get_by_id(cliente_id) # Verifica que el cliente exista
-        
+
         conductor = ConductorAdicional(
             cliente_id=cliente_id,
             **data.model_dump()
@@ -94,7 +94,25 @@ class ClienteService:
         return self.repo.add_conductor(conductor)
 
     def delete_conductor(self, conductor_id: int) -> None:
+        """Baja lógica. NUNCA borra (ver regla-nunca-eliminar)."""
         conductor = self.repo.get_conductor(conductor_id)
         if not conductor:
             raise NotFoundError(f"Conductor adicional con ID {conductor_id} no encontrado")
-        self.repo.delete_conductor(conductor)
+        self.repo.deactivate_conductor(conductor)
+
+    # --- Contactos (empresas) ---
+
+    def get_contactos(self, cliente_id: int, incluir_inactivos: bool = False) -> list[ClienteContacto]:
+        self.get_by_id(cliente_id)
+        return self.repo.get_contactos_by_cliente(cliente_id, incluir_inactivos=incluir_inactivos)
+
+    def add_contacto(self, cliente_id: int, data: ClienteContactoCreate) -> ClienteContacto:
+        self.get_by_id(cliente_id)
+        contacto = ClienteContacto(cliente_id=cliente_id, **data.model_dump())
+        return self.repo.add_contacto(contacto)
+
+    def delete_contacto(self, contacto_id: int) -> None:
+        contacto = self.repo.get_contacto(contacto_id)
+        if not contacto:
+            raise NotFoundError(f"Contacto con ID {contacto_id} no encontrado")
+        self.repo.deactivate_contacto(contacto)

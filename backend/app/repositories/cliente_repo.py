@@ -5,7 +5,7 @@ Solo queries SQLAlchemy — sin lógica de negocio.
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 
-from app.models.cliente import Cliente, ConductorAdicional
+from app.models.cliente import Cliente, ConductorAdicional, ClienteContacto
 from app.repositories.base import BaseRepository
 
 
@@ -62,10 +62,37 @@ class ClienteRepository(BaseRepository[Cliente]):
         stmt = select(ConductorAdicional).where(ConductorAdicional.id == conductor_id)
         return self.db.execute(stmt).scalar_one_or_none()
 
-    def get_conductores_by_cliente(self, cliente_id: int) -> list[ConductorAdicional]:
-        stmt = select(ConductorAdicional).where(ConductorAdicional.cliente_id == cliente_id).order_by(ConductorAdicional.nombre_completo)
+    def get_conductores_by_cliente(self, cliente_id: int, incluir_inactivos: bool = False) -> list[ConductorAdicional]:
+        stmt = select(ConductorAdicional).where(ConductorAdicional.cliente_id == cliente_id)
+        if not incluir_inactivos:
+            stmt = stmt.where(ConductorAdicional.activo == True)
+        stmt = stmt.order_by(ConductorAdicional.nombre_completo)
         return list(self.db.execute(stmt).scalars().all())
 
-    def delete_conductor(self, conductor: ConductorAdicional) -> None:
-        self.db.delete(conductor)
+    def deactivate_conductor(self, conductor: ConductorAdicional) -> None:
+        """Baja lógica. NUNCA borra (ver regla-nunca-eliminar)."""
+        conductor.activo = False
+        self.db.commit()
+
+    # --- Contactos (empresas) ---
+
+    def add_contacto(self, contacto: ClienteContacto) -> ClienteContacto:
+        self.db.add(contacto)
+        self.db.commit()
+        self.db.refresh(contacto)
+        return contacto
+
+    def get_contacto(self, contacto_id: int) -> ClienteContacto | None:
+        stmt = select(ClienteContacto).where(ClienteContacto.id == contacto_id)
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def get_contactos_by_cliente(self, cliente_id: int, incluir_inactivos: bool = False) -> list[ClienteContacto]:
+        stmt = select(ClienteContacto).where(ClienteContacto.cliente_id == cliente_id)
+        if not incluir_inactivos:
+            stmt = stmt.where(ClienteContacto.activo == True)
+        stmt = stmt.order_by(ClienteContacto.nombre)
+        return list(self.db.execute(stmt).scalars().all())
+
+    def deactivate_contacto(self, contacto: ClienteContacto) -> None:
+        contacto.activo = False
         self.db.commit()

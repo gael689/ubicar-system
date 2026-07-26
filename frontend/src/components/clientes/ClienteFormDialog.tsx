@@ -26,6 +26,17 @@ const schema = z.object({
   tipo_conductor: z.enum(['es_conductor', 'conductor_designado']),
   conductor_nombre: z.string().optional().or(z.literal('')),
   conductor_licencia_vencimiento: z.string().optional().or(z.literal('')),
+  // Datos fiscales — todos opcionales, se completan con el tiempo.
+  razon_social: z.string().optional().or(z.literal('')),
+  condicion_iva: z.enum(['responsable_inscripto', 'monotributo', 'consumidor_final', 'exento', '']).optional(),
+  domicilio: z.string().optional().or(z.literal('')),
+  localidad: z.string().optional().or(z.literal('')),
+  provincia: z.string().optional().or(z.literal('')),
+  codigo_postal: z.string().optional().or(z.literal('')),
+  fecha_nacimiento: z.string().optional().or(z.literal('')),
+  licencia_pais: z.string().optional().or(z.literal('')),
+  licencia_desde: z.string().optional().or(z.literal('')),
+  condicion_pago_default: z.enum(['contado', 'cta_cte_15', 'cta_cte_30', 'cta_cte_60', 'cta_cte_90', '']).optional(),
 }).refine(data => data.telefono || data.email, {
   message: "Debe ingresar teléfono o email",
   path: ["telefono"],
@@ -62,6 +73,7 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
   });
 
   const tipoConductor = useWatch({ control, name: 'tipo_conductor' });
+  const tipoCliente = useWatch({ control, name: 'tipo' });
 
   useEffect(() => {
     if (open) {
@@ -78,6 +90,16 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
         tipo_conductor: hasConductor ? 'conductor_designado' : 'es_conductor',
         conductor_nombre: hasConductor ? cliente.conductores_adicionales[0].nombre_completo : '',
         conductor_licencia_vencimiento: hasConductor ? cliente.conductores_adicionales[0].licencia_vencimiento : '',
+        razon_social: cliente.razon_social ?? '',
+        condicion_iva: cliente.condicion_iva ?? '',
+        domicilio: cliente.domicilio ?? '',
+        localidad: cliente.localidad ?? '',
+        provincia: cliente.provincia ?? '',
+        codigo_postal: cliente.codigo_postal ?? '',
+        fecha_nacimiento: cliente.fecha_nacimiento ?? '',
+        licencia_pais: cliente.licencia_pais ?? '',
+        licencia_desde: cliente.licencia_desde ?? '',
+        condicion_pago_default: cliente.condicion_pago_default ?? '',
       } : {
         tipo: 'particular',
         es_frecuente: false,
@@ -90,6 +112,16 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
         conductor_nombre: '',
         conductor_licencia_vencimiento: '',
         notas: '',
+        razon_social: '',
+        condicion_iva: '',
+        domicilio: '',
+        localidad: '',
+        provincia: '',
+        codigo_postal: '',
+        fecha_nacimiento: '',
+        licencia_pais: '',
+        licencia_desde: '',
+        condicion_pago_default: '',
       });
     }
   }, [open, cliente, isEdit, reset]);
@@ -104,6 +136,16 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
       tipo: data.tipo,
       es_frecuente: data.es_frecuente,
       notas: data.notas || undefined,
+      razon_social: data.razon_social || null,
+      condicion_iva: data.condicion_iva || null,
+      domicilio: data.domicilio || null,
+      localidad: data.localidad || null,
+      provincia: data.provincia || null,
+      codigo_postal: data.codigo_postal || null,
+      fecha_nacimiento: data.fecha_nacimiento || null,
+      licencia_pais: data.licencia_pais || null,
+      licencia_desde: data.licencia_desde || null,
+      condicion_pago_default: data.condicion_pago_default || null,
     };
 
     if (isEdit && cliente) {
@@ -192,6 +234,73 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
                 </Field>
               </div>
             )}
+          </div>
+
+          {/* Datos fiscales */}
+          <div className="border-t border-border pt-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Datos fiscales
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {tipoCliente === 'empresa' ? (
+                <>
+                  <Field label="Razón social">
+                    <input {...register('razon_social')} placeholder="Ubicar Rent SA" className="input-base" />
+                  </Field>
+                  <Field label="Condición IVA">
+                    <select {...register('condicion_iva')} className="input-base">
+                      <option value="">Sin especificar</option>
+                      <option value="responsable_inscripto">Responsable Inscripto</option>
+                      <option value="monotributo">Monotributo</option>
+                      <option value="exento">Exento</option>
+                    </select>
+                  </Field>
+                </>
+              ) : (
+                <>
+                  <Field label="Fecha de nacimiento">
+                    <input {...register('fecha_nacimiento')} type="date" className="input-base" />
+                  </Field>
+                  <Field label="Condición IVA">
+                    <select {...register('condicion_iva')} className="input-base">
+                      <option value="">Sin especificar</option>
+                      <option value="consumidor_final">Consumidor Final</option>
+                      <option value="responsable_inscripto">Responsable Inscripto</option>
+                      <option value="monotributo">Monotributo</option>
+                      <option value="exento">Exento</option>
+                    </select>
+                  </Field>
+                  <Field label="País de licencia">
+                    <input {...register('licencia_pais')} placeholder="Argentina" className="input-base" />
+                  </Field>
+                  <Field label="Licencia desde">
+                    <input {...register('licencia_desde')} type="date" className="input-base" />
+                  </Field>
+                </>
+              )}
+              <Field label="Domicilio">
+                <input {...register('domicilio')} placeholder="Av. Alem 123" className="input-base" />
+              </Field>
+              <Field label="Localidad">
+                <input {...register('localidad')} placeholder="Bahía Blanca" className="input-base" />
+              </Field>
+              <Field label="Provincia">
+                <input {...register('provincia')} placeholder="Buenos Aires" className="input-base" />
+              </Field>
+              <Field label="Código postal">
+                <input {...register('codigo_postal')} placeholder="8000" className="input-base" />
+              </Field>
+              <Field label="Condición de pago">
+                <select {...register('condicion_pago_default')} className="input-base">
+                  <option value="">Sin especificar</option>
+                  <option value="contado">Contado</option>
+                  <option value="cta_cte_15">Cta. Cte. 15 días</option>
+                  <option value="cta_cte_30">Cta. Cte. 30 días</option>
+                  <option value="cta_cte_60">Cta. Cte. 60 días</option>
+                  <option value="cta_cte_90">Cta. Cte. 90 días</option>
+                </select>
+              </Field>
+            </div>
           </div>
 
           <div className="border-t border-border pt-4">

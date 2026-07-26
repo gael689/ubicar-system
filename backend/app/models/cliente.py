@@ -26,7 +26,29 @@ class Cliente(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Datos fiscales (Fase 1, sección 3.7). razon_social/condicion_iva
+    # aplican sobre todo a tipo='empresa'; fecha_nacimiento a particular
+    # (edad mínima de conductor). Todos nullable porque muchos clientes
+    # ya cargados no los van a tener.
+    razon_social: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    condicion_iva: Mapped[str | None] = mapped_column(
+        Enum("responsable_inscripto", "monotributo", "consumidor_final", "exento", name="condicion_iva"),
+        nullable=True,
+    )
+    domicilio: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    localidad: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provincia: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    codigo_postal: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    fecha_nacimiento: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    licencia_pais: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    licencia_desde: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    # Reutiliza los mismos valores que CuentaCorriente.condicion_pago.
+    condicion_pago_default: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     conductores_adicionales: Mapped[list["ConductorAdicional"]] = relationship(
+        back_populates="cliente", cascade="all, delete-orphan"
+    )
+    contactos: Mapped[list["ClienteContacto"]] = relationship(
         back_populates="cliente", cascade="all, delete-orphan"
     )
 
@@ -40,5 +62,22 @@ class ConductorAdicional(Base):
     dni: Mapped[str | None] = mapped_column(String(20), nullable=True)
     licencia_numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
     licencia_vencimiento: Mapped[date] = mapped_column(Date(), nullable=False)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     cliente: Mapped["Cliente"] = relationship(back_populates="conductores_adicionales")
+
+
+class ClienteContacto(Base):
+    """Contacto de una empresa cliente (puede haber varios, cada uno con su puesto)."""
+    __tablename__ = "cliente_contactos"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), nullable=False, index=True)
+    nombre: Mapped[str] = mapped_column(String(255), nullable=False)
+    puesto: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    telefono: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    cliente: Mapped["Cliente"] = relationship(back_populates="contactos")

@@ -4,6 +4,8 @@ from typing import Literal, Optional
 
 
 TipoCliente = Literal["particular", "empresa"]
+CondicionIva = Literal["responsable_inscripto", "monotributo", "consumidor_final", "exento"]
+CondicionPagoDefault = Literal["contado", "cta_cte_15", "cta_cte_30", "cta_cte_60", "cta_cte_90"]
 
 
 def _vacio_a_none(v):
@@ -27,6 +29,26 @@ class ConductorAdicionalCreate(ConductorAdicionalBase):
 class ConductorAdicionalResponse(ConductorAdicionalBase):
     id: int
     cliente_id: int
+    activo: bool
+    model_config = {"from_attributes": True}
+
+
+class ClienteContactoBase(BaseModel):
+    nombre: str
+    puesto: str | None = None
+    telefono: str | None = None
+    email: str | None = None
+
+
+class ClienteContactoCreate(ClienteContactoBase):
+    pass
+
+
+class ClienteContactoResponse(ClienteContactoBase):
+    id: int
+    cliente_id: int
+    activo: bool
+    created_at: datetime
     model_config = {"from_attributes": True}
 
 
@@ -44,7 +66,22 @@ class ClienteBase(BaseModel):
     es_frecuente: bool = False
     notas: str | None = None
 
+    # Datos fiscales (opcionales — se van completando con el tiempo, no
+    # bloquean el alta rápida de un cliente).
+    razon_social: str | None = None
+    condicion_iva: CondicionIva | None = None
+    domicilio: str | None = None
+    localidad: str | None = None
+    provincia: str | None = None
+    codigo_postal: str | None = None
+    fecha_nacimiento: date | None = None
+    licencia_pais: str | None = None
+    licencia_desde: date | None = None
+    condicion_pago_default: CondicionPagoDefault | None = None
+
     _licencia_vacia = field_validator("licencia_vencimiento", mode="before")(_vacio_a_none)
+    _nacimiento_vacio = field_validator("fecha_nacimiento", mode="before")(_vacio_a_none)
+    _licencia_desde_vacia = field_validator("licencia_desde", mode="before")(_vacio_a_none)
 
     @model_validator(mode='after')
     def check_contact(self) -> 'ClienteBase':
@@ -69,8 +106,20 @@ class ClienteUpdate(BaseModel):
     es_frecuente: bool | None = None
     notas: str | None = None
     activo: bool | None = None
+    razon_social: str | None = None
+    condicion_iva: CondicionIva | None = None
+    domicilio: str | None = None
+    localidad: str | None = None
+    provincia: str | None = None
+    codigo_postal: str | None = None
+    fecha_nacimiento: date | None = None
+    licencia_pais: str | None = None
+    licencia_desde: date | None = None
+    condicion_pago_default: CondicionPagoDefault | None = None
 
     _licencia_vacia = field_validator("licencia_vencimiento", mode="before")(_vacio_a_none)
+    _nacimiento_vacio = field_validator("fecha_nacimiento", mode="before")(_vacio_a_none)
+    _licencia_desde_vacia = field_validator("licencia_desde", mode="before")(_vacio_a_none)
 
 
 class ClienteResponse(ClienteBase):
@@ -78,4 +127,5 @@ class ClienteResponse(ClienteBase):
     activo: bool
     created_at: datetime
     conductores_adicionales: list[ConductorAdicionalResponse] = []
+    contactos: list[ClienteContactoResponse] = []
     model_config = {"from_attributes": True}

@@ -141,21 +141,21 @@
 | ID | Caso de uso | Estado | Prio | Nota |
 |---|---|---|---|---|
 | CLI-01 | Alta, edición y baja lógica | ✅ | — | |
-| CLI-02 | Distinguir particular / empresa | 🟡 | P1 | Sólo cambia la etiqueta "DNI"/"CUIT" |
-| CLI-03 | Formulario condicional por tipo | ⬜ | P1 | |
-| CLI-04 | **Contacto de la empresa con su puesto** | ⬜ | P1 | Nueva tabla `contactos_cliente` |
-| CLI-05 | Varios contactos por empresa | ⬜ | P2 | Quién firma ≠ quién paga ≠ quién recibe facturas |
-| CLI-06 | Datos fiscales (razón social, IVA, domicilio) | ⬜ | P1 | Necesario para facturar |
+| CLI-02 | Distinguir particular / empresa | ✅ | — | **Hecho 2026-07-26**: además de la etiqueta, ahora hay campos fiscales distintos por tipo (ver CLI-06) |
+| CLI-03 | Formulario condicional por tipo | ✅ | — | **Hecho 2026-07-26**: `ClienteFormDialog.tsx` muestra razón social/condición IVA para empresa, fecha de nacimiento/licencia país/desde para particular |
+| CLI-04 | **Contacto de la empresa con su puesto** | ✅ | — | **Hecho 2026-07-26**: tabla `cliente_contactos` (migración 023), tab "Contactos" visible sólo para tipo=empresa |
+| CLI-05 | Varios contactos por empresa | ✅ | — | **Hecho 2026-07-26**: sin límite de contactos por cliente, cada uno con nombre/puesto/teléfono/email |
+| CLI-06 | Datos fiscales (razón social, IVA, domicilio) | ✅ | — | **Hecho 2026-07-26**: `razon_social`, `condicion_iva`, `domicilio`/`localidad`/`provincia`/`codigo_postal`, `condicion_pago_default` |
 | CLI-07 | Validar dígito verificador del CUIT | ⬜ | P2 | |
 | CLI-08 | **Corregir un DNI/CUIT mal cargado** | ✅ | — | **Arreglado 2026-07-26**: `ClienteUpdate` acepta `dni_cuit`, valida unicidad excluyéndose a sí mismo |
 | CLI-09 | Cambiar tipo particular ↔ empresa | ✅ | — | **Arreglado 2026-07-26**: `ClienteUpdate.tipo` ahora editable (de paso, junto con CLI-08) |
 | CLI-10 | **Cargar número y categoría de licencia** | ✅ | — | **Arreglado 2026-07-26**: `licencia_numero`/`licencia_categoria` expuestos en `ClienteBase`/`ClienteUpdate` |
 | CLI-11 | Impedir cliente sin licencia | ⬜ | P1 | **2026-07-26**: ya no acepta `""` (rota → `None` explícito por la migración de fechas), pero sigue siendo opcional a propósito — decisión de producto pendiente, no técnica |
-| CLI-12 | Conductores adicionales | ✅ | — | |
+| CLI-12 | Conductores adicionales | ✅ | — | **Bug corregido 2026-07-26**: se borraban en duro (`db.delete()`), violando la regla "nunca eliminar". Ahora `DELETE /clientes/{id}/conductores/{id}` es baja lógica (`activo=False`, migración 023) |
 | CLI-13 | Impedir baja con alquiler activo | ✅ | — | **Arreglado 2026-07-26**: bloquea si tiene reservas en `pendiente/confirmada/activa/vencida` |
 | CLI-14 | Lista negra | ⬜ | P2 | Hoy nada impide realquilarle a quien no pagó |
-| CLI-15 | Fecha de nacimiento / edad mínima | ⬜ | P2 | |
-| CLI-16 | Antigüedad de licencia | ⬜ | P3 | |
+| CLI-15 | Fecha de nacimiento / edad mínima | 🟡 | P2 | **Campo agregado 2026-07-26** (`fecha_nacimiento`); falta la validación de edad mínima al crear la reserva |
+| CLI-16 | Antigüedad de licencia | 🟡 | P3 | **Campo agregado 2026-07-26** (`licencia_desde`); falta la validación de antigüedad mínima |
 | CLI-17 | Extranjeros (pasaporte, licencia de otro país) | ⬜ | P3 | |
 | CLI-18 | Documentos del cliente | ✅ | — | |
 | CLI-19 | Tarjeta protegida con PIN | 🟡 | P2 | PIN hardcodeado; debe pasar a permiso por rol |
