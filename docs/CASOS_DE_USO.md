@@ -209,7 +209,7 @@
 | FIN-08 | **Fecha de vencimiento por movimiento** | ✅ | — | **Hecho 2026-07-26**: se calcula solo desde la condición (`domain/cuenta_corriente.py`), o se puede fijar a mano |
 | FIN-09 | Aging de deuda (0-30 / 31-60 / 61-90 / +90) | ⬜ | P1 | El dato (`fecha_vencimiento`) ya existe; falta la vista agrupada en la UI |
 | FIN-10 | Límite de crédito por cliente | 🟡 | P2 | Campo `limite_credito` ya existe en el modelo; falta la alerta al superarlo |
-| FIN-11 | Asientos automáticos desde alquiler/pago/multa | 🟡 | P1 | El de **pago** ya funciona (`create_pago`); falta el de **checkout automático** y **multa** — es una decisión de comportamiento aparte (¿todo alquiler genera débito, o sólo los que eligen cta. cte.?), no sólo de esquema |
+| FIN-11 | Asientos automáticos desde alquiler/pago/multa | 🟡 | P1 | **Arreglado 2026-07-26**: checkout, anticipo, cobros en checkout/check-in y excedente ya generan asiento automático (ledger completo, confirmado con el usuario — pendiente ok final de Franco/Martín, ver `VALIDAR_CON_DUENOS.md`). Falta sólo el de **multa** |
 | FIN-12 | Anular movimiento con contra-asiento | ✅ | — | **Hecho 2026-07-26**: `POST /cuentas-corrientes/movimientos/{id}/anular`. El borrado de un pago en cta. cte. ahora anula el movimiento automáticamente en vez de bloquear |
 | FIN-13 | **Echeq vinculado al cliente** | ⬜ | P1 | Hoy `contraparte` es texto libre |
 | FIN-14 | **Echeq con importe y fecha de pago** | 🟡 | P1 | Falta separar fecha de pago de fecha de acreditación |

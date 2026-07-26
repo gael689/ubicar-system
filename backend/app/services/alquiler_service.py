@@ -26,6 +26,7 @@ from app.models.tarifa import Tarifa
 from app.repositories.alquiler_repo import AlquilerRepo
 from app.repositories.reserva_repo import ReservaRepo
 from app.schemas.alquiler import PagoInmediato
+from app.services.cuenta_corriente_service import CuentaCorrienteService
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class AlquilerService:
         self.db = db
         self.alquiler_repo = AlquilerRepo(db)
         self.reserva_repo = ReservaRepo(db)
+        self.cc_service = CuentaCorrienteService(db)
 
     # ── Lectura ───────────────────────────────────────────────────────────────
 
@@ -159,6 +161,23 @@ class AlquilerService:
             self.alquiler_repo.create(alquiler)
             self.db.flush()  # Para obtener alquiler.id
 
+            # Ledger completo: el checkout factura el alquiler completo como
+            # un débito automático en la cuenta corriente del cliente,
+            # exista o no un pago inmediato. Cualquier cobro (abajo) genera
+            # el crédito que lo cancela — total o parcialmente.
+            monto_facturado = (reserva.precio_total or Decimal("0")) + (reserva.cargo_late_checkout or Decimal("0"))
+            if monto_facturado > 0:
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="debito",
+                    concepto=f"Alquiler #{reserva.id} — checkout ({reserva.vehiculo.patente if reserva.vehiculo else ''})",
+                    monto=monto_facturado,
+                    fecha=checkout_fecha,
+                    creado_por=usuario_id,
+                    alquiler_id=alquiler.id,
+                    reserva_id=reserva.id,
+                )
+
             # Si hay un anticipo guardado en la reserva, creamos el Pago ahora
             if reserva.anticipo_monto and reserva.anticipo_monto > 0:
                 pago_anticipo = Pago(
@@ -171,6 +190,18 @@ class AlquilerService:
                     cobrado_por=usuario_id,
                 )
                 self.db.add(pago_anticipo)
+                self.db.flush()
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="credito",
+                    concepto=f"Anticipo de reserva #{reserva.id} ({pago_anticipo.medio_pago})",
+                    monto=reserva.anticipo_monto,
+                    fecha=pago_anticipo.fecha,
+                    creado_por=usuario_id,
+                    alquiler_id=alquiler.id,
+                    reserva_id=reserva.id,
+                    pago_id=pago_anticipo.id,
+                )
 
             # Si se pasó un pago inmediato en el modal de checkout
             if pago_inmediato and pago_inmediato.monto > 0:
@@ -184,6 +215,18 @@ class AlquilerService:
                     cobrado_por=usuario_id,
                 )
                 self.db.add(pago_checkout)
+                self.db.flush()
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="credito",
+                    concepto=f"Cobro en checkout — alquiler #{reserva.id} ({pago_checkout.medio_pago})",
+                    monto=pago_inmediato.monto,
+                    fecha=pago_inmediato.fecha,
+                    creado_por=usuario_id,
+                    alquiler_id=alquiler.id,
+                    reserva_id=reserva.id,
+                    pago_id=pago_checkout.id,
+                )
 
             # Cambiar estado de la reserva
             self.reserva_repo.update(reserva, estado=EstadoReserva.ACTIVA.value)
@@ -305,6 +348,21 @@ class AlquilerService:
             )
             self.reserva_repo.update(reserva, estado=EstadoReserva.FINALIZADA.value)
 
+            # Ledger completo: el excedente que efectivamente se decidió
+            # cobrar (D-19) es un cargo adicional al alquiler — débito.
+            # Si se bonificó (cargo_excedente == 0), no genera movimiento.
+            if cargo_excedente and cargo_excedente > 0:
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="debito",
+                    concepto=f"Excedente alquiler #{reserva.id} — check-in ({decision_excedente.value})",
+                    monto=cargo_excedente,
+                    fecha=checkin_fecha,
+                    creado_por=usuario_id,
+                    alquiler_id=alquiler_id,
+                    reserva_id=reserva.id,
+                )
+
             # Si el operario registró un cobro al momento del check-in
             if pago_inmediato and pago_inmediato.monto > 0:
                 pago_checkin = Pago(
@@ -317,6 +375,18 @@ class AlquilerService:
                     cobrado_por=usuario_id,
                 )
                 self.db.add(pago_checkin)
+                self.db.flush()
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="credito",
+                    concepto=f"Cobro en check-in — alquiler #{reserva.id} ({pago_checkin.medio_pago})",
+                    monto=pago_inmediato.monto,
+                    fecha=pago_inmediato.fecha,
+                    creado_por=usuario_id,
+                    alquiler_id=alquiler_id,
+                    reserva_id=reserva.id,
+                    pago_id=pago_checkin.id,
+                )
 
             vehiculo = reserva.vehiculo
             vehiculo.estado = nuevo_estado_vehiculo.value

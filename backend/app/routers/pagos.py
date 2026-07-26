@@ -160,39 +160,26 @@ def create_pago(
 
     pago = Pago(**payload.model_dump(), cobrado_por=current_user.id)
     db.add(pago)
+    db.flush()  # asegurar pago.id antes de enlazarlo al movimiento
 
-    # Si el medio es cuenta corriente → el cliente no paga ahora, se le carga
-    # a la cuenta: es un DÉBITO (aumenta lo que debe — D-01).
-    if payload.medio_pago == "cuenta_corriente":
+    # Ledger completo: todo alquiler factura un débito automático en el
+    # checkout (ver AlquilerService.checkout). Cualquier cobro posterior,
+    # sea cual sea el medio de pago, genera el CRÉDITO que lo cancela.
+    reserva = db.get(Reserva, alquiler.reserva_id)
+    if reserva:
         from decimal import Decimal
-        from app.domain.cuenta_corriente import aplicar_movimiento, calcular_vencimiento
-        from app.models.cuenta_corriente import CuentaCorriente, MovimientoCuentaCorriente
-        reserva = db.get(Reserva, alquiler.reserva_id)
-        if reserva:
-            cc = db.query(CuentaCorriente).filter(
-                CuentaCorriente.cliente_id == reserva.cliente_id
-            ).first()
-            if not cc:
-                cc = CuentaCorriente(cliente_id=reserva.cliente_id, saldo=0)
-                db.add(cc)
-                db.flush()
-            db.flush()  # asegurar pago.id antes de enlazarlo al movimiento
-            nuevo_saldo = aplicar_movimiento(Decimal(str(cc.saldo)), "debito", Decimal(str(payload.monto)))
-            mov = MovimientoCuentaCorriente(
-                cuenta_corriente_id=cc.id,
-                tipo="debito",
-                concepto=f"Cobro alquiler #{payload.alquiler_id}",
-                monto=payload.monto,
-                fecha=payload.fecha,
-                condicion=cc.condicion_pago,
-                fecha_vencimiento=calcular_vencimiento(payload.fecha, cc.condicion_pago),
-                saldo_posterior=nuevo_saldo,
-                alquiler_id=payload.alquiler_id,
-                pago_id=pago.id,
-                creado_por=current_user.id,
-            )
-            db.add(mov)
-            cc.saldo = nuevo_saldo
+        from app.services.cuenta_corriente_service import CuentaCorrienteService
+
+        CuentaCorrienteService(db).registrar_movimiento(
+            cliente_id=reserva.cliente_id,
+            tipo="credito",
+            concepto=f"Cobro alquiler #{payload.alquiler_id} ({payload.medio_pago})",
+            monto=Decimal(str(payload.monto)),
+            fecha=payload.fecha,
+            creado_por=current_user.id,
+            alquiler_id=payload.alquiler_id,
+            pago_id=pago.id,
+        )
 
     db.commit()
     db.refresh(pago)
@@ -209,46 +196,21 @@ def delete_pago(
     if not pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
 
-    if pago.medio_pago == "cuenta_corriente":
-        # Este pago generó un movimiento en la cuenta corriente del cliente
-        # (ver create_pago). Antes de borrar el Pago, se anula ese movimiento
-        # con un contra-asiento (nunca se edita ni se borra el original) para
-        # que el saldo no quede desincronizado.
-        from decimal import Decimal
-        from app.domain.cuenta_corriente import aplicar_movimiento
-        from app.models.cuenta_corriente import CuentaCorriente, MovimientoCuentaCorriente
+    # Con el ledger completo, todo pago generó un crédito en la cuenta
+    # corriente del cliente (ver create_pago). Antes de borrar el Pago, se
+    # anula ese movimiento con un contra-asiento — nunca se edita ni se
+    # borra el original — para que el saldo no quede desincronizado.
+    from app.services.cuenta_corriente_service import CuentaCorrienteService
 
-        mov = (
-            db.query(MovimientoCuentaCorriente)
-            .filter(MovimientoCuentaCorriente.pago_id == pago_id, MovimientoCuentaCorriente.anulado == False)
-            .first()
-        )
-        if mov:
-            cc = db.get(CuentaCorriente, mov.cuenta_corriente_id)
-            tipo_contrario = "credito" if mov.tipo == "debito" else "debito"
-            nuevo_saldo = aplicar_movimiento(Decimal(str(cc.saldo)), tipo_contrario, Decimal(str(mov.monto)))
-            contra = MovimientoCuentaCorriente(
-                cuenta_corriente_id=cc.id,
-                tipo=tipo_contrario,
-                concepto=f"Anulación de movimiento #{mov.id} ({mov.concepto}) — se eliminó el pago #{pago_id}",
-                monto=mov.monto,
-                fecha=date.today(),
-                saldo_posterior=nuevo_saldo,
-                alquiler_id=mov.alquiler_id,
-                creado_por=current_user.id,
-            )
-            db.add(contra)
-            db.flush()
-            mov.anulado = True
-            mov.anulado_por_movimiento_id = contra.id
-            # El Pago está por borrarse (hard delete): se desvincula la FK para
-            # no dejarla apuntando a un registro inexistente. El texto del
-            # concepto de arriba deja el rastro humano de qué pago fue.
-            mov.pago_id = None
-            cc.saldo = nuevo_saldo
-            # Forzar que el UPDATE de mov.pago_id llegue a la base antes del
-            # DELETE del pago, o la FK todavía-referenciada rechaza el borrado.
-            db.flush()
+    mov = CuentaCorrienteService(db).anular_por_pago(
+        pago_id, motivo=f"se eliminó el pago #{pago_id}", creado_por=current_user.id
+    )
+    if mov:
+        # El Pago está por borrarse (hard delete): anular_por_pago ya
+        # desvinculó la FK del movimiento original. Forzar que ese UPDATE
+        # llegue a la base antes del DELETE del pago, o la FK todavía
+        # referenciada rechaza el borrado.
+        db.flush()
 
     db.delete(pago)
     db.commit()
