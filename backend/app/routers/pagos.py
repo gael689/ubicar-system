@@ -198,5 +198,20 @@ def delete_pago(
     pago = db.query(Pago).filter(Pago.id == pago_id).first()
     if not pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
+    if pago.medio_pago == "cuenta_corriente":
+        # Este pago generó un movimiento en la cuenta corriente del cliente
+        # (ver create_pago). Borrarlo aquí dejaría el saldo desincronizado
+        # -una deuda fantasma o una condonación fantasma-, porque hoy no hay
+        # forma de saber qué movimiento revertir ni de dejar rastro de la
+        # anulación. Se resuelve con el ledger de cuenta corriente (Fase 1:
+        # anulación con contra-asiento). Hasta entonces, no se borra.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "No se puede eliminar un pago registrado en cuenta corriente: "
+                "dejaría el saldo del cliente desincronizado. Corregilo con un "
+                "movimiento manual en la cuenta corriente del cliente."
+            ),
+        )
     db.delete(pago)
     db.commit()

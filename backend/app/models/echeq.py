@@ -15,9 +15,14 @@ class Echeq(Base):
     fecha_emision: Mapped[date] = mapped_column(Date(), nullable=False)
     fecha_cobro: Mapped[date] = mapped_column(Date(), nullable=False, index=True)
     estado: Mapped[str] = mapped_column(
-        Enum("pendiente", "cobrado", "rechazado", "vencido", name="estado_echeq"),
+        Enum(
+            "pendiente",  # legacy — no usar en registros nuevos
+            "en_cartera", "depositado", "endosado",
+            "cobrado", "rechazado", "vencido",
+            name="estado_echeq",
+        ),
         nullable=False,
-        default="pendiente",
+        default="en_cartera",
     )
     contraparte: Mapped[str] = mapped_column(String(255), nullable=False)
     banco: Mapped[str] = mapped_column(String(100), nullable=False)

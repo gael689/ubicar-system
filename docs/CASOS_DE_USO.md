@@ -202,7 +202,7 @@
 | FIN-01 | Registrar cobros | ✅ | — | |
 | FIN-02 | Caja diaria con ingresos y egresos | ✅ | — | |
 | FIN-03 | Cobros pendientes centralizados | ✅ | — | |
-| FIN-04 | **Anular un pago sin borrarlo** | 🔴 | **P0** | Hoy es hard delete y no revierte la cuenta corriente |
+| FIN-04 | **Anular un pago sin borrarlo** | 🟡 | P1 | **2026-07-26**: se bloqueó el borrado de pagos vía cuenta corriente (409, mensaje claro). Pagos normales (efectivo/transferencia/etc.) se siguen borrando como antes — la anulación con contra-asiento completa sigue siendo Fase 1 |
 | FIN-05 | Pago sin alquiler asociado (a cuenta) | ⬜ | P1 | `alquiler_id` es NOT NULL |
 | FIN-06 | Cuenta corriente por cliente | 🟡 | P1 | Es un saldo mutable, no un ledger auditable |
 | FIN-07 | **Condición de pago (contado / 30 / 60 / 90)** | ⬜ | P1 | Pedido explícito |
@@ -213,7 +213,7 @@
 | FIN-12 | Anular movimiento con contra-asiento | ⬜ | P1 | |
 | FIN-13 | **Echeq vinculado al cliente** | ⬜ | P1 | Hoy `contraparte` es texto libre |
 | FIN-14 | **Echeq con importe y fecha de pago** | 🟡 | P1 | Falta separar fecha de pago de fecha de acreditación |
-| FIN-15 | Ciclo completo del echeq | 🟡 | P1 | Falta el caso de rechazo, que es el que cuesta plata |
+| FIN-15 | Ciclo completo del echeq | 🟡 | P1 | **2026-07-26**: se arregló que el ciclo funcionara en absoluto (ver hallazgo abajo). Sigue faltando el caso de rechazo con contra-asiento (Fase 1) |
 | FIN-16 | Echeq genera movimiento en cuenta corriente | ⬜ | P1 | |
 | FIN-17 | Cartera de echeqs por mes | ⬜ | P2 | Saber con qué plata se cuenta |
 | FIN-18 | **Recibos con PDF estético** | ⬜ | P1 | Ver RCB-* |
@@ -411,6 +411,12 @@ El botón de Check-in **nunca aparecía en la lista de reservas**, para ningún 
 - `extender()` sobre una reserva `vencida` ahora vuelve a `activa` si la nueva fecha queda en el futuro (evita que quede "vencida" para siempre tras extenderla)
 - Descubierto: **todas las migraciones de Alembic están en `.gitignore`** (`backend/alembic/versions/*.py`), incluidas las 16 existentes de antes de esta sesión. Sólo las migraciones 017 y 018 de esta sesión se agregaron a git de forma forzada (`git add -f`) para que los cambios de esquema sean reproducibles en otro entorno. Vale revisar esa regla del `.gitignore` — probablemente sea un descuido, no una decisión.
 - **Fase 0 ítem #10 completo**: migración `018_fechas_date` — `pagos.fecha`, `gastos.fecha`, `echeqs.fecha_emision/fecha_cobro`, `movimientos_cuenta_corriente.fecha`, `clientes.licencia_vencimiento`, `conductores_adicionales.licencia_vencimiento`, `documentos.vigencia_desde/vigencia_hasta`, `reservas.anticipo_fecha` — todas migradas de `String(10)` a `Date` real. Simplificó de paso varios `.isoformat()`/`_parse_iso()` que ya no hacían falta en `documento_service.py` y `gasto_service.py`.
+
+**🆕 Quinto hallazgo nuevo (2026-07-26), el más serio de este grupo:** al probar el bloqueo de FIN-04, un pago con `medio_pago="cuenta_corriente"` crasheaba con `LookupError: 'cuenta_corriente' is not among the defined enum values`. La migración 013 (`013_caja_echeq_cc.py`) había agregado `'cuenta_corriente'` al enum de Postgres `medio_pago` con `ALTER TYPE`, pero el modelo SQLAlchemy (`models/pago.py`) seguía declarando el `Enum(...)` de Python con sólo los 5 valores originales — la migración tocó la base pero nadie actualizó el modelo. **Cobrar un alquiler con "Cuenta Corriente" nunca funcionó desde que se implementó.**
+
+Se revisó si el mismo patrón se repetía en otro lado y sí: `models/echeq.py`'s `estado` sólo declaraba `pendiente, cobrado, rechazado, vencido` en Python, cuando la migración 013 también había agregado `en_cartera, depositado, endosado` al enum de Postgres — y son justamente los estados intermedios del ciclo de vida real del echeq (`en_cartera → depositado/endosado → cobrado`). **Cualquier transición de estado de un echeq más allá de "pendiente" crasheaba.** De paso se corrigió el valor por defecto de un echeq nuevo: pasa de `"pendiente"` (marcado como legacy en el propio schema, "no usar en registros nuevos") a `"en_cartera"`, alineado con lo que el código ya documentaba como la intención correcta.
+
+Arreglado agregando los valores faltantes a los `Enum(...)` de SQLAlchemy en ambos modelos — sin migración nueva, porque Postgres ya tenía los valores desde 2026-06-26. Verificado en vivo vía HTTP real: pago por cuenta corriente (201), bloqueo de borrado de ese pago (409), echeq creado en `en_cartera` (201), transición completa `en_cartera → depositado → cobrado` (200 cada paso), y un pago normal en efectivo se sigue pudiendo borrar sin cambios (204).
 
 ---
 
