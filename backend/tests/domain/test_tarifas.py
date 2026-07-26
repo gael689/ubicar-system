@@ -59,8 +59,11 @@ class TestSeleccionarTipoTarifa:
 
 # ─── seleccionar_tarifa ───────────────────────────────────────────────────────
 
-def tarifa(id: int, tipo: TipoTarifa, monto: float, vehiculo_id: int | None = None) -> TarifaInfo:
-    return TarifaInfo(id=id, tipo=tipo, monto=Decimal(str(monto)), vehiculo_id=vehiculo_id)
+def tarifa(
+    id: int, tipo: TipoTarifa, monto: float,
+    vehiculo_id: int | None = None, categoria_id: int | None = None,
+) -> TarifaInfo:
+    return TarifaInfo(id=id, tipo=tipo, monto=Decimal(str(monto)), vehiculo_id=vehiculo_id, categoria_id=categoria_id)
 
 
 class TestSeleccionarTarifa:
@@ -110,6 +113,42 @@ class TestSeleccionarTarifa:
         tarifas = [tarifa(1, TipoTarifa.SEMANAL, 25000)]
         with pytest.raises(BusinessRuleError):
             seleccionar_tarifa(3, tarifas)
+
+    # ── D-08: tarifa por categoría ────────────────────────────────────────
+
+    def test_tarifa_de_categoria_cuando_no_hay_especifica(self):
+        tarifas = [
+            tarifa(1, TipoTarifa.DIARIA, 20000, categoria_id=None),  # general
+            tarifa(2, TipoTarifa.DIARIA, 28000, categoria_id=7),      # SUV
+        ]
+        t = seleccionar_tarifa(3, tarifas, categoria_id=7)
+        assert t.id == 2
+        assert t.monto == Decimal("28000")
+
+    def test_especifica_del_vehiculo_le_gana_a_la_de_categoria(self):
+        tarifas = [
+            tarifa(1, TipoTarifa.DIARIA, 28000, categoria_id=7),
+            tarifa(2, TipoTarifa.DIARIA, 35000, vehiculo_id=5),
+        ]
+        t = seleccionar_tarifa(3, tarifas, categoria_id=7)
+        assert t.id == 2
+        assert t.monto == Decimal("35000")
+
+    def test_categoria_distinta_no_aplica(self):
+        """Tarifa de categoría 7 no debe usarse para un vehículo de categoría 9."""
+        tarifas = [tarifa(1, TipoTarifa.DIARIA, 28000, categoria_id=7)]
+        with pytest.raises(BusinessRuleError):
+            seleccionar_tarifa(3, tarifas, categoria_id=9)
+
+    def test_sin_categoria_asignada_cae_a_general(self):
+        """Vehículo sin categoria_id (categoria_id=None acá) usa la general, no la de categoría."""
+        tarifas = [
+            tarifa(1, TipoTarifa.DIARIA, 20000, categoria_id=None),
+            tarifa(2, TipoTarifa.DIARIA, 28000, categoria_id=7),
+        ]
+        t = seleccionar_tarifa(3, tarifas, categoria_id=None)
+        assert t.id == 1
+        assert t.monto == Decimal("20000")
 
 
 # ─── calcular_precio_total ────────────────────────────────────────────────────

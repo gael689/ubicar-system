@@ -709,7 +709,7 @@ El sistema hoy es **interno y confiado**: un humano carga la reserva sabiendo lo
 
 ### 7.2 Motor de precios
 
-Hoy: tarifa por vehículo o general, seleccionada por duración (diaria <7d, semanal 7-29d, mensual 30+). **No soporta estacionalidad ni categorías.** El pedido es precio por categoría, por día del año, con fechas especiales.
+Hoy: tarifa por vehículo, por categoría, o general, seleccionada por duración (diaria <7d, semanal 7-29d, mensual 30+) — **hecho 2026-07-26** (migración 025, Fase 1 ítem 21, D-08). **Todavía no soporta estacionalidad** (precio distinto por fecha/temporada). El pedido completo es precio por categoría, por día del año, con fechas especiales — eso sigue siendo esta sección 7.2, de la Fase 5.
 
 **Diseño en capas, se resuelve día por día:**
 
@@ -888,7 +888,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 18. ✅ Automatismos de asientos (checkout → débito, pago → crédito, multa → débito, recibo → crédito) — hecho 2026-07-26
 19. ✅ Datos fiscales del cliente + **empresa vs particular** (contactos con puesto, formulario condicional) — hecho 2026-07-26 (migración 023). Ver detalle abajo
 20. ✅ **Conductor ≠ pagador** en la reserva — hecho 2026-07-26 (migración 024). `Reserva.conductor_id` (nullable, apunta a `conductores_adicionales` del propio cliente); si es NULL, el cliente es quien maneja (comportamiento de siempre). `MultaService.buscar_responsable()` ahora devuelve también el conductor real, no sólo el cliente que paga. Selector en `ReservaModal.tsx`, visible sólo si el cliente tiene conductores adicionales cargados
-21. **Rediseño de tarifas**: `precio_por_dia` explícito, por vehículo **y** por categoría, bandas configurables
+21. ✅ **Rediseño de tarifas — primera etapa**: categoría como entidad nueva (D-08), `precio_por_dia` explícito por vehículo **y** por categoría — hecho 2026-07-26 (migración 025). Ver detalle abajo. **Sin calendario/estacionalidad todavía** (`tarifas_calendario` con prioridades queda para la Fase 5, cuando la reserva pase a ser por categoría en la web)
 22. **Descuentos auditados** (precio de lista vs cobrado, motivo, autorizado por) + **con/sin factura** en la reserva
 23. **Estados nuevos**: `VENCIDA`, `NO_SHOW`, `CERRADA` + política de seña en cancelación y no-show
 24. **Cargos de cierre**: combustible faltante, limpieza, liquidación de garantía contra los cargos

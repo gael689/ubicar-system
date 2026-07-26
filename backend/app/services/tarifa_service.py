@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Service de Tarifas.
 
@@ -12,6 +13,7 @@ from app.core.exceptions import NotFoundError
 from app.models.tarifa import Tarifa
 from app.repositories.tarifa_repo import TarifaRepository
 from app.repositories.vehiculo_repo import VehiculoRepository
+from app.repositories.categoria_repo import CategoriaRepository
 from app.schemas.tarifa import TarifaCreate, TarifaUpdate
 
 
@@ -20,6 +22,7 @@ class TarifaService:
         self.db = db
         self.repo = TarifaRepository(db)
         self.vehiculo_repo = VehiculoRepository(db)
+        self.categoria_repo = CategoriaRepository(db)
 
     def list(self, vehiculo_id: int, incluir_inactivas: bool = False) -> list[Tarifa]:
         if self.vehiculo_repo.get(vehiculo_id) is None:
@@ -52,6 +55,33 @@ class TarifaService:
         self.db.commit()
         self.db.refresh(tarifa)
         return tarifa
+
+    def create_for_categoria(self, categoria_id: int, payload: TarifaCreate) -> Tarifa:
+        """Tarifa a nivel de categoría (D-08) — aplica a todos los vehículos de
+        esa categoría que no tengan una tarifa específica propia."""
+        if self.categoria_repo.get(categoria_id) is None:
+            raise NotFoundError("Categoría", categoria_id)
+
+        anterior = self.repo.get_activa_por_tipo_categoria(categoria_id, payload.tipo)
+        if anterior is not None:
+            anterior.activo = False
+
+        tarifa = Tarifa(
+            categoria_id=categoria_id,
+            tipo=payload.tipo,
+            monto=payload.monto,
+            activo=True,
+            vigencia_desde=payload.vigencia_desde or date.today(),
+        )
+        self.repo.create(tarifa)
+        self.db.commit()
+        self.db.refresh(tarifa)
+        return tarifa
+
+    def list_by_categoria(self, categoria_id: int, incluir_inactivas: bool = False) -> list[Tarifa]:
+        if self.categoria_repo.get(categoria_id) is None:
+            raise NotFoundError("Categoría", categoria_id)
+        return self.repo.list_by_categoria(categoria_id, incluir_inactivas=incluir_inactivas)
 
     def update(self, tarifa_id: int, payload: TarifaUpdate) -> Tarifa:
         tarifa = self.get(tarifa_id)

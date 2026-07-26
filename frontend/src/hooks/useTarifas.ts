@@ -7,6 +7,7 @@ import type { ApiResponse } from '@/types';
 export interface Tarifa {
   id: number;
   vehiculo_id: number | null;
+  categoria_id: number | null;
   tipo: 'diaria' | 'semanal' | 'mensual';
   monto: number;
   activo: boolean;

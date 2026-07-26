@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 
 import { useCreateVehiculo, useUpdateVehiculo } from '@/hooks/useVehiculos';
+import { useCategorias } from '@/hooks/useCategorias';
 import {
   DEFAULT_VEHICULO_VALUES,
   vehiculoFormSchema,
@@ -41,6 +42,7 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
   const isEdit = !!vehiculo;
   const create = useCreateVehiculo();
   const update = useUpdateVehiculo();
+  const { data: categorias } = useCategorias();
 
   const form = useForm<VehiculoFormValues>({
     resolver: zodResolver(vehiculoFormSchema),
@@ -60,6 +62,7 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
         km_actual: vehiculo.km_actual,
         km_entre_services: vehiculo.km_entre_services,
         km_proximo_service: vehiculo.km_proximo_service,
+        categoria_id: vehiculo.categoria_id,
       });
     } else {
       form.reset(DEFAULT_VEHICULO_VALUES);
@@ -131,6 +134,31 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
                         <SelectItem key={value} value={value}>
                           {label}
                         </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </Field>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Categoría">
+              <Controller
+                control={form.control}
+                name="categoria_id"
+                render={({ field }) => (
+                  <Select
+                    value={field.value != null ? String(field.value) : '__none__'}
+                    onValueChange={(v) => field.onChange(v === '__none__' ? null : Number(v))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sin categoría</SelectItem>
+                      {(categorias ?? []).map(c => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

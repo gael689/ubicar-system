@@ -457,7 +457,7 @@ class AlquilerService:
 
         # Recalcular tarifa con la nueva duración
         nueva_duracion = calcular_duracion_dias(reserva.fecha_inicio, nueva_fecha_fin)
-        tarifas_info = self._cargar_tarifas_info(reserva.vehiculo_id)
+        tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
 
         fecha_fin_anterior = reserva.fecha_fin
         precio_anterior = reserva.precio_total
@@ -465,7 +465,7 @@ class AlquilerService:
 
         tarifa_no_encontrada = False
         try:
-            nueva_tarifa = seleccionar_tarifa(nueva_duracion, tarifas_info)
+            nueva_tarifa = seleccionar_tarifa(nueva_duracion, tarifas_info, categoria_id)
             nuevo_precio = calcular_precio_total(nueva_duracion, nueva_tarifa)
             nueva_tarifa_id = nueva_tarifa.id
         except BusinessRuleError:
@@ -568,9 +568,9 @@ class AlquilerService:
 
         # Fallback: buscar tarifa diaria activa
         duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
-        tarifas_info = self._cargar_tarifas_info(reserva.vehiculo_id)
+        tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
         try:
-            tarifa_sel = seleccionar_tarifa(duracion, tarifas_info)
+            tarifa_sel = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
             return tarifa_sel.monto
         except BusinessRuleError:
             raise BusinessRuleError(
@@ -578,8 +578,11 @@ class AlquilerService:
                 "No hay tarifa configurada para calcular el excedente",
             )
 
-    def _cargar_tarifas_info(self, vehiculo_id: int) -> list[TarifaInfo]:
+    def _cargar_tarifas_info(self, vehiculo_id: int) -> tuple[list[TarifaInfo], int | None]:
+        """Devuelve (tarifas, categoria_id_del_vehiculo) — ver mismo método en ReservaService."""
         from app.domain.enums import TipoTarifa
+        vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
+        categoria_id = vehiculo.categoria_id if vehiculo else None
         tarifas = (
             self.db.query(Tarifa)
             .filter(
@@ -588,15 +591,17 @@ class AlquilerService:
             )
             .all()
         )
-        return [
+        tarifas_info = [
             TarifaInfo(
                 id=t.id,
                 tipo=TipoTarifa(t.tipo),
                 monto=Decimal(str(t.monto)),
                 vehiculo_id=t.vehiculo_id,
+                categoria_id=t.categoria_id,
             )
             for t in tarifas
         ]
+        return tarifas_info, categoria_id
 
     def _cargar_ventanas_raw(
         self, vehiculo_id: int, excluir_reserva_id: int | None = None

@@ -22,6 +22,7 @@ class TarifaUpdate(BaseModel):
 class TarifaResponse(BaseModel):
     id: int
     vehiculo_id: int | None
+    categoria_id: int | None
     tipo: TipoTarifa
     monto: Decimal
     activo: bool

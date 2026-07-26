@@ -23,7 +23,8 @@ class TarifaInfo:
     id: int
     tipo: TipoTarifa
     monto: Decimal
-    vehiculo_id: int | None  # None = tarifa general
+    vehiculo_id: int | None  # None = no es específica de un vehículo
+    categoria_id: int | None = None  # None = no es de categoría (ver D-08)
 
 
 def calcular_duracion_dias(fecha_inicio: date, fecha_fin: date) -> int:
@@ -52,28 +53,37 @@ def seleccionar_tipo_tarifa(dias: int) -> TipoTarifa:
 def seleccionar_tarifa(
     duracion_dias: int,
     tarifas: list[TarifaInfo],
+    categoria_id: int | None = None,
 ) -> TarifaInfo:
     """
     Selecciona la tarifa aplicable para un alquiler.
 
-    Prioridad:
+    Prioridad (D-08 — el vehículo específico gana):
     1. Tarifa específica del vehículo del tipo correspondiente (mayor id si hay varias).
-    2. Tarifa general del tipo correspondiente (mayor id si hay varias).
-    3. BusinessRuleError si no hay tarifa configurada.
+    2. Tarifa de la categoría del vehículo, del tipo correspondiente (mayor id si hay varias).
+    3. Tarifa general del tipo correspondiente (mayor id si hay varias).
+    4. BusinessRuleError si no hay tarifa configurada en ningún nivel.
 
     Args:
         duracion_dias: duración del alquiler en días.
-        tarifas: todas las tarifas activas relevantes (del vehículo + generales).
+        tarifas: todas las tarifas activas relevantes (del vehículo + su categoría + generales).
+        categoria_id: categoría del vehículo que se está cotizando, si tiene una asignada.
     """
     tipo = seleccionar_tipo_tarifa(duracion_dias)
 
-    # Tarifa específica del vehículo (vehiculo_id != None)
+    # 1. Tarifa específica del vehículo (vehiculo_id != None)
     especificas = [t for t in tarifas if t.vehiculo_id is not None and t.tipo == tipo]
     if especificas:
         return max(especificas, key=lambda t: t.id)
 
-    # Tarifa general
-    generales = [t for t in tarifas if t.vehiculo_id is None and t.tipo == tipo]
+    # 2. Tarifa de la categoría del vehículo
+    if categoria_id is not None:
+        de_categoria = [t for t in tarifas if t.categoria_id == categoria_id and t.tipo == tipo]
+        if de_categoria:
+            return max(de_categoria, key=lambda t: t.id)
+
+    # 3. Tarifa general (ni vehículo ni categoría)
+    generales = [t for t in tarifas if t.vehiculo_id is None and t.categoria_id is None and t.tipo == tipo]
     if generales:
         return max(generales, key=lambda t: t.id)
 

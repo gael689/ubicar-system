@@ -283,6 +283,12 @@ export interface Usuario {
 
 // ─── Vehículo ────────────────────────────────────────────────────────────────
 
+export interface CategoriaResumen {
+  id: number;
+  codigo: string;
+  nombre: string;
+}
+
 export interface Vehiculo {
   id: number;
   patente: string;
@@ -295,6 +301,8 @@ export interface Vehiculo {
   km_actual: number;
   km_proximo_service: number;
   km_entre_services: number;
+  categoria_id: number | null;
+  categoria?: CategoriaResumen | null;
   activo: boolean;
   foto_url: string | null;
   created_at: string;
@@ -309,6 +317,7 @@ export interface VehiculoCreate {
   color: string;
   km_actual: number;
   km_entre_services: number;
+  categoria_id?: number | null;
 }
 
 export interface VehiculoUpdate {
@@ -319,6 +328,32 @@ export interface VehiculoUpdate {
   km_actual?: number;
   km_entre_services?: number;
   km_proximo_service?: number;
+  categoria_id?: number | null;
+}
+
+// ─── Categoría (D-08) ─────────────────────────────────────────────────────────
+
+export interface Categoria {
+  id: number;
+  codigo: string;
+  nombre: string;
+  descripcion: string | null;
+  orden: number;
+  activo: boolean;
+  created_at: string;
+}
+
+export interface CategoriaCreate {
+  codigo: string;
+  nombre: string;
+  descripcion?: string | null;
+  orden?: number;
+}
+
+export interface CategoriaUpdate {
+  nombre?: string;
+  descripcion?: string | null;
+  orden?: number;
 }
 
 // ─── Tarifa ──────────────────────────────────────────────────────────────────
@@ -326,6 +361,7 @@ export interface VehiculoUpdate {
 export interface Tarifa {
   id: number;
   vehiculo_id: number | null;
+  categoria_id: number | null;
   tipo: TipoTarifa;
   monto: string;            // Numeric serializado como string desde Pydantic
   activo: boolean;

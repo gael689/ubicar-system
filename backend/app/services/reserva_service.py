@@ -198,9 +198,9 @@ class ReservaService:
         tarifa_id = None
         if precio_total is None:
             duracion = calcular_duracion_dias(fecha_inicio, fecha_fin)
-            tarifas_info = self._cargar_tarifas_info(vehiculo_id)
+            tarifas_info, categoria_id = self._cargar_tarifas_info(vehiculo_id)
             try:
-                tarifa = seleccionar_tarifa(duracion, tarifas_info)
+                tarifa = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
                 precio_total = calcular_precio_total(duracion, tarifa)
                 tarifa_id = tarifa.id
             except BusinessRuleError:
@@ -381,9 +381,9 @@ class ReservaService:
         else:
             # Calcular tarifa y precio total
             duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
-            tarifas_info = self._cargar_tarifas_info(reserva.vehiculo_id)
+            tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
             try:
-                tarifa = seleccionar_tarifa(duracion, tarifas_info)
+                tarifa = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
                 precio = calcular_precio_total(duracion, tarifa)
                 tarifa_id = tarifa.id
             except BusinessRuleError:
@@ -512,8 +512,13 @@ class ReservaService:
                 )
         return ventanas
 
-    def _cargar_tarifas_info(self, vehiculo_id: int) -> list[TarifaInfo]:
-        """Carga las tarifas activas relevantes para el vehículo."""
+    def _cargar_tarifas_info(self, vehiculo_id: int) -> tuple[list[TarifaInfo], int | None]:
+        """Carga las tarifas activas relevantes para el vehículo: las suyas
+        específicas, las de su categoría (si tiene una asignada), y las
+        generales. Devuelve (tarifas, categoria_id_del_vehiculo)."""
+        vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
+        categoria_id = vehiculo.categoria_id if vehiculo else None
+
         tarifas = (
             self.db.query(Tarifa)
             .filter(
@@ -523,12 +528,14 @@ class ReservaService:
             .all()
         )
         from app.domain.enums import TipoTarifa
-        return [
+        tarifas_info = [
             TarifaInfo(
                 id=t.id,
                 tipo=TipoTarifa(t.tipo),
                 monto=Decimal(str(t.monto)),
                 vehiculo_id=t.vehiculo_id,
+                categoria_id=t.categoria_id,
             )
             for t in tarifas
         ]
+        return tarifas_info, categoria_id

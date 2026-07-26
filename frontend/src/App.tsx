@@ -4,6 +4,7 @@ import { Dashboard } from '@/pages/Dashboard';
 import { PlaceholderPage } from '@/pages/PlaceholderPage';
 import { FlotaList } from '@/pages/flota/FlotaList';
 import { FlotaDetail } from '@/pages/flota/FlotaDetail';
+import { CategoriasPage } from '@/pages/flota/CategoriasPage';
 import { ClientesList } from '@/pages/clientes/ClientesList';
 import { ClienteDetail } from '@/pages/clientes/ClienteDetail';
 import { ReservasList } from '@/pages/reservas/ReservasList';
@@ -28,6 +29,10 @@ export default function App() {
         <Route
           path="/flota/:id"
           element={<AppLayout title="Flota"><FlotaDetail /></AppLayout>}
+        />
+        <Route
+          path="/flota/categorias"
+          element={<AppLayout title="Flota"><CategoriasPage /></AppLayout>}
         />
         <Route
           path="/reservas"

@@ -118,7 +118,7 @@
 |---|---|---|---|---|
 | PRE-01 | **Tarifa semanal/mensual bien calculada** | ✅ | — | **Revisado 2026-07-26**: el cálculo (`días × monto`) siempre fue correcto — `monto` es precio por día en cualquier banda, no precio total del período (test que ya lo bloqueaba desde antes de esta sesión: `test_siete_dias_tarifa_semanal`). El bug real era de **UI**: nada aclaraba eso, así que un operador podía cargar el precio total de la semana pensando que era por día. Corregido: labels/hints explícitos + advertencia (no bloqueante) si el precio por día de una banda larga no es menor al de una corta |
 | PRE-02 | Tarifa por vehículo específico | ✅ | — | |
-| PRE-03 | **Tarifa por categoría** | ⬜ | P1 | No existe el concepto de categoría |
+| PRE-03 | **Tarifa por categoría** | ✅ | — | **Hecho 2026-07-26** (migración 025): `Tarifa.categoria_id` conviven con `vehiculo_id` — el vehículo específico sigue ganando (D-08). Sin calendario/estacionalidad todavía (eso es Fase 5, `tarifas_calendario`) |
 | PRE-04 | Tarifa general (fallback) | ✅ | — | |
 | PRE-05 | Selección por banda de duración | ✅ | — | <7 / 7-29 / 30+ |
 | PRE-06 | Bandas de duración configurables | ⬜ | P2 | Hoy hardcodeadas |
@@ -178,7 +178,7 @@
 | VEH-09 | **Service por fecha** | ⬜ | P1 | `proxima_fecha` existe y nadie la consulta |
 | VEH-10 | Historial de servicios | ✅ | — | |
 | VEH-11 | Gastos por vehículo | ✅ | — | |
-| VEH-12 | Categoría de vehículo | ⬜ | P1 | Prerequisito de PRE-03 y de la web |
+| VEH-12 | Categoría de vehículo | ✅ | — | **Hecho 2026-07-26**: tabla `categorias` (D-08), 6 categorías seedeadas (compacto/sedán/sedán superior/SUV/pick-up/furgón). `Vehiculo.categoria_id` nullable — los 16 vehículos ya cargados hay que categorizarlos a mano desde `VehiculoFormDialog.tsx` |
 | ~~VEH-13~~ | ~~Capacidad de tanque~~ | ❌ | — | **Descartado (D-20).** El nivel visual por fracciones alcanza; el importe del gasto se carga a mano |
 | VEH-14 | Datos registrales (chasis, motor, titular) | ⬜ | P2 | |
 | VEH-15 | Specs (transmisión, pasajeros, valijas, AC) | ⬜ | 🔵 | Para mostrar en la web |
@@ -322,7 +322,7 @@
 | UI-07 | Panel de estado en la ficha de reserva | ⬜ | P1 | Qué pasa y qué hacer, sin cruzar pantallas |
 | UI-08 | Liquidación completa en el check-in | ⬜ | P1 | |
 | UI-09 | Semáforo de validaciones en el check-out | ⬜ | P1 | |
-| UI-10 | Grilla de tarifas por categoría y banda | ⬜ | P1 | |
+| UI-10 | Grilla de tarifas por categoría y banda | 🟡 | P1 | **Hecho 2026-07-26** en versión simple (lista expandible por categoría en `/flota/categorias`, no una grilla categoría×banda todavía) |
 | UI-11 | Búsqueda global (Cmd+K) | ⬜ | P3 | |
 | UI-12 | Unificar paleta e íconos | ⬜ | P2 | Conviven 3 sistemas de color |
 | UI-13 | Confirmaciones consistentes | ⬜ | P3 | Hay `confirm()` nativo mezclado con `ConfirmDialog` |

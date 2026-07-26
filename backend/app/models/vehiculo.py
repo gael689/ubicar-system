@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List
-from sqlalchemy import String, Boolean, DateTime, Enum, Integer
+from sqlalchemy import String, Boolean, DateTime, Enum, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -28,6 +28,9 @@ class Vehiculo(Base):
         nullable=False,
         default="disponible",
     )
+    # Categoría (D-08): compacto/sedán/sedán superior/SUV/pick-up/furgón.
+    # Nullable: los 16 vehículos ya cargados antes de esto se categorizan a mano.
+    categoria_id: Mapped[int | None] = mapped_column(ForeignKey("categorias.id"), nullable=True)
     km_actual: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     km_proximo_service: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     km_entre_services: Mapped[int] = mapped_column(Integer, nullable=False, default=10000)
@@ -37,3 +40,4 @@ class Vehiculo(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     servicios: Mapped[List["Servicio"]] = relationship("Servicio", back_populates="vehiculo", order_by="Servicio.fecha.desc()")
+    categoria: Mapped["Categoria"] = relationship("Categoria")

@@ -14,7 +14,7 @@ from app.routers import (
     vehiculos, clientes, reservas, alquileres,
     contratos, pagos, gastos, echeqs, documentos,
     cotizador, reportes, public, tarifas, ocupacion, tarjetas, multas,
-    servicios, notificaciones, cuentas_corrientes, recibos,
+    servicios, notificaciones, cuentas_corrientes, recibos, categorias,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,7 @@ app.include_router(servicios.router, prefix=API_PREFIX)
 app.include_router(notificaciones.router, prefix=API_PREFIX)
 app.include_router(cuentas_corrientes.router, prefix=API_PREFIX)
 app.include_router(recibos.router, prefix=API_PREFIX)
+app.include_router(categorias.router, prefix=API_PREFIX)
 
 
 # ─── Archivos estáticos (storage local) ───────────────────────────────────────

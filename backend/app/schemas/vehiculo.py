@@ -16,6 +16,7 @@ class VehiculoBase(BaseModel):
     color: str
     km_actual: int
     km_entre_services: int
+    categoria_id: int | None = None
 
 
 class VehiculoCreate(VehiculoBase):
@@ -30,7 +31,15 @@ class VehiculoUpdate(BaseModel):
     km_actual: int | None = None
     km_entre_services: int | None = None
     km_proximo_service: int | None = None
+    categoria_id: int | None = None
     # activo no se cambia por PATCH: usar DELETE (baja lógica) o POST /reactivar.
+
+
+class CategoriaResumen(BaseModel):
+    id: int
+    codigo: str
+    nombre: str
+    model_config = {"from_attributes": True}
 
 
 class VehiculoResponse(VehiculoBase):
@@ -41,6 +50,7 @@ class VehiculoResponse(VehiculoBase):
     activo: bool
     foto_url: str | None = None
     created_at: datetime
+    categoria: CategoriaResumen | None = None
 
     model_config = {"from_attributes": True}
 

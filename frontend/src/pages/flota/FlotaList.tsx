@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Car, Plus } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Car, Plus, Tags } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -73,10 +74,15 @@ export function FlotaList() {
         title="Flota"
         description="Gestioná todos los vehículos. Los inactivos no se eliminan — siguen visibles con el toggle."
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Nuevo vehículo
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/flota/categorias"><Tags className="h-4 w-4" /> Categorías</Link>
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Nuevo vehículo
+            </Button>
+          </div>
         }
       />
 

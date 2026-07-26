@@ -20,6 +20,7 @@ export const vehiculoFormSchema = z.object({
   km_actual: z.coerce.number().int().min(0, 'No puede ser negativo'),
   km_entre_services: z.coerce.number().int().min(1000, 'Mínimo 1000 km'),
   km_proximo_service: z.coerce.number().int().min(0).optional(),
+  categoria_id: z.coerce.number().int().nullable().optional(),
 });
 
 export type VehiculoFormValues = z.infer<typeof vehiculoFormSchema>;
@@ -33,4 +34,5 @@ export const DEFAULT_VEHICULO_VALUES: VehiculoFormValues = {
   color: '',
   km_actual: 0,
   km_entre_services: 10000,
+  categoria_id: null,
 };

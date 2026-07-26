@@ -24,3 +24,20 @@ class TarifaRepository(BaseRepository[Tarifa]):
             Tarifa.activo == True,
         )
         return self.db.execute(stmt).scalar_one_or_none()
+
+    # --- Tarifas por categoría (D-08) ---
+
+    def list_by_categoria(self, categoria_id: int, incluir_inactivas: bool = False) -> list[Tarifa]:
+        stmt = select(Tarifa).where(Tarifa.categoria_id == categoria_id)
+        if not incluir_inactivas:
+            stmt = stmt.where(Tarifa.activo == True)
+        stmt = stmt.order_by(Tarifa.tipo, Tarifa.vigencia_desde.desc())
+        return list(self.db.execute(stmt).scalars().all())
+
+    def get_activa_por_tipo_categoria(self, categoria_id: int, tipo: str) -> Tarifa | None:
+        stmt = select(Tarifa).where(
+            Tarifa.categoria_id == categoria_id,
+            Tarifa.tipo == tipo,
+            Tarifa.activo == True,
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
