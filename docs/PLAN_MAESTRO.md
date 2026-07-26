@@ -390,19 +390,33 @@ Necesarios para facturar y para operar cuenta corriente con empresas:
 
 ### 3.8 Nuevos automatismos (lo que hace que todo esté conectado)
 
-| Evento | Asiento automático en CC |
-|---|---|
-| Checkout confirmado con precio total | DEBE por el total del alquiler, condición del cliente, vencimiento calculado |
-| Pago registrado | HABER por el monto |
-| **Recibo emitido** | **HABER + imputación a las deudas seleccionadas + entrada en Caja del día** |
-| **Recibo anulado** | **Contra-asiento DEBE + contra-recibo, nunca borrado** |
-| Echeq recibido en cartera | HABER diferido |
-| Echeq rechazado | DEBE (revierte) + alerta alta |
-| Multa cambia a `imputada` | DEBE por el monto |
-| Cargo por excedente / late checkout | DEBE al cerrar el checkin |
-| Garantía ejecutada parcial | DEBE por el monto retenido |
-| Factura emitida | Vincula al asiento existente (no duplica) |
-| Nota de crédito | HABER |
+| Evento | Asiento automático en CC | Estado |
+|---|---|---|
+| Checkout confirmado con precio total | DEBE por el total del alquiler, condición del cliente, vencimiento calculado | ✅ Hecho |
+| Pago registrado | HABER por el monto | ✅ Hecho |
+| **Recibo emitido** | **HABER + imputación a las deudas seleccionadas + entrada en Caja del día** | ⬜ Módulo Recibos, sección 3.6 |
+| **Recibo anulado** | **Contra-asiento DEBE + contra-recibo, nunca borrado** | ⬜ Módulo Recibos |
+| Echeq recibido en cartera | HABER diferido | ✅ Hecho |
+| Echeq rechazado | DEBE (revierte) + alerta alta | ✅ Hecho (la alerta es Fase 2) |
+| Multa cambia a `imputada` | DEBE por el monto | ✅ Hecho |
+| Multa resuelta (cobrada / bonificada) | HABER (cobrada) o contra-asiento con motivo (bonificada) | ✅ Hecho |
+| Cargo por excedente / late checkout | DEBE al cerrar el checkin | ✅ Hecho |
+| Garantía ejecutada parcial | DEBE por el monto retenido | ⬜ Necesita el parte de daños (Fase 4) |
+| Factura emitida | Vincula al asiento existente (no duplica) | ⬜ Módulo Comprobantes, sección 3.5 |
+| Nota de crédito | HABER | ⬜ Módulo Comprobantes |
+
+**✅ Hecho (2026-07-26) — Multa.** Imputar una multa a un cliente (`estado='imputada'`) genera el débito automático. Nuevo `POST /multas/{id}/resolver` con dos salidas, mismo patrón que el rechazo de un echeq y la decisión de excedente del check-in (D-19):
+- **`cobrada`** — el cliente la pagó, genera el crédito que cancela el débito.
+- **`bonificada`** — se le perdona, anula el débito con contra-asiento. **Exige motivo** a nivel de API (422 si falta), no sólo en el frontend. Nuevo estado `bonificada` en el enum (antes sólo existía `cobrada`, que no distinguía "pagó" de "se lo perdonamos").
+
+Verificado en vivo: imputar sin cliente da 422; imputar con cliente genera el débito exacto; resolver "cobrada" cancela el débito a $0; bonificar sin motivo da 422; bonificar con motivo revierte el débito y guarda el motivo en la multa.
+
+**🔑 El principio general, para cuando se agregue el parte de daños (Fase 4) u otro "cargo extra" atribuible a un cliente:** cualquier cargo de este tipo debe seguir el mismo patrón de 3 pasos —
+1. **Se genera un débito automático** en la CC del cliente al confirmarse/imputarse (no antes: mientras es sólo un hallazgo sin confirmar, no se cobra nada).
+2. **Una acción de resolución con exactamente dos salidas:** cobrado (→ crédito) o bonificado/perdonado (→ contra-asiento, motivo obligatorio). No hay un tercer estado ambiguo.
+3. **El historial queda gratis** — el movimiento de CC ya lleva fecha, concepto, quién lo generó y a qué entidad se enlaza (vía su FK específica en `movimientos_cuenta_corriente`: `multa_id` ya existe, `dano_id` se agrega cuando exista la tabla de partes de daños).
+
+`CuentaCorrienteService.registrar_movimiento()` y `.anular_movimiento()` ya son genéricos — el trabajo para un cargo nuevo es sólo el enum de estados + el endpoint de resolución + la llamada al servicio, como se hizo acá para multas. No hace falta tocar el ledger en sí.
 
 ### 3.9 UI — Cuenta Corriente
 

@@ -2,17 +2,24 @@
 MultaService — lógica de gestión de multas/infracciones.
 El flujo principal: buscar quién tenía el auto en la fecha/hora de la infracción,
 luego crear la multa vinculada al cliente y alquiler responsable.
+
+Ledger: imputar una multa a un cliente genera un débito automático en su
+cuenta corriente (mismo mecanismo que alquiler/pago/echeq). Resolverla
+("cobrada" o "bonificada") genera el crédito o el contra-asiento
+correspondiente — ver CuentaCorrienteService.
 """
 from datetime import date, time, datetime
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, BusinessRuleError
 from app.models.alquiler import Alquiler
 from app.models.reserva import Reserva
 from app.models.vehiculo import Vehiculo
 from app.models.cliente import Cliente
+from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.repositories.multa_repo import MultaRepo
 from app.schemas.multa import MultaCreate, MultaUpdate, BusquedaMultaResponse
+from app.services.cuenta_corriente_service import CuentaCorrienteService
 
 
 class MultaService:
@@ -99,10 +106,85 @@ class MultaService:
     def list(self, **kwargs):
         return self.repo.list(**kwargs)
 
-    def actualizar(self, id: int, payload: MultaUpdate):
+    def actualizar(self, id: int, payload: MultaUpdate, usuario_id: int | None = None):
         multa = self.get(id)
         data = {k: v for k, v in payload.model_dump().items() if v is not None}
-        return self.repo.update(multa, data)
+        estado_anterior = multa.estado
+        multa = self.repo.update(multa, data)
+
+        # Imputar (asignarle un responsable) genera el débito en su cuenta
+        # corriente — sólo la primera vez que pasa a este estado.
+        if data.get("estado") == "imputada" and estado_anterior != "imputada":
+            cliente_id = data.get("cliente_id") or multa.cliente_id
+            if not cliente_id:
+                raise BusinessRuleError(
+                    "multa_sin_cliente",
+                    "No se puede imputar una multa sin un cliente responsable",
+                )
+            CuentaCorrienteService(self.db).registrar_movimiento(
+                cliente_id=cliente_id,
+                tipo="debito",
+                concepto=f"Multa #{multa.id} — {multa.patente} ({multa.fecha_infraccion})",
+                monto=multa.monto,
+                fecha=date.today(),
+                creado_por=usuario_id,
+                alquiler_id=multa.alquiler_id,
+                multa_id=multa.id,
+            )
+
+        return multa
+
+    def resolver(self, id: int, decision: str, motivo: str | None, usuario_id: int | None):
+        """
+        Resuelve una multa imputada: "cobrada" (el cliente la pagó — genera
+        el crédito que cancela el débito) o "bonificada" (se le perdona —
+        anula el débito con un contra-asiento, motivo obligatorio).
+        """
+        multa = self.get(id)
+        if multa.estado != "imputada":
+            raise BusinessRuleError(
+                "multa_no_imputada",
+                f"Sólo se puede resolver una multa imputada (estado actual: {multa.estado})",
+            )
+        if not multa.cliente_id:
+            raise BusinessRuleError("multa_sin_cliente", "La multa no tiene cliente responsable")
+
+        cc_service = CuentaCorrienteService(self.db)
+
+        if decision == "cobrada":
+            cc_service.registrar_movimiento(
+                cliente_id=multa.cliente_id,
+                tipo="credito",
+                concepto=f"Multa #{multa.id} cobrada — {multa.patente}",
+                monto=multa.monto,
+                fecha=date.today(),
+                creado_por=usuario_id,
+                alquiler_id=multa.alquiler_id,
+                multa_id=multa.id,
+            )
+        elif decision == "bonificada":
+            if not motivo or not motivo.strip():
+                raise BusinessRuleError("motivo_requerido", "Bonificar una multa requiere un motivo")
+            debito = (
+                self.db.query(MovimientoCuentaCorriente)
+                .filter(
+                    MovimientoCuentaCorriente.multa_id == id,
+                    MovimientoCuentaCorriente.tipo == "debito",
+                    MovimientoCuentaCorriente.anulado == False,
+                )
+                .first()
+            )
+            if debito:
+                cc_service.anular_movimiento(debito.id, motivo=motivo, creado_por=usuario_id)
+            multa.motivo_bonificacion = motivo
+        else:
+            raise BusinessRuleError("decision_invalida", f"Decisión inválida: {decision!r}")
+
+        multa.estado = decision
+        multa.resuelto_por = usuario_id
+        multa.resuelto_en = datetime.utcnow()
+        self.db.flush()
+        return multa
 
     def eliminar(self, id: int) -> None:
         multa = self.get(id)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_db, get_current_user
 from app.core.responses import ok, paginated
 from app.models.usuario import Usuario
-from app.schemas.multa import MultaCreate, MultaUpdate, MultaResponse, BusquedaMultaResponse
+from app.schemas.multa import MultaCreate, MultaUpdate, MultaResponse, BusquedaMultaResponse, ResolverMultaRequest
 from app.services.multa_service import MultaService
 
 router = APIRouter(prefix="/multas", tags=["Multas"])
@@ -97,13 +97,32 @@ def actualizar_multa(
     multa_id: int,
     payload: MultaUpdate,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     svc = MultaService(db)
-    multa = svc.actualizar(multa_id, payload)
+    multa = svc.actualizar(multa_id, payload, usuario_id=current_user.id)
     db.commit()
     db.refresh(multa)
     return ok(MultaResponse.model_validate(multa), "Multa actualizada")
+
+
+@router.post("/{multa_id}/resolver")
+def resolver_multa(
+    multa_id: int,
+    payload: ResolverMultaRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Resuelve una multa imputada: "cobrada" (el cliente la pagó — genera el
+    crédito que cancela el débito) o "bonificada" (se le perdona — anula el
+    débito con un contra-asiento, motivo obligatorio).
+    """
+    svc = MultaService(db)
+    multa = svc.resolver(multa_id, payload.decision, payload.motivo, current_user.id)
+    db.commit()
+    db.refresh(multa)
+    return ok(MultaResponse.model_validate(multa), "Multa resuelta")
 
 
 @router.delete("/{multa_id}", status_code=status.HTTP_204_NO_CONTENT)

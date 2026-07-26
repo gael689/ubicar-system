@@ -218,7 +218,7 @@
 | FIN-17 | Cartera de echeqs por mes | ⬜ | P2 | Saber con qué plata se cuenta |
 | FIN-18 | **Recibos con PDF estético** | ⬜ | P1 | Ver RCB-* |
 | FIN-19 | Facturas / comprobantes | ⬜ | P1 | Hoy sólo un booleano `con_factura` |
-| FIN-20 | Multa imputada genera deuda | ⬜ | P2 | Hoy queda aislada |
+| FIN-20 | Multa imputada genera deuda | ✅ | — | **Hecho 2026-07-26**: imputar genera débito automático. Nuevo `POST /multas/{id}/resolver` (cobrada → crédito · bonificada → contra-asiento, motivo obligatorio) |
 | FIN-21 | Reportes de ingresos y flota | ✅ | — | |
 | FIN-22 | Separar facturado / no facturado en reportes | ⬜ | P1 | |
 | FIN-23 | Facturación electrónica AFIP | ⬜ | P3 | Diferido; dejar los campos preparados |

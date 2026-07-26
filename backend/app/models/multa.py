@@ -28,7 +28,7 @@ class Multa(Base):
 
     # Estado de gestión
     estado: Mapped[str] = mapped_column(
-        SAEnum("pendiente", "imputada", "cobrada", "apelando", name="estado_multa"),
+        SAEnum("pendiente", "imputada", "cobrada", "apelando", "bonificada", name="estado_multa"),
         nullable=False,
         default="pendiente",
     )
@@ -39,6 +39,11 @@ class Multa(Base):
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Resolución (D-19 style): quién decidió cobrarla o bonificarla, y por qué
+    motivo_bonificacion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resuelto_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    resuelto_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relaciones
     vehiculo: Mapped["Vehiculo"] = relationship("Vehiculo", foreign_keys=[vehiculo_id])

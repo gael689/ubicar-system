@@ -1,6 +1,15 @@
 from datetime import date, time, datetime
 from decimal import Decimal
+from typing import Literal
 from pydantic import BaseModel
+
+
+DecisionMulta = Literal["cobrada", "bonificada"]
+
+
+class ResolverMultaRequest(BaseModel):
+    decision: DecisionMulta
+    motivo: str | None = None  # requerido si decision == "bonificada"
 
 
 class MultaCreate(BaseModel):
@@ -55,6 +64,9 @@ class MultaResponse(BaseModel):
     notas: str | None
     activo: bool
     created_at: datetime
+    motivo_bonificacion: str | None = None
+    resuelto_por: int | None = None
+    resuelto_en: datetime | None = None
     vehiculo: VehiculoResumen | None = None
     cliente: ClienteResumen | None = None
     model_config = {"from_attributes": True}
