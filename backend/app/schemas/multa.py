@@ -85,6 +85,11 @@ class BusquedaMultaResponse(BaseModel):
     cliente_id: int | None = None
     cliente_nombre: str | None = None
     cliente_dni: str | None = None
+    # Conductor != pagador: si la reserva tenía un conductor designado, es
+    # quien manejaba de verdad — la multa se sigue imputando al cliente
+    # (quien paga/firma), pero conviene saber a quién contactar también.
+    conductor_nombre: str | None = None
+    conductor_dni: str | None = None
     contrato_numero: int | None = None
     fecha_checkout: date | None = None
     fecha_checkin: date | None = None

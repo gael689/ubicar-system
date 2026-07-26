@@ -887,7 +887,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 17. ✅ Echeq: `cliente_id` + ciclo de vida completo + generación de movimiento en CC — hecho 2026-07-26 (migración 020). Frontend: rechazo ahora exige motivo (ver 3.6-bis)
 18. ✅ Automatismos de asientos (checkout → débito, pago → crédito, multa → débito, recibo → crédito) — hecho 2026-07-26
 19. ✅ Datos fiscales del cliente + **empresa vs particular** (contactos con puesto, formulario condicional) — hecho 2026-07-26 (migración 023). Ver detalle abajo
-20. **Conductor ≠ pagador** en la reserva — prerequisito para imputar multas en empresas
+20. ✅ **Conductor ≠ pagador** en la reserva — hecho 2026-07-26 (migración 024). `Reserva.conductor_id` (nullable, apunta a `conductores_adicionales` del propio cliente); si es NULL, el cliente es quien maneja (comportamiento de siempre). `MultaService.buscar_responsable()` ahora devuelve también el conductor real, no sólo el cliente que paga. Selector en `ReservaModal.tsx`, visible sólo si el cliente tiene conductores adicionales cargados
 21. **Rediseño de tarifas**: `precio_por_dia` explícito, por vehículo **y** por categoría, bandas configurables
 22. **Descuentos auditados** (precio de lista vs cobrado, motivo, autorizado por) + **con/sin factura** en la reserva
 23. **Estados nuevos**: `VENCIDA`, `NO_SHOW`, `CERRADA` + política de seña en cancelación y no-show

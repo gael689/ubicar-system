@@ -533,6 +533,7 @@ export interface Reserva {
   id: number;
   vehiculo_id: number;
   cliente_id: number;
+  conductor_id: number | null;
   fecha_inicio: string;   // ISO date "YYYY-MM-DD"
   hora_inicio: string;    // "HH:MM:SS"
   fecha_fin: string;
@@ -567,6 +568,7 @@ export interface Reserva {
   // Relaciones expandidas
   vehiculo?: VehiculoResumen;
   cliente?: ClienteResumen;
+  conductor?: ConductorAdicional | null;
   alquiler_id?: number | null;
   alquiler_estado?: string | null;
 }
@@ -574,6 +576,7 @@ export interface Reserva {
 export interface ReservaCreate {
   vehiculo_id: number;
   cliente_id: number;
+  conductor_id?: number | null;
   fecha_inicio: string;
   hora_inicio: string;
   fecha_fin: string;
@@ -591,6 +594,7 @@ export interface ReservaCreate {
   garantia_tarjeta_vencimiento?: string | null;
   garantia_tarjeta_titular?: string | null;
   forma_pago_prevista?: string | null;
+  estado_pago?: string | null;
   anticipo_monto?: number | null;
   anticipo_fecha?: string | null;
   anticipo_medio_pago?: string | null;
@@ -598,6 +602,7 @@ export interface ReservaCreate {
 
 export interface ReservaUpdate {
   vehiculo_id?: number;
+  conductor_id?: number | null;
   fecha_inicio?: string;
   hora_inicio?: string;
   fecha_fin?: string;
@@ -607,6 +612,7 @@ export interface ReservaUpdate {
   notas?: string | null;
   precio_total?: number | null;
   forma_pago_prevista?: string | null;
+  estado_pago?: string | null;
   anticipo_monto?: number | null;
   anticipo_fecha?: string | null;
   anticipo_medio_pago?: string | null;

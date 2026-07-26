@@ -40,7 +40,7 @@
 | RES-12b | Cancelar: retener la seña completa | ⬜ | P1 | D-11: no se devuelve nada. Genera el asiento solo |
 | RES-13 | Reabrir reserva finalizada por error | ⬜ | P2 | |
 | RES-14 | Marcar con factura / sin factura | ⬜ | P1 | Sólo existe a nivel de cada pago |
-| RES-15 | Separar quién paga de quién maneja | ⬜ | P1 | Crítico para empresas y para imputar multas |
+| RES-15 | Separar quién paga de quién maneja | ✅ | — | **Hecho 2026-07-26** (migración 024): `Reserva.conductor_id` nullable → si no se define, el cliente es el conductor (sin cambios). `MultaService.buscar_responsable()` ya devuelve ambos (cliente que paga + conductor real) |
 | RES-16 | Registrar conductores autorizados del alquiler | ⬜ | P2 | Hoy sólo a nivel de ficha del cliente |
 | RES-17 | Ver desglose del precio, no sólo el total | ⬜ | P1 | |
 | RES-18 | Buscar por nombre / DNI | ✅ | — | |

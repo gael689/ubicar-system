@@ -19,7 +19,7 @@ from app.domain.transiciones import (
 from app.domain.ventana import VentanaReserva
 from app.models.reserva import Reserva
 from app.models.vehiculo import Vehiculo
-from app.models.cliente import Cliente
+from app.models.cliente import Cliente, ConductorAdicional
 from app.models.tarifa import Tarifa
 from app.repositories.reserva_repo import ReservaRepo
 from app.repositories.alquiler_repo import AlquilerRepo
@@ -94,6 +94,21 @@ class ReservaService:
 
     # ── Crear reserva ─────────────────────────────────────────────────────────
 
+    def _validar_conductor(self, conductor_id: int, cliente_id: int) -> None:
+        """El conductor tiene que ser un conductor adicional activo del propio cliente."""
+        conductor = (
+            self.db.query(ConductorAdicional)
+            .filter(ConductorAdicional.id == conductor_id)
+            .first()
+        )
+        if not conductor or not conductor.activo:
+            raise NotFoundError("Conductor adicional", conductor_id)
+        if conductor.cliente_id != cliente_id:
+            raise BusinessRuleError(
+                "conductor_no_pertenece_al_cliente",
+                "El conductor seleccionado no pertenece al cliente de la reserva",
+            )
+
     def create(
         self,
         vehiculo_id: int,
@@ -121,6 +136,7 @@ class ReservaService:
         anticipo_monto: Decimal | None = None,
         anticipo_fecha: date | None = None,
         anticipo_medio_pago: str | None = None,
+        conductor_id: int | None = None,
         usuario_id: int = 0,
     ) -> tuple[Reserva, list[dict]]:
         """
@@ -141,6 +157,9 @@ class ReservaService:
         cliente = self.db.query(Cliente).filter(Cliente.id == cliente_id).first()
         if not cliente or not cliente.activo:
             raise NotFoundError("Cliente", cliente_id)
+
+        if conductor_id is not None:
+            self._validar_conductor(conductor_id, cliente_id)
 
         # 2. Construir datetime completos para solapamiento
         inicio_dt = datetime.combine(fecha_inicio, hora_inicio)
@@ -192,6 +211,7 @@ class ReservaService:
             reserva = Reserva(
                 vehiculo_id=vehiculo_id,
                 cliente_id=cliente_id,
+                conductor_id=conductor_id,
                 fecha_inicio=fecha_inicio,
                 hora_inicio=hora_inicio,
                 fecha_fin=fecha_fin,
@@ -236,6 +256,7 @@ class ReservaService:
         id: int,
         usuario_id: int,
         vehiculo_id: int | None = None,
+        conductor_id: int | None = None,
         fecha_inicio: date | None = None,
         hora_inicio: time | None = None,
         fecha_fin: date | None = None,
@@ -259,6 +280,9 @@ class ReservaService:
 
         # Si es confirmada, no se puede cambiar cliente
         # (vehiculo_id y fechas sí, según D8)
+
+        if conductor_id is not None:
+            self._validar_conductor(conductor_id, reserva.cliente_id)
 
         # Usar valores actuales si no se proveen
         v_id = vehiculo_id or reserva.vehiculo_id
@@ -292,6 +316,8 @@ class ReservaService:
             kwargs = {}
             if vehiculo_id is not None:
                 kwargs["vehiculo_id"] = vehiculo_id
+            if conductor_id is not None:
+                kwargs["conductor_id"] = conductor_id
             if fecha_inicio is not None:
                 kwargs["fecha_inicio"] = fecha_inicio
             if hora_inicio is not None:

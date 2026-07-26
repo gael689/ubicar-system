@@ -4,7 +4,7 @@ import { CurrencyDollarIcon, CreditCardIcon as HeroCreditCardIcon, ClockIcon as 
 import { useQuery } from '@tanstack/react-query';
 import { useReservas } from '@/hooks/useReservas';
 import { useVehiculos } from '@/hooks/useVehiculos';
-import { useClientes } from '@/hooks/useClientes';
+import { useClientes, useConductores } from '@/hooks/useClientes';
 import api from '@/lib/api';
 import type { Reserva, ReservaCreate, ReservaUpdate, SolapeWarning, Tarifa, ApiResponse } from '@/types';
 
@@ -37,6 +37,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const [vehiculoId, setVehiculoId]           = useState(reserva?.vehiculo_id?.toString() ?? initialVehiculoId?.toString() ?? '');
   const [clienteId, setClienteId]             = useState(reserva?.cliente_id?.toString() ?? '');
+  const [conductorId, setConductorId]         = useState(reserva?.conductor_id?.toString() ?? '');
+  const { data: conductoresCliente } = useConductores(clienteId ? Number(clienteId) : 0);
   const [fechaInicio, setFechaInicio]         = useState(reserva?.fecha_inicio ?? initialFechaInicio ?? today());
   const [horaInicio, setHoraInicio]           = useState(reserva ? formatTime(reserva.hora_inicio) : '10:00');
   const [fechaFin, setFechaFin]               = useState(reserva?.fecha_fin ?? '');
@@ -91,6 +93,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const selectCliente = (id: string, nombre: string) => {
     setClienteId(id);
+    setConductorId('');
     setClientSearch(nombre);
     setClientDropdownOpen(false);
   };
@@ -208,6 +211,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       if (isEdit) {
         const payload: ReservaUpdate = {
           vehiculo_id: parseInt(vehiculoId),
+          conductor_id: conductorId ? parseInt(conductorId) : null,
           fecha_inicio: fechaInicio,
           hora_inicio: horaInicio + ':00',
           fecha_fin: fechaFin,
@@ -228,6 +232,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         const payload: ReservaCreate = {
           vehiculo_id: parseInt(vehiculoId),
           cliente_id: parseInt(clienteId),
+          conductor_id: conductorId ? parseInt(conductorId) : null,
           fecha_inicio: fechaInicio,
           hora_inicio: horaInicio + ':00',
           fecha_fin: fechaFin,
@@ -348,6 +353,24 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </div>
             </div>
           </div>
+
+          {/* Conductor (si es distinto de quien paga) */}
+          {clienteId && conductoresCliente && conductoresCliente.length > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Conductor</label>
+              <select
+                value={conductorId}
+                onChange={e => setConductorId(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              >
+                <option value="">El cliente es el conductor</option>
+                {conductoresCliente.filter(c => c.activo).map(c => (
+                  <option key={c.id} value={c.id}>{c.nombre_completo}{c.dni ? ` (DNI ${c.dni})` : ''}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">Para empresas: quién retira el auto, si no es quien paga/firma.</p>
+            </div>
+          )}
 
           {/* Fechas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

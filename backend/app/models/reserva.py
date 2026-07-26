@@ -26,6 +26,12 @@ class Reserva(Base):
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Conductor != pagador (Fase 1, ítem 20): si es NULL, el cliente es quien
+    # maneja (comportamiento de siempre). Si se define, apunta a uno de los
+    # conductores_adicionales del propio cliente — típico en empresas, donde
+    # quien paga/firma no es quien retira el auto.
+    conductor_id: Mapped[int | None] = mapped_column(ForeignKey("conductores_adicionales.id"), nullable=True)
+
     # ── Fase 3 — campos nuevos ────────────────────────────────────────────────
     # D1 late checkout
     hora_devolucion_acordada: Mapped[time | None] = mapped_column(Time(), nullable=True)
@@ -56,6 +62,7 @@ class Reserva(Base):
     # ── Relaciones ────────────────────────────────────────────────────────────
     vehiculo: Mapped["Vehiculo"] = relationship("Vehiculo")
     cliente: Mapped["Cliente"] = relationship("Cliente")
+    conductor: Mapped["ConductorAdicional"] = relationship("ConductorAdicional")
     usuario: Mapped["Usuario"] = relationship("Usuario")
     tarifa_aplicada: Mapped["Tarifa"] = relationship("Tarifa", foreign_keys=[tarifa_aplicada_id])
     alquiler: Mapped["Alquiler"] = relationship("Alquiler", back_populates="reserva", uselist=False)

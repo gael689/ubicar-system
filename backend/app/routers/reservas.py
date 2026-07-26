@@ -95,6 +95,7 @@ def create_reserva(
         reserva, warnings = svc.create(
             vehiculo_id=payload.vehiculo_id,
             cliente_id=payload.cliente_id,
+            conductor_id=payload.conductor_id,
             fecha_inicio=payload.fecha_inicio,
             hora_inicio=payload.hora_inicio,
             fecha_fin=payload.fecha_fin,

@@ -29,11 +29,21 @@ class ClienteResumen(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ConductorResumen(BaseModel):
+    id: int
+    nombre_completo: str
+    dni: str | None = None
+    licencia_numero: str | None = None
+    licencia_vencimiento: date
+    model_config = {"from_attributes": True}
+
+
 # ── Request schemas ───────────────────────────────────────────────────────────
 
 class ReservaCreate(BaseModel):
     vehiculo_id: int
     cliente_id: int
+    conductor_id: int | None = None
     fecha_inicio: date
     hora_inicio: time
     fecha_fin: date
@@ -63,6 +73,7 @@ class ReservaCreate(BaseModel):
 class ReservaUpdate(BaseModel):
     """Para edición (pendiente o confirmada según D8)."""
     vehiculo_id: int | None = None
+    conductor_id: int | None = None
     fecha_inicio: date | None = None
     hora_inicio: time | None = None
     fecha_fin: date | None = None
@@ -99,6 +110,7 @@ class ReservaResponse(BaseModel):
     id: int
     vehiculo_id: int
     cliente_id: int
+    conductor_id: int | None = None
     fecha_inicio: date
     hora_inicio: time
     fecha_fin: date
@@ -133,6 +145,7 @@ class ReservaResponse(BaseModel):
     # Relaciones expandidas
     vehiculo: VehiculoResumen | None = None
     cliente: ClienteResumen | None = None
+    conductor: ConductorResumen | None = None
     alquiler_id: int | None = None
     alquiler_estado: str | None = None
     model_config = {"from_attributes": True}

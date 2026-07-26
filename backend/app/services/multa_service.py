@@ -76,6 +76,9 @@ class MultaService:
         alquiler = alquileres[0]
         reserva = alquiler.reserva
         cliente = self.db.query(Cliente).filter(Cliente.id == reserva.cliente_id).first()
+        # Conductor != pagador: si la reserva tenía un conductor designado
+        # (típico en empresas), es quien realmente manejaba.
+        conductor = reserva.conductor if reserva.conductor_id else None
 
         return BusquedaMultaResponse(
             encontrado=True,
@@ -86,6 +89,8 @@ class MultaService:
             cliente_id=cliente.id if cliente else None,
             cliente_nombre=cliente.nombre_completo if cliente else None,
             cliente_dni=cliente.dni_cuit if cliente else None,
+            conductor_nombre=conductor.nombre_completo if conductor else None,
+            conductor_dni=conductor.dni if conductor else None,
             contrato_numero=reserva.id,
             fecha_checkout=alquiler.checkout_fecha,
             fecha_checkin=alquiler.checkin_fecha,
