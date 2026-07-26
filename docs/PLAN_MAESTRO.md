@@ -235,6 +235,15 @@ Propuesta, alineada con la práctica contable argentina:
 | `creado_por` | FK usuario | Auditoría |
 | `created_at` | DateTime | |
 
+**✅ Hecho (2026-07-26), migración 019.** Todo lo de arriba implementado excepto `comprobante_id` (espera a que exista la tabla `comprobantes`, sección 3.6). Nuevo módulo puro `domain/cuenta_corriente.py` con `signo_movimiento()`, `aplicar_movimiento()` y `calcular_vencimiento()` — 11 tests unitarios. Nuevo endpoint `POST /cuentas-corrientes/movimientos/{id}/anular` (contra-asiento, nunca edita ni borra el original).
+
+**El signo se invirtió (D-01)** en `add_movimiento` y en la rama `cuenta_corriente` de `create_pago` — antes un movimiento "debito" restaba del saldo (convención vieja: negativo = deuda); ahora suma (positivo = deuda). Se corrigió también en el frontend (`CuentaCorrienteTab.tsx`, `CuentasCorrientesPage.tsx`), que mostraba la polaridad vieja.
+
+**`DELETE /pagos/{id}` para pagos en cuenta corriente** ya no bloquea (como en el commit anterior): ahora encuentra el movimiento vinculado por `pago_id` y lo anula con un contra-asiento automático antes de borrar el `Pago`. Se encontró y arregló un bug real acá: la FK `movimientos_cuenta_corriente.pago_id` impedía el `DELETE FROM pagos` porque el `UPDATE` que desvincula la referencia no se había *flusheado* todavía — sin un `db.flush()` explícito antes del `db.delete(pago)`, Postgres rechazaba el borrado con `ForeignKeyViolation`.
+
+**Deliberadamente NO incluido en este batch** (para no mezclar un cambio de esquema con un cambio de comportamiento): el automatismo "todo checkout genera un débito automático en la CC del cliente". Hoy sólo un pago con `medio_pago=cuenta_corriente` genera movimiento. Extenderlo a *todos* los alquileres (registrando el total como deuda y cada cobro como crédito, sea cual sea el medio de pago) es un cambio de comportamiento visible para cada transacción nueva — punto 3.8 de este documento — y merece confirmarse aparte antes de wirearlo.
+
+Verificado en vivo vía HTTP real: débito manual con `condicion=cta_cte_30` calculó el vencimiento solo (+30 días); crédito bajó el saldo correctamente; anulación de un crédito revirtió el saldo con contra-asiento y quedó bloqueada la doble anulación (409); pago por cuenta corriente generó el débito enlazado; borrar ese pago anuló el movimiento y el saldo volvió a su valor anterior; un pago normal (efectivo) se sigue borrando sin cambios.
 ### 3.4 Cambios de modelo — Echeq
 
 Hoy el echeq no sabe de quién es. Agregar:
@@ -833,7 +842,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 15. Resolver errores de TypeScript pendientes
 
 ### 💰 Fase 1 — Finanzas conectadas + reglas de negocio (3-4 semanas)
-16. Rediseñar cuenta corriente como ledger inmutable (`saldo_posterior`, `condicion`, `fecha_vencimiento`, anulación, FKs)
+16. ✅ Rediseñar cuenta corriente como ledger inmutable (`saldo_posterior`, `condicion`, `fecha_vencimiento`, anulación, FKs) — hecho 2026-07-26 (migración 019). Ver detalle abajo
 17. Echeq: `cliente_id` + `fecha_pago` + ciclo de vida completo + generación de movimiento en CC
 18. Automatismos de asientos (checkout → débito, pago → crédito, multa → débito, etc.)
 19. Datos fiscales del cliente + **empresa vs particular** (contactos con puesto, formulario condicional)

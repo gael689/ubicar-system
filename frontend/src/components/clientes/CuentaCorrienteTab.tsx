@@ -62,12 +62,13 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground mb-1">Saldo actual de {clienteNombre}</p>
-            <p className={`text-3xl font-bold ${saldo < 0 ? 'text-danger' : saldo > 0 ? 'text-success' : 'text-foreground'}`}>
-              {formatCurrency(saldo)}
+            {/* D-01: saldo positivo = el cliente debe. Negativo = saldo a favor. */}
+            <p className={`text-3xl font-bold ${saldo > 0 ? 'text-danger' : saldo < 0 ? 'text-success' : 'text-foreground'}`}>
+              {formatCurrency(Math.abs(saldo))}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {saldo < 0 && 'El cliente tiene una deuda pendiente'}
-              {saldo > 0 && 'El cliente tiene saldo a favor'}
+              {saldo > 0 && 'El cliente tiene una deuda pendiente'}
+              {saldo < 0 && 'El cliente tiene saldo a favor'}
               {saldo === 0 && 'Saldo en cero'}
             </p>
           </div>

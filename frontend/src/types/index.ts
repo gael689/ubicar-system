@@ -124,10 +124,17 @@ export interface EcheqUpdate {
 
 // ─── Cuentas Corrientes ───────────────────────────────────────────────────────
 
+export type CondicionPago = 'contado' | 'cta_cte_15' | 'cta_cte_30' | 'cta_cte_60' | 'cta_cte_90';
+
 export interface CuentaCorriente {
   id: number;
   cliente_id: number;
+  // D-01: saldo positivo = el cliente debe. Negativo = saldo a favor.
   saldo: number;
+  condicion_pago?: CondicionPago | null;
+  limite_credito?: number | null;
+  bloqueada?: boolean;
+  observaciones?: string | null;
   cliente_nombre: string | null;
 }
 
@@ -137,7 +144,18 @@ export interface MovimientoCC {
   concepto: string;
   monto: number;
   fecha: string;
+  condicion?: CondicionPago | null;
+  fecha_vencimiento?: string | null;
+  saldo_posterior?: number;
   alquiler_id: number | null;
+  reserva_id?: number | null;
+  pago_id?: number | null;
+  echeq_id?: number | null;
+  multa_id?: number | null;
+  anulado?: boolean;
+  anulado_por_movimiento_id?: number | null;
+  creado_por?: number | null;
+  created_at?: string;
 }
 
 export interface MovimientoCCCreate {
@@ -145,7 +163,10 @@ export interface MovimientoCCCreate {
   concepto: string;
   monto: number;
   fecha: string;
+  condicion?: CondicionPago | null;
+  fecha_vencimiento?: string | null;
   alquiler_id?: number | null;
+  reserva_id?: number | null;
 }
 
 // ─── Caja ─────────────────────────────────────────────────────────────────────

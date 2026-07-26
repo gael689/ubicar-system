@@ -202,15 +202,15 @@
 | FIN-01 | Registrar cobros | ✅ | — | |
 | FIN-02 | Caja diaria con ingresos y egresos | ✅ | — | |
 | FIN-03 | Cobros pendientes centralizados | ✅ | — | |
-| FIN-04 | **Anular un pago sin borrarlo** | 🟡 | P1 | **2026-07-26**: se bloqueó el borrado de pagos vía cuenta corriente (409, mensaje claro). Pagos normales (efectivo/transferencia/etc.) se siguen borrando como antes — la anulación con contra-asiento completa sigue siendo Fase 1 |
+| FIN-04 | **Anular un pago sin borrarlo** | ✅ | — | **Completado 2026-07-26**: con el ledger ya construido, borrar un pago en cta. cte. anula el movimiento con contra-asiento en vez de bloquear. Pagos normales se siguen borrando igual |
 | FIN-05 | Pago sin alquiler asociado (a cuenta) | ⬜ | P1 | `alquiler_id` es NOT NULL |
-| FIN-06 | Cuenta corriente por cliente | 🟡 | P1 | Es un saldo mutable, no un ledger auditable |
-| FIN-07 | **Condición de pago (contado / 30 / 60 / 90)** | ⬜ | P1 | Pedido explícito |
-| FIN-08 | **Fecha de vencimiento por movimiento** | ⬜ | P1 | Pedido explícito |
-| FIN-09 | Aging de deuda (0-30 / 31-60 / 61-90 / +90) | ⬜ | P1 | |
-| FIN-10 | Límite de crédito por cliente | ⬜ | P2 | |
-| FIN-11 | Asientos automáticos desde alquiler/pago/multa | ⬜ | P1 | Es lo que conecta todo |
-| FIN-12 | Anular movimiento con contra-asiento | ⬜ | P1 | |
+| FIN-06 | Cuenta corriente por cliente | ✅ | — | **Arreglado 2026-07-26**: ahora es un ledger — `saldo_posterior` en cada movimiento, nunca se edita a mano |
+| FIN-07 | **Condición de pago (contado / 15 / 30 / 60 / 90)** | ✅ | — | **Hecho 2026-07-26**: campo `condicion` por movimiento y `condicion_pago` default por cuenta |
+| FIN-08 | **Fecha de vencimiento por movimiento** | ✅ | — | **Hecho 2026-07-26**: se calcula solo desde la condición (`domain/cuenta_corriente.py`), o se puede fijar a mano |
+| FIN-09 | Aging de deuda (0-30 / 31-60 / 61-90 / +90) | ⬜ | P1 | El dato (`fecha_vencimiento`) ya existe; falta la vista agrupada en la UI |
+| FIN-10 | Límite de crédito por cliente | 🟡 | P2 | Campo `limite_credito` ya existe en el modelo; falta la alerta al superarlo |
+| FIN-11 | Asientos automáticos desde alquiler/pago/multa | 🟡 | P1 | El de **pago** ya funciona (`create_pago`); falta el de **checkout automático** y **multa** — es una decisión de comportamiento aparte (¿todo alquiler genera débito, o sólo los que eligen cta. cte.?), no sólo de esquema |
+| FIN-12 | Anular movimiento con contra-asiento | ✅ | — | **Hecho 2026-07-26**: `POST /cuentas-corrientes/movimientos/{id}/anular`. El borrado de un pago en cta. cte. ahora anula el movimiento automáticamente en vez de bloquear |
 | FIN-13 | **Echeq vinculado al cliente** | ⬜ | P1 | Hoy `contraparte` es texto libre |
 | FIN-14 | **Echeq con importe y fecha de pago** | 🟡 | P1 | Falta separar fecha de pago de fecha de acreditación |
 | FIN-15 | Ciclo completo del echeq | 🟡 | P1 | **2026-07-26**: se arregló que el ciclo funcionara en absoluto (ver hallazgo abajo). Sigue faltando el caso de rechazo con contra-asiento (Fase 1) |

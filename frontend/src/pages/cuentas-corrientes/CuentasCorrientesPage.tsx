@@ -71,10 +71,11 @@ function CCDetalle({
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div>
             <h2 className="text-base font-bold text-foreground">{cc.cliente_nombre}</h2>
-            <p className={`text-lg font-bold mt-0.5 ${cc.saldo < 0 ? 'text-danger' : cc.saldo > 0 ? 'text-success' : 'text-muted-foreground'}`}>
-              Saldo: {formatCurrency(cc.saldo)}
-              {cc.saldo < 0 && ' (debe)'}
-              {cc.saldo > 0 && ' (a favor)'}
+            {/* D-01: saldo positivo = el cliente debe. Negativo = saldo a favor. */}
+            <p className={`text-lg font-bold mt-0.5 ${cc.saldo > 0 ? 'text-danger' : cc.saldo < 0 ? 'text-success' : 'text-muted-foreground'}`}>
+              Saldo: {formatCurrency(Math.abs(cc.saldo))}
+              {cc.saldo > 0 && ' (debe)'}
+              {cc.saldo < 0 && ' (a favor)'}
             </p>
           </div>
           <button onClick={onClose} className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg">✕</button>
@@ -154,8 +155,9 @@ export function CuentasCorrientesPage() {
   const { data: cuentas = [], isLoading } = useCuentasCorrientes();
   const [selected, setSelected] = useState<CuentaCorriente | null>(null);
 
-  const conDeuda = cuentas.filter(c => c.saldo < 0);
-  const conSaldo = cuentas.filter(c => c.saldo > 0);
+  // D-01: saldo positivo = el cliente debe. Negativo = saldo a favor.
+  const conDeuda = cuentas.filter(c => c.saldo > 0);
+  const conSaldo = cuentas.filter(c => c.saldo < 0);
   const enCero = cuentas.filter(c => c.saldo === 0);
 
   return (
@@ -212,7 +214,7 @@ export function CuentasCorrientesPage() {
         ) : (
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             {cuentas
-              .sort((a, b) => a.saldo - b.saldo) // deudores primero
+              .sort((a, b) => b.saldo - a.saldo) // deudores primero (saldo positivo más alto)
               .map((cc, i) => (
                 <div
                   key={cc.id}
@@ -223,8 +225,8 @@ export function CuentasCorrientesPage() {
                     <p className="text-sm font-medium text-foreground">{cc.cliente_nombre ?? `Cliente #${cc.cliente_id}`}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-sm font-bold ${cc.saldo < 0 ? 'text-danger' : cc.saldo > 0 ? 'text-success' : 'text-muted-foreground'}`}>
-                      {formatCurrency(cc.saldo)}
+                    <span className={`text-sm font-bold ${cc.saldo > 0 ? 'text-danger' : cc.saldo < 0 ? 'text-success' : 'text-muted-foreground'}`}>
+                      {formatCurrency(Math.abs(cc.saldo))}
                     </span>
                     <button
                       onClick={(e) => { e.stopPropagation(); navigate(`/clientes/${cc.cliente_id}`); }}
