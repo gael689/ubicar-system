@@ -70,8 +70,8 @@ class DocumentoService:
             tipo=payload.tipo,
             nombre=payload.nombre,
             archivo_key="",
-            vigencia_desde=payload.vigencia_desde.isoformat() if payload.vigencia_desde else None,
-            vigencia_hasta=payload.vigencia_hasta.isoformat() if payload.vigencia_hasta else None,
+            vigencia_desde=payload.vigencia_desde,
+            vigencia_hasta=payload.vigencia_hasta,
             cargado_por=cargado_por,
         )
         self.repo.create(doc)
@@ -105,8 +105,8 @@ class DocumentoService:
             tipo=payload.tipo,
             nombre=payload.nombre,
             archivo_key="",
-            vigencia_desde=payload.vigencia_desde.isoformat() if payload.vigencia_desde else None,
-            vigencia_hasta=payload.vigencia_hasta.isoformat() if payload.vigencia_hasta else None,
+            vigencia_desde=payload.vigencia_desde,
+            vigencia_hasta=payload.vigencia_hasta,
             cargado_por=cargado_por,
         )
         self.repo.create(doc)
@@ -123,13 +123,11 @@ class DocumentoService:
         doc = self.get(documento_id)
 
         cambios = payload.model_dump(exclude_unset=True)
-        nueva_desde = cambios.get("vigencia_desde", _parse_iso(doc.vigencia_desde))
-        nueva_hasta = cambios.get("vigencia_hasta", _parse_iso(doc.vigencia_hasta))
+        nueva_desde = cambios.get("vigencia_desde", doc.vigencia_desde)
+        nueva_hasta = cambios.get("vigencia_hasta", doc.vigencia_hasta)
         _check_vigencias(nueva_desde, nueva_hasta)
 
         for field, value in cambios.items():
-            if field in ("vigencia_desde", "vigencia_hasta") and value is not None:
-                value = value.isoformat()
             setattr(doc, field, value)
 
         self.db.commit()
@@ -151,9 +149,3 @@ def _check_vigencias(desde: date | None, hasta: date | None) -> None:
             "vigencia_invalida",
             "vigencia_desde debe ser anterior o igual a vigencia_hasta",
         )
-
-
-def _parse_iso(value: str | None) -> date | None:
-    if not value:
-        return None
-    return date.fromisoformat(value)

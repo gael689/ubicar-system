@@ -1,3 +1,4 @@
+from datetime import date
 from pydantic import BaseModel
 from typing import Literal
 
@@ -13,8 +14,8 @@ EstadoEcheq = Literal[
 class EcheqCreate(BaseModel):
     tipo: TipoEcheq
     monto: float
-    fecha_emision: str
-    fecha_cobro: str
+    fecha_emision: date
+    fecha_cobro: date
     contraparte: str
     banco: str
     numero_cheque: str
@@ -26,7 +27,7 @@ class EcheqCreate(BaseModel):
 class EcheqUpdate(BaseModel):
     estado: EstadoEcheq | None = None
     notas: str | None = None
-    fecha_cobro: str | None = None
+    fecha_cobro: date | None = None
 
 
 class EcheqResponse(EcheqCreate):

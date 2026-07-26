@@ -119,7 +119,7 @@ class ReservaService:
         forma_pago_prevista: str | None = None,
         estado_pago: str = "pendiente",
         anticipo_monto: Decimal | None = None,
-        anticipo_fecha: str | None = None,
+        anticipo_fecha: date | None = None,
         anticipo_medio_pago: str | None = None,
         usuario_id: int = 0,
     ) -> tuple[Reserva, list[dict]]:
@@ -248,7 +248,7 @@ class ReservaService:
         forma_pago_prevista: str | None = None,
         estado_pago: str | None = None,
         anticipo_monto: Decimal | None = None,
-        anticipo_fecha: str | None = None,
+        anticipo_fecha: date | None = None,
         anticipo_medio_pago: str | None = None,
     ) -> tuple[Reserva, list[dict]]:
         """Actualiza una reserva en estado pendiente o confirmada (D8)."""

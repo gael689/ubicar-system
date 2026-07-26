@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import String, DateTime, Numeric, ForeignKey, Text, Enum
+from datetime import datetime, date
+from sqlalchemy import String, DateTime, Date, Numeric, ForeignKey, Text, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -12,8 +12,8 @@ class Echeq(Base):
         Enum("emitido", "recibido", name="tipo_echeq"), nullable=False
     )
     monto: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    fecha_emision: Mapped[str] = mapped_column(String(10), nullable=False)
-    fecha_cobro: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    fecha_emision: Mapped[date] = mapped_column(Date(), nullable=False)
+    fecha_cobro: Mapped[date] = mapped_column(Date(), nullable=False, index=True)
     estado: Mapped[str] = mapped_column(
         Enum("pendiente", "cobrado", "rechazado", "vencido", name="estado_echeq"),
         nullable=False,

@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
@@ -18,8 +19,8 @@ def _service(db: Session = Depends(get_db)) -> GastoService:
 def list_gastos(
     vehiculo_id: int,
     tipo: TipoGasto | None = Query(None),
-    fecha_desde: str | None = Query(None, description="ISO YYYY-MM-DD"),
-    fecha_hasta: str | None = Query(None, description="ISO YYYY-MM-DD"),
+    fecha_desde: date | None = Query(None, description="ISO YYYY-MM-DD"),
+    fecha_hasta: date | None = Query(None, description="ISO YYYY-MM-DD"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     service: GastoService = Depends(_service),

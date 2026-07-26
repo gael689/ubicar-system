@@ -150,7 +150,7 @@
 | CLI-08 | **Corregir un DNI/CUIT mal cargado** | ✅ | — | **Arreglado 2026-07-26**: `ClienteUpdate` acepta `dni_cuit`, valida unicidad excluyéndose a sí mismo |
 | CLI-09 | Cambiar tipo particular ↔ empresa | ✅ | — | **Arreglado 2026-07-26**: `ClienteUpdate.tipo` ahora editable (de paso, junto con CLI-08) |
 | CLI-10 | **Cargar número y categoría de licencia** | ✅ | — | **Arreglado 2026-07-26**: `licencia_numero`/`licencia_categoria` expuestos en `ClienteBase`/`ClienteUpdate` |
-| CLI-11 | Impedir cliente sin licencia | ⬜ | P1 | Hoy acepta `""` |
+| CLI-11 | Impedir cliente sin licencia | ⬜ | P1 | **2026-07-26**: ya no acepta `""` (rota → `None` explícito por la migración de fechas), pero sigue siendo opcional a propósito — decisión de producto pendiente, no técnica |
 | CLI-12 | Conductores adicionales | ✅ | — | |
 | CLI-13 | Impedir baja con alquiler activo | ✅ | — | **Arreglado 2026-07-26**: bloquea si tiene reservas en `pendiente/confirmada/activa/vencida` |
 | CLI-14 | Lista negra | ⬜ | P2 | Hoy nada impide realquilarle a quien no pagó |
@@ -400,12 +400,15 @@ El botón de Check-in **nunca aparecía en la lista de reservas**, para ningún 
 
 **🆕 Segundo hallazgo nuevo (2026-07-26):** `PATCH /clientes/{id}` y `DELETE /clientes/{id}` (baja lógica) **nunca funcionaron**. `cliente_service.py` llamaba `self.repo.update(cliente)`, pero `ClienteRepository` — que hereda de `BaseRepository` — no tiene (ni heredó) ningún método `update()`. Eso lanza `AttributeError`, no capturado por ningún exception handler registrado en `main.py`, así que cualquier edición o baja de un cliente devolvía un 500 crudo. Se revisó el resto de los repos que heredan de `BaseRepository` (`documento_repo`, `gasto_repo`, `tarifa_repo`, `vehiculo_repo`) y ninguno de sus servicios llama a `self.repo.update()` — usan el patrón de `vehiculo_service.py` (`setattr` + `self.db.commit()` + `refresh()` directo). Arreglado: `cliente_service.py` sigue el mismo patrón que `vehiculo_service.py`, sin necesitar tocar el repositorio. Verificado en vivo con 6 casos (crear, editar licencia, corregir DNI, rechazar DNI duplicado, dar de baja sin reservas, bloquear baja con reserva activa) — los 6 pasaron.
 
+**🆕 Tercer hallazgo nuevo (2026-07-26):** `/reportes/flota` crasheaba con `TypeError` apenas había una reserva real en el rango de fechas consultado. `fecha_desde`/`fecha_hasta` llegaban como `str` (query params), y el código hacía `max(r.fecha_inicio, fecha_desde)` — comparando un `date` (columna real de `Reserva`) contra un `str`, algo que Python no permite. Sólo "funcionaba" en desarrollo porque nunca se había probado con una reserva real superpuesta al rango. Arreglado: los query params pasan a `date` (FastAPI los parsea solo), eliminando también los `try/except ValueError` manuales que rodeaban conversiones redundantes. Verificado en vivo: con datos reales, el reporte calculó correctamente 3 y 2 días de ocupación para los dos vehículos con reservas en el rango consultado.
+
 **Además, corregidos en este mismo batch aunque no estaban en la lista original de 12:**
 - Código muerto eliminado en la validación de fecha futura del checkout (`alquiler_service.py`)
 - N+1 del calendario: `joinedload(Reserva.alquiler)` agregado a `find_para_ocupacion`
 - Dashboard: `refetchInterval` de 15s → 2min (240 ejecuciones/hora por usuario contra un endpoint pesado)
 - `extender()` sobre una reserva `vencida` ahora vuelve a `activa` si la nueva fecha queda en el futuro (evita que quede "vencida" para siempre tras extenderla)
-- Descubierto: **todas las migraciones de Alembic están en `.gitignore`** (`backend/alembic/versions/*.py`), incluidas las 16 existentes de antes de esta sesión. Sólo la migración 017 de este batch se agregó a git de forma forzada (`git add -f`) para que el estado `vencida` sea reproducible en otro entorno. Vale revisar esa regla del `.gitignore` — probablemente sea un descuido, no una decisión.
+- Descubierto: **todas las migraciones de Alembic están en `.gitignore`** (`backend/alembic/versions/*.py`), incluidas las 16 existentes de antes de esta sesión. Sólo las migraciones 017 y 018 de esta sesión se agregaron a git de forma forzada (`git add -f`) para que los cambios de esquema sean reproducibles en otro entorno. Vale revisar esa regla del `.gitignore` — probablemente sea un descuido, no una decisión.
+- **Fase 0 ítem #10 completo**: migración `018_fechas_date` — `pagos.fecha`, `gastos.fecha`, `echeqs.fecha_emision/fecha_cobro`, `movimientos_cuenta_corriente.fecha`, `clientes.licencia_vencimiento`, `conductores_adicionales.licencia_vencimiento`, `documentos.vigencia_desde/vigencia_hasta`, `reservas.anticipo_fecha` — todas migradas de `String(10)` a `Date` real. Simplificó de paso varios `.isoformat()`/`_parse_iso()` que ya no hacían falta en `documento_service.py` y `gasto_service.py`.
 
 ---
 

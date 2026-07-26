@@ -800,6 +800,16 @@ Aunque todavía no esté definida: catálogo de flota por categoría con fotos, 
 
 Unificar `String(10)` → `Date` en: `pagos.fecha`, `echeqs.fecha_*`, `movimientos_cc.fecha`, `clientes.licencia_vencimiento`, `documentos.vigencia_*`. Es la causa raíz del bug 2.1 y de futuros. Hacerlo de una vez, con backfill.
 
+**✅ Hecho (2026-07-26), migración 018.** Se migraron también, por ser la misma clase de bug: `conductores_adicionales.licencia_vencimiento`, `gastos.fecha` y `reservas.anticipo_fecha` (no estaban en la lista original pero mezclaban los mismos dos mundos). Todas las tablas tenían 0 filas excepto `clientes` (1) y `reservas` (varias) — riesgo de migración mínimo, verificado antes de escribir el `ALTER COLUMN ... USING col::date`.
+
+`clientes.licencia_vencimiento` quedó **nullable** (no `NOT NULL` como se planteaba): el formulario de alta vigente (`ClienteFormDialog.tsx`) ya trata la licencia como opcional, y forzar el `NOT NULL` habría sido una decisión de producto (CLI-11, todavía abierta) disfrazada de migración técnica — se optó por no cambiar comportamiento sin que sea una decisión explícita.
+
+De paso, dos bugs más encontrados y arreglados por quedar expuestos al mismo tipo de mezcla:
+- `/reportes/flota` hacía `max(r.fecha_inicio, fecha_desde)` con `r.fecha_inicio` como `date` y `fecha_desde` como `str` — crasheaba con `TypeError` apenas había una reserva real en el rango consultado. Se tipó el query param como `date` en FastAPI, eliminando también el `try/except ValueError` manual que había alrededor.
+- El filtro mensual de `/reportes/ingresos` usaba `Pago.fecha.like(f"{prefijo}%")`, que deja de tener sentido sobre una columna `Date`. Se reemplazó por `extract('year', ...) == anio, extract('month', ...) == mes`.
+
+Verificado en vivo: `/reportes/flota?fecha_desde=2026-06-01&fecha_hasta=2026-06-30` calculó correctamente 3 y 2 días de ocupación para los vehículos con reservas reales en ese rango (antes crasheaba). Checkout con anticipo vía HTTP real generó un `Pago` con `fecha` como `date` propiamente tipado. `Documento`, `Gasto`, `Cliente`, `Echeq` y `MovimientoCuentaCorriente` probados con creación y actualización.
+
 ---
 
 ## 9. Orden de ejecución propuesto
@@ -815,7 +825,7 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 7. **Dejar de duplicar el anticipo** — se cuenta dos veces y subestima la deuda
 8. **`extender()` deja de borrar el precio** cuando no encuentra tarifa
 9. Validar que el kilometraje no retroceda en el check-out
-10. Migrar todas las fechas `String` → `Date`
+10. ✅ Migrar todas las fechas `String` → `Date` — hecho 2026-07-26 (migración 018)
 11. Convertir `DELETE /pagos` en anulación con contra-asiento
 12. Exponer `licencia_numero`/`licencia_categoria` y permitir corregir DNI/CUIT y tipo de cliente
 13. Implementar la validación de baja de cliente con alquiler activo

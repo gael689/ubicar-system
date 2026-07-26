@@ -15,7 +15,7 @@ from app.domain.enums import DecisionExcedente
 class PagoInmediato(BaseModel):
     monto: Decimal
     medio_pago: str
-    fecha: str
+    fecha: date
     notas: str | None = None
 
 class CheckoutCreate(BaseModel):

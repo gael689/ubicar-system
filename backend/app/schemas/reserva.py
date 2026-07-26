@@ -56,7 +56,7 @@ class ReservaCreate(BaseModel):
     forma_pago_prevista: str | None = None
     estado_pago: str = "pendiente"
     anticipo_monto: Decimal | None = None
-    anticipo_fecha: str | None = None
+    anticipo_fecha: date | None = None
     anticipo_medio_pago: str | None = None
 
 
@@ -75,7 +75,7 @@ class ReservaUpdate(BaseModel):
     forma_pago_prevista: str | None = None
     estado_pago: str | None = None
     anticipo_monto: Decimal | None = None
-    anticipo_fecha: str | None = None
+    anticipo_fecha: date | None = None
     anticipo_medio_pago: str | None = None
 
 
@@ -128,7 +128,7 @@ class ReservaResponse(BaseModel):
     forma_pago_prevista: str | None = None
     estado_pago: str = "pendiente"
     anticipo_monto: Decimal | None = None
-    anticipo_fecha: str | None = None
+    anticipo_fecha: date | None = None
     anticipo_medio_pago: str | None = None
     # Relaciones expandidas
     vehiculo: VehiculoResumen | None = None

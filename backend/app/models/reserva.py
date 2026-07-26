@@ -50,7 +50,7 @@ class Reserva(Base):
     forma_pago_prevista: Mapped[str | None] = mapped_column(String(30), nullable=True)
     estado_pago: Mapped[str] = mapped_column(String(20), server_default="pendiente", nullable=False, default="pendiente")
     anticipo_monto: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
-    anticipo_fecha: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    anticipo_fecha: Mapped[date | None] = mapped_column(Date(), nullable=True)
     anticipo_medio_pago: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     # ── Relaciones ────────────────────────────────────────────────────────────

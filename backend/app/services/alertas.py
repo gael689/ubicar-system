@@ -13,10 +13,10 @@ def obtener_alertas(db: Session) -> list[dict]:
     # VTV y pólizas por vencer (30, 15, 7 días)
     umbrales_doc = [7, 15, 30]
     for umbral in umbrales_doc:
-        fecha_limite = (hoy + timedelta(days=umbral)).isoformat()
+        fecha_limite = hoy + timedelta(days=umbral)
         docs = (
             db.query(Documento)
-            .filter(Documento.vigencia_hasta <= fecha_limite, Documento.vigencia_hasta >= hoy.isoformat())
+            .filter(Documento.vigencia_hasta <= fecha_limite, Documento.vigencia_hasta >= hoy)
             .all()
         )
         for doc in docs:
@@ -30,7 +30,7 @@ def obtener_alertas(db: Session) -> list[dict]:
             })
 
     # Licencias de clientes (30 días)
-    fecha_limite_lic = (hoy + timedelta(days=30)).isoformat()
+    fecha_limite_lic = hoy + timedelta(days=30)
     clientes_por_vencer = (
         db.query(Cliente)
         .filter(Cliente.licencia_vencimiento <= fecha_limite_lic, Cliente.activo == True)
@@ -47,7 +47,7 @@ def obtener_alertas(db: Session) -> list[dict]:
         })
 
     # Echeqs próximos (7 días)
-    fecha_limite_echeq = (hoy + timedelta(days=7)).isoformat()
+    fecha_limite_echeq = hoy + timedelta(days=7)
     echeqs = (
         db.query(Echeq)
         .filter(Echeq.fecha_cobro <= fecha_limite_echeq, Echeq.estado == "pendiente")

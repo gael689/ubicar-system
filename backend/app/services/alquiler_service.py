@@ -166,7 +166,7 @@ class AlquilerService:
                     monto=reserva.anticipo_monto,
                     medio_pago=reserva.anticipo_medio_pago or "efectivo",
                     con_factura=False,
-                    fecha=reserva.anticipo_fecha or checkout_fecha.isoformat(),
+                    fecha=reserva.anticipo_fecha or checkout_fecha,
                     notas=f"Anticipo de reserva #{reserva.id}",
                     cobrado_por=usuario_id,
                 )

@@ -1,6 +1,6 @@
 from datetime import date
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import func, extract
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_current_user
@@ -23,7 +23,6 @@ def dashboard_stats(
     _: Usuario = Depends(get_current_user),
 ):
     hoy_date = date.fromisoformat(fecha) if fecha else date.today()
-    hoy_str = hoy_date.isoformat()
     # today fallback for stat blocks
     real_today = date.today()
 
@@ -112,7 +111,7 @@ def dashboard_stats(
         })
 
     # 3. Pagos de la fecha
-    pagos_hoy = db.query(Pago).filter(Pago.fecha == hoy_str).all()
+    pagos_hoy = db.query(Pago).filter(Pago.fecha == hoy_date).all()
     for p in pagos_hoy:
         alq = db.get(Alquiler, p.alquiler_id) if p.alquiler_id else None
         r = db.get(Reserva, alq.reserva_id) if alq else None
@@ -132,7 +131,7 @@ def dashboard_stats(
         })
 
     # 4. Gastos de la fecha
-    gastos_hoy = db.query(Gasto).filter(Gasto.fecha == hoy_str).all()
+    gastos_hoy = db.query(Gasto).filter(Gasto.fecha == hoy_date).all()
     for g in gastos_hoy:
         hora = "12:00"
         flujo_del_dia.append({
@@ -167,10 +166,12 @@ def reporte_ingresos(
     """Ingresos mensuales del año indicado, desglosados por medio de pago."""
     meses = []
     for mes in range(1, 13):
-        prefijo = f"{anio}-{mes:02d}"
-
-        pagos_mes = db.query(Pago).filter(Pago.fecha.like(f"{prefijo}%")).all()
-        gastos_mes = db.query(Gasto).filter(Gasto.fecha.like(f"{prefijo}%")).all()
+        pagos_mes = db.query(Pago).filter(
+            extract("year", Pago.fecha) == anio, extract("month", Pago.fecha) == mes,
+        ).all()
+        gastos_mes = db.query(Gasto).filter(
+            extract("year", Gasto.fecha) == anio, extract("month", Gasto.fecha) == mes,
+        ).all()
 
         total_ingresos = sum(float(p.monto) for p in pagos_mes)
         total_egresos = sum(float(g.monto) for g in gastos_mes)
@@ -196,8 +197,8 @@ def reporte_ingresos(
 
 @router.get("/flota")
 def reporte_flota(
-    fecha_desde: str = Query(..., description="ISO YYYY-MM-DD"),
-    fecha_hasta: str = Query(..., description="ISO YYYY-MM-DD"),
+    fecha_desde: date = Query(..., description="ISO YYYY-MM-DD"),
+    fecha_hasta: date = Query(..., description="ISO YYYY-MM-DD"),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
@@ -222,17 +223,11 @@ def reporte_flota(
         gastos_vehiculo = 0.0
 
         for r in reservas:
-            # Días aproximados del período solapado
+            # Días aproximados del período solapado (ambos son date, sin conversiones)
             inicio = max(r.fecha_inicio, fecha_desde)
             fin = min(r.fecha_fin, fecha_hasta)
             if fin >= inicio:
-                from datetime import date
-                try:
-                    d_i = date.fromisoformat(inicio)
-                    d_f = date.fromisoformat(fin)
-                    dias_alquilados += (d_f - d_i).days + 1
-                except ValueError:
-                    pass
+                dias_alquilados += (fin - inicio).days + 1
 
             # Ingresos asociados al alquiler
             alquiler = (
@@ -257,13 +252,7 @@ def reporte_flota(
         gastos_vehiculo = sum(float(g.monto) for g in gastos)
 
         # Días totales del período
-        try:
-            from datetime import date as _date
-            d_i = _date.fromisoformat(fecha_desde)
-            d_f = _date.fromisoformat(fecha_hasta)
-            dias_periodo = (d_f - d_i).days + 1
-        except ValueError:
-            dias_periodo = 30
+        dias_periodo = (fecha_hasta - fecha_desde).days + 1
 
         ocupacion_pct = round((dias_alquilados / dias_periodo * 100) if dias_periodo > 0 else 0, 1)
 

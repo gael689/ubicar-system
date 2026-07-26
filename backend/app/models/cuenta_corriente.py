@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import String, DateTime, Numeric, ForeignKey, Text, Enum
+from datetime import datetime, date
+from sqlalchemy import String, DateTime, Date, Numeric, ForeignKey, Text, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -34,7 +34,7 @@ class MovimientoCuentaCorriente(Base):
     )
     concepto: Mapped[str] = mapped_column(String(255), nullable=False)
     monto: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    fecha: Mapped[str] = mapped_column(String(10), nullable=False)
+    fecha: Mapped[date] = mapped_column(Date(), nullable=False)
     alquiler_id: Mapped[int | None] = mapped_column(ForeignKey("alquileres.id"), nullable=True)
 
     cuenta_corriente: Mapped["CuentaCorriente"] = relationship(back_populates="movimientos")

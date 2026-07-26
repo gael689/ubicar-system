@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -41,8 +42,8 @@ def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
 @router.get("")
 def list_pagos(
     alquiler_id: int | None = Query(None),
-    fecha_desde: str | None = Query(None),
-    fecha_hasta: str | None = Query(None),
+    fecha_desde: date | None = Query(None),
+    fecha_hasta: date | None = Query(None),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
@@ -119,7 +120,7 @@ def get_pagos_pendientes(
 
 @router.get("/caja/dia")
 def caja_dia(
-    fecha: str = Query(..., description="ISO YYYY-MM-DD"),
+    fecha: date = Query(..., description="ISO YYYY-MM-DD"),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):

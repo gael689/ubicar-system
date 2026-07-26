@@ -1,3 +1,4 @@
+from datetime import date
 from pydantic import BaseModel
 from typing import Literal
 
@@ -10,7 +11,7 @@ class PagoCreate(BaseModel):
     monto: float
     medio_pago: MedioPago
     con_factura: bool = False
-    fecha: str
+    fecha: date
     notas: str | None = None
 
 

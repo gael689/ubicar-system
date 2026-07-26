@@ -58,8 +58,7 @@ def get_notificaciones(
     _: Usuario = Depends(get_current_user),
 ):
     hoy = date.today()
-    hoy_str = hoy.isoformat()
-    en_30_dias_str = (hoy + timedelta(days=30)).isoformat()
+    en_30_dias = hoy + timedelta(days=30)
     items: list[NotificacionItem] = []
 
     # ── 1. Checkouts pendientes (reservas confirmadas cuya fecha/hora programada ya pasó) ──
@@ -149,8 +148,8 @@ def get_notificaciones(
         .all()
     )
     for d in docs_vehiculo:
-        vh = d.vigencia_hasta  # str ISO "YYYY-MM-DD"
-        if vh < hoy_str:
+        vh = d.vigencia_hasta  # date
+        if vh < hoy:
             items.append(NotificacionItem(
                 tipo="doc_vehiculo_vencido",
                 titulo=f"Documento vencido ({d.tipo})",
@@ -160,7 +159,7 @@ def get_notificaciones(
                 entidad_id=d.vehiculo_id,
                 url_destino=f"/flota/{d.vehiculo_id}",
             ))
-        elif vh <= en_30_dias_str:
+        elif vh <= en_30_dias:
             items.append(NotificacionItem(
                 tipo="doc_vehiculo_por_vencer",
                 titulo=f"Documento por vencer ({d.tipo})",
@@ -181,8 +180,8 @@ def get_notificaciones(
         .all()
     )
     for d in docs_cliente:
-        vh = d.vigencia_hasta  # str ISO "YYYY-MM-DD"
-        if vh < hoy_str:
+        vh = d.vigencia_hasta  # date
+        if vh < hoy:
             items.append(NotificacionItem(
                 tipo="doc_cliente_vencido",
                 titulo=f"Doc. cliente vencido ({d.tipo})",
@@ -192,7 +191,7 @@ def get_notificaciones(
                 entidad_id=d.cliente_id,
                 url_destino=f"/clientes/{d.cliente_id}",
             ))
-        elif vh <= en_30_dias_str:
+        elif vh <= en_30_dias:
             items.append(NotificacionItem(
                 tipo="doc_cliente_por_vencer",
                 titulo=f"Doc. cliente por vencer ({d.tipo})",

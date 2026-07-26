@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import String, DateTime, Boolean, Numeric, ForeignKey, Text, Enum
+from datetime import datetime, date
+from sqlalchemy import String, DateTime, Date, Boolean, Numeric, ForeignKey, Text, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -16,7 +16,7 @@ class Pago(Base):
     )
     con_factura: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     cobrado_por: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
-    fecha: Mapped[str] = mapped_column(String(10), nullable=False)
+    fecha: Mapped[date] = mapped_column(Date(), nullable=False)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     alquiler: Mapped["Alquiler"] = relationship("Alquiler", back_populates="pagos")

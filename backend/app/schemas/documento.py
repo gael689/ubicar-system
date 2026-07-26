@@ -31,8 +31,8 @@ class DocumentoResponse(BaseModel):
     nombre: str
     archivo_url: str | None = None
     fecha_carga: datetime
-    vigencia_desde: str | None
-    vigencia_hasta: str | None
+    vigencia_desde: date | None
+    vigencia_hasta: date | None
     cargado_por: int
 
     model_config = {"from_attributes": True}

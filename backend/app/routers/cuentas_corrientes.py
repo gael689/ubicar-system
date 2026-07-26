@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -15,7 +16,7 @@ class MovimientoCreate(BaseModel):
     tipo: str  # "debito" | "credito"
     concepto: str
     monto: float
-    fecha: str
+    fecha: date
     alquiler_id: int | None = None
 
 
@@ -24,7 +25,7 @@ class MovimientoResponse(BaseModel):
     tipo: str
     concepto: str
     monto: float
-    fecha: str
+    fecha: date
     alquiler_id: int | None
     model_config = {"from_attributes": True}
 

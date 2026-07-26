@@ -1,4 +1,5 @@
 """Repositorio de Gastos."""
+from datetime import date
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
@@ -15,8 +16,8 @@ class GastoRepository(BaseRepository[Gasto]):
         vehiculo_id: int,
         *,
         tipo: str | None = None,
-        fecha_desde: str | None = None,
-        fecha_hasta: str | None = None,
+        fecha_desde: date | None = None,
+        fecha_hasta: date | None = None,
         skip: int = 0,
         limit: int = 20,
     ) -> tuple[list[Gasto], int]:

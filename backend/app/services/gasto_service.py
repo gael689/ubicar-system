@@ -8,6 +8,7 @@ vehículo se actualiza:
 
 Doc F1 sección B1.6: gastos en F1 son borrado físico (no entidad auditada).
 """
+from datetime import date
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
@@ -29,8 +30,8 @@ class GastoService:
         vehiculo_id: int,
         *,
         tipo: str | None = None,
-        fecha_desde: str | None = None,
-        fecha_hasta: str | None = None,
+        fecha_desde: date | None = None,
+        fecha_hasta: date | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[Gasto], int]:
@@ -59,7 +60,7 @@ class GastoService:
             descripcion=payload.descripcion,
             monto=payload.monto,
             medio_pago=payload.medio_pago,
-            fecha=payload.fecha.isoformat(),
+            fecha=payload.fecha,
             proveedor=payload.proveedor,
             km_al_momento=payload.km_al_momento,
             notas=payload.notas,
@@ -74,8 +75,6 @@ class GastoService:
         gasto = self.get(gasto_id)
         cambios = payload.model_dump(exclude_unset=True)
         for field, value in cambios.items():
-            if field == "fecha" and value is not None:
-                value = value.isoformat()
             setattr(gasto, field, value)
 
         # Si quedó como service con km, re-evaluar (idempotente).

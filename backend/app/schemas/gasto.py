@@ -41,7 +41,7 @@ class GastoResponse(BaseModel):
     descripcion: str
     monto: Decimal
     medio_pago: MedioPagoGasto
-    fecha: str
+    fecha: date
     proveedor: str | None
     km_al_momento: int | None
     notas: str | None
