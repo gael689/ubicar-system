@@ -326,7 +326,7 @@
 | UI-11 | Búsqueda global (Cmd+K) | ⬜ | P3 | |
 | UI-12 | Unificar paleta e íconos | ⬜ | P2 | Conviven 3 sistemas de color |
 | UI-13 | Confirmaciones consistentes | ⬜ | P3 | Hay `confirm()` nativo mezclado con `ConfirmDialog` |
-| UI-14 | Limpiar archivos muertos | ⬜ | P2 | `List.tsx`/`Detail.tsx` duplicados, 5 previews del cotizador |
+| UI-14 | Limpiar archivos muertos | ✅ | — | **Hecho 2026-07-26**: 7 archivos borrados (`List.tsx`/`Detail.tsx` + 5 previews del cotizador sin usar), verificado con `tsc` |
 
 ## WEB — Sistema de reservas online 🔵
 
