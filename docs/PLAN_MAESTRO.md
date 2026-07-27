@@ -757,9 +757,28 @@ Descuento por duración (7+ días: −X% · 30+ días: −Y%)
 | `min_dias`, `max_dias` | Restricciones opcionales |
 | `nombre` | "Temporada alta verano", "Semana Santa 2027" |
 | `visible_web` | Permite precios distintos web vs mostrador |
+| `es_promocional` | Marca la regla como promo (ver abajo) |
+| `precio_referencia` | Precio "de lista" tachado, sólo si `es_promocional` |
+| `etiqueta_promo` | Texto de marketing: "Promo Día del Amigo" |
 | `activo` | |
 
 El sistema de prioridades es la clave: cargás una regla base anual con prioridad 0, encima "temporada alta enero-febrero" con prioridad 10, y encima "primera semana de septiembre" con prioridad 20. La más específica gana sin tener que borrar nada. Exactamente el caso que se planteó.
+
+**Confirmado con el usuario (2026-07-27)** que este es el modelo que los dueños quieren y cómo lo van a cargar ellos mismos:
+
+> *"planificar precios base, y precios por fecha. Por ejemplo para el día del amigo van a planificar los precios ya fijos, para navidad el que quiera reservar en esas semanas otros precios, que tengan la posibilidad de poner precios promocionales para incentivar más al marketing"*
+
+Traducido al diseño de arriba, las tres capas que describieron son exactamente las tres prioridades:
+
+| Lo que dijeron | Cómo se carga |
+|---|---|
+| "precios base" | Regla anual por categoría, `prioridad = 0` |
+| "para el día del amigo / navidad, precios fijos" | Regla con `fecha_desde`/`fecha_fin` de esa semana, `prioridad = 10` |
+| "precios promocionales para incentivar el marketing" | Igual que la anterior + `es_promocional = true`, `prioridad = 20` |
+
+**Por qué la promo necesita campos propios y no alcanza con bajar el precio:** una promo no es sólo un precio más barato, es un precio que **se comunica como descuento**. La web tiene que poder mostrar "antes $85.000, ahora $68.000" y una etiqueta que enganche — eso necesita saber cuál era el precio de lista (`precio_referencia`) y cómo llamar a la promo (`etiqueta_promo`). Si sólo se bajara `precio_dia`, el cliente ve un precio más barato pero **nunca se entera de que está aprovechando algo**, que es justamente lo contrario de "incentivar el marketing". Además `es_promocional` permite listar todas las promos vigentes en un solo lugar sin adivinar comparando precios.
+
+**"La idea es acoplar todo a esto"** — el punto es que el motor sea la **única** fuente de precios del sistema: `POST /api/v1/precios/calcular` lo consumen el sistema interno (`ReservaModal`), el cotizador y la web, con el mismo desglose día por día. Hoy el precio de una reserva se calcula en `domain/tarifas.py::seleccionar_tarifa` (por duración, sin fechas); cuando entre el calendario, **esa función pasa a ser un caso particular del motor nuevo** (la regla de prioridad 0), no un camino paralelo. Es el mismo criterio que se usó con las tarifas por categoría vs. por vehículo: una sola función decide, con precedencia explícita.
 
 **Tabla `descuentos_duracion`:** `categoria_id` nullable, `dias_desde`, `dias_hasta`, `porcentaje`.
 
@@ -1008,7 +1027,12 @@ cobrarlo. Ahora:
   quiere agregar el croquis encima.
 
 ### 🌐 Fase 5 — Cimientos para la web (3 semanas)
-54. Categorías de vehículo + migrar la flota existente (la tarifa por categoría de la F1 ya la espera)
+54. 🟡 **Categorías de vehículo + migrar la flota existente** — la entidad, las 6 categorías y la tarifa por categoría están hechas desde la F1 (ítem 21), y el selector existe en `VehiculoFormDialog`. Lo que faltaba era **cargar el dato**: al 2026-07-27 los 16 vehículos tenían `categoria_id = NULL`, con lo cual la tarifa por categoría nunca podía dispararse (sólo aplicaban las tarifas por vehículo puntual). **Asignadas las 7 pick-ups** (3 Hilux, Amarok, 2 Tunland, Titano), que no admiten discusión. **Quedan 9 autos sin categoría a propósito**, esperando la decisión #8: la segmentación compacto / sedán / sedán superior fija el tier de precio de la web, así que la definen Franco y Martín, no el sistema:
+    - `PMH625` Chevrolet Corsa Classic · `AH762UL` Fiat Argo Drive MT
+    - `AG591WA` / `AH021RK` / `AH067LW` / `AH462EG` Fiat Cronos Drive 1.3
+    - `LGW669` Fiat Siena Essence · `AF865DD` Toyota Etios 1.5 XLS AT
+    - `AG902AQ` VW Virtus 1.6 (candidato a "sedán superior", es el más equipado)
+    Las categorías `SUV` y `Furgón` existen pero hoy no las usa ningún vehículo.
 55. Sucursales + cargos one-way
 56. Adicionales + adicionales por reserva
 57. **Motor de precios por calendario** + pantalla de administración

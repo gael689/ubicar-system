@@ -117,6 +117,29 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 ---
 
+## 7. ¿En qué categoría va cada auto? (composición de la flota)
+
+**Contexto:** las 6 categorías (compacto, sedán, sedán superior, SUV, pick-up, furgón) y la tarifa por categoría existen desde la Fase 1, pero al 2026-07-27 **ningún vehículo tenía categoría asignada** — con lo cual la tarifa por categoría nunca se disparaba y sólo aplicaban las tarifas por vehículo puntual.
+
+**Qué se hizo:** se asignaron las **7 pick-ups** (3 Toyota Hilux, VW Amarok, 2 Foton Tunland, Fiat Titano), que no admiten discusión. **Los 9 autos quedaron sin categoría a propósito.**
+
+**Por qué no se decidió solo:** la segmentación compacto / sedán / sedán superior **fija el tier de precio de la web**. No es una clasificación técnica sino comercial — poner el Virtus en "sedán" o en "sedán superior" cambia lo que cobra el negocio.
+
+**Estado:** ⬜ **Pendiente de Franco/Martín** — en qué categoría va cada uno:
+
+| Patente | Vehículo | Sugerencia |
+|---|---|---|
+| `PMH625` | Chevrolet Corsa Classic | Compacto |
+| `AH762UL` | Fiat Argo Drive MT | Compacto |
+| `AG591WA` `AH021RK` `AH067LW` `AH462EG` | Fiat Cronos Drive 1.3 (×4) | Sedán |
+| `LGW669` | Fiat Siena Essence | Sedán |
+| `AF865DD` | Toyota Etios 1.5 XLS AT | Sedán |
+| `AG902AQ` | VW Virtus 1.6 | Sedán superior (es el más equipado) |
+
+Las categorías **SUV** y **Furgón** existen pero hoy no las usa ningún vehículo — confirmar si la flota va a incorporarlas o si conviene desactivarlas.
+
+---
+
 ## Cómo seguir
 
 Cuando Franco/Martín confirmen el punto 1 (el único realmente importante de esta lista):
