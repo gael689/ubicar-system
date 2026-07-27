@@ -1059,7 +1059,39 @@ cobrarlo. Ahora:
 
 ---
 
-## 9.1 La landing ya existe — plan de migración a Next.js
+## 9.1 La landing ya existe — migración a Next.js ✅ **hecha (2026-07-27)**
+
+> **Estado: los pasos 1-6 de este plan están ejecutados.** La web vive ahora en
+> `web/` dentro de este repo (junto a `backend/` y `frontend/`), en Next.js 16
+> con App Router. Documentación operativa en `web/README.md`. Lo que sigue
+> pendiente es el flujo de reserva (Fase 6), que depende de la Fase 5.
+>
+> **Lo que se ganó, medido:** `/` y `/maquinaria` se prerenderizan **estáticas**
+> — antes el HTML servido era un `<div id="root">` vacío. El `title`, la
+> `description` y los tres bloques JSON-LD (LocalBusiness, FAQPage y los
+> `Product` de maquinaria) ahora viajan en el HTML, que era el objetivo del
+> punto 1 de "por qué Next.js sí conviene".
+>
+> **🔴 Acción pendiente de seguridad:** el access token de la Meta Conversions
+> API estaba **hardcodeado en el bundle público** (`src/lib/meta-pixel.ts` de
+> la versión Vite; el propio código lo admitía en un comentario). Se movió a
+> `app/api/track/route.ts` con el token en variable de entorno del servidor,
+> pero **el token viejo estuvo expuesto en producción y hay que rotarlo en
+> Meta Business**.
+>
+> **Desvíos respecto del plan original, con su motivo:**
+> - Se mantuvo **Tailwind 3** en vez de adoptar la v4 que trae el scaffold:
+>   migrar los tokens HSL a la sintaxis CSS-first arriesgaba deriva visual
+>   sobre un diseño ya aprobado, sin beneficio a cambio.
+> - Se copiaron sólo los **7 componentes de shadcn** que la landing usa de
+>   verdad, no los 47 del proyecto original.
+> - `next/image` **todavía no se aplicó** a los `<img>` de los componentes: la
+>   migración priorizó que el diseño quedara idéntico. Es una optimización
+>   incremental que se puede hacer archivo por archivo sin romper nada.
+
+<details>
+<summary>Plan original (previo a la ejecución)</summary>
+
 
 **Descubierto el 2026-07-27.** Ya hay una landing de Ubicar hecha y aprobada
 ("gustó mucho") en `Desktop/1. Clientes/ubicar-rent-pro`. El ítem 63 no
@@ -1154,9 +1186,12 @@ presentación y no toca el backend.
 
 ### Hueco a cerrar antes
 
-**0 de 16 vehículos tienen categoría asignada** (2026-07-27), aunque las 6
-categorías están cargadas y la tarifa por categoría funciona. Es la segunda
-mitad del ítem 54 y es requisito de todo lo anterior: la web vende categorías.
+Al 2026-07-27 quedan **9 de 16 vehículos sin categoría** (las 7 pick-ups ya se
+asignaron). Es la segunda mitad del ítem 54 y es requisito de todo lo anterior:
+la web vende categorías. La segmentación de los 9 autos la definen Franco y
+Martín — ver `docs/VALIDAR_CON_DUENOS.md` punto 7.
+
+</details>
 
 ### 📐 Después de la Fase 1 — Diagramas
 Cuando el modelo esté estabilizado, generar en Mermaid (versionados junto al código): diagrama de estados de reserva y vehículo, ER actualizado (`docs/er-diagram.html` quedó viejo), flujo operativo de punta a punta, mapa de conexiones entre módulos, y flujo de la web. **No antes**: hoy el modelo va a cambiar bastante y un diagrama hecho ahora nace desactualizado. Detalle en `docs/CASOS_DE_USO.md`.
