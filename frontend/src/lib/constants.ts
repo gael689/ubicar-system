@@ -332,6 +332,9 @@ export const NAV_GROUPS: NavGroup[] = [
   { label: 'Cotizador', icon: 'Calculator', items: [
     { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
   ] },
+  { label: 'Fechas especiales', icon: 'CalendarDays', items: [
+    { path: '/fechas-especiales', label: 'Fechas especiales', icon: 'CalendarDays' },
+  ] },
   { label: 'Configuración', icon: 'Settings', items: [
     { path: '/configuracion', label: 'Configuración', icon: 'Settings' },
   ] },

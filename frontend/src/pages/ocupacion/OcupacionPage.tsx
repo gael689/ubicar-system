@@ -1,9 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useOcupacion } from '@/hooks/useOcupacion';
-import { useFechasEspeciales, indexarPorDia } from '@/hooks/useFechasEspeciales';
-import { COLOR_FECHA_ESPECIAL } from '@/lib/constants';
 import { api } from '@/lib/api';
 import type { VehiculoOcupacion, EventoOcupacion, Reserva, ApiResponse } from '@/types';
 import { ReservaModal } from '../reservas/ReservaModal';
@@ -122,14 +120,6 @@ export function OcupacionPage() {
   const rangeStart = days[0];
   const rangeEnd = days[days.length - 1];
   const totalDays = days.length;
-
-  // Fechas especiales del rango visible (feriados, Navidad, Día del Amigo,
-  // temporada alta). Se indexan por día para preguntar en O(1) al pintar.
-  const { data: fechasEspeciales = [] } = useFechasEspeciales({
-    desde: formatDate(rangeStart),
-    hasta: formatDate(rangeEnd),
-  });
-  const especialesPorDia = useMemo(() => indexarPorDia(fechasEspeciales), [fechasEspeciales]);
 
   const loadData = () => {
     fetchOcupacion({
@@ -374,23 +364,11 @@ export function OcupacionPage() {
                   {days.map((day, i) => {
                     const today = isToday(day);
                     const weekend = day.getDay() === 0 || day.getDay() === 6;
-                    const especiales = especialesPorDia.get(formatDate(day)) ?? [];
-                    // Si hay varias el mismo día (ej. Navidad dentro de
-                    // "Fiestas"), manda la de rango más corto: es la más
-                    // específica y la que el admin quiere ver.
-                    const principal = especiales.length > 0
-                      ? [...especiales].sort((a, b) =>
-                          (new Date(a.fecha_hasta).getTime() - new Date(a.fecha_desde).getTime()) -
-                          (new Date(b.fecha_hasta).getTime() - new Date(b.fecha_desde).getTime()))[0]
-                      : null;
-                    const colores = principal ? COLOR_FECHA_ESPECIAL[principal.color] : null;
                     return (
                       <th
                         key={i}
-                        title={especiales.map(e => e.nombre).join(' · ')}
                         className={`py-2 text-center border-r border-slate-200 sticky top-0 z-40 ${
                           today ? 'bg-primary/10/90 text-primary/90' :
-                          colores ? `${colores.celda}/95 text-slate-600` :
                           weekend ? 'bg-slate-100/90 text-slate-600' : 'bg-slate-50/90 text-slate-600'
                         }`}
                         style={{ minWidth: '180px', width: '180px' }}
@@ -401,14 +379,6 @@ export function OcupacionPage() {
                         <div className="text-[10px] uppercase tracking-wider font-bold opacity-80 mt-0.5">
                           {FULL_DAY_LABELS[day.getDay()]}
                         </div>
-                        {principal && colores && (
-                          <div
-                            className={`mx-1 mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold truncate ${colores.chip}`}
-                          >
-                            {principal.nombre}
-                            {especiales.length > 1 ? ` +${especiales.length - 1}` : ''}
-                          </div>
-                        )}
                       </th>
                     );
                   })}
@@ -677,14 +647,6 @@ function AgendaView({
   // Build a 35-day calendar grid centered on agendaDate's month
   const year = agendaDate.getFullYear();
   const month = agendaDate.getMonth();
-
-  // Fechas especiales del mes visible — el admin las ve marcadas en la grilla
-  // y listadas debajo del día seleccionado.
-  const { data: fechasMes = [] } = useFechasEspeciales({
-    desde: formatDate(new Date(year, month, 1)),
-    hasta: formatDate(new Date(year, month + 1, 0)),
-  });
-  const especialesPorDia = useMemo(() => indexarPorDia(fechasMes), [fechasMes]);
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
 
@@ -747,29 +709,18 @@ function AgendaView({
             const isT = dayStr === todayStr;
             const dayEvents = getEventsForDay(day);
             const hasEvents = dayEvents.length > 0;
-            const especiales = especialesPorDia.get(dayStr) ?? [];
-            const colorEspecial = especiales.length > 0
-              ? COLOR_FECHA_ESPECIAL[especiales[0].color]
-              : null;
-
             return (
               <button
                 key={idx}
                 onClick={() => onDateChange(day)}
-                title={especiales.map(e => e.nombre).join(' · ')}
                 className={`relative flex flex-col items-center justify-center h-12 transition-colors
                   ${isSelected
                     ? 'bg-primary text-white rounded-xl mx-1 my-0.5 font-bold shadow-md'
                     : isT
                     ? 'text-primary font-bold'
-                    : colorEspecial
-                    ? `${colorEspecial.celda} text-slate-700 hover:brightness-95`
                     : 'text-slate-700 hover:bg-slate-50'
                   }`}
               >
-                {colorEspecial && !isSelected && (
-                  <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${colorEspecial.punto}`} />
-                )}
                 <span className="text-sm leading-tight">{day.getDate()}</span>
                 {hasEvents && (
                   <div className="flex gap-0.5 mt-0.5">
@@ -805,16 +756,6 @@ function AgendaView({
             <Plus className="w-3.5 h-3.5" /> Nueva reserva
           </button>
         </div>
-
-        {(especialesPorDia.get(selectedStr) ?? []).map(fe => (
-          <div
-            key={fe.id}
-            className={`rounded-lg px-3 py-2 text-xs font-bold ${COLOR_FECHA_ESPECIAL[fe.color].chip}`}
-          >
-            {fe.nombre}
-            {fe.notas ? <span className="font-normal opacity-90"> · {fe.notas}</span> : null}
-          </div>
-        ))}
 
         {loading ? (
           <div className="flex items-center justify-center py-8">

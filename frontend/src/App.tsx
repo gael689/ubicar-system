@@ -13,6 +13,7 @@ import { MultasPage } from '@/pages/multas/MultasPage';
 import { FinanzasPage } from '@/pages/finanzas/FinanzasPage';
 import { ReportesPage } from '@/pages/reportes/ReportesPage';
 import { ConfiguracionPage } from '@/pages/configuracion/ConfiguracionPage';
+import { FechasEspecialesPage } from '@/pages/fechas-especiales/FechasEspecialesPage';
 import { NotificacionesPage } from '@/pages/notificaciones/NotificacionesPage';
 
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/reportes" element={<AppLayout title="Reportes"><ReportesPage /></AppLayout>} />
         <Route path="/notificaciones" element={<AppLayout title="Notificaciones"><NotificacionesPage /></AppLayout>} />
         <Route path="/configuracion" element={<AppLayout title="Configuración"><ConfiguracionPage /></AppLayout>} />
+        <Route path="/fechas-especiales" element={<AppLayout title="Fechas especiales"><FechasEspecialesPage /></AppLayout>} />
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>
     </BrowserRouter>
