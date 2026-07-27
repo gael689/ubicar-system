@@ -1,0 +1,265 @@
+"""
+NotificacionService — motor de reglas unificado (Fase 2, plan maestro §4).
+
+Reemplaza dos sistemas paralelos que existían antes:
+- `services/alertas.py` (huérfano — nadie lo llamaba).
+- `routers/notificaciones.py` computando todo on-demand en cada request de
+  la campana, sin persistencia (no se podía marcar leído/posponer/descartar,
+  ni saber si algo ya se había avisado).
+
+`generar()` corre todas las reglas de `domain/notificaciones_reglas.py`,
+inserta las que son nuevas (por `clave_dedupe`) y auto-resuelve las que ya
+no aplican. Lo llama el scheduler todos los días a las 08:00 ART, y también
+se puede disparar a mano (botón "actualizar" de la campana, o el evento
+puntual de un echeq rechazado).
+"""
+from __future__ import annotations
+
+from datetime import date, datetime
+
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.core.exceptions import NotFoundError
+from app.domain.notificaciones_reglas import evaluar_todas
+from app.models.notificacion import Notificacion, PreferenciaNotificacion
+from app.services.notificaciones import enviar_email
+
+ESTADOS_ACTIVOS = ("pendiente", "enviada", "pospuesta")
+
+
+def _clave_dedupe(c: dict) -> str:
+    return f"{c['tipo']}:{c['entidad_tipo']}:{c['entidad_id']}:{c['fecha_objetivo'] or ''}"
+
+
+class NotificacionService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    # ── Motor ────────────────────────────────────────────────────────────
+
+    def generar(self, hoy: date | None = None) -> dict:
+        """Evalúa el catálogo completo de reglas, inserta lo nuevo (dedup por
+        clave) y auto-resuelve lo que ya no aparece. No hace commit — lo hace
+        el caller (router o scheduler)."""
+        hoy = hoy or date.today()
+        candidatos = evaluar_todas(self.db, hoy)
+
+        claves_generadas = {_clave_dedupe(c) for c in candidatos}
+        existentes = {
+            n.clave_dedupe
+            for n in self.db.query(Notificacion.clave_dedupe)
+            .filter(Notificacion.clave_dedupe.in_(claves_generadas))
+            .all()
+        }
+
+        creadas = 0
+        for c in candidatos:
+            clave = _clave_dedupe(c)
+            if clave in existentes:
+                continue
+            self.db.add(Notificacion(
+                tipo=c["tipo"],
+                titulo=c["titulo"],
+                descripcion=c["descripcion"],
+                urgencia=c["urgencia"],
+                entidad_tipo=c["entidad_tipo"],
+                entidad_id=c["entidad_id"],
+                url_destino=c["url_destino"],
+                fecha_objetivo=c["fecha_objetivo"],
+                clave_dedupe=clave,
+                estado="pendiente",
+            ))
+            creadas += 1
+
+        resueltas = self._auto_resolver(candidatos)
+        self.db.flush()
+        return {"creadas": creadas, "resueltas": resueltas, "evaluadas": len(candidatos)}
+
+    def generar_una(self, candidato: dict) -> Notificacion | None:
+        """Crea una notificación puntual fuera del ciclo del motor — para
+        eventos instantáneos que no deben esperar a la corrida de las 08:00
+        (ej: echeq rechazado al registrarlo). Idempotente por clave_dedupe."""
+        clave = _clave_dedupe(candidato)
+        existe = self.db.query(Notificacion).filter(Notificacion.clave_dedupe == clave).first()
+        if existe:
+            return None
+        notif = Notificacion(
+            tipo=candidato["tipo"],
+            titulo=candidato["titulo"],
+            descripcion=candidato["descripcion"],
+            urgencia=candidato["urgencia"],
+            entidad_tipo=candidato["entidad_tipo"],
+            entidad_id=candidato["entidad_id"],
+            url_destino=candidato["url_destino"],
+            fecha_objetivo=candidato["fecha_objetivo"],
+            clave_dedupe=clave,
+            estado="pendiente",
+        )
+        self.db.add(notif)
+        self.db.flush()
+        return notif
+
+    def _auto_resolver(self, candidatos: list[dict]) -> int:
+        """Si una notificación activa ya no aparece entre los candidatos
+        actuales para su (tipo, entidad_tipo, entidad_id) — sin importar la
+        fecha_objetivo, que puede haber cambiado de umbral — la condición que
+        la generó desapareció (se cobró el echeq, se hizo el checkin, etc.):
+        pasa a resuelta sola."""
+        activas_por_entidad: dict[tuple, set] = {}
+        for c in candidatos:
+            key = (c["tipo"], c["entidad_tipo"], c["entidad_id"])
+            activas_por_entidad.setdefault(key, set()).add(_clave_dedupe(c))
+
+        pendientes = self.db.query(Notificacion).filter(Notificacion.estado.in_(ESTADOS_ACTIVOS)).all()
+        resueltas = 0
+        for n in pendientes:
+            key = (n.tipo, n.entidad_tipo, n.entidad_id)
+            if key not in activas_por_entidad:
+                n.estado = "resuelta"
+                n.resuelta_at = datetime.utcnow()
+                resueltas += 1
+        return resueltas
+
+    # ── Consulta ─────────────────────────────────────────────────────────
+
+    def list_activas(self, urgencia: str | None = None) -> list[Notificacion]:
+        ahora = datetime.utcnow()
+        q = self.db.query(Notificacion).filter(
+            Notificacion.estado.in_(("pendiente", "enviada")),
+        )
+        if urgencia:
+            q = q.filter(Notificacion.urgencia == urgencia)
+        items = q.order_by(Notificacion.created_at.desc()).all()
+        # Las pospuestas vuelven a aparecer solo cuando se cumple posponer_hasta.
+        pospuestas = (
+            self.db.query(Notificacion)
+            .filter(Notificacion.estado == "pospuesta", Notificacion.posponer_hasta <= ahora)
+            .order_by(Notificacion.created_at.desc())
+            .all()
+        )
+        return items + pospuestas
+
+    def list_historial(self, page: int = 1, page_size: int = 30) -> tuple[list[Notificacion], int]:
+        q = self.db.query(Notificacion).filter(Notificacion.estado.in_(("leida", "descartada", "resuelta")))
+        total = q.count()
+        items = q.order_by(Notificacion.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        return items, total
+
+    def get(self, id: int) -> Notificacion:
+        n = self.db.get(Notificacion, id)
+        if not n:
+            raise NotFoundError("Notificación", id)
+        return n
+
+    # ── Acciones (D-19 style: transición explícita, no edición libre) ──────
+
+    def marcar_leida(self, id: int) -> Notificacion:
+        n = self.get(id)
+        n.estado = "leida"
+        n.leida_at = datetime.utcnow()
+        self.db.flush()
+        return n
+
+    def posponer(self, id: int, hasta: datetime) -> Notificacion:
+        n = self.get(id)
+        n.estado = "pospuesta"
+        n.posponer_hasta = hasta
+        self.db.flush()
+        return n
+
+    def descartar(self, id: int) -> Notificacion:
+        n = self.get(id)
+        n.estado = "descartada"
+        self.db.flush()
+        return n
+
+    # ── Preferencias ─────────────────────────────────────────────────────
+
+    def list_preferencias(self, usuario_id: int) -> list[PreferenciaNotificacion]:
+        return (
+            self.db.query(PreferenciaNotificacion)
+            .filter(PreferenciaNotificacion.usuario_id == usuario_id)
+            .all()
+        )
+
+    def set_preferencia(
+        self, usuario_id: int, tipo_regla: str, canales: list[str], anticipacion_dias: int | None, activo: bool
+    ) -> PreferenciaNotificacion:
+        pref = (
+            self.db.query(PreferenciaNotificacion)
+            .filter(
+                PreferenciaNotificacion.usuario_id == usuario_id,
+                PreferenciaNotificacion.tipo_regla == tipo_regla,
+            )
+            .first()
+        )
+        if pref is None:
+            pref = PreferenciaNotificacion(usuario_id=usuario_id, tipo_regla=tipo_regla)
+            self.db.add(pref)
+        pref.canales = canales
+        pref.anticipacion_dias = anticipacion_dias
+        pref.activo = activo
+        self.db.flush()
+        return pref
+
+    # ── Digest matutino por email ───────────────────────────────────────
+    # Último canal a implementar (a pedido explícito del usuario). El motor
+    # ya corre a las 08:00 ART y persiste todo — esto sólo arma un resumen
+    # de lo activo en ese momento y lo manda por Resend. Sin destinatarios
+    # configurados (`settings.notificaciones_digest_destinatarios` vacío) o
+    # sin `resend_api_key`, es un no-op silencioso (ver enviar_email).
+
+    _ORDEN_URGENCIA = ("critica", "alta", "media", "baja")
+    _LABEL_URGENCIA = {
+        "critica": "🔴 CRÍTICO",
+        "alta": "🟠 ALTA",
+        "media": "🟡 MEDIA",
+        "baja": "⚪ BAJA",
+    }
+
+    def construir_digest(self, hoy: date | None = None) -> tuple[str, str] | None:
+        """Arma (asunto, html) del digest a partir de lo activo ahora mismo.
+        Devuelve None si no hay nada que avisar (no manda un mail vacío)."""
+        hoy = hoy or date.today()
+        items = self.list_activas()
+        if not items:
+            return None
+
+        por_urgencia: dict[str, list[Notificacion]] = {u: [] for u in self._ORDEN_URGENCIA}
+        for n in items:
+            por_urgencia.setdefault(n.urgencia, []).append(n)
+
+        bloques = []
+        for urgencia in self._ORDEN_URGENCIA:
+            notifs = por_urgencia.get(urgencia) or []
+            if not notifs:
+                continue
+            filas = "".join(
+                f"<li><strong>{n.titulo}</strong> — {n.descripcion}</li>"
+                for n in notifs
+            )
+            bloques.append(
+                f"<h3>{self._LABEL_URGENCIA[urgencia]} ({len(notifs)})</h3><ul>{filas}</ul>"
+            )
+
+        fecha_str = hoy.strftime("%d/%m/%Y")
+        html = f"<h2>Resumen de notificaciones — {fecha_str}</h2>{''.join(bloques)}"
+        asunto = f"Ubicar Rent — {len(items)} notificaciones activas ({fecha_str})"
+        return asunto, html
+
+    def enviar_digest_matutino(self, hoy: date | None = None) -> int:
+        """Arma el digest y lo manda a los destinatarios configurados.
+        Devuelve cuántos envíos se hicieron con éxito (0 si no hay nada que
+        avisar, no hay destinatarios, o falló Resend)."""
+        destinatarios = [
+            d.strip() for d in settings.notificaciones_digest_destinatarios.split(",") if d.strip()
+        ]
+        if not destinatarios:
+            return 0
+        digest = self.construir_digest(hoy)
+        if digest is None:
+            return 0
+        asunto, html = digest
+        enviados = sum(1 for d in destinatarios if enviar_email(d, asunto, html))
+        return enviados

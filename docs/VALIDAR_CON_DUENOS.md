@@ -107,6 +107,16 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 ---
 
+## 6. Multas — ¿existe descuento por pronto pago?
+
+**Contexto:** el catálogo de notificaciones del plan maestro (§4.2) incluye una regla "multa próxima a vencer (descuento por pronto pago)". Al construir el motor de notificaciones (Fase 2, 2026-07-26) se encontró que el modelo `Multa` no registra ninguna fecha límite de descuento por pronto pago — no hay forma de saber, para ninguna multa cargada, si tiene ese beneficio ni cuándo vence.
+
+**Qué se decidió:** no implementar la regla todavía, en vez de inventar un campo o un umbral sin confirmar cómo funciona en la práctica.
+
+**Estado:** ⬜ **Pendiente confirmación de Franco/Martín:** ¿las multas de tránsito que gestionan (Bahía Blanca / provincia de Buenos Aires) tienen descuento por pronto pago? Si sí, ¿con qué plazo y porcentaje? Con esa respuesta se agrega el campo a `Multa` y la regla al catálogo — es una extensión chica sobre lo ya construido.
+
+---
+
 ## Cómo seguir
 
 Cuando Franco/Martín confirmen el punto 1 (el único realmente importante de esta lista):

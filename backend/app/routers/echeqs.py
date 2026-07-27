@@ -10,6 +10,7 @@ from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.models.echeq import Echeq
 from app.schemas.echeq import EcheqCreate, EcheqUpdate, EcheqResponse
 from app.services.cuenta_corriente_service import CuentaCorrienteService
+from app.services.notificacion_service import NotificacionService
 
 router = APIRouter(prefix="/echeqs", tags=["Echeqs"])
 
@@ -110,6 +111,20 @@ def update_echeq(
 
     for field, value in cambios.items():
         setattr(echeq, field, value)
+
+    if nuevo_estado == "rechazado" and echeq.estado == "rechazado":
+        # Alerta al instante (D-19/PLAN_MAESTRO §4.2: "al registrarlo", no
+        # espera a la corrida de las 08:00 del scheduler).
+        NotificacionService(db).generar_una({
+            "tipo": "echeq_rechazado",
+            "titulo": "Echeq rechazado",
+            "descripcion": f"Echeq de {echeq.contraparte} — ${echeq.monto} — {echeq.motivo_rechazo}",
+            "urgencia": "critica",
+            "entidad_tipo": "echeq",
+            "entidad_id": echeq.id,
+            "url_destino": "/caja",
+            "fecha_objetivo": None,
+        })
 
     db.commit()
     db.refresh(echeq)

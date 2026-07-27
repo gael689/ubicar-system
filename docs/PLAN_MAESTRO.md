@@ -53,7 +53,7 @@ Los conceptos del rubro que el modelo de datos todavía no conoce y que van a ha
 | Caja / Pagos | ✅ | ✅ | Alquiler, CC | ⚠️ Ver 2.4 |
 | Echeqs | ⚠️ mínimo | ✅ | **nada** | 🔴 Isla |
 | Cuentas Corrientes | ⚠️ básico | ✅ | Cliente, Pagos | 🔴 Sin ledger |
-| Notificaciones | ⚠️ computed | ✅ campana | — | 🔴 Ver 2.1 |
+| Notificaciones | ✅ motor + tabla | ✅ campana con leído/posponer/descartar/historial | Todo el sistema (25 reglas) | Hecho 2026-07-26, ver §4 |
 | Reportes | ✅ | ✅ | Pagos, Gastos | Bueno |
 | Recibos | ✅ (versión simplificada, sin imputación FIFO) | ✅ tab en Cliente | Cliente, CC | Hecho 2026-07-26, ver 3.6 |
 | Facturas / Comprobantes | ❌ no existe | ❌ | — | 🔴 A construir |
@@ -86,11 +86,15 @@ if saldo_pendiente > 0 and r.fecha_fin < hoy_str:
 
 Causa raíz: **mezcla de tipos de fecha en todo el sistema.** `Reserva` usa `Date`/`Time` reales, pero `Pago.fecha`, `Echeq.fecha_cobro`, `MovimientoCC.fecha`, `Cliente.licencia_vencimiento` y `Documento.vigencia_hasta` son `String(10)`. Funciona por comparación lexicográfica ISO hasta que cruzás los dos mundos, que es exactamente lo que pasó acá.
 
+**✅ Resuelto (Fase 2, 2026-07-26):** el router entero fue reemplazado. El endpoint ya no computa nada on-demand — lee de la tabla `notificaciones`, sin comparaciones de tipos mezclados.
+
 ### 2.2 🔴 CRÍTICO — El scheduler de alertas nunca arranca
 
 `services/alertas.py` define `iniciar_scheduler(app)` con un `CronTrigger(hour=8, minute=0)`. **No lo llama nadie.** `main.py` no tiene evento de startup ni lifespan. `apscheduler==3.10.4` está en `requirements.txt` sin usarse. Y aunque arrancara, el job sólo hace `print(f"[Scheduler] {len(alertas)} alertas generadas")` — hay un `# TODO: enviar alertas` en el lugar del envío.
 
 Además, si arrancara: `CronTrigger(hour=8)` usa la timezone del proceso. En un contenedor en UTC eso son las 5 de la mañana en Argentina. Hay que fijar `ZoneInfo("America/Argentina/Buenos_Aires")` explícito.
+
+**✅ Resuelto (Fase 2, 2026-07-26):** `services/alertas.py` eliminado. `main.py` ahora define un `lifespan` que arranca `AsyncIOScheduler(timezone=ZoneInfo("America/Argentina/Buenos_Aires"))` con el `CronTrigger` fijado a esa misma TZ explícitamente — exactamente la trampa que este punto advertía.
 
 ### 2.3 🟠 Dos sistemas de alertas paralelos y divergentes
 
@@ -106,6 +110,8 @@ Además, si arrancara: `CronTrigger(hour=8)` usa la timezone del proceso. En un 
 | Pagos pendientes | ❌ | ✅ (roto, ver 2.1) |
 
 Hay que unificar en un solo motor. Es la base del pedido de "módulo completo de alertas".
+
+**✅ Resuelto (Fase 2, 2026-07-26):** un solo catálogo de 25 reglas en `domain/notificaciones_reglas.py`, superset de ambos sistemas anteriores. Detalle en `docs/CATALOGO_NOTIFICACIONES.md`.
 
 ### 2.4 🟠 El saldo de cuenta corriente es un número mutable sin auditoría
 
@@ -138,6 +144,8 @@ Debe ser: anulación con contra-asiento, no borrado.
 ### 2.7 🟡 Performance de `/notificaciones`
 
 El bloque 8 trae **todos los alquileres finalizados de la historia** y suma sus pagos en Python. Con polling cada 60 segundos desde el frontend, a los 2 años de operación esto es una consulta cara repetida 1.440 veces por día por usuario. Con la tabla de notificaciones real (sección 4) esto pasa a ser un `SELECT` sobre índice.
+
+**✅ Resuelto (Fase 2, 2026-07-26):** `GET /notificaciones` ahora es un `SELECT` sobre `notificaciones` con índice en `estado` — el cálculo pesado (`saldo_pendiente_alquiler` y las demás 24 reglas) sólo corre una vez al día en el motor, no en cada polling de la campana. La regla en sí (`saldo_pendiente_al_finalizar` en `notificaciones_reglas.py`) conserva la misma limitación N+1 de origen (trae todos los alquileres finalizados y suma pagos en Python) — pero ahora paga ese costo una vez por día, no 1.440 veces.
 
 ### 2.8 🟡 `/public/disponibilidad` devuelve datos incorrectos
 
@@ -904,14 +912,14 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 27. ✅ Módulo Comprobantes/Facturas (carga manual + PDF + vínculo a CC) — hecho 2026-07-26 (migración 029, FIN-19)
 28. ✅ UI: ledger con Debe/Haber/Saldo + aging (`CuentaCorrienteTab.tsx`) · grilla de tarifas (`/flota/categorias`) · liquidación en el check-in (`CheckinModal.tsx`) · panel de estado en la reserva (`ReservaInfoModal.tsx`, mejorado no rediseñado) — hecho 2026-07-26, FIN-09/UI-07/UI-08/UI-10. **Fase 1 completa.**
 
-### 🔔 Fase 2 — Alertas y Notificaciones (2 semanas)
-29. Tabla `notificaciones` + deduplicación + auto-resolución
-30. Motor de reglas unificado (jubilar `services/alertas.py` y el router computed)
-31. Scheduler APScheduler con TZ Argentina, arrancado desde el lifespan de FastAPI
-32. Regla de echeq **T-2 días a las 08:00** + el resto del catálogo de 4.2
-33. Digest matutino por email (Resend)
-34. Campana in-app reescrita: leído / posponer / descartar / historial
-35. Preferencias por usuario
+### 🔔 Fase 2 — Alertas y Notificaciones (2 semanas) — ✅ completa (2026-07-26)
+29. ✅ Tabla `notificaciones` + deduplicación (`clave_dedupe` UNIQUE) + auto-resolución — migración 030
+30. ✅ Motor de reglas unificado — `domain/notificaciones_reglas.py` (25 reglas) + `services/notificacion_service.py`. `services/alertas.py` eliminado, router `notificaciones.py` reescrito contra la tabla
+31. ✅ Scheduler APScheduler con TZ Argentina (`America/Argentina/Buenos_Aires`), arrancado desde el `lifespan` de FastAPI en `main.py` — corre todos los días a las 08:00 ART
+32. ✅ Regla de echeq **T-2 días** + el resto del catálogo de 4.2. Se revisó y se agregaron 6 reglas que no estaban en el catálogo original: contrato sin firmar con entrega hoy, reserva pendiente >24hs, cliente supera límite de crédito, factura pendiente de emitir, vehículo fuera de servicio prolongado (requirió `Vehiculo.estado_desde`), licencia vencida con reserva futura, multa imputada sin cobrar >15 días (requirió `Multa.fecha_imputada`), service por fecha (no sólo por km). **2 reglas del catálogo original quedaron sin implementar** por depender de algo que no existe todavía: reserva nueva desde la web (Fase 5) y multa con descuento por pronto pago (no hay fecha límite modelada). Detalle completo: `docs/CATALOGO_NOTIFICACIONES.md`
+33. ✅ Digest matutino por email (Resend) — hecho 2026-07-26, último en implementarse a propósito (pedido explícito del usuario). `NotificacionService.construir_digest()` arma un resumen agrupado por urgencia (crítica → baja) de todo lo activo; `enviar_digest_matutino()` lo manda a `settings.notificaciones_digest_destinatarios` (separados por coma) vía Resend. El scheduler lo llama automáticamente después de `generar()` en cada corrida de las 08:00 ART. También hay un trigger manual: `POST /notificaciones/enviar-digest`. Sin destinatarios configurados o sin `RESEND_API_KEY`, es un no-op silencioso (no rompe nada en desarrollo)
+34. ✅ Campana in-app reescrita: leído / posponer ("recordarme mañana") / descartar / historial paginado (`NotificacionesPanel.tsx`, `HistorialNotificacionesDialog.tsx`)
+35. 🟡 Preferencias por usuario — tabla `preferencias_notificacion` + `GET/PUT /notificaciones/preferencias` hechos, pero **sin UI ni aplicación real en las reglas todavía**: con un solo usuario (`dev_bypass_auth`) y sin canales fuera de in-app, no hay nada que diferenciar. Se retoma con Clerk (Fase 3.5) y el email
 
 ### 🎨 Fase 3 — UI/UX y validaciones (1-2 semanas)
 36. Menú reagrupado a 6 items, sidebar `w-52`, auto-colapso en Reservas/Ocupación

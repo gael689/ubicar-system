@@ -86,6 +86,10 @@ class VehiculoService:
         vehiculo = self.get(vehiculo_id)
 
         cambios = payload.model_dump(exclude_unset=True)
+        nuevo_estado = cambios.get("estado")
+        if nuevo_estado is not None and nuevo_estado != vehiculo.estado:
+            from datetime import datetime
+            vehiculo.estado_desde = datetime.utcnow()
         for field, value in cambios.items():
             setattr(vehiculo, field, value)
 

@@ -40,6 +40,10 @@ class Multa(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Cuándo pasó a "imputada" (Fase 2: la regla "imputada sin cobrar > 15
+    # días" la necesita — antes no se registraba en ningún lado).
+    fecha_imputada: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Resolución (D-19 style): quién decidió cobrarla o bonificarla, y por qué
     motivo_bonificacion: Mapped[str | None] = mapped_column(Text, nullable=True)
     resuelto_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)

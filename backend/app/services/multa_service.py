@@ -126,6 +126,7 @@ class MultaService:
                     "multa_sin_cliente",
                     "No se puede imputar una multa sin un cliente responsable",
                 )
+            multa.fecha_imputada = datetime.utcnow()
             CuentaCorrienteService(self.db).registrar_movimiento(
                 cliente_id=cliente_id,
                 tipo="debito",

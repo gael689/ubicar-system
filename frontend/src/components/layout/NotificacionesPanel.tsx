@@ -1,36 +1,68 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, X, ChevronRight, RefreshCw } from 'lucide-react';
-import { useNotificaciones } from '@/hooks/useNotificaciones';
+import { Bell, X, ChevronRight, RefreshCw, Check, Clock, History } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  useNotificaciones,
+  useGenerarNotificaciones,
+  useMarcarLeida,
+  usePosponerNotificacion,
+  useDescartarNotificacion,
+} from '@/hooks/useNotificaciones';
+import { HistorialNotificacionesDialog } from './HistorialNotificacionesDialog';
+import { extractError } from '@/lib/utils';
 import type { NotificacionItem, UrgenciaNot } from '@/types';
 
 const URGENCIA_CONFIG: Record<UrgenciaNot, { dot: string }> = {
-  alta:  { dot: 'bg-red-500'   },
+  critica: { dot: 'bg-red-600' },
+  alta: { dot: 'bg-red-500' },
   media: { dot: 'bg-amber-500' },
-  baja:  { dot: 'bg-slate-400' },
+  baja: { dot: 'bg-slate-400' },
 };
 
 const TIPO_GRUPO: Record<string, string> = {
-  checkout_pendiente:       '🚗 Check-ins pendientes',
-  checkin_pendiente:        '🏁 Check-outs pendientes',
-  garantia_sin_resolver:    '🔒 Garantías',
-  doc_vehiculo_vencido:     '📄 Documentos vehículos',
-  doc_vehiculo_por_vencer:  '📄 Documentos vehículos',
-  doc_cliente_vencido:      '👤 Documentos clientes',
-  doc_cliente_por_vencer:   '👤 Documentos clientes',
-  service_vencido:          '🔧 Mantenimiento',
-  service_proximo:          '🔧 Mantenimiento',
-  multa_pendiente:          '⚠️ Multas',
+  entrega_hoy: '🚗 Entregas de hoy',
+  devolucion_hoy: '🏁 Devoluciones de hoy',
+  checkout_pendiente: '🚗 Checkouts pendientes',
+  checkin_vencido: '🏁 Devoluciones vencidas',
+  contrato_no_firmado: '📝 Contratos sin firmar',
+  reserva_pendiente_24hs: '📋 Reservas sin confirmar',
+  echeq_proximo: '💰 Echeqs',
+  echeq_vence_hoy: '💰 Echeqs',
+  echeq_sin_acreditar: '💰 Echeqs',
+  echeq_rechazado: '💰 Echeqs',
+  cc_vencimiento_proximo: '💳 Cuenta corriente',
+  cc_vencida: '💳 Cuenta corriente',
+  limite_credito_superado: '💳 Cuenta corriente',
+  saldo_pendiente_alquiler: '💳 Cuenta corriente',
+  garantia_sin_resolver: '🔒 Garantías',
+  factura_pendiente_emitir: '🧾 Facturación',
+  doc_vehiculo_vencido: '📄 Documentos vehículos',
+  doc_vehiculo_por_vencer: '📄 Documentos vehículos',
+  doc_cliente_vencido: '👤 Documentos clientes',
+  doc_cliente_por_vencer: '👤 Documentos clientes',
+  service_km_vencido: '🔧 Mantenimiento',
+  service_km_proximo: '🔧 Mantenimiento',
+  service_fecha_vencido: '🔧 Mantenimiento',
+  service_fecha_proximo: '🔧 Mantenimiento',
+  licencia_cliente_por_vencer: '🪪 Licencias',
+  licencia_vencida_reserva_futura: '🪪 Licencias',
+  vehiculo_fuera_servicio_prolongado: '🛠️ Flota',
+  multa_pendiente_imputar: '⚠️ Multas',
+  multa_imputada_sin_cobrar: '⚠️ Multas',
 };
 
 export function NotificacionesPanel() {
   const [open, setOpen] = useState(false);
-  const { data, isLoading, refetch, isFetching } = useNotificaciones();
+  const [historialOpen, setHistorialOpen] = useState(false);
+  const { data, isLoading, isFetching } = useNotificaciones();
+  const generar = useGenerarNotificaciones();
   const navigate = useNavigate();
 
-  const total    = data?.total    ?? 0;
+  const total = data?.total ?? 0;
+  const criticas = data?.criticas ?? 0;
   const urgentes = data?.urgentes ?? 0;
-  const items    = data?.items    ?? [];
+  const items = data?.items ?? [];
 
   const grupos = items.reduce<Record<string, NotificacionItem[]>>((acc, item) => {
     const grupo = TIPO_GRUPO[item.tipo] ?? 'Otros';
@@ -44,9 +76,16 @@ export function NotificacionesPanel() {
     setOpen(false);
   }
 
+  async function handleActualizar() {
+    try {
+      await generar.mutateAsync();
+    } catch (err) {
+      toast.error(extractError(err));
+    }
+  }
+
   return (
     <div className="relative">
-      {/* Bell button */}
       <button
         onClick={() => setOpen(v => !v)}
         className="relative flex items-center justify-center w-9 h-9 rounded-xl hover:bg-white/10 transition-colors text-slate-400 hover:text-white"
@@ -55,36 +94,39 @@ export function NotificacionesPanel() {
         <Bell className="h-5 w-5" />
         {total > 0 && (
           <span className={`absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full text-[10px] font-bold flex items-center justify-center px-1 ${
-            urgentes > 0 ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'
+            criticas > 0 ? 'bg-red-600 text-white' : urgentes > 0 ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'
           }`}>
             {total > 99 ? '99+' : total}
           </span>
         )}
       </button>
 
-      {/* Panel — abre hacia ARRIBA desde el botón, tema claro */}
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute left-12 bottom-0 z-50 w-96 max-h-[80vh] rounded-2xl bg-background border border-border shadow-xl shadow-black/10 flex flex-col overflow-hidden">
 
-            {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 bg-muted/50">
               <div className="flex items-center gap-2">
                 <Bell className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-semibold text-foreground">Alertas del sistema</span>
-                {total > 0 && (
-                  <span className="text-xs text-muted-foreground">({total})</span>
-                )}
+                {total > 0 && <span className="text-xs text-muted-foreground">({total})</span>}
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => refetch()}
-                  disabled={isFetching}
+                  onClick={handleActualizar}
+                  disabled={isFetching || generar.isPending}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title="Actualizar"
+                  title="Actualizar (vuelve a evaluar todas las reglas)"
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`h-3.5 w-3.5 ${isFetching || generar.isPending ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  onClick={() => setHistorialOpen(true)}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="Ver historial"
+                >
+                  <History className="h-3.5 w-3.5" />
                 </button>
                 <button
                   onClick={() => setOpen(false)}
@@ -95,7 +137,6 @@ export function NotificacionesPanel() {
               </div>
             </div>
 
-            {/* Content */}
             <div className="overflow-y-auto flex-1 p-3 space-y-3">
               {isLoading && (
                 <div className="text-center py-6 text-muted-foreground text-sm">Cargando alertas...</div>
@@ -115,15 +156,14 @@ export function NotificacionesPanel() {
                     {grupo}
                   </div>
                   <div className="space-y-1">
-                    {groupItems.map((item, i) => (
-                      <NotifCard key={i} item={item} onNavigate={handleNavigate} />
+                    {groupItems.map(item => (
+                      <NotifCard key={item.id} item={item} onNavigate={handleNavigate} />
                     ))}
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Footer */}
             {total > 0 && (
               <div className="px-4 py-2.5 border-t border-border shrink-0 bg-muted/30">
                 <p className="text-[10px] text-muted-foreground text-center">
@@ -134,27 +174,71 @@ export function NotificacionesPanel() {
           </div>
         </>
       )}
+
+      {historialOpen && <HistorialNotificacionesDialog open={historialOpen} onClose={() => setHistorialOpen(false)} />}
     </div>
   );
 }
 
 function NotifCard({ item, onNavigate }: { item: NotificacionItem; onNavigate: (url: string) => void }) {
   const cfg = URGENCIA_CONFIG[item.urgencia];
+  const marcarLeida = useMarcarLeida();
+  const posponer = usePosponerNotificacion();
+  const descartar = useDescartarNotificacion();
+
+  function manana8am(): string {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(8, 0, 0, 0);
+    return d.toISOString();
+  }
+
+  async function accion(e: React.MouseEvent, fn: () => Promise<unknown>) {
+    e.stopPropagation();
+    try {
+      await fn();
+    } catch (err) {
+      toast.error(extractError(err));
+    }
+  }
+
   return (
-    <button
-      onClick={() => onNavigate(item.url_destino)}
-      className="w-full text-left rounded-xl px-3 py-2.5 hover:bg-muted transition-colors border border-transparent hover:border-border group"
-    >
-      <div className="flex items-start gap-2.5">
-        <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${cfg.dot}`} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 justify-between">
-            <p className="text-xs font-semibold text-foreground truncate">{item.titulo}</p>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    <div className="group rounded-xl border border-transparent hover:border-border hover:bg-muted transition-colors">
+      <button onClick={() => onNavigate(item.url_destino)} className="w-full text-left px-3 py-2.5">
+        <div className="flex items-start gap-2.5">
+          <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${cfg.dot}`} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 justify-between">
+              <p className="text-xs font-semibold text-foreground truncate">{item.titulo}</p>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{item.descripcion}</p>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{item.descripcion}</p>
         </div>
+      </button>
+      <div className="flex items-center gap-1 px-3 pb-2 pl-8 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={e => accion(e, () => marcarLeida.mutateAsync(item.id))}
+          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-success px-1.5 py-0.5 rounded"
+          title="Marcar como leída"
+        >
+          <Check className="h-3 w-3" /> Leída
+        </button>
+        <button
+          onClick={e => accion(e, () => posponer.mutateAsync({ id: item.id, hasta: manana8am() }))}
+          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-warning px-1.5 py-0.5 rounded"
+          title="Recordarme mañana"
+        >
+          <Clock className="h-3 w-3" /> Mañana
+        </button>
+        <button
+          onClick={e => accion(e, () => descartar.mutateAsync(item.id))}
+          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-danger px-1.5 py-0.5 rounded"
+          title="Descartar"
+        >
+          <X className="h-3 w-3" /> Descartar
+        </button>
       </div>
-    </button>
+    </div>
   );
 }

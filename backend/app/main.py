@@ -1,5 +1,7 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,12 +22,61 @@ from app.routers import (
 
 logger = logging.getLogger(__name__)
 
+TZ_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+def _correr_motor_notificaciones() -> None:
+    """Job del scheduler (08:00 ART): corre todas las reglas del catálogo
+    (domain/notificaciones_reglas.py), persiste lo nuevo, auto-resuelve lo
+    que ya no aplica, y manda el digest matutino por email (último canal,
+    no-op si no hay destinatarios/API key configurados). Ver
+    app/services/notificacion_service.py."""
+    from app.services.notificacion_service import NotificacionService
+
+    db = SessionLocal()
+    try:
+        service = NotificacionService(db)
+        resultado = service.generar()
+        db.commit()
+        logger.info(
+            "[Scheduler] Motor de notificaciones: %s creadas, %s resueltas, %s evaluadas",
+            resultado["creadas"], resultado["resueltas"], resultado["evaluadas"],
+        )
+        enviados = service.enviar_digest_matutino()
+        if enviados:
+            logger.info("[Scheduler] Digest matutino enviado a %s destinatarios", enviados)
+    except Exception:
+        db.rollback()
+        logger.exception("[Scheduler] Falló la corrida del motor de notificaciones")
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+
+    scheduler = AsyncIOScheduler(timezone=TZ_ARGENTINA)
+    scheduler.add_job(
+        _correr_motor_notificaciones,
+        CronTrigger(hour=8, minute=0, timezone=TZ_ARGENTINA),
+        id="motor_notificaciones_diario",
+        replace_existing=True,
+    )
+    scheduler.start()
+    logger.info("Scheduler iniciado — motor de notificaciones corre todos los días a las 08:00 ART")
+    yield
+    scheduler.shutdown(wait=False)
+
+
 app = FastAPI(
     title="Ubicar Rent API",
     description="Sistema de gestión de alquiler de vehículos",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────

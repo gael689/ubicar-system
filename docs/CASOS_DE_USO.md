@@ -245,28 +245,40 @@
 
 ## NOT — Alertas y notificaciones
 
+Motor de reglas unificado — hecho 2026-07-26 (Fase 2 completa). Ver detalle
+completo en `docs/CATALOGO_NOTIFICACIONES.md` (catálogo de las 25 reglas) y
+la memoria `notificaciones_fase2`.
+
 | ID | Caso de uso | Estado | Prio | Nota |
 |---|---|---|---|---|
-| NOT-01 | Campana con alertas en vivo | ✅ | — | **Arreglado 2026-07-25**: se corrigió el tipo de comparación. Verificado en vivo con datos reales (aparece `pago_pendiente` sin crashear) |
-| NOT-02 | **Envío automático de alertas** | 🔴 | **P0** | El scheduler nunca arrancó — sólo hace `print()` |
-| NOT-03 | Un solo motor de reglas | 🔴 | P1 | Hay dos sistemas paralelos y divergentes |
-| NOT-04 | Persistir notificaciones | ⬜ | P1 | Hoy se computan al abrir la campana |
-| NOT-05 | Marcar leído / posponer / descartar | ⬜ | P1 | |
-| NOT-06 | Deduplicación | ⬜ | P1 | Para que no se repita todos los días |
-| NOT-07 | Auto-resolución | ⬜ | P1 | Si se cobró el echeq, la alerta se apaga sola |
-| NOT-08 | **Digest matutino a las 08:00** | ⬜ | P1 | Pedido explícito. Con TZ Argentina |
-| NOT-09 | **Echeq a cobrar: aviso T-2 días** | ⬜ | P1 | Pedido explícito |
-| NOT-10 | Echeq vence hoy / no acreditado / rechazado | ⬜ | P1 | |
-| NOT-11 | Vencimiento de cuenta corriente T-3 y T-0 | ⬜ | P1 | |
-| NOT-12 | Deuda vencida con escalamiento | ⬜ | P1 | +1, +7, +15, +30 días |
-| NOT-13 | Entregas y devoluciones de hoy | 🟡 | P1 | Existe en el dashboard, no como alerta |
-| NOT-14 | **Auto no devuelto** | ✅ | — | **Arreglado 2026-07-26**: ahora filtra `estado == 'vencida'` directo, con horas de atraso calculadas |
-| NOT-15 | Documentos por vencer (30/15/7/1) | 🟡 | P1 | Sólo 30 días, y no se envía |
-| NOT-16 | Licencia de cliente por vencer | 🔴 | P1 | Sólo en el módulo huérfano |
-| NOT-17 | Service próximo / vencido | ✅ | — | Se detecta; no se envía |
-| NOT-18 | Multas pendientes | ✅ | — | Ídem |
-| NOT-19 | Garantía sin resolver | ✅ | — | Ídem |
-| NOT-20 | Preferencias por usuario | ⬜ | P2 | Evita que apaguen todo por saturación |
+| NOT-01 | Campana con alertas en vivo | ✅ | — | Reescrita contra la tabla `notificaciones` (persistida), no cómputo on-demand |
+| NOT-02 | **Envío automático de alertas** | ✅ | — | Scheduler APScheduler arrancado desde el `lifespan` de FastAPI, TZ `America/Argentina/Buenos_Aires`, corre todos los días a las 08:00 ART |
+| NOT-03 | Un solo motor de reglas | ✅ | — | `services/alertas.py` eliminado. Todo pasa por `domain/notificaciones_reglas.py` + `services/notificacion_service.py` |
+| NOT-04 | Persistir notificaciones | ✅ | — | Tabla `notificaciones` (migración 030) |
+| NOT-05 | Marcar leído / posponer / descartar | ✅ | — | `POST /notificaciones/{id}/leer\|posponer\|descartar`, botones en la campana (aparecen al hover) |
+| NOT-06 | Deduplicación | ✅ | — | `clave_dedupe` UNIQUE (`tipo:entidad_tipo:entidad_id:fecha_objetivo`) |
+| NOT-07 | Auto-resolución | ✅ | — | Si la condición desaparece de la corrida del motor, la notificación pasa a `resuelta` sola (match por tipo+entidad, sin la fecha) |
+| NOT-08 | **Digest matutino a las 08:00** | ⬜ | P1 | **Diferido a propósito** — el usuario pidió dejar la integración de email para el final. El motor ya corre a las 08:00 ART; sólo falta el canal de envío (Resend) |
+| NOT-09 | **Echeq a cobrar: aviso T-2 días** | ✅ | — | `echeq_proximo_t2` |
+| NOT-10 | Echeq vence hoy / no acreditado / rechazado | ✅ | — | `echeq_vence_hoy` / `echeq_sin_acreditar` / `echeq_rechazado` (este último instantáneo, no espera al motor — se dispara desde `routers/echeqs.py` al registrar el rechazo) |
+| NOT-11 | Vencimiento de cuenta corriente T-3 y T-0 | ✅ | — | `cc_vencimiento_proximo` |
+| NOT-12 | Deuda vencida con escalamiento | ✅ | — | `cc_vencida`, +1/+7 alta, +15/+30 crítica |
+| NOT-13 | Entregas y devoluciones de hoy | ✅ | — | `entrega_hoy` / `devolucion_hoy`, ahora también como notificación (ya existía en el dashboard) |
+| NOT-14 | **Auto no devuelto** | ✅ | — | `checkin_vencido` |
+| NOT-15 | Documentos por vencer (30/15/7/1) | ✅ | — | `doc_vehiculo_por_vencer` / `doc_cliente_por_vencer`, escalando urgencia por umbral |
+| NOT-16 | Licencia de cliente por vencer | ✅ | — | `licencia_cliente_por_vencer` (T-30/T-7) + nueva `licencia_vencida_reserva_futura` (no estaba en el catálogo original — agregada en la revisión de la Fase 2) |
+| NOT-17 | Service próximo / vencido | ✅ | — | Por km (`service_km_*`, ya existía) y **por fecha** (`service_fecha_*`, nuevo — usa `Servicio.proxima_fecha`) |
+| NOT-18 | Multas pendientes | ✅ | — | `multa_pendiente_imputar` + nueva `multa_imputada_sin_cobrar` (>15 días; requirió agregar `Multa.fecha_imputada`, no existía) |
+| NOT-19 | Garantía sin resolver | ✅ | — | `garantia_sin_resolver`, ahora con el umbral real (>3 días desde el checkin, antes no lo tenía) |
+| NOT-20 | Preferencias por usuario | 🟡 | P2 | Tabla + endpoints (`GET/PUT /notificaciones/preferencias`) hechos. **Sin UI de configuración ni aplicación real en las reglas**: con un solo usuario de `dev_bypass_auth` y sin canales fuera de in-app todavía, no hay nada que diferenciar entre usuarios. Se retoma cuando entre Clerk (Fase 3.5) y el email (ítem 21) |
+| NOT-21 | Contrato sin firmar con entrega hoy | ✅ | — | Nueva — no estaba en el catálogo original |
+| NOT-22 | Reserva pendiente de confirmar >24hs | ✅ | — | Nueva |
+| NOT-23 | Cliente supera límite de crédito | ✅ | — | Nueva |
+| NOT-24 | Saldo pendiente al finalizar alquiler | ✅ | — | Ya existía como `pago_pendiente`; renombrada `saldo_pendiente_alquiler`, misma lógica |
+| NOT-25 | Factura pendiente de emitir | ✅ | — | Nueva |
+| NOT-26 | Vehículo fuera de servicio prolongado | ✅ | — | Nueva — requirió agregar `Vehiculo.estado_desde` (no existía forma de saber desde cuándo estaba en ese estado) |
+| NOT-27 | Reserva nueva desde la web | ⬜ | — | **No implementable todavía**: no existe el sistema de reservas web (Fase 5) |
+| NOT-28 | Multa próxima a vencer (descuento pronto pago) | ⬜ | — | **No implementable todavía**: `Multa` no registra una fecha límite de descuento por pronto pago |
 | NOT-21 | Email como canal | ⬜ | P1 | Resend integrado pero sin usar |
 | NOT-22 | Push web | ⬜ | P3 | |
 | NOT-23 | WhatsApp automático | ⬜ | P3 | Requiere WhatsApp Business API. **Descartado por ahora** |
@@ -390,7 +402,8 @@
 | ID | Qué | Nota |
 |---|---|---|
 | FIN-04 | Borrar un pago no revierte la cuenta corriente | Requiere el rediseño del ledger de cuenta corriente (Fase 1) |
-| NOT-02 | El scheduler de alertas nunca arrancó | Requiere el motor de notificaciones de la Fase 2 |
+
+**✅ NOT-02 resuelto (2026-07-26):** el scheduler de alertas ahora arranca desde el `lifespan` de FastAPI (`main.py`) con `AsyncIOScheduler` y TZ `America/Argentina/Buenos_Aires` — corre todos los días a las 08:00 ART. Ver Fase 2 completa en `docs/CATALOGO_NOTIFICACIONES.md`.
 
 **🆕 Hallazgo nuevo, no estaba en el catálogo original (2026-07-26):**
 

@@ -911,36 +911,43 @@ export interface ServicioUpdate {
   proxima_fecha?: string | null;
 }
 
-// ─── Notificaciones In-System ────────────────────────────────────────────────
+// ─── Notificaciones (Fase 2 — motor de reglas persistido) ────────────────────
+// Ver docs/CATALOGO_NOTIFICACIONES.md para el detalle de cada tipo.
 
-export type TipoNotificacion =
-  | 'checkout_pendiente'
-  | 'checkin_pendiente'
-  | 'garantia_sin_resolver'
-  | 'doc_vehiculo_vencido'
-  | 'doc_vehiculo_por_vencer'
-  | 'doc_cliente_vencido'
-  | 'doc_cliente_por_vencer'
-  | 'service_vencido'
-  | 'service_proximo'
-  | 'multa_pendiente'
-  | 'pago_pendiente';
-
-export type UrgenciaNot = 'alta' | 'media' | 'baja';
+export type UrgenciaNot = 'critica' | 'alta' | 'media' | 'baja';
+export type EstadoNotificacion = 'pendiente' | 'enviada' | 'leida' | 'pospuesta' | 'descartada' | 'resuelta';
 
 export interface NotificacionItem {
-  tipo: TipoNotificacion;
+  id: number;
+  tipo: string;
   titulo: string;
   descripcion: string;
   urgencia: UrgenciaNot;
   entidad_tipo: string;
   entidad_id: number;
   url_destino: string;
+  fecha_objetivo: string | null;
+  programada_para: string;
+  estado: EstadoNotificacion;
+  posponer_hasta: string | null;
+  leida_at: string | null;
+  resuelta_at: string | null;
+  created_at: string;
 }
 
 export interface NotificacionesResponse {
   items: NotificacionItem[];
   total: number;
+  criticas: number;
   urgentes: number;
+}
+
+export interface PreferenciaNotificacion {
+  id: number;
+  usuario_id: number;
+  tipo_regla: string;
+  canales: string[];
+  anticipacion_dias: number | null;
+  activo: boolean;
 }
 

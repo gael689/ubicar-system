@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     # Email
     resend_api_key: str = ""
     from_email: str = "noreply@ubicarrent.com"
+    # Destinatarios del digest matutino de notificaciones, separados por coma.
+    # Vacío = no se envía nada (además de que enviar_email ya no hace nada
+    # sin resend_api_key). Sin usuarios reales todavía (pre-Clerk), es la
+    # única forma de configurar a quién le llega.
+    notificaciones_digest_destinatarios: str = ""
 
     # App
     frontend_url: str = "http://localhost:5173"

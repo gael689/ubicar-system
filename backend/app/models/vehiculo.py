@@ -38,6 +38,9 @@ class Vehiculo(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     foto_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    # Cuándo entró al estado actual (Fase 2: regla "fuera de servicio > 7
+    # días" la necesita). Se actualiza cada vez que cambia `estado`.
+    estado_desde: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     servicios: Mapped[List["Servicio"]] = relationship("Servicio", back_populates="vehiculo", order_by="Servicio.fecha.desc()")
     categoria: Mapped["Categoria"] = relationship("Categoria")
