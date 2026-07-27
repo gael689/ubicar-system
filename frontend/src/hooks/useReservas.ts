@@ -9,6 +9,24 @@ import type {
   ApiResponse,
 } from '@/types';
 
+/**
+ * Descarga el PDF de confirmación de la reserva. Se llama automáticamente al
+ * crearla (para mandárselo al cliente) y también a demanda desde el listado.
+ * El PDF además queda archivado solo en el perfil del cliente — eso lo hace
+ * el backend, acá sólo se dispara la descarga.
+ */
+export async function descargarPdfReserva(reservaId: number): Promise<void> {
+  const res = await api.get(`/reservas/${reservaId}/pdf`, { responseType: 'blob' });
+  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `reserva-${String(reservaId).padStart(5, '0')}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 interface ListReservasParams {
   estado?: string;
   vehiculo_id?: number;

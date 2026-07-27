@@ -5,10 +5,13 @@ Router de Reservas — Fase 3 completo.
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db, get_current_user
+from app.adapters.storage import IStorage
+from app.core.deps import get_db, get_current_user, get_storage
+from app.models.reserva import Reserva
+from app.services.reserva_documento_service import ReservaDocumentoService
 from app.core.exceptions import ConflictError, NotFoundError, BusinessRuleError
 from app.core.responses import ok, paginated
 from app.models.usuario import Usuario
@@ -91,6 +94,7 @@ def list_reservas(
 def create_reserva(
     payload: ReservaCreate,
     db: Session = Depends(get_db),
+    storage: IStorage = Depends(get_storage),
     current_user: Usuario = Depends(get_current_user),
 ):
     svc = ReservaService(db)
@@ -138,12 +142,46 @@ def create_reserva(
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # PDF de confirmación archivado en el perfil del cliente. Va después del
+    # commit y nunca hace fallar la reserva: si algo sale mal se registra y se
+    # puede volver a pedir desde GET /reservas/{id}/pdf.
+    db.refresh(reserva)
+    doc = ReservaDocumentoService(db, storage).generar_y_archivar(reserva, current_user.id)
+    if doc is not None:
+        db.commit()
+
     return ok(
         {
             **ReservaResponse.model_validate(reserva).model_dump(),
             "warnings": warnings,
         },
         "Reserva creada"
+    )
+
+
+@router.get("/{reserva_id}/pdf")
+def descargar_pdf_reserva(
+    reserva_id: int,
+    db: Session = Depends(get_db),
+    storage: IStorage = Depends(get_storage),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    PDF de confirmación de la reserva. Se regenera al vuelo con los datos
+    actuales — si la reserva se editó después de creada, el PDF refleja el
+    estado de hoy, no el del momento del alta.
+    """
+    reserva = db.get(Reserva, reserva_id)
+    if not reserva:
+        raise HTTPException(status_code=404, detail="Reserva no encontrada")
+
+    contenido = ReservaDocumentoService(db, storage).generar(reserva)
+    return Response(
+        content=contenido,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="reserva-{reserva_id:05d}.pdf"'
+        },
     )
 
 

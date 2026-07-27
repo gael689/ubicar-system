@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, X, AlertTriangle, Calendar, MapPin, Clock, CreditCard, Sparkles, DollarSign, ShieldCheck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useReservas } from '@/hooks/useReservas';
+import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import { useVehiculos } from '@/hooks/useVehiculos';
 import { useClientes, useConductores } from '@/hooks/useClientes';
 import api from '@/lib/api';
@@ -350,6 +350,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         };
         const { reserva: r, warnings: w } = await createReserva(payload);
         if (w.length > 0) setWarnings(w);
+        // El PDF de confirmación se descarga solo para mandárselo al cliente.
+        // Si la descarga falla no se pierde nada: el backend ya lo archivó en
+        // el perfil del cliente y se puede volver a bajar desde el listado.
+        descargarPdfReserva(r.id).catch(() => {});
         onSuccess(r, w);
       }
     } catch (err: any) {

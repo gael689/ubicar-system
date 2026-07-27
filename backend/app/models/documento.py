@@ -11,7 +11,11 @@ class Documento(Base):
     vehiculo_id: Mapped[int | None] = mapped_column(ForeignKey("vehiculos.id"), nullable=True, index=True)
     cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True, index=True)
     tipo: Mapped[str] = mapped_column(
-        Enum("poliza", "vtv", "clausulas", "otro", "dni", "licencia", "contrato", name="tipo_documento"), nullable=False
+        Enum(
+            "poliza", "vtv", "clausulas", "otro", "dni", "licencia", "contrato", "reserva",
+            name="tipo_documento",
+        ),
+        nullable=False,
     )
     nombre: Mapped[str] = mapped_column(String(255), nullable=False)
     archivo_key: Mapped[str] = mapped_column(String(512), nullable=False)

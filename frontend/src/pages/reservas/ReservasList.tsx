@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useReservas } from '@/hooks/useReservas';
+import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import api from '@/lib/api';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { extractError, cn } from '@/lib/utils';
@@ -333,6 +333,16 @@ export function ReservasList() {
                   </td>
                   <td className={cellPad}>
                     <div className="flex items-center justify-end gap-2">
+                      {/* PDF de confirmación — se genera al vuelo con los
+                          datos actuales, sirve para reenviárselo al cliente */}
+                      <button
+                        onClick={() => descargarPdfReserva(r.id).catch(() => {})}
+                        title="Descargar PDF de la reserva"
+                        className="px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-bold transition-colors"
+                      >
+                        PDF
+                      </button>
+
                       {/* Editar / Cancelar (solo si no hay alquiler) */}
                       {!r.alquiler_id && r.estado !== 'cancelada' && (
                         <>

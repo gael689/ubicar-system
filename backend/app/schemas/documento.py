@@ -4,9 +4,11 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-TipoDocumento = Literal["poliza", "vtv", "clausulas", "otro", "dni", "licencia", "contrato"]
+TipoDocumento = Literal["poliza", "vtv", "clausulas", "otro", "dni", "licencia", "contrato", "reserva"]
 TipoDocumentoVehiculo = Literal["poliza", "vtv", "clausulas", "otro"]
-TipoDocumentoCliente = Literal["dni", "licencia", "contrato", "otro"]
+# "reserva" lo genera el sistema al crear una reserva (PDF de confirmación),
+# no se sube a mano — pero se lista junto al resto de los documentos del cliente.
+TipoDocumentoCliente = Literal["dni", "licencia", "contrato", "otro", "reserva"]
 
 
 class DocumentoCreate(BaseModel):
