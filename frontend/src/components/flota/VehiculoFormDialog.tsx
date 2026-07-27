@@ -63,6 +63,10 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
         km_entre_services: vehiculo.km_entre_services,
         km_proximo_service: vehiculo.km_proximo_service,
         categoria_id: vehiculo.categoria_id,
+        vtv_vencimiento: vehiculo.vtv_vencimiento,
+        poliza_vencimiento: vehiculo.poliza_vencimiento,
+        compania_seguro: vehiculo.compania_seguro,
+        nro_poliza: vehiculo.nro_poliza,
       });
     } else {
       form.reset(DEFAULT_VEHICULO_VALUES);
@@ -211,6 +215,26 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
               </p>
             </Field>
           )}
+
+          {/* Vencimientos (Fase 3, ítem 38): campos propios del vehículo —
+              el sistema alerta con esto, no depende de que se haya subido
+              el documento en la pestaña de Documentos. */}
+          <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-border">
+            <Field label="Vencimiento VTV" error={form.formState.errors.vtv_vencimiento?.message}>
+              <Input type="date" {...form.register('vtv_vencimiento')} value={form.watch('vtv_vencimiento') ?? ''} />
+            </Field>
+            <Field label="Vencimiento póliza" error={form.formState.errors.poliza_vencimiento?.message}>
+              <Input type="date" {...form.register('poliza_vencimiento')} value={form.watch('poliza_vencimiento') ?? ''} />
+            </Field>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Compañía de seguro" error={form.formState.errors.compania_seguro?.message}>
+              <Input {...form.register('compania_seguro')} value={form.watch('compania_seguro') ?? ''} placeholder="Sancor Seguros" />
+            </Field>
+            <Field label="N° de póliza" error={form.formState.errors.nro_poliza?.message}>
+              <Input {...form.register('nro_poliza')} value={form.watch('nro_poliza') ?? ''} placeholder="123456" />
+            </Field>
+          </div>
 
           <DialogFooter className="mt-2">
             <Button

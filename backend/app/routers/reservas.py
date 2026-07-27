@@ -20,6 +20,8 @@ from app.schemas.reserva import (
     ReasignarRequest,
     CancelarReservaRequest,
     SolapeWarning,
+    BloqueoItemResponse,
+    SemaforoResponse,
 )
 from app.services.reserva_service import ReservaService
 from app.services.alquiler_service import AlquilerService
@@ -160,6 +162,47 @@ def get_reserva(
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return ok(ReservaResponse.model_validate(reserva))
+
+
+@router.get("/{reserva_id}/pre-checkout")
+def pre_checkout(
+    reserva_id: int,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """Semáforo previo al check-out (Fase 3, ítem 39): adelanta lo que
+    checkout() va a advertir/bloquear, sin tener que abrir el modal.
+    Ver domain/bloqueos.py — la mayoría son advertencias informativas."""
+    from app.domain.bloqueos import evaluar_pre_checkout
+
+    svc = ReservaService(db)
+    try:
+        reserva = svc.get(reserva_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    semaforo, items = evaluar_pre_checkout(db, reserva)
+    return ok(SemaforoResponse(semaforo=semaforo, items=[BloqueoItemResponse(**i.__dict__) for i in items]).model_dump())
+
+
+@router.get("/{reserva_id}/pre-checkin")
+def pre_checkin(
+    reserva_id: int,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """Semáforo previo al check-in (Fase 3, ítem 39). Requiere que la
+    reserva ya tenga un alquiler (checkout hecho)."""
+    from app.domain.bloqueos import evaluar_pre_checkin
+
+    svc = ReservaService(db)
+    try:
+        reserva = svc.get(reserva_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    if not reserva.alquiler:
+        raise HTTPException(status_code=422, detail="Esta reserva todavía no tiene checkout registrado")
+    semaforo, items = evaluar_pre_checkin(db, reserva.alquiler)
+    return ok(SemaforoResponse(semaforo=semaforo, items=[BloqueoItemResponse(**i.__dict__) for i in items]).model_dump())
 
 
 @router.patch("/{reserva_id}")

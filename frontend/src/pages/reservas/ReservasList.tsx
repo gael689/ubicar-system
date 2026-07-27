@@ -1,16 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useReservas } from '@/hooks/useReservas';
 import api from '@/lib/api';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
-import { extractError } from '@/lib/utils';
+import { extractError, cn } from '@/lib/utils';
+import { useAppStore } from '@/store/useAppStore';
 import type { Reserva, EstadoReserva, PaginatedResponse } from '@/types';
 import { ReservaModal } from './ReservaModal';
 import { CheckoutModal } from './CheckoutModal';
 import { CheckinModal } from './CheckinModal';
 import { ExtenderModal } from './ExtenderModal';
+import { SemaforoDot } from './SemaforoDot';
 
 const ESTADOS: { value: EstadoReserva | ''; label: string }[] = [
   { value: '', label: 'Todos los estados' },
@@ -61,6 +63,16 @@ export function ReservasList() {
   const [search, setSearch] = useState('');
   const [fechaFiltro, setFechaFiltro] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Fase 3 §5.2: filtros colapsables (arrancan cerrados para recuperar
+  // espacio) y densidad de tabla persistida.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const { reservasDensidad: densidad, setReservasDensidad: setDensidad } = useAppStore();
+  const activeFiltersCount = useMemo(
+    () => [estado, search, fechaFiltro].filter(Boolean).length,
+    [estado, search, fechaFiltro],
+  );
+  const compacta = densidad === 'compacta';
+  const cellPad = compacta ? 'px-3 py-1.5' : 'px-4 py-3';
   const [checkoutReserva, setCheckoutReserva] = useState<Reserva | null>(null);
   const [checkinReserva, setCheckinReserva] = useState<Reserva | null>(null);
   const [editReserva, setEditReserva] = useState<Reserva | null>(null);
@@ -99,78 +111,119 @@ export function ReservasList() {
   const totalPages = Math.ceil(total / pageSize);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Reservas y Alquileres</h1>
-          <p className="text-sm text-slate-500 mt-1">{total} resultado{total !== 1 ? 's' : ''}</p>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Nueva Reserva
-        </button>
-      </div>
-
-      {/* Buscador y filtro de fecha */}
-      <div className="flex flex-wrap gap-3">
-        <div className="flex-1 min-w-48 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre o DNI/CUIT del cliente..."
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-          />
-          {search && (
-            <button onClick={() => { setSearch(''); setPage(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X className="w-4 h-4" />
+    <div className="space-y-4">
+      {/* Header — sticky para no perderlo al scrollear la tabla */}
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 bg-surface/95 backdrop-blur px-4 pt-4 pb-3 space-y-3 border-b border-transparent">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">Reservas y Alquileres</h1>
+            <p className="text-sm text-slate-500 mt-1">{total} resultado{total !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Toggle de densidad */}
+            <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5">
+              <button
+                onClick={() => setDensidad('comoda')}
+                title="Densidad cómoda"
+                className={cn('p-1.5 rounded-md transition-colors', !compacta ? 'bg-indigo-100 text-indigo-800' : 'text-slate-400 hover:text-slate-600')}
+              >
+                <Rows2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setDensidad('compacta')}
+                title="Densidad compacta"
+                className={cn('p-1.5 rounded-md transition-colors', compacta ? 'bg-indigo-100 text-indigo-800' : 'text-slate-400 hover:text-slate-600')}
+              >
+                <Rows3 className="w-4 h-4" />
+              </button>
+            </div>
+            <button
+              onClick={() => setFiltersOpen(v => !v)}
+              className={cn(
+                'px-3 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center gap-2',
+                filtersOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50',
+              )}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filtros
+              {activeFiltersCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
+                  {activeFiltersCount}
+                </span>
+              )}
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', filtersOpen && 'rotate-180')} />
             </button>
-          )}
-        </div>
-        <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 px-3">
-          <Calendar className="w-4 h-4 text-slate-400" />
-          <input
-            type="date"
-            value={fechaFiltro}
-            onChange={e => { setFechaFiltro(e.target.value); setPage(1); }}
-            className="border-none bg-transparent text-sm text-slate-700 focus:ring-0 py-2"
-            title="Filtrar por dia especifico"
-          />
-          {fechaFiltro && (
-            <button onClick={() => { setFechaFiltro(''); setPage(1); }} className="text-slate-400 hover:text-slate-600">
-              <X className="w-3.5 h-3.5" />
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Nueva Reserva
             </button>
-          )}
+          </div>
         </div>
-      </div>
 
-      {/* Filtros de estado */}
-      <div className="flex gap-2 flex-wrap">
-        {ESTADOS.map((e) => (
-          <button
-            key={e.value}
-            onClick={() => { setEstado(e.value); setPage(1); }}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${
-              estado === e.value
-                ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            {e.label}
-          </button>
-        ))}
-        {(search || fechaFiltro) && (
-          <button
-            onClick={() => { setSearch(''); setFechaFiltro(''); setPage(1); }}
-            className="px-4 py-1.5 rounded-full text-sm font-medium border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 transition-all"
-          >
-            Limpiar filtros
-          </button>
+        {filtersOpen && (
+          <div className="space-y-3">
+            {/* Buscador y filtro de fecha */}
+            <div className="flex flex-wrap gap-3">
+              <div className="flex-1 min-w-48 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre o DNI/CUIT del cliente..."
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setPage(1); }}
+                  className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                />
+                {search && (
+                  <button onClick={() => { setSearch(''); setPage(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 px-3">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                <input
+                  type="date"
+                  value={fechaFiltro}
+                  onChange={e => { setFechaFiltro(e.target.value); setPage(1); }}
+                  className="border-none bg-transparent text-sm text-slate-700 focus:ring-0 py-2"
+                  title="Filtrar por dia especifico"
+                />
+                {fechaFiltro && (
+                  <button onClick={() => { setFechaFiltro(''); setPage(1); }} className="text-slate-400 hover:text-slate-600">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Filtros de estado */}
+            <div className="flex gap-2 flex-wrap">
+              {ESTADOS.map((e) => (
+                <button
+                  key={e.value}
+                  onClick={() => { setEstado(e.value); setPage(1); }}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                    estado === e.value
+                      ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {e.label}
+                </button>
+              ))}
+              {(search || fechaFiltro) && (
+                <button
+                  onClick={() => { setSearch(''); setFechaFiltro(''); setPage(1); }}
+                  className="px-4 py-1.5 rounded-full text-sm font-medium border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 transition-all"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -219,66 +272,66 @@ export function ReservasList() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-left">
-                <th className="px-4 py-3 border-r border-slate-200 w-16">ID</th>
-                <th className="px-4 py-3 border-r border-slate-200">Vehículo</th>
-                <th className="px-4 py-3 border-r border-slate-200">Cliente</th>
-                <th className="px-4 py-3 border-r border-slate-200">Fechas</th>
-                <th className="px-4 py-3 border-r border-slate-200">Precio</th>
-                <th className="px-4 py-3 border-r border-slate-200">Estado</th>
-                <th className="px-4 py-3 text-right">Acciones</th>
+                <th className={cn(cellPad, 'border-r border-slate-200 w-16')}>ID</th>
+                <th className={cn(cellPad, 'border-r border-slate-200')}>Vehículo</th>
+                <th className={cn(cellPad, 'border-r border-slate-200')}>Cliente</th>
+                <th className={cn(cellPad, 'border-r border-slate-200')}>Fechas</th>
+                <th className={cn(cellPad, 'border-r border-slate-200')}>Precio</th>
+                <th className={cn(cellPad, 'border-r border-slate-200')}>Estado</th>
+                <th className={cn(cellPad, 'text-right')}>Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {reservas.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50 transition-colors group">
-                  <td className="px-4 py-3 text-slate-500 font-mono font-medium border-r border-slate-200">
+                  <td className={cn(cellPad, 'text-slate-500 font-mono font-medium border-r border-slate-200')}>
                     #{r.id}
                   </td>
-                  <td className="px-4 py-3 border-r border-slate-200">
+                  <td className={cn(cellPad, 'border-r border-slate-200')}>
                     <div className="flex justify-between items-start">
                       <div>
-                        <div className="font-bold text-slate-800">
+                        <div className={cn('font-bold text-slate-800', compacta && 'text-xs')}>
                           {r.vehiculo ? `${r.vehiculo.marca} ${r.vehiculo.modelo}` : `Veh. ${r.vehiculo_id}`}
                         </div>
-                        {r.vehiculo && (
+                        {r.vehiculo && !compacta && (
                           <div className="text-xs text-slate-500">{r.vehiculo.patente}</div>
                         )}
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 border-r border-slate-200">
-                    <div className="text-slate-800 font-medium">
+                  <td className={cn(cellPad, 'border-r border-slate-200')}>
+                    <div className={cn('text-slate-800 font-medium', compacta && 'text-xs')}>
                       {r.cliente?.nombre_completo ?? `Cliente ${r.cliente_id}`}
                     </div>
                   </td>
-                  <td className="px-4 py-3 border-r border-slate-200">
+                  <td className={cn(cellPad, 'border-r border-slate-200')}>
                     <div className="text-slate-800 text-xs font-medium">
                       {r.fecha_inicio} <span className="text-slate-400">→</span> {r.fecha_fin}
                     </div>
-                    {r.late_checkout && (
+                    {r.late_checkout && !compacta && (
                       <div className="text-xs text-amber-600 mt-1 font-medium bg-amber-50 inline-block px-1.5 py-0.5 rounded">
                         Late checkout
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 border-r border-slate-200">
+                  <td className={cn(cellPad, 'border-r border-slate-200')}>
                     {r.precio_total ? (
-                      <span className="text-emerald-700 font-bold">
+                      <span className={cn('text-emerald-700 font-bold', compacta && 'text-xs')}>
                         ${parseFloat(r.precio_total).toLocaleString('es-AR')}
                       </span>
                     ) : (
                       <span className="text-slate-400 text-xs italic">Sin precio</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 border-r border-slate-200">
+                  <td className={cn(cellPad, 'border-r border-slate-200')}>
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase border ${ESTADO_COLORS[r.estado] ?? ''}`}>
                       {ESTADO_ICONS[r.estado]} {r.estado}
                     </span>
-                    {r.bloqueada_por_solape && (
+                    {r.bloqueada_por_solape && !compacta && (
                       <div className="text-xs text-amber-600 mt-1 font-medium">⚠️ Solape pendiente</div>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className={cellPad}>
                     <div className="flex items-center justify-end gap-2">
                       {/* Editar / Cancelar (solo si no hay alquiler) */}
                       {!r.alquiler_id && r.estado !== 'cancelada' && (
@@ -300,12 +353,15 @@ export function ReservasList() {
 
                       {/* Check-out (entregar auto al cliente) */}
                       {!r.alquiler_id && r.estado !== 'cancelada' && (
-                        <button
-                          onClick={() => setCheckoutReserva(r)}
-                          className="px-3 py-1.5 rounded bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-colors"
-                        >
-                          Check-out
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <SemaforoDot reservaId={r.id} momento="checkout" />
+                          <button
+                            onClick={() => setCheckoutReserva(r)}
+                            className="px-3 py-1.5 rounded bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-colors"
+                          >
+                            Check-out
+                          </button>
+                        </div>
                       )}
 
                       {/* Check-in + Extender (auto entregado, pendiente devolución) */}
@@ -317,6 +373,7 @@ export function ReservasList() {
                           >
                             Extender
                           </button>
+                          <SemaforoDot reservaId={r.id} momento="checkin" />
                           <button
                             onClick={() => setCheckinReserva(r)}
                             className="px-3 py-1.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold transition-colors"

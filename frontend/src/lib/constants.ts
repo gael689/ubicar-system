@@ -183,3 +183,42 @@ export const NAV_ITEMS = [
   { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
   { path: '/reportes', label: 'Reportes', icon: 'BarChart2' },
 ] as const;
+
+// Fase 3, ítem 36 (plan maestro §5.1): menú reagrupado de 9 items planos a
+// 6 grupos. No mueve rutas ni páginas — sólo agrupa la navegación. Los
+// grupos de un solo item se comportan como link directo; los de más de
+// uno, como sección expandible.
+export interface NavGroup {
+  label: string;
+  icon: string;
+  items: { path: string; label: string; icon: string }[];
+}
+
+export const NAV_GROUPS: NavGroup[] = [
+  { label: 'Hoy', icon: 'LayoutDashboard', items: [
+    { path: '/ocupacion', label: 'Ocupación', icon: 'LayoutDashboard' },
+  ] },
+  { label: 'Reservas', icon: 'ClipboardList', items: [
+    { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
+    { path: '/contratos', label: 'Contratos', icon: 'FileText' },
+  ] },
+  { label: 'Flota', icon: 'Car', items: [
+    { path: '/flota', label: 'Vehículos', icon: 'Car' },
+    { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
+  ] },
+  { label: 'Clientes', icon: 'Users', items: [
+    { path: '/clientes', label: 'Clientes', icon: 'Users' },
+  ] },
+  { label: 'Finanzas', icon: 'Wallet', items: [
+    { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
+  ] },
+  { label: 'Más', icon: 'MoreHorizontal', items: [
+    { path: '/reportes', label: 'Reportes', icon: 'BarChart2' },
+    { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
+  ] },
+];
+
+// Rutas donde el sidebar arranca colapsado y se expande al pasar el mouse
+// (plan maestro §5.1, punto 2): recupera ancho útil en las dos pantallas
+// que más lo necesitan.
+export const SIDEBAR_AUTOCOLLAPSE_PREFIXES = ['/reservas', '/ocupacion'];

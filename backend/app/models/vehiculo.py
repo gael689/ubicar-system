@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import TYPE_CHECKING, List
-from sqlalchemy import String, Boolean, DateTime, Enum, Integer, ForeignKey
+from sqlalchemy import String, Boolean, Date, DateTime, Enum, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -41,6 +41,16 @@ class Vehiculo(Base):
     # Cuándo entró al estado actual (Fase 2: regla "fuera de servicio > 7
     # días" la necesita). Se actualiza cada vez que cambia `estado`.
     estado_desde: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Vencimientos (Fase 3, ítem 38): campos propios del vehículo, no
+    # dependen de que alguien haya subido el Documento correcto con
+    # vigencia_hasta cargada. El Documento (tipo='vtv'/'poliza') sigue
+    # existiendo para el archivo adjunto — esto es la fecha que el sistema
+    # usa para alertar y filtrar.
+    vtv_vencimiento: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    poliza_vencimiento: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    compania_seguro: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    nro_poliza: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     servicios: Mapped[List["Servicio"]] = relationship("Servicio", back_populates="vehiculo", order_by="Servicio.fecha.desc()")
     categoria: Mapped["Categoria"] = relationship("Categoria")

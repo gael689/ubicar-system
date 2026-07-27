@@ -78,7 +78,9 @@ Urgencia, de mayor a menor: **crítica** > **alta** > **media** > **baja**.
 
 | Tipo | Qué detecta | Cuándo dispara | Urgencia |
 |---|---|---|---|
-| `doc_vehiculo_vencido` / `doc_vehiculo_por_vencer` | VTV, póliza o cualquier documento de un vehículo, vencido o por vencer | T-30/T-15/T-7/T-1 y vencido, 08:00 | Baja → Crítica, escalando |
+| `vtv_vencimiento` | VTV del vehículo (campo propio desde Fase 3, `Vehiculo.vtv_vencimiento` — ya no depende de un `Documento` cargado) | T-30/T-15/T-7/T-1 y vencido, 08:00 | Baja → Crítica, escalando |
+| `poliza_vencimiento` | Póliza del vehículo (`Vehiculo.poliza_vencimiento`, ídem) | T-30/T-15/T-7/T-1 y vencido, 08:00 | Baja → Crítica, escalando |
+| `doc_vehiculo_vencido` / `doc_vehiculo_por_vencer` | Resto de documentos del vehículo (cláusulas, otros) — VTV/póliza ya no pasan por acá | T-30/T-15/T-7/T-1 y vencido, 08:00 | Baja → Crítica, escalando |
 | `doc_cliente_vencido` / `doc_cliente_por_vencer` | Documento de un cliente (DNI, licencia cargada como doc), vencido o por vencer | Igual que arriba | Baja → Crítica, escalando |
 | `service_km_proximo` / `service_km_vencido` | Kilometraje del vehículo cerca o pasado del próximo service | <1.000 km restantes / vencido, 08:00 | Media / Alta |
 | `service_fecha_proximo` / `service_fecha_vencido` | Fecha programada del próximo service (campo `proxima_fecha` del último service cargado) | T-15 días / vencido, 08:00 | Media / Alta |

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel
 from typing import Literal
 
@@ -20,7 +20,10 @@ class VehiculoBase(BaseModel):
 
 
 class VehiculoCreate(VehiculoBase):
-    pass
+    vtv_vencimiento: date | None = None
+    poliza_vencimiento: date | None = None
+    compania_seguro: str | None = None
+    nro_poliza: str | None = None
 
 
 class VehiculoUpdate(BaseModel):
@@ -32,6 +35,10 @@ class VehiculoUpdate(BaseModel):
     km_entre_services: int | None = None
     km_proximo_service: int | None = None
     categoria_id: int | None = None
+    vtv_vencimiento: date | None = None
+    poliza_vencimiento: date | None = None
+    compania_seguro: str | None = None
+    nro_poliza: str | None = None
     # activo no se cambia por PATCH: usar DELETE (baja lógica) o POST /reactivar.
 
 
@@ -51,6 +58,10 @@ class VehiculoResponse(VehiculoBase):
     foto_url: str | None = None
     created_at: datetime
     categoria: CategoriaResumen | None = None
+    vtv_vencimiento: date | None = None
+    poliza_vencimiento: date | None = None
+    compania_seguro: str | None = None
+    nro_poliza: str | None = None
 
     model_config = {"from_attributes": True}
 

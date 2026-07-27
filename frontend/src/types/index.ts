@@ -306,6 +306,10 @@ export interface Vehiculo {
   activo: boolean;
   foto_url: string | null;
   created_at: string;
+  vtv_vencimiento: string | null;
+  poliza_vencimiento: string | null;
+  compania_seguro: string | null;
+  nro_poliza: string | null;
 }
 
 export interface VehiculoCreate {
@@ -318,6 +322,10 @@ export interface VehiculoCreate {
   km_actual: number;
   km_entre_services: number;
   categoria_id?: number | null;
+  vtv_vencimiento?: string | null;
+  poliza_vencimiento?: string | null;
+  compania_seguro?: string | null;
+  nro_poliza?: string | null;
 }
 
 export interface VehiculoUpdate {
@@ -329,6 +337,10 @@ export interface VehiculoUpdate {
   km_entre_services?: number;
   km_proximo_service?: number;
   categoria_id?: number | null;
+  vtv_vencimiento?: string | null;
+  poliza_vencimiento?: string | null;
+  compania_seguro?: string | null;
+  nro_poliza?: string | null;
 }
 
 // ─── Categoría (D-08) ─────────────────────────────────────────────────────────
@@ -563,6 +575,19 @@ export interface SolapeWarning {
   cliente?: string;
   fecha_inicio?: string;
   fecha_fin?: string;
+}
+
+// ─── Matriz de bloqueos (Fase 3, ítem 39) ────────────────────────────────────
+
+export interface BloqueoItem {
+  codigo: string;
+  mensaje: string;
+  severidad: 'bloqueante' | 'advertencia';
+}
+
+export interface Semaforo {
+  semaforo: 'rojo' | 'amarillo' | 'verde';
+  items: BloqueoItem[];
 }
 
 export interface Reserva {

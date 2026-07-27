@@ -450,8 +450,63 @@ _UMBRALES_DOC = [(1, "critica"), (7, "alta"), (15, "media"), (30, "baja")]
 
 
 def doc_vehiculo_vencimiento(db: Session, hoy: date) -> list[dict]:
-    docs = db.query(Documento).filter(Documento.vehiculo_id.isnot(None), Documento.cliente_id.is_(None)).all()
+    # VTV y póliza tienen su propia regla (vtv_vencimiento/poliza_vencimiento,
+    # Fase 3 ítem 38 — leen el campo del vehículo, no el Documento genérico).
+    # Ésta cubre el resto de los tipos (clausulas, otro).
+    docs = (
+        db.query(Documento)
+        .filter(
+            Documento.vehiculo_id.isnot(None),
+            Documento.cliente_id.is_(None),
+            Documento.tipo.notin_(["vtv", "poliza"]),
+        )
+        .all()
+    )
     return _reglas_documentos_lista(docs, hoy, "vehiculo", lambda d: d.vehiculo_id, "flota")
+
+
+def vtv_vencimiento(db: Session, hoy: date) -> list[dict]:
+    vehiculos = db.query(Vehiculo).filter(Vehiculo.activo == True, Vehiculo.vtv_vencimiento.isnot(None)).all()
+    return _reglas_vencimiento_vehiculo(vehiculos, hoy, "vtv_vencimiento", "VTV", lambda v: v.vtv_vencimiento)
+
+
+def poliza_vencimiento(db: Session, hoy: date) -> list[dict]:
+    vehiculos = db.query(Vehiculo).filter(Vehiculo.activo == True, Vehiculo.poliza_vencimiento.isnot(None)).all()
+    return _reglas_vencimiento_vehiculo(vehiculos, hoy, "poliza_vencimiento", "Póliza", lambda v: v.poliza_vencimiento)
+
+
+def _reglas_vencimiento_vehiculo(vehiculos, hoy: date, tipo: str, label: str, get_fecha) -> list[dict]:
+    items = []
+    for v in vehiculos:
+        vh = get_fecha(v)
+        if vh < hoy:
+            items.append({
+                "tipo": tipo,
+                "titulo": f"{label} vencida",
+                "descripcion": f"{_vehiculo_desc(v)} — {label} vencida el {vh}",
+                "urgencia": "critica",
+                "entidad_tipo": "vehiculo",
+                "entidad_id": v.id,
+                "url_destino": f"/flota/{v.id}",
+                "fecha_objetivo": vh,
+            })
+            continue
+        dias = (vh - hoy).days
+        umbral = next((u for u, _ in _UMBRALES_DOC if dias <= u), None)
+        if umbral is None:
+            continue
+        urgencia = dict(_UMBRALES_DOC)[umbral]
+        items.append({
+            "tipo": tipo,
+            "titulo": f"{label} por vencer",
+            "descripcion": f"{_vehiculo_desc(v)} — {label} vence el {vh} (T-{umbral})",
+            "urgencia": urgencia,
+            "entidad_tipo": "vehiculo",
+            "entidad_id": v.id,
+            "url_destino": f"/flota/{v.id}",
+            "fecha_objetivo": vh,
+        })
+    return items
 
 
 def doc_cliente_vencimiento(db: Session, hoy: date) -> list[dict]:
@@ -705,6 +760,8 @@ REGLAS = [
     garantia_sin_resolver,
     factura_pendiente_emitir,
     doc_vehiculo_vencimiento,
+    vtv_vencimiento,
+    poliza_vencimiento,
     doc_cliente_vencimiento,
     service_km,
     service_fecha,

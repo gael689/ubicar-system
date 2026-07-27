@@ -94,6 +94,8 @@ export function VehiculoTable({ vehiculos, onEdit, onDeactivate, onReactivate }:
                     </span>
                   )}
                   <ServiceBadge kmActual={v.km_actual} kmProximoService={v.km_proximo_service} />
+                  <VencimientoBadge label="VTV" fecha={v.vtv_vencimiento} />
+                  <VencimientoBadge label="Póliza" fecha={v.poliza_vencimiento} />
                 </div>
               </TableCell>
               <TableCell className="text-right tabular-nums text-sm">
@@ -158,6 +160,32 @@ function ServiceBadge({ kmActual, kmProximoService }: { kmActual: number; kmProx
       <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
         <Wrench className="h-3 w-3" />
         Service próximo
+      </span>
+    );
+  }
+  return null;
+}
+
+// Fase 3, ítem 38: VTV y póliza son campos propios del vehículo — sólo se
+// muestra badge si hay fecha cargada; sin dato, no se asume nada.
+function VencimientoBadge({ label, fecha }: { label: string; fecha: string | null }) {
+  if (!fecha) return null;
+  const hoy = new Date();
+  const venc = new Date(fecha);
+  const diasRestantes = Math.floor((venc.getTime() - hoy.getTime()) / 86400000);
+  if (diasRestantes < 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+        <AlertTriangle className="h-3 w-3" />
+        {label} vencida
+      </span>
+    );
+  }
+  if (diasRestantes <= 30) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+        <AlertTriangle className="h-3 w-3" />
+        {label} por vencer
       </span>
     );
   }

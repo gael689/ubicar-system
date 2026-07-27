@@ -1,18 +1,20 @@
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2,
-  ChevronLeft, ChevronRight, X, AlertTriangle,
+  ChevronLeft, ChevronRight, ChevronDown, X, AlertTriangle, MoreHorizontal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
-import { NAV_ITEMS } from '@/lib/constants';
+import { NAV_ITEMS, NAV_GROUPS, SIDEBAR_AUTOCOLLAPSE_PREFIXES } from '@/lib/constants';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { NotificacionesPanel } from '@/components/layout/NotificacionesPanel';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
-  Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2, AlertTriangle,
+  Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2, AlertTriangle, MoreHorizontal,
 };
 
 // ─── Mobile bottom nav ────────────────────────────────────────────────────────
@@ -52,22 +54,56 @@ interface SidebarProps {
   mobileOpen?: boolean;
 }
 
+function isGroupActive(group: (typeof NAV_GROUPS)[number], pathname: string): boolean {
+  return group.items.some((i) => pathname === i.path || pathname.startsWith(i.path + '/'));
+}
+
 export function Sidebar({ onMobileClose, mobileOpen }: SidebarProps) {
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
   const { pathname } = useLocation();
 
+  // Fase 3 §5.1: en /reservas y /ocupacion el sidebar arranca colapsado y
+  // se expande al pasar el mouse — recupera ancho útil sin perder el acceso
+  // rápido al resto del menú. No toca la preferencia persistida del usuario,
+  // que sigue aplicando en el resto de las pantallas.
+  const isAutoCollapseRoute = SIDEBAR_AUTOCOLLAPSE_PREFIXES.some((p) => pathname.startsWith(p));
+  const [hoverExpanded, setHoverExpanded] = useState(false);
+  const effectiveCollapsed = isAutoCollapseRoute ? !hoverExpanded : sidebarCollapsed;
+
+  // Los grupos con más de un item arrancan expandidos si contienen la ruta activa.
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(NAV_GROUPS.filter((g) => g.items.length > 1 && isGroupActive(g, pathname)).map((g) => g.label))
+  );
+  useEffect(() => {
+    const activeGroup = NAV_GROUPS.find((g) => g.items.length > 1 && isGroupActive(g, pathname));
+    if (activeGroup) {
+      setExpanded((prev) => (prev.has(activeGroup.label) ? prev : new Set(prev).add(activeGroup.label)));
+    }
+  }, [pathname]);
+
+  function toggleGroup(label: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
+
   const sidebarContent = (
     <aside
+      onMouseEnter={() => isAutoCollapseRoute && setHoverExpanded(true)}
+      onMouseLeave={() => isAutoCollapseRoute && setHoverExpanded(false)}
       className={cn(
         'flex h-full flex-col border-r border-border bg-card transition-all duration-200',
-        sidebarCollapsed ? 'w-16' : 'w-60'
+        effectiveCollapsed ? 'w-16' : 'w-52'
       )}
     >
       {/* Logo */}
       <div
         className={cn(
           'flex h-16 shrink-0 items-center justify-center border-b border-border bg-white',
-          sidebarCollapsed ? 'px-2' : 'px-4',
+          effectiveCollapsed ? 'px-2' : 'px-4',
         )}
       >
         <img
@@ -75,66 +111,153 @@ export function Sidebar({ onMobileClose, mobileOpen }: SidebarProps) {
           alt="Ubicar Rent"
           className={cn(
             'object-contain transition-all',
-            sidebarCollapsed ? 'h-9 w-9 [object-position:left]' : 'h-10 w-auto',
+            effectiveCollapsed ? 'h-9 w-9 [object-position:left]' : 'h-10 w-auto',
           )}
           // En colapsado mostramos solo la "u" inicial del logo recortando al cuadrado
-          style={sidebarCollapsed ? { objectFit: 'cover', objectPosition: '0 50%' } : {}}
+          style={effectiveCollapsed ? { objectFit: 'cover', objectPosition: '0 50%' } : {}}
         />
       </div>
 
-      {/* Nav items */}
+      {/* Nav groups */}
       <TooltipProvider delayDuration={0}>
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {NAV_ITEMS.map((item) => {
-            const Icon = ICONS[item.icon];
-            const active = pathname === item.path || pathname.startsWith(item.path + '/');
+          {NAV_GROUPS.map((group) => {
+            const GroupIcon = ICONS[group.icon];
+            const groupActive = isGroupActive(group, pathname);
 
-            const link = (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                onClick={onMobileClose}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                  sidebarCollapsed && 'justify-center px-2'
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {!sidebarCollapsed && <span>{item.label}</span>}
-              </NavLink>
-            );
+            // Grupo de un solo item: link directo, sin fricción de expandir/colapsar.
+            if (group.items.length === 1) {
+              const item = group.items[0];
+              const Icon = ICONS[item.icon];
+              const link = (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  onClick={onMobileClose}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    groupActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    effectiveCollapsed && 'justify-center px-2'
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {!effectiveCollapsed && <span>{group.label}</span>}
+                </NavLink>
+              );
+              if (effectiveCollapsed) {
+                return (
+                  <Tooltip key={group.label}>
+                    <TooltipTrigger asChild>{link}</TooltipTrigger>
+                    <TooltipContent side="right">{group.label}</TooltipContent>
+                  </Tooltip>
+                );
+              }
+              return link;
+            }
 
-            if (sidebarCollapsed) {
+            // Grupo con sub-items: colapsado → dropdown al hacer click (más
+            // intuitivo que confiar en hover, y accesible en touch).
+            if (effectiveCollapsed) {
               return (
-                <Tooltip key={item.path}>
-                  <TooltipTrigger asChild>{link}</TooltipTrigger>
-                  <TooltipContent side="right">{item.label}</TooltipContent>
-                </Tooltip>
+                <DropdownMenu key={group.label}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className={cn(
+                            'flex w-full items-center justify-center rounded-lg px-2 py-2 text-sm font-medium transition-colors',
+                            groupActive
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                          )}
+                        >
+                          <GroupIcon className="h-4 w-4 shrink-0" />
+                        </button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">{group.label}</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent side="right" align="start">
+                    {group.items.map((item) => (
+                      <DropdownMenuItem key={item.path} asChild>
+                        <NavLink to={item.path} onClick={onMobileClose}>{item.label}</NavLink>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               );
             }
-            return link;
+
+            // Grupo con sub-items, sidebar expandido: sección plegable.
+            const isOpen = expanded.has(group.label);
+            return (
+              <div key={group.label}>
+                <button
+                  onClick={() => toggleGroup(group.label)}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    groupActive && !isOpen
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  )}
+                >
+                  <GroupIcon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 text-left">{group.label}</span>
+                  <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', isOpen && 'rotate-180')} />
+                </button>
+                {isOpen && (
+                  <div className="mt-0.5 ml-3.5 space-y-0.5 border-l border-border pl-3">
+                    {group.items.map((item) => {
+                      const Icon = ICONS[item.icon];
+                      const active = pathname === item.path || pathname.startsWith(item.path + '/');
+                      return (
+                        <NavLink
+                          key={item.path}
+                          to={item.path}
+                          onClick={onMobileClose}
+                          className={cn(
+                            'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors',
+                            active
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5 shrink-0" />
+                          <span>{item.label}</span>
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
           })}
         </nav>
       </TooltipProvider>
 
       {/* Panel de notificaciones + Collapse toggle (desktop only) */}
       <div className="shrink-0 border-t border-border p-2 hidden md:flex flex-col gap-1">
-        <div className={cn('flex items-center', sidebarCollapsed ? 'justify-center' : 'justify-between px-1')}>
+        <div className={cn('flex items-center', effectiveCollapsed ? 'justify-center' : 'justify-between px-1')}>
           <NotificacionesPanel />
-          {!sidebarCollapsed && (
+          {!effectiveCollapsed && (
             <span className="text-xs text-muted-foreground">Alertas</span>
           )}
         </div>
-        <button
-          onClick={toggleSidebar}
-          className="flex w-full items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          aria-label={sidebarCollapsed ? 'Expandir menú' : 'Colapsar menú'}
-        >
-          {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </button>
+        {isAutoCollapseRoute ? (
+          <div className="flex w-full items-center justify-center rounded-lg p-2 text-muted-foreground/60" title="Se expande al pasar el mouse">
+            {effectiveCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </div>
+        ) : (
+          <button
+            onClick={toggleSidebar}
+            className="flex w-full items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            aria-label={sidebarCollapsed ? 'Expandir menú' : 'Colapsar menú'}
+          >
+            {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        )}
       </div>
     </aside>
   );

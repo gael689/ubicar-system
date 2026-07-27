@@ -182,3 +182,16 @@ class ReservaListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Matriz de bloqueos (Fase 3, ítem 39) ──────────────────────────────────────
+
+class BloqueoItemResponse(BaseModel):
+    codigo: str
+    mensaje: str
+    severidad: Literal["bloqueante", "advertencia"]
+
+
+class SemaforoResponse(BaseModel):
+    semaforo: Literal["rojo", "amarillo", "verde"]
+    items: list[BloqueoItemResponse]
