@@ -12,6 +12,7 @@ import { CotizadorPage } from '@/pages/cotizador/CotizadorPage';
 import { MultasPage } from '@/pages/multas/MultasPage';
 import { FinanzasPage } from '@/pages/finanzas/FinanzasPage';
 import { ReportesPage } from '@/pages/reportes/ReportesPage';
+import { ConfiguracionPage } from '@/pages/configuracion/ConfiguracionPage';
 
 export default function App() {
   return (
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="/cuentas-corrientes" element={<Navigate to="/finanzas" replace />} />
         <Route path="/echeqs" element={<Navigate to="/finanzas" replace />} />
         <Route path="/reportes" element={<AppLayout title="Reportes"><ReportesPage /></AppLayout>} />
+        <Route path="/configuracion" element={<AppLayout title="Configuración"><ConfiguracionPage /></AppLayout>} />
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>
     </BrowserRouter>

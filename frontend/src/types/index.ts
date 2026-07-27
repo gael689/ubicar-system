@@ -976,3 +976,15 @@ export interface PreferenciaNotificacion {
   activo: boolean;
 }
 
+// ─── Configuración (Fase 3, ítem 40) ─────────────────────────────────────────
+
+export interface ConfiguracionItem {
+  id: number;
+  clave: string;
+  valor: string;
+  tipo: 'int' | 'decimal' | 'bool' | 'string';
+  categoria: string;
+  descripcion: string;
+  updated_at: string;
+}
+

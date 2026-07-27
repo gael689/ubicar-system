@@ -10,7 +10,10 @@ from enum import Enum
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
-from app.domain.control_24hs import calcular_excedente, ResultadoExcedente
+from app.domain.control_24hs import (
+    calcular_excedente, ResultadoExcedente,
+    GRACIA_MINUTOS, MULTIPLICADOR_HORA_EXCEDENTE, TOPE_HORAS_ANTES_DIA_EXTRA,
+)
 from app.domain.enums import EstadoReserva, EstadoVehiculo, DecisionExcedente
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.tarifas import (
@@ -26,6 +29,7 @@ from app.models.tarifa import Tarifa
 from app.repositories.alquiler_repo import AlquilerRepo
 from app.repositories.reserva_repo import ReservaRepo
 from app.schemas.alquiler import PagoInmediato
+from app.services.configuracion_service import ConfiguracionService
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 
 logger = logging.getLogger(__name__)
@@ -37,6 +41,18 @@ class AlquilerService:
         self.alquiler_repo = AlquilerRepo(db)
         self.reserva_repo = ReservaRepo(db)
         self.cc_service = CuentaCorrienteService(db)
+        self.config_service = ConfiguracionService(db)
+
+    def _params_excedente(self) -> dict:
+        """Lee gracia/multiplicador/tope de la tabla `configuracion` (Fase 3,
+        ítem 40) en vez de los defaults hardcodeados del dominio. Si algún
+        valor no está cargado (o no es parseable), cae al default original
+        de control_24hs.py — nunca rompe el cálculo."""
+        return {
+            "gracia_minutos": self.config_service.get_int("excedente.gracia_minutos", GRACIA_MINUTOS),
+            "multiplicador_hora": self.config_service.get_int("excedente.multiplicador_hora", MULTIPLICADOR_HORA_EXCEDENTE),
+            "tope_horas": self.config_service.get_int("excedente.tope_horas_dia_extra", TOPE_HORAS_ANTES_DIA_EXTRA),
+        }
 
     # ── Lectura ───────────────────────────────────────────────────────────────
 
@@ -72,7 +88,7 @@ class AlquilerService:
         checkin_dt = datetime.combine(checkin_fecha, checkin_hora)
 
         tarifa_diaria = self._obtener_tarifa_diaria(reserva)
-        return calcular_excedente(hora_devolucion_dt, checkin_dt, tarifa_diaria)
+        return calcular_excedente(hora_devolucion_dt, checkin_dt, tarifa_diaria, **self._params_excedente())
 
     # ── Checkout ──────────────────────────────────────────────────────────────
 
@@ -312,7 +328,7 @@ class AlquilerService:
         hora_devolucion = reserva.hora_devolucion_acordada or reserva.hora_inicio
         hora_devolucion_dt = datetime.combine(reserva.fecha_fin, hora_devolucion)
         tarifa_diaria = self._obtener_tarifa_diaria(reserva)
-        resultado = calcular_excedente(hora_devolucion_dt, checkin_dt, tarifa_diaria)
+        resultado = calcular_excedente(hora_devolucion_dt, checkin_dt, tarifa_diaria, **self._params_excedente())
 
         # Aplicar decisión de cobro
         cargo_excedente, horas_cobradas, excedente_bonificado = self._aplicar_decision_excedente(

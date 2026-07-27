@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2,
-  ChevronLeft, ChevronRight, ChevronDown, X, AlertTriangle, MoreHorizontal,
+  ChevronLeft, ChevronRight, ChevronDown, X, AlertTriangle, MoreHorizontal, Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
@@ -14,7 +14,7 @@ import { NotificacionesPanel } from '@/components/layout/NotificacionesPanel';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
-  Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2, AlertTriangle, MoreHorizontal,
+  Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2, AlertTriangle, MoreHorizontal, Settings,
 };
 
 // ─── Mobile bottom nav ────────────────────────────────────────────────────────

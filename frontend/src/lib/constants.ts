@@ -215,6 +215,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { label: 'Más', icon: 'MoreHorizontal', items: [
     { path: '/reportes', label: 'Reportes', icon: 'BarChart2' },
     { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
+    { path: '/configuracion', label: 'Configuración', icon: 'Settings' },
   ] },
 ];
 
