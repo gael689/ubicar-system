@@ -786,6 +786,15 @@ Traducido al diseño de arriba, las tres capas que describieron son exactamente 
 
 **Pantalla de administración: "Calendario de precios"** — vista tipo calendario anual, categorías en filas, meses en columnas, precio y color por celda. Pintar un rango y asignar precio. Debe ser tan fácil como marcar en un Excel, porque es lo que van a usar todas las semanas.
 
+**✅ Primer ladrillo construido (2026-07-27, migración `036_fechas_especiales`).** Pedido explícito: *"en el calendario le tienen que aparecer las fechas especiales a los administradores"*. Se adelantó porque tiene valor propio **hoy**, sin esperar al motor de precios: saber que la semana que viene es Navidad cambia cómo se planifica la flota, y esa información no estaba en ningún lado del sistema.
+
+- Tabla `fechas_especiales`: nombre, **rango** (`fecha_desde`/`fecha_hasta` — los dueños piensan en "las semanas de Navidad", no en el 25 aislado; para un día suelto ambas son iguales), `tipo` (feriado / fin de semana largo / comercial / temporada / otro), `color`, notas, baja lógica con reactivación.
+- **Sembrados 22 registros**: feriados nacionales argentinos de fecha fija 2026 y 2027, Día del Amigo, "Fiestas" (20/12 al 6/1) y temporada alta de verano. **No se sembraron los feriados móviles** (Carnaval, Semana Santa, y los trasladables por decreto): dependen del calendario litúrgico o de una decisión anual del PEN, así que sembrarlos calculados sería adivinar. Se cargan a mano, que para eso está la pantalla.
+- **Se ven en las dos vistas del calendario**: en la vista timeline, un chip de color en el encabezado del día y la columna teñida; en la vista agenda mensual, un punto de color en el día y el detalle listado debajo del día seleccionado. Si un día cae en varias (Navidad dentro de "Fiestas"), **gana la de rango más corto** — es la más específica y la que el admin quiere ver.
+- Administración en `/configuracion` (`FechasEspecialesPanel`), donde los dueños las cargan ellos mismos.
+
+**Cómo engancha con el motor de precios:** cuando entre `tarifas_calendario`, una regla de precio va a poder **apuntar a una fecha especial** en vez de repetir el rango a mano. Así "Navidad 2026" se define una sola vez y sirve para el calendario **y** para el precio — que es exactamente el "acoplar todo a esto" que se pidió. Los colores ya elegidos acá se reutilizan para pintar el calendario de precios.
+
 ### 7.3 Disponibilidad
 
 **`GET /api/v1/public/disponibilidad`** — reescribir por completo:

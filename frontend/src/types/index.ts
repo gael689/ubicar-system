@@ -864,6 +864,43 @@ export interface OcupacionResponse {
   eventos: EventoOcupacion[];
 }
 
+// ─── Fechas especiales ───────────────────────────────────────────────────────
+
+export type TipoFechaEspecial = 'feriado' | 'fin_semana_largo' | 'comercial' | 'temporada' | 'otro';
+export type ColorFechaEspecial = 'rojo' | 'ambar' | 'verde' | 'azul' | 'violeta';
+
+export interface FechaEspecial {
+  id: number;
+  nombre: string;
+  fecha_desde: string;
+  fecha_hasta: string;
+  tipo: TipoFechaEspecial;
+  color: ColorFechaEspecial;
+  notas: string | null;
+  activo: boolean;
+  creado_por: number | null;
+  created_at: string;
+}
+
+export interface FechaEspecialCreate {
+  nombre: string;
+  fecha_desde: string;
+  fecha_hasta: string;
+  tipo?: TipoFechaEspecial;
+  color?: ColorFechaEspecial;
+  notas?: string | null;
+}
+
+export interface FechaEspecialUpdate {
+  nombre?: string;
+  fecha_desde?: string;
+  fecha_hasta?: string;
+  tipo?: TipoFechaEspecial;
+  color?: ColorFechaEspecial;
+  notas?: string | null;
+  activo?: boolean;
+}
+
 // ─── Daños (parte de daños) ──────────────────────────────────────────────────
 
 export type MomentoDanio = 'checkout' | 'checkin' | 'preexistente';

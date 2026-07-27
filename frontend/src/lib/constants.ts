@@ -10,6 +10,8 @@ import type {
   SeveridadDanio,
   EstadoDanio,
   ResponsableDanio,
+  TipoFechaEspecial,
+  ColorFechaEspecial,
 } from '@/types';
 
 // ─── Vehículos ───────────────────────────────────────────────────────────────
@@ -75,6 +77,29 @@ export const ESTADO_ECHEQ_COLOR: Record<EstadoEcheq, string> = {
   cobrado: 'bg-success/15 text-success border-success/30',
   vencido: 'bg-muted/40 text-muted-foreground border-border',
   pendiente: 'bg-muted/40 text-muted-foreground border-border',
+};
+
+// ─── Fechas especiales ───────────────────────────────────────────────────────
+
+export const TIPO_FECHA_ESPECIAL_LABEL: Record<TipoFechaEspecial, string> = {
+  feriado: 'Feriado',
+  fin_semana_largo: 'Fin de semana largo',
+  comercial: 'Fecha comercial',
+  temporada: 'Temporada',
+  otro: 'Otro',
+};
+
+/**
+ * Clases completas por color — nunca interpolar (`bg-${color}-500` no
+ * sobrevive al purge de Tailwind). `chip` es para el badge en el header del
+ * calendario; `celda` tiñe suavemente la columna del día.
+ */
+export const COLOR_FECHA_ESPECIAL: Record<ColorFechaEspecial, { chip: string; celda: string; punto: string }> = {
+  rojo:    { chip: 'bg-red-600 text-white',     celda: 'bg-red-50',     punto: 'bg-red-600' },
+  ambar:   { chip: 'bg-amber-500 text-white',   celda: 'bg-amber-50',   punto: 'bg-amber-500' },
+  verde:   { chip: 'bg-emerald-600 text-white', celda: 'bg-emerald-50', punto: 'bg-emerald-600' },
+  azul:    { chip: 'bg-sky-600 text-white',     celda: 'bg-sky-50',     punto: 'bg-sky-600' },
+  violeta: { chip: 'bg-violet-600 text-white',  celda: 'bg-violet-50',  punto: 'bg-violet-600' },
 };
 
 // ─── Daños (parte de daños) ──────────────────────────────────────────────────

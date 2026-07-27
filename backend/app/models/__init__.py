@@ -15,11 +15,12 @@ from app.models.tarjeta_cliente import TarjetaCliente
 from app.models.multa import Multa
 from app.models.servicio import Servicio
 from app.models.danio import Danio, FotoDanio
+from app.models.fecha_especial import FechaEspecial
 
 __all__ = [
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",
     "Tarifa", "Reserva", "Alquiler", "Contrato", "Pago",
     "CuentaCorriente", "MovimientoCuentaCorriente",
     "Echeq", "Gasto", "Documento", "Presupuesto", "TarjetaCliente",
-    "Multa", "Servicio", "Danio", "FotoDanio",
+    "Multa", "Servicio", "Danio", "FotoDanio", "FechaEspecial",
 ]

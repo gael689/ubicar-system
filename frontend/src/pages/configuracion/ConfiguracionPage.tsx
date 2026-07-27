@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useConfiguracion, useUpdateConfiguracion } from '@/hooks/useConfiguracion';
+import { FechasEspecialesPanel } from '@/components/configuracion/FechasEspecialesPanel';
 import { extractError, formatDate } from '@/lib/utils';
 import type { ConfiguracionItem } from '@/types';
 
@@ -50,6 +51,8 @@ export function ConfiguracionPage() {
           </Card>
         ))
       )}
+
+      <FechasEspecialesPanel />
 
       <p className="text-xs text-muted-foreground px-1">
         ¿Falta un parámetro? Esta pantalla lee de una tabla genérica clave/valor — agregar uno nuevo es una fila más, no requiere rediseñar la UI.
