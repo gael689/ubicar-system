@@ -1,0 +1,271 @@
+import type { Metadata, Viewport } from "next";
+import { DM_Sans } from "next/font/google";
+import Script from "next/script";
+import "./globals.css";
+
+// Se auto-hostea: elimina el request bloqueante a fonts.googleapis.com que
+// tenía la versión Vite y evita el salto de layout al cargar la tipografía.
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-dm-sans",
+});
+
+const SITE = "https://ubicar-rent.com.ar";
+const META_PIXEL_ID = "26876823408666329";
+const GA_ID = "G-25783YNP7G";
+
+const TITULO = "Alquiler de Autos en Bahía Blanca | Ubicar Rent";
+const DESCRIPCION =
+  "Alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y CABA. " +
+  "Reserva rápida por WhatsApp. Atención a empresas y particulares. ¡Consultá disponibilidad!";
+const DESCRIPCION_SOCIAL =
+  "Alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y CABA. Reservá por WhatsApp.";
+
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE),
+  title: TITULO,
+  description: DESCRIPCION,
+  keywords: [
+    "alquiler de autos bahia blanca", "alquiler de autos en bahia blanca",
+    "rent a car bahia blanca", "alquiler de vehiculos bahia blanca",
+    "alquiler camioneta bahia blanca", "alquiler 4x4 bahia blanca",
+    "alquiler maquinaria bahia blanca", "retroexcavadora bahia blanca",
+    "pala cargadora bahia blanca", "ubicar rent",
+  ],
+  robots: { index: true, follow: true },
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: SITE,
+    title: TITULO,
+    description: DESCRIPCION_SOCIAL,
+    images: ["/og-image.jpeg"],
+    locale: "es_AR",
+    siteName: "Ubicar Rent",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITULO,
+    description: DESCRIPCION_SOCIAL,
+    images: ["/og-image.jpeg"],
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  manifest: "/site.webmanifest",
+  other: {
+    "facebook-domain-verification": "h1xnldir1icchdwxhy2d0q0ll4ma3l",
+    "geo.region": "AR-B",
+    "geo.placename": "Bahía Blanca, Buenos Aires, Argentina",
+    "geo.position": "-38.7196;-62.2724",
+    ICBM: "-38.7196, -62.2724",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+};
+
+/**
+ * Datos estructurados. Se mantienen tal cual estaban en el `index.html` de la
+ * versión Vite — son los que hacen que Google muestre la ficha de negocio y el
+ * bloque de preguntas frecuentes, así que tocarlos tiene costo real en SEO.
+ */
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "LocalBusiness",
+      "@id": `${SITE}/#business`,
+      name: "Ubicar Rent",
+      description:
+        "Empresa de alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y Buenos Aires. Servicio para particulares y empresas con reserva por WhatsApp.",
+      url: `${SITE}/`,
+      logo: `${SITE}/og-image.jpeg`,
+      image: `${SITE}/og-image.jpeg`,
+      telephone: ["+5492914180554", "+5491125164791"],
+      email: "ubicar.rent@gmail.com",
+      priceRange: "$$",
+      currenciesAccepted: "ARS",
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: "Paraguay 241",
+        addressLocality: "Bahía Blanca",
+        addressRegion: "Buenos Aires",
+        postalCode: "8000",
+        addressCountry: "AR",
+      },
+      geo: { "@type": "GeoCoordinates", latitude: -38.7196, longitude: -62.2724 },
+      areaServed: [
+        { "@type": "City", name: "Bahía Blanca" },
+        { "@type": "City", name: "Ciudad Autónoma de Buenos Aires" },
+        { "@type": "AdministrativeArea", name: "Sur de la Provincia de Buenos Aires" },
+      ],
+      sameAs: ["https://www.instagram.com/ubicar_rent/"],
+      hasOfferCatalog: {
+        "@type": "OfferCatalog",
+        name: "Servicios de alquiler de vehículos y maquinaria",
+        itemListElement: [
+          {
+            "@type": "Offer",
+            itemOffered: {
+              "@type": "Service",
+              name: "Alquiler de autos sin chofer en Bahía Blanca",
+              description:
+                "Alquiler de automóviles sin conductor en Bahía Blanca para particulares y empresas.",
+            },
+          },
+          {
+            "@type": "Offer",
+            itemOffered: {
+              "@type": "Service",
+              name: "Alquiler de camionetas 4x4 en Bahía Blanca",
+              description:
+                "Alquiler de camionetas doble cabina con tracción 4x4 en Bahía Blanca. Ideales para campo, minería y uso corporativo.",
+            },
+          },
+          {
+            "@type": "Offer",
+            itemOffered: {
+              "@type": "Service",
+              name: "Alquiler de maquinaria pesada en Bahía Blanca",
+              description:
+                "Alquiler de retroexcavadoras Caterpillar, palas cargadoras, camiones volcadores y minicargadoras en Bahía Blanca.",
+            },
+          },
+          {
+            "@type": "Offer",
+            itemOffered: {
+              "@type": "Service",
+              name: "Alquiler de vehículos para empresas en CABA",
+              description:
+                "Soluciones corporativas de movilidad en Buenos Aires: flota empresarial, vehículos de reemplazo y alquileres a largo plazo.",
+            },
+          },
+        ],
+      },
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${SITE}/#website`,
+      url: `${SITE}/`,
+      name: "Ubicar Rent",
+      description: "Alquiler de autos y maquinaria en Bahía Blanca",
+      inLanguage: "es-AR",
+      publisher: { "@id": `${SITE}/#business` },
+    },
+    {
+      "@type": "FAQPage",
+      "@id": `${SITE}/#faq`,
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "¿Alquilan autos en Bahía Blanca?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Sí, Ubicar Rent ofrece alquiler de autos sin chofer en Bahía Blanca. Contamos con una flota de automóviles, camionetas y 4x4 disponibles. Podés reservar por WhatsApp al +54 9 291 418-0554.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "¿Dónde queda Ubicar Rent en Bahía Blanca?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Ubicar Rent está en Paraguay 241, Bahía Blanca, Buenos Aires, Argentina. También atendemos en Capital Federal (CABA) al +54 9 11 2516-4791.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "¿Tienen camionetas 4x4 para alquilar?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Sí, disponemos de camionetas doble cabina con tracción 4x4 para alquiler en Bahía Blanca. Ideales para trabajo en campo, minería y empresas. Consultá disponibilidad al +54 9 291 418-0554.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "¿Alquilan maquinaria pesada en Bahía Blanca?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Sí, contamos con retroexcavadoras Caterpillar 416D, palas cargadoras 924 HZ, minicargadoras New Holland L318, camiones volcadores Ford Cargo 1722 y tanques de agua para obra en Bahía Blanca.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "¿Cómo reservo un auto o maquinaria?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Podés reservar completando el formulario de disponibilidad en nuestra web o por WhatsApp: +54 9 291 418-0554 (Bahía Blanca) o +54 9 11 2516-4791 (CABA). También podés escribirnos a ubicar.rent@gmail.com.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "¿Hacen alquileres para empresas?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Sí, Ubicar Rent ofrece soluciones corporativas de movilidad: gestión de flota, vehículos de reemplazo y alquileres a largo plazo en Bahía Blanca y CABA. Contactanos al +54 9 291 418-0554.",
+          },
+        },
+      ],
+    },
+  ],
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="es" className={dmSans.variable}>
+      <body className="antialiased">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+        />
+
+        {children}
+
+        {/* Meta Pixel — `afterInteractive` para no bloquear el primer render,
+            algo que la versión Vite sí hacía al tenerlo inline en el <head>. */}
+        <Script id="meta-pixel" strategy="afterInteractive">
+          {`!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+          n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+          if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+          n.queue=[];t=b.createElement(e);t.async=!0;
+          t.src=v;s=b.getElementsByTagName(e)[0];
+          s.parentNode.insertBefore(t,s)}(window, document,'script',
+          'https://connect.facebook.net/en_US/fbevents.js');
+          fbq('init', '${META_PIXEL_ID}');
+          fbq('track', 'PageView');`}
+        </Script>
+        <noscript>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            height="1"
+            width="1"
+            style={{ display: "none" }}
+            alt=""
+            src={`https://www.facebook.com/tr?id=${META_PIXEL_ID}&ev=PageView&noscript=1`}
+          />
+        </noscript>
+
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+          strategy="afterInteractive"
+        />
+        <Script id="ga4" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', '${GA_ID}');`}
+        </Script>
+      </body>
+    </html>
+  );
+}

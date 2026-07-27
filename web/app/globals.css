@@ -1,0 +1,108 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 33% 13%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 33% 13%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 33% 13%;
+
+    --primary: 214 52% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 212 60% 72%;
+    --secondary-foreground: 222 33% 13%;
+
+    --muted: 214 30% 95%;
+    --muted-foreground: 220 10% 46%;
+
+    --accent: 212 60% 72%;
+    --accent-foreground: 222 33% 13%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 214 52% 52%;
+
+    --radius: 0.375rem;
+
+    /* Custom tokens */
+    --ubicar-blue: 214 52% 52%;
+    --ubicar-light-blue: 212 60% 72%;
+    --ubicar-dark: 222 33% 13%;
+    --ubicar-white: 0 0% 100%;
+    --ubicar-green: 142 71% 45%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    text-wrap: balance;
+    overflow-wrap: break-word;
+  }
+
+  p {
+    text-wrap: pretty;
+    overflow-wrap: break-word;
+  }
+}
+
+@layer utilities {
+  .section-white {
+    @apply bg-background;
+  }
+
+  .section-light-blue {
+    background-color: hsl(var(--ubicar-light-blue) / 0.12);
+  }
+
+  .section-dark {
+    background-color: hsl(var(--ubicar-dark));
+    color: hsl(var(--ubicar-white));
+  }
+
+  .section-blue {
+    background-color: hsl(var(--ubicar-blue));
+    color: hsl(var(--ubicar-white));
+  }
+
+  .text-ubicar-blue {
+    color: hsl(var(--ubicar-blue));
+  }
+
+  .bg-ubicar-green {
+    background-color: hsl(var(--ubicar-green));
+  }
+}

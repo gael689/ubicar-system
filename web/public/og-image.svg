@@ -1,0 +1,67 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1B3F6B"/>
+      <stop offset="100%" stop-color="#0A1628"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#5B9BD5"/>
+      <stop offset="100%" stop-color="#3A7DC0"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="40" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Fondo -->
+  <rect width="1200" height="630" fill="url(#bgGrad)"/>
+
+  <!-- Círculos decorativos de fondo -->
+  <circle cx="980" cy="180" r="320" fill="rgba(91,155,213,0.07)"/>
+  <circle cx="1100" cy="500" r="200" fill="rgba(91,155,213,0.05)"/>
+  <circle cx="100" cy="550" r="150" fill="rgba(91,155,213,0.04)"/>
+
+  <!-- Línea de acento superior -->
+  <rect x="80" y="72" width="1040" height="1.5" fill="rgba(91,155,213,0.2)" rx="1"/>
+
+  <!-- Chip de categoría -->
+  <rect x="80" y="140" width="220" height="34" rx="17" fill="rgba(91,155,213,0.15)"/>
+  <text x="190" y="162" font-family="DM Sans, Arial, sans-serif" font-size="13" font-weight="700" fill="#A8CAFE" text-anchor="middle" letter-spacing="2">BAHÍA BLANCA · ARG</text>
+
+  <!-- Nombre de marca -->
+  <text x="80" y="280" font-family="DM Sans, Arial, sans-serif" font-size="96" font-weight="800" fill="#F0F5FA" letter-spacing="-3">Ubicar Rent</text>
+
+  <!-- Línea de acento bajo el nombre -->
+  <rect x="80" y="305" width="80" height="4" rx="2" fill="url(#accent)"/>
+
+  <!-- Tagline -->
+  <text x="80" y="370" font-family="DM Sans, Arial, sans-serif" font-size="30" font-weight="400" fill="rgba(220,235,255,0.65)">Alquiler de Autos, Camionetas 4x4 y Maquinaria Pesada</text>
+
+  <!-- Separador -->
+  <rect x="80" y="420" width="1040" height="1" fill="rgba(255,255,255,0.07)" rx="1"/>
+
+  <!-- Servicios chips -->
+  <!-- Chip 1 -->
+  <rect x="80" y="445" width="180" height="38" rx="10" fill="rgba(255,255,255,0.06)"/>
+  <text x="170" y="469" font-family="DM Sans, Arial, sans-serif" font-size="14" font-weight="600" fill="rgba(220,235,255,0.7)" text-anchor="middle">Autos sin chofer</text>
+
+  <!-- Chip 2 -->
+  <rect x="276" y="445" width="170" height="38" rx="10" fill="rgba(255,255,255,0.06)"/>
+  <text x="361" y="469" font-family="DM Sans, Arial, sans-serif" font-size="14" font-weight="600" fill="rgba(220,235,255,0.7)" text-anchor="middle">Camionetas 4x4</text>
+
+  <!-- Chip 3 -->
+  <rect x="462" y="445" width="200" height="38" rx="10" fill="rgba(255,255,255,0.06)"/>
+  <text x="562" y="469" font-family="DM Sans, Arial, sans-serif" font-size="14" font-weight="600" fill="rgba(220,235,255,0.7)" text-anchor="middle">Maquinaria Pesada</text>
+
+  <!-- Chip 4 -->
+  <rect x="678" y="445" width="180" height="38" rx="10" fill="rgba(255,255,255,0.06)"/>
+  <text x="768" y="469" font-family="DM Sans, Arial, sans-serif" font-size="14" font-weight="600" fill="rgba(220,235,255,0.7)" text-anchor="middle">Soluciones Empresa</text>
+
+  <!-- URL y teléfono -->
+  <text x="80" y="560" font-family="DM Sans, Arial, sans-serif" font-size="20" font-weight="600" fill="rgba(168,202,254,0.6)" letter-spacing="0.5">ubicar-rent.com.ar</text>
+  <text x="80" y="590" font-family="DM Sans, Arial, sans-serif" font-size="17" font-weight="400" fill="rgba(220,235,255,0.35)">WhatsApp +54 9 291 418-0554</text>
+
+  <!-- Línea de acento inferior -->
+  <rect x="80" y="612" width="1040" height="1.5" fill="rgba(91,155,213,0.2)" rx="1"/>
+</svg>
