@@ -78,6 +78,7 @@ class CheckinCreate(BaseModel):
 class ExtenderRequest(BaseModel):
     nueva_fecha_fin: date
     nueva_hora_fin: time
+    precio_total: Decimal | None = None
 
 
 # ── Response: excedente preview ───────────────────────────────────────────────

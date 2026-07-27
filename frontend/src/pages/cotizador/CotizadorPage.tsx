@@ -323,6 +323,7 @@ export function CotizadorPage() {
                             <SelectItem value="sedan_sup">Sedán Superior</SelectItem>
                             <SelectItem value="suv">SUV</SelectItem>
                             <SelectItem value="camioneta">Pick up</SelectItem>
+                            <SelectItem value="furgon">Furgón</SelectItem>
                           </SelectContent>
                         </Select>
                       )}

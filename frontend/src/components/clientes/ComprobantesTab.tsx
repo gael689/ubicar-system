@@ -55,7 +55,7 @@ export function ComprobantesTab({ clienteId }: Props) {
         <div>
           <h3 className="text-sm font-semibold text-foreground">Comprobantes</h3>
           <p className="text-xs text-muted-foreground">
-            Facturas, notas de crédito/débito y remitos — carga manual con PDF. Sin facturación electrónica AFIP todavía.
+            Facturas, notas de crédito/débito y remitos — carga manual con PDF.
           </p>
         </div>
         <Button size="sm" onClick={() => setFormOpen(true)}>

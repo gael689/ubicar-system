@@ -70,6 +70,19 @@ class ReservaCreate(BaseModel):
     anticipo_medio_pago: str | None = None
     con_factura: bool = False
     descuento_motivo: str | None = None
+    # Condición de pago del saldo — decisión de la reserva, sin default
+    # implícito de ancla (ver ReservaService.create).
+    condicion_pago: str = "contado"
+    condicion_pago_ancla: Literal["checkout", "checkin", "fecha_especifica"] | None = None
+    condicion_pago_fecha_ancla: date | None = None
+    # Factura — sólo descriptivo, sin integración AFIP real todavía.
+    tipo_factura: Literal["A", "B", "C"] | None = None
+    factura_a_nombre_de: str | None = None
+    # Datos del echeq — opcionales, se puede dejar pendiente y completar
+    # después (ver ReservaService.create / EcheqService).
+    echeq_banco: str | None = None
+    echeq_numero_cheque: str | None = None
+    echeq_fecha_cobro: date | None = None
 
 
 class ReservaUpdate(BaseModel):
@@ -147,6 +160,14 @@ class ReservaResponse(BaseModel):
     descuento_autorizado_por: int | None = None
     con_factura: bool = False
     motivo_cancelacion: str | None = None
+    condicion_pago: str = "contado"
+    condicion_pago_ancla: str | None = None
+    condicion_pago_fecha_ancla: date | None = None
+    tipo_factura: str | None = None
+    factura_a_nombre_de: str | None = None
+    echeq_banco: str | None = None
+    echeq_numero_cheque: str | None = None
+    echeq_fecha_cobro: date | None = None
     # D2 solape
     bloqueada_por_solape: bool
     # Garantía

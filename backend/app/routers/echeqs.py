@@ -10,6 +10,7 @@ from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.models.echeq import Echeq
 from app.schemas.echeq import EcheqCreate, EcheqUpdate, EcheqResponse
 from app.services.cuenta_corriente_service import CuentaCorrienteService
+from app.services.echeq_service import EcheqService
 from app.services.notificacion_service import NotificacionService
 
 router = APIRouter(prefix="/echeqs", tags=["Echeqs"])
@@ -20,6 +21,7 @@ def _echeq_response(echeq: Echeq, db: Session) -> dict:
     if echeq.cliente_id:
         cliente = db.get(Cliente, echeq.cliente_id)
         data["cliente_nombre"] = cliente.nombre_completo if cliente else None
+    data["datos_completos"] = bool(echeq.banco and echeq.numero_cheque and echeq.fecha_cobro)
     return data
 
 
@@ -61,27 +63,31 @@ def create_echeq(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    echeq = Echeq(**payload.model_dump(), creado_por=current_user.id)
-    db.add(echeq)
-    db.flush()  # asegurar echeq.id
-
     # Un echeq RECIBIDO de un cliente identificado es, a los fines de la
     # cuenta corriente, un cobro: entra en cartera y ya genera el crédito
     # (aunque todavía no se hizo efectivo — ver docs/PLAN_MAESTRO.md 3.4).
     # Si más adelante rebota, se revierte con un contra-asiento (ver abajo).
-    if echeq.tipo == "recibido" and echeq.cliente_id:
-        mov = CuentaCorrienteService(db).registrar_movimiento(
-            cliente_id=echeq.cliente_id,
-            tipo="credito",
-            concepto=f"Echeq recibido #{echeq.numero_cheque} ({echeq.banco}) — vence {echeq.fecha_cobro}",
-            monto=Decimal(str(echeq.monto)),
-            fecha=echeq.fecha_emision,
+    # Misma lógica que usa ReservaService.create() cuando el medio de pago
+    # elegido es "echeq" — centralizada en EcheqService para no duplicarla.
+    if payload.tipo == "recibido" and payload.cliente_id:
+        echeq = EcheqService(db).crear_recibido(
+            cliente_id=payload.cliente_id,
+            contraparte=payload.contraparte,
+            monto=Decimal(str(payload.monto)),
+            fecha_emision=payload.fecha_emision,
             creado_por=current_user.id,
-            alquiler_id=echeq.alquiler_id,
-            echeq_id=echeq.id,
+            banco=payload.banco,
+            numero_cheque=payload.numero_cheque,
+            fecha_cobro=payload.fecha_cobro,
+            reserva_id=payload.reserva_id,
+            alquiler_id=payload.alquiler_id,
+            gasto_id=payload.gasto_id,
+            notas=payload.notas,
         )
-        echeq.cuenta_corriente_id = mov.cuenta_corriente_id
-        echeq.movimiento_cc_id = mov.id
+    else:
+        echeq = Echeq(**payload.model_dump(), creado_por=current_user.id)
+        db.add(echeq)
+        db.flush()  # asegurar echeq.id
 
     db.commit()
     db.refresh(echeq)

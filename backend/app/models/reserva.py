@@ -71,6 +71,30 @@ class Reserva(Base):
     anticipo_fecha: Mapped[date | None] = mapped_column(Date(), nullable=True)
     anticipo_medio_pago: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
+    # Condición de pago del saldo (Fase 3-bis): decisión de la reserva, no un
+    # default silencioso del cliente. Mismos valores que
+    # CuentaCorriente.condicion_pago (domain/cuenta_corriente.py::DIAS_POR_CONDICION).
+    condicion_pago: Mapped[str] = mapped_column(String(20), server_default="contado", nullable=False, default="contado")
+    # Desde cuándo se cuentan los días del plazo — sin default implícito, lo
+    # elige quien carga la reserva. 'checkout' | 'checkin' | 'fecha_especifica'.
+    condicion_pago_ancla: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Sólo si condicion_pago_ancla == 'fecha_especifica'.
+    condicion_pago_fecha_ancla: Mapped[date | None] = mapped_column(Date(), nullable=True)
+
+    # Factura (sólo descriptivo por ahora — sin integración AFIP real, ver
+    # Plan Maestro decisión #5).
+    tipo_factura: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    factura_a_nombre_de: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Datos del echeq cuando el medio de pago (previsto o del anticipo) es
+    # "echeq" — todos opcionales: se puede dejar pendiente y completarlos
+    # después desde la ficha del cliente o el módulo de Echeqs. Si el cliente
+    # está cargado, ReservaService.create() ya crea el Echeq vinculado
+    # (Echeq.reserva_id) con estos datos, completos o no.
+    echeq_banco: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    echeq_numero_cheque: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    echeq_fecha_cobro: Mapped[date | None] = mapped_column(Date(), nullable=True)
+
     # ── Relaciones ────────────────────────────────────────────────────────────
     vehiculo: Mapped["Vehiculo"] = relationship("Vehiculo")
     cliente: Mapped["Cliente"] = relationship("Cliente")

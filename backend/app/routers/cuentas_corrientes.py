@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -50,11 +50,20 @@ class MovimientoResponse(BaseModel):
     anulado_por_movimiento_id: int | None
     creado_por: int | None
     created_at: datetime
+    vencimiento_editado_motivo: str | None = None
+    vencimiento_editado_por: int | None = None
+    vencimiento_editado_en: datetime | None = None
     model_config = {"from_attributes": True}
 
 
 class AnularRequest(BaseModel):
     motivo: str
+
+
+class EditarVencimientoRequest(BaseModel):
+    fecha_vencimiento: date | None
+    motivo: str
+    condicion: str | None = None  # opcional: renegociar también la condición
 
 
 class CCResponse(BaseModel):
@@ -81,6 +90,30 @@ def _cc_response(cc: CuentaCorriente, db: Session) -> dict:
         "observaciones": cc.observaciones,
         "cliente_nombre": cliente.nombre_completo if cliente else None,
     }
+
+
+@router.get("/pendientes")
+def list_clientes_con_pago_pendiente(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """IDs de clientes con un débito vencido o que vence en <=3 días —
+    para el badge "Pago pendiente" del listado de clientes (seguimiento,
+    sin entrar al detalle de cada uno)."""
+    limite = date.today() + timedelta(days=3)
+    cliente_ids = (
+        db.query(CuentaCorriente.cliente_id)
+        .join(MovimientoCuentaCorriente, MovimientoCuentaCorriente.cuenta_corriente_id == CuentaCorriente.id)
+        .filter(
+            MovimientoCuentaCorriente.tipo == "debito",
+            MovimientoCuentaCorriente.anulado == False,
+            MovimientoCuentaCorriente.fecha_vencimiento.isnot(None),
+            MovimientoCuentaCorriente.fecha_vencimiento <= limite,
+        )
+        .distinct()
+        .all()
+    )
+    return ok(sorted(cid for (cid,) in cliente_ids))
 
 
 @router.get("")
@@ -185,3 +218,38 @@ def anular_movimiento(
     db.commit()
     db.refresh(contra)
     return ok(MovimientoResponse.model_validate(contra), "Movimiento anulado")
+
+
+@router.patch("/movimientos/{movimiento_id}/vencimiento")
+def editar_vencimiento(
+    movimiento_id: int,
+    payload: EditarVencimientoRequest,
+    db: Session = Depends(get_db),
+    svc: CuentaCorrienteService = Depends(_service),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Corrige a mano la fecha de vencimiento (y opcionalmente la condición) de
+    un débito — no toca monto ni saldo, no es un contra-asiento. Cubre el
+    caso de ancla=check-in mientras el auto no había vuelto, extensiones, o
+    cualquier renegociación. Motivo siempre obligatorio (sin roles todavía
+    que restrinjan quién puede hacerlo).
+    """
+    existente = db.get(MovimientoCuentaCorriente, movimiento_id)
+    if not existente:
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+
+    try:
+        mov = svc.editar_vencimiento(
+            movimiento_id=movimiento_id,
+            fecha_vencimiento=payload.fecha_vencimiento,
+            motivo=payload.motivo,
+            usuario_id=current_user.id,
+            condicion=payload.condicion,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    db.commit()
+    db.refresh(mov)
+    return ok(MovimientoResponse.model_validate(mov), "Vencimiento actualizado")

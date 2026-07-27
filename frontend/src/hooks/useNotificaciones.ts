@@ -14,11 +14,25 @@ export function useNotificaciones() {
   });
 }
 
-export function useHistorialNotificaciones(page = 1) {
+interface HistorialParams {
+  page?: number;
+  soloResueltas?: boolean;
+  fecha?: string | null;
+  anio?: number | null;
+  mes?: number | null;
+}
+
+export function useHistorialNotificaciones({ page = 1, soloResueltas = true, fecha, anio, mes }: HistorialParams = {}) {
   return useQuery({
-    queryKey: ['notificaciones', 'historial', page],
+    queryKey: ['notificaciones', 'historial', page, soloResueltas, fecha, anio, mes],
     queryFn: async () => {
-      const { data } = await api.get<PaginatedResponse<NotificacionItem>>(`/notificaciones/historial?page=${page}`);
+      const params: Record<string, string | number | boolean> = { page, solo_resueltas: soloResueltas };
+      if (fecha) params.fecha = fecha;
+      else {
+        if (anio) params.anio = anio;
+        if (mes) params.mes = mes;
+      }
+      const { data } = await api.get<PaginatedResponse<NotificacionItem>>('/notificaciones/historial', { params });
       return data;
     },
   });

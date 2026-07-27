@@ -5,6 +5,8 @@ import { useCreateGasto } from '@/hooks/useGastos';
 import type { CheckinCreate, DecisionExcedente, PreviewExcedente, Reserva } from '@/types';
 import { useDebounce } from '@/hooks/useDebounce';
 import { usePagosPendientes } from '@/hooks/usePagos';
+import { DaniosPreexistentes } from '@/components/flota/DaniosPreexistentes';
+import { DaniosTab } from '@/components/flota/DaniosTab';
 
 const FUEL_LEVELS = [
   { value: 0,   label: 'Vacío',  color: 'bg-red-50 border-red-300 text-red-700' },
@@ -95,6 +97,8 @@ export function CheckinModal({
   const [pagoMedio, setPagoMedio] = useState('efectivo');
   const [pagoFecha, setPagoFecha] = useState(todayStr());
   const [pagoNotas, setPagoNotas] = useState('');
+  const [mostrarConfirmacionCobro, setMostrarConfirmacionCobro] = useState(false);
+  const [confirmoSinCobro, setConfirmoSinCobro] = useState(false);
 
   const [realKmCheckout, setRealKmCheckout] = useState(kmCheckout);
   const [loadingAlquiler, setLoadingAlquiler] = useState(true);
@@ -206,6 +210,26 @@ export function CheckinModal({
       if (!pagoFecha) { setLocalError('Seleccione la fecha de pago'); return; }
     }
 
+    if (!cobrarAhora && totalACobrarAhora > 0 && !confirmoSinCobro) {
+      setMostrarConfirmacionCobro(true);
+      return;
+    }
+
+    await ejecutarCheckin();
+  }
+
+  function handleConfirmarSinCobro() {
+    setConfirmoSinCobro(true);
+    setMostrarConfirmacionCobro(false);
+    ejecutarCheckin();
+  }
+
+  function handleConfirmarSiCobro() {
+    setMostrarConfirmacionCobro(false);
+    handleCobrarAhoraChange(true);
+  }
+
+  async function ejecutarCheckin() {
     const payload: CheckinCreate = {
       checkin_fecha: fecha,
       checkin_hora: hora + ':00',
@@ -326,6 +350,76 @@ export function CheckinModal({
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Registrar cobro ahora */}
+          <div className="rounded-xl border border-warning overflow-hidden">
+            <div className="bg-warning px-4 py-2.5">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={cobrarAhora}
+                  onChange={e => handleCobrarAhoraChange(e.target.checked)}
+                  className="w-4 h-4 accent-white"
+                />
+                <span className="text-xs font-semibold text-white uppercase tracking-wide">
+                  Cobrar al cliente ahora
+                  {totalACobrarAhora > 0 && (
+                    <span className="ml-2 normal-case font-medium text-white/90">
+                      (total: {formatMoney(totalACobrarAhora)})
+                    </span>
+                  )}
+                </span>
+              </label>
+            </div>
+            {cobrarAhora && (
+              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-background">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Monto ($) *</label>
+                  <input
+                    type="number"
+                    value={pagoMonto}
+                    onChange={e => setPagoMonto(parseFloat(e.target.value) || '')}
+                    min={0}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Medio de pago *</label>
+                  <select
+                    value={pagoMedio}
+                    onChange={e => setPagoMedio(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="tarjeta">Tarjeta</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="echeq">Echeq</option>
+                    <option value="cuenta_corriente">Cuenta Corriente</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Fecha del cobro *</label>
+                  <input
+                    type="date"
+                    value={pagoFecha}
+                    onChange={e => setPagoFecha(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Notas (opcional)</label>
+                  <input
+                    type="text"
+                    value={pagoNotas}
+                    onChange={e => setPagoNotas(e.target.value)}
+                    placeholder="Ej: Efectivo en mano"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Preview excedente */}
@@ -635,74 +729,16 @@ export function CheckinModal({
             </div>
           )}
 
-          {/* Registrar cobro ahora */}
-          <div className="rounded-xl border border-border overflow-hidden">
-            <div className="bg-muted/50 px-4 py-2.5 border-b border-border">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={cobrarAhora}
-                  onChange={e => handleCobrarAhoraChange(e.target.checked)}
-                  className="w-4 h-4 accent-primary"
-                />
-                <span className="text-xs font-semibold text-foreground uppercase tracking-wide">
-                  Cobrar al cliente ahora
-                  {totalACobrarAhora > 0 && (
-                    <span className="ml-2 normal-case font-medium text-muted-foreground">
-                      (total: {formatMoney(totalACobrarAhora)})
-                    </span>
-                  )}
-                </span>
-              </label>
-            </div>
-            {cobrarAhora && (
-              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-background">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Monto ($) *</label>
-                  <input
-                    type="number"
-                    value={pagoMonto}
-                    onChange={e => setPagoMonto(parseFloat(e.target.value) || '')}
-                    min={0}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Medio de pago *</label>
-                  <select
-                    value={pagoMedio}
-                    onChange={e => setPagoMedio(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    <option value="efectivo">Efectivo</option>
-                    <option value="transferencia">Transferencia</option>
-                    <option value="tarjeta">Tarjeta</option>
-                    <option value="cheque">Cheque</option>
-                    <option value="echeq">Echeq</option>
-                    <option value="cuenta_corriente">Cuenta Corriente</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Fecha del cobro *</label>
-                  <input
-                    type="date"
-                    value={pagoFecha}
-                    onChange={e => setPagoFecha(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Notas (opcional)</label>
-                  <input
-                    type="text"
-                    value={pagoNotas}
-                    onChange={e => setPagoNotas(e.target.value)}
-                    placeholder="Ej: Efectivo en mano"
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-              </div>
-            )}
+          {/* Parte de daños — lo que ya estaba + lo que aparece al devolverlo */}
+          <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
+            <DaniosPreexistentes vehiculoId={reserva.vehiculo_id} />
+            <DaniosTab
+              vehiculoId={reserva.vehiculo_id}
+              alquilerId={alquilerId}
+              momento="checkin"
+              compacto
+              titulo="Daños al devolver"
+            />
           </div>
 
           {/* Descripción */}
@@ -737,22 +773,46 @@ export function CheckinModal({
           )}
         </form>
 
-        <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSubmit as any}
-            disabled={alquilerLoading}
-            className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2"
-          >
-            {alquilerLoading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
-            <Flag className="h-4 w-4" /> Registrar Check-in
-          </button>
-        </div>
+        {mostrarConfirmacionCobro ? (
+          <div className="px-6 py-4 border-t border-warning bg-warning">
+            <p className="text-sm font-semibold text-white mb-3">
+              ⚠️ No marcaste "Cobrar al cliente ahora" — ¿el cliente pagó el saldo pendiente ({formatMoney(totalACobrarAhora)})?
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleConfirmarSinCobro}
+                className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-medium transition-colors"
+              >
+                No, todavía no cobré
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarSiCobro}
+                className="px-4 py-2 rounded-lg bg-white hover:bg-white/90 text-warning text-sm font-semibold transition-colors"
+              >
+                Sí, ya cobré el total
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSubmit as any}
+              disabled={alquilerLoading}
+              className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {alquilerLoading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
+              <Flag className="h-4 w-4" /> Registrar Check-in
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, AlertTriangle, Plus, Pencil, Trash2, Save, User, FileWarning, CheckCircle2, Gift } from 'lucide-react';
+import { Search, AlertTriangle, Plus, Pencil, Save, User, FileWarning, CheckCircle2, Gift } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,7 +9,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { useMultas } from '@/hooks/useMultas';
-import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR } from '@/lib/constants';
+import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR, ESTADO_MULTA_COLOR_OUTLINE } from '@/lib/constants';
 import type { Multa, BusquedaMultaResult, EstadoMulta, EstadoMultaEditable, MultaCreate } from '@/types';
 import { cn, extractError } from '@/lib/utils';
 
@@ -21,7 +21,10 @@ function formatMoney(v: string | number) {
   return `$${parseFloat(String(v)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 }
 
-const ESTADOS: EstadoMultaEditable[] = ['pendiente', 'imputada', 'apelando'];
+// "cobrada"/"bonificada" no se setean a mano: van por los botones de
+// resolución (generan el movimiento de cuenta corriente). El resto son
+// transiciones directas, un click, sin pasar por "Editar".
+const ESTADOS_DIRECTOS: EstadoMultaEditable[] = ['pendiente', 'imputada', 'apelando'];
 const ESTADO_FILTROS: { value: string; label: string }[] = [
   { value: '', label: 'Todos' },
   ...(['pendiente', 'imputada', 'cobrada', 'bonificada', 'apelando'] as EstadoMulta[])
@@ -29,7 +32,7 @@ const ESTADO_FILTROS: { value: string; label: string }[] = [
 ];
 
 export function MultasPage() {
-  const { loading, error, buscarResponsable, crearMulta, actualizarMulta, eliminarMulta, resolverMulta, listMultas } = useMultas();
+  const { loading, error, buscarResponsable, crearMulta, actualizarMulta, resolverMulta, listMultas } = useMultas();
 
   // ── Buscador ──────────────────────────────────────────────────────────────
   const [busPatente, setBusPatente] = useState('');
@@ -49,13 +52,12 @@ export function MultasPage() {
   const [form, setForm] = useState<Partial<MultaCreate>>({});
 
   // ── Edición inline ────────────────────────────────────────────────────────
-  const [editando, setEditando] = useState<number | null>(null);
-  const [estadoEdit, setEstadoEdit] = useState<EstadoMultaEditable>('pendiente');
+  const [editandoNotas, setEditandoNotas] = useState<number | null>(null);
   const [notasEdit, setNotasEdit] = useState('');
-  const [deleteId, setDeleteId] = useState<number | null>(null);
   const [cobrarId, setCobrarId] = useState<number | null>(null);
   const [bonificarId, setBonificarId] = useState<number | null>(null);
   const [resolviendo, setResolviendo] = useState(false);
+  const [cambiandoEstado, setCambiandoEstado] = useState(false);
 
   const cargarMultas = useCallback(async () => {
     const res = await listMultas({
@@ -112,9 +114,22 @@ export function MultasPage() {
     cargarMultas();
   };
 
-  const handleGuardarEstado = async (m: Multa) => {
-    await actualizarMulta(m.id, { estado: estadoEdit, notas: notasEdit || undefined });
-    setEditando(null);
+  const handleCambiarEstado = async (m: Multa, estado: EstadoMultaEditable) => {
+    if (m.estado === estado) return;
+    setCambiandoEstado(true);
+    try {
+      await actualizarMulta(m.id, { estado });
+      cargarMultas();
+    } catch (err) {
+      toast.error(extractError(err));
+    } finally {
+      setCambiandoEstado(false);
+    }
+  };
+
+  const handleGuardarNotas = async (m: Multa) => {
+    await actualizarMulta(m.id, { notas: notasEdit || undefined });
+    setEditandoNotas(null);
     cargarMultas();
   };
 
@@ -351,99 +366,105 @@ export function MultasPage() {
           <div className="space-y-2">
             {multas.map(m => (
               <div key={m.id} className="rounded-xl border border-border bg-background p-4">
-                {editando === m.id ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Estado</label>
-                        <select value={estadoEdit} onChange={e => setEstadoEdit(e.target.value as EstadoMultaEditable)} className="input-base">
-                          {ESTADOS.map(s => <option key={s} value={s}>{ESTADO_MULTA_LABEL[s]}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Notas</label>
-                        <input value={notasEdit} onChange={e => setNotasEdit(e.target.value)} className="input-base" />
-                      </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono font-bold text-sm">{m.patente}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDate(m.fecha_infraccion)}{m.hora_infraccion ? ` · ${m.hora_infraccion.slice(0, 5)}` : ''}
+                      </span>
+                      <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold', ESTADO_MULTA_COLOR[m.estado])}>
+                        {ESTADO_MULTA_LABEL[m.estado]}
+                      </span>
                     </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={() => handleGuardarEstado(m)} disabled={loading}>
-                        <Save className="h-3.5 w-3.5" /> Guardar
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEditando(null)}>Cancelar</Button>
-                    </div>
+                    {m.cliente && (
+                      <Link to={`/clientes/${m.cliente.id}`} className="text-sm text-primary hover:underline">
+                        {m.cliente.nombre_completo}
+                        <span className="text-muted-foreground font-normal"> · {m.cliente.dni_cuit}</span>
+                      </Link>
+                    )}
+                    {m.descripcion && <p className="text-xs text-muted-foreground">{m.descripcion}</p>}
+                    {m.alquiler_id && <p className="text-xs text-muted-foreground">Contrato #{m.alquiler_id}</p>}
+                    {editandoNotas === m.id ? (
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          value={notasEdit}
+                          onChange={e => setNotasEdit(e.target.value)}
+                          placeholder="Notas internas"
+                          className="input-base text-sm"
+                          autoFocus
+                        />
+                        <Button size="sm" onClick={() => handleGuardarNotas(m)} disabled={loading}>
+                          <Save className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditandoNotas(null)}>Cancelar</Button>
+                      </div>
+                    ) : (
+                      m.notas && <p className="text-xs text-muted-foreground italic">{m.notas}</p>
+                    )}
+                    {m.estado === 'bonificada' && m.motivo_bonificacion && (
+                      <p className="text-xs text-muted-foreground italic">Motivo: {m.motivo_bonificacion}</p>
+                    )}
                   </div>
-                ) : (
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono font-bold text-sm">{m.patente}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDate(m.fecha_infraccion)}{m.hora_infraccion ? ` · ${m.hora_infraccion.slice(0, 5)}` : ''}
-                        </span>
-                        <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium', ESTADO_MULTA_COLOR[m.estado])}>
-                          {ESTADO_MULTA_LABEL[m.estado]}
-                        </span>
-                      </div>
-                      {m.cliente && (
-                        <Link to={`/clientes/${m.cliente.id}`} className="text-sm text-primary hover:underline">
-                          {m.cliente.nombre_completo}
-                          <span className="text-muted-foreground font-normal"> · {m.cliente.dni_cuit}</span>
-                        </Link>
-                      )}
-                      {m.descripcion && <p className="text-xs text-muted-foreground">{m.descripcion}</p>}
-                      {m.alquiler_id && <p className="text-xs text-muted-foreground">Contrato #{m.alquiler_id}</p>}
-                      {m.notas && <p className="text-xs text-muted-foreground italic">{m.notas}</p>}
-                      {m.estado === 'bonificada' && m.motivo_bonificacion && (
-                        <p className="text-xs text-muted-foreground italic">Motivo: {m.motivo_bonificacion}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="font-bold text-foreground">{formatMoney(m.monto)}</span>
-                      {m.estado === 'imputada' && (
-                        <>
-                          <Button variant="outline" size="sm" onClick={() => setCobrarId(m.id)}>
-                            <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Cobrada
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => setBonificarId(m.id)}>
-                            <Gift className="h-3.5 w-3.5 text-muted-foreground" /> Bonificar
-                          </Button>
-                        </>
-                      )}
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <span className="font-bold text-foreground">{formatMoney(m.monto)}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      {ESTADOS_DIRECTOS.map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          disabled={cambiandoEstado || m.estado === s}
+                          onClick={() => handleCambiarEstado(m, s)}
+                          className={cn(
+                            'px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors disabled:cursor-default',
+                            m.estado === s
+                              ? ESTADO_MULTA_COLOR[s]
+                              : ESTADO_MULTA_COLOR_OUTLINE[s],
+                          )}
+                        >
+                          {ESTADO_MULTA_LABEL[s]}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        disabled={m.estado === 'cobrada'}
+                        onClick={() => setCobrarId(m.id)}
+                        className={cn(
+                          'flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors disabled:cursor-default',
+                          m.estado === 'cobrada'
+                            ? ESTADO_MULTA_COLOR.cobrada
+                            : ESTADO_MULTA_COLOR_OUTLINE.cobrada,
+                        )}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Cobrada
+                      </button>
+                      <button
+                        type="button"
+                        disabled={m.estado === 'bonificada'}
+                        onClick={() => setBonificarId(m.id)}
+                        className={cn(
+                          'flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors disabled:cursor-default',
+                          m.estado === 'bonificada'
+                            ? ESTADO_MULTA_COLOR.bonificada
+                            : ESTADO_MULTA_COLOR_OUTLINE.bonificada,
+                        )}
+                      >
+                        <Gift className="h-3.5 w-3.5" /> Bonificada
+                      </button>
                       <Button variant="ghost" size="sm" onClick={() => {
-                        setEditando(m.id);
-                        setEstadoEdit(m.estado === 'cobrada' || m.estado === 'bonificada' ? 'pendiente' : m.estado);
+                        setEditandoNotas(m.id);
                         setNotasEdit(m.notas ?? '');
                       }}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteId(m.id)}>
-                        <Trash2 className="h-3.5 w-3.5 text-danger" />
-                      </Button>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             ))}
           </div>
         )}
       </Card>
-
-      <ConfirmDialog
-        open={deleteId !== null}
-        onOpenChange={open => !open && setDeleteId(null)}
-        title="Eliminar multa"
-        description="Esta acción da de baja la multa del sistema."
-        confirmLabel="Eliminar"
-        destructive
-        loading={loading}
-        onConfirm={async () => {
-          if (deleteId) {
-            await eliminarMulta(deleteId);
-            setDeleteId(null);
-            cargarMultas();
-          }
-        }}
-      />
 
       <ConfirmDialog
         open={cobrarId !== null}

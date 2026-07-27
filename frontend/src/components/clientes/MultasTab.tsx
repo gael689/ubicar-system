@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, Plus, Pencil, Trash2, X, Save, FileWarning, CheckCircle2, Gift } from 'lucide-react';
+import { AlertTriangle, Plus, Pencil, X, Save, FileWarning, CheckCircle2, Gift } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { useMultas } from '@/hooks/useMultas';
-import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR } from '@/lib/constants';
+import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR, ESTADO_MULTA_COLOR_OUTLINE } from '@/lib/constants';
 import type { Multa, EstadoMultaEditable } from '@/types';
 import { cn, extractError } from '@/lib/utils';
 
@@ -24,22 +24,23 @@ function formatMoney(v: string | number) {
   return `$${parseFloat(String(v)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 }
 
-// "cobrada"/"bonificada" no son editables a mano: sólo se llega vía los
-// botones de resolución (que generan el movimiento de cuenta corriente).
-const ESTADOS: EstadoMultaEditable[] = ['pendiente', 'imputada', 'apelando'];
+// "cobrada"/"bonificada" no se setean a mano acá: van por los botones de
+// resolución (que generan el movimiento de cuenta corriente). Las demás sí
+// son transiciones libres, directas con un click — no hace falta pasar por
+// "Editar" para algo tan frecuente como mover el estado.
+const ESTADOS_DIRECTOS: EstadoMultaEditable[] = ['pendiente', 'imputada', 'apelando'];
 
 export function MultasTab({ clienteId }: Props) {
-  const { listMultas, crearMulta, actualizarMulta, eliminarMulta, resolverMulta, loading, error } = useMultas();
+  const { listMultas, crearMulta, actualizarMulta, resolverMulta, loading, error } = useMultas();
   const [multas, setMultas] = useState<Multa[]>([]);
   const [total, setTotal] = useState(0);
-  const [editando, setEditando] = useState<number | null>(null);
-  const [estadoEdit, setEstadoEdit] = useState<EstadoMultaEditable>('pendiente');
+  const [editandoNotas, setEditandoNotas] = useState<number | null>(null);
   const [notasEdit, setNotasEdit] = useState('');
-  const [deleteId, setDeleteId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [cobrarId, setCobrarId] = useState<number | null>(null);
   const [bonificarId, setBonificarId] = useState<number | null>(null);
   const [resolviendo, setResolviendo] = useState(false);
+  const [cambiandoEstado, setCambiandoEstado] = useState(false);
 
   // Form nueva multa
   const [form, setForm] = useState({
@@ -59,9 +60,22 @@ export function MultasTab({ clienteId }: Props) {
 
   useEffect(() => { cargar().catch(() => {}); }, [cargar]);
 
-  const handleGuardarEstado = async (multa: Multa) => {
-    await actualizarMulta(multa.id, { estado: estadoEdit, notas: notasEdit || undefined });
-    setEditando(null);
+  const handleCambiarEstado = async (multa: Multa, estado: EstadoMultaEditable) => {
+    if (multa.estado === estado) return;
+    setCambiandoEstado(true);
+    try {
+      await actualizarMulta(multa.id, { estado });
+      cargar();
+    } catch (err) {
+      toast.error(extractError(err));
+    } finally {
+      setCambiandoEstado(false);
+    }
+  };
+
+  const handleGuardarNotas = async (multa: Multa) => {
+    await actualizarMulta(multa.id, { notas: notasEdit || undefined });
+    setEditandoNotas(null);
     cargar();
   };
 
@@ -224,103 +238,100 @@ export function MultasTab({ clienteId }: Props) {
               key={m.id}
               className="rounded-xl border border-border bg-background p-4"
             >
-              {editando === m.id ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <FormField label="Estado">
-                      <select
-                        value={estadoEdit}
-                        onChange={e => setEstadoEdit(e.target.value as EstadoMultaEditable)}
-                        className="input-base"
-                      >
-                        {ESTADOS.map(s => (
-                          <option key={s} value={s}>{ESTADO_MULTA_LABEL[s]}</option>
-                        ))}
-                      </select>
-                    </FormField>
-                    <FormField label="Notas">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-bold text-foreground text-sm">{m.patente}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(m.fecha_infraccion)}{m.hora_infraccion ? ` · ${m.hora_infraccion.slice(0, 5)}` : ''}
+                    </span>
+                    <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold', ESTADO_MULTA_COLOR[m.estado])}>
+                      {ESTADO_MULTA_LABEL[m.estado]}
+                    </span>
+                  </div>
+                  {m.descripcion && <p className="text-sm text-muted-foreground">{m.descripcion}</p>}
+                  {m.alquiler_id && (
+                    <p className="text-xs text-muted-foreground">Contrato #{m.alquiler_id}</p>
+                  )}
+                  {editandoNotas === m.id ? (
+                    <div className="flex items-center gap-2 pt-1">
                       <input
                         value={notasEdit}
                         onChange={e => setNotasEdit(e.target.value)}
                         placeholder="Notas internas"
-                        className="input-base"
+                        className="input-base text-sm"
+                        autoFocus
                       />
-                    </FormField>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => handleGuardarEstado(m)} disabled={loading}>
-                      <Save className="h-3.5 w-3.5" /> Guardar
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditando(null)}>Cancelar</Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono font-bold text-foreground text-sm">{m.patente}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {formatDate(m.fecha_infraccion)}{m.hora_infraccion ? ` · ${m.hora_infraccion.slice(0, 5)}` : ''}
-                      </span>
-                      <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium', ESTADO_MULTA_COLOR[m.estado])}>
-                        {ESTADO_MULTA_LABEL[m.estado]}
-                      </span>
+                      <Button size="sm" onClick={() => handleGuardarNotas(m)} disabled={loading}>
+                        <Save className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditandoNotas(null)}>Cancelar</Button>
                     </div>
-                    {m.descripcion && <p className="text-sm text-muted-foreground">{m.descripcion}</p>}
-                    {m.alquiler_id && (
-                      <p className="text-xs text-muted-foreground">Contrato #{m.alquiler_id}</p>
-                    )}
-                    {m.notas && <p className="text-xs text-muted-foreground italic">{m.notas}</p>}
-                    {m.estado === 'bonificada' && m.motivo_bonificacion && (
-                      <p className="text-xs text-muted-foreground italic">Motivo: {m.motivo_bonificacion}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-base font-bold text-foreground">{formatMoney(m.monto)}</span>
-                    {m.estado === 'imputada' && (
-                      <>
-                        <Button variant="outline" size="sm" onClick={() => setCobrarId(m.id)}>
-                          <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Cobrada
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => setBonificarId(m.id)}>
-                          <Gift className="h-3.5 w-3.5 text-muted-foreground" /> Bonificar
-                        </Button>
-                      </>
-                    )}
+                  ) : (
+                    m.notas && <p className="text-xs text-muted-foreground italic">{m.notas}</p>
+                  )}
+                  {m.estado === 'bonificada' && m.motivo_bonificacion && (
+                    <p className="text-xs text-muted-foreground italic">Motivo: {m.motivo_bonificacion}</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <span className="text-base font-bold text-foreground">{formatMoney(m.monto)}</span>
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {ESTADOS_DIRECTOS.map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        disabled={cambiandoEstado || m.estado === s}
+                        onClick={() => handleCambiarEstado(m, s)}
+                        className={cn(
+                          'px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors disabled:cursor-default',
+                          m.estado === s
+                            ? ESTADO_MULTA_COLOR[s]
+                            : ESTADO_MULTA_COLOR_OUTLINE[s],
+                        )}
+                      >
+                        {ESTADO_MULTA_LABEL[s]}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      disabled={m.estado === 'cobrada'}
+                      onClick={() => setCobrarId(m.id)}
+                      className={cn(
+                        'flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors disabled:cursor-default',
+                        m.estado === 'cobrada'
+                          ? ESTADO_MULTA_COLOR.cobrada
+                          : ESTADO_MULTA_COLOR_OUTLINE.cobrada,
+                      )}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Cobrada
+                    </button>
+                    <button
+                      type="button"
+                      disabled={m.estado === 'bonificada'}
+                      onClick={() => setBonificarId(m.id)}
+                      className={cn(
+                        'flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors disabled:cursor-default',
+                        m.estado === 'bonificada'
+                          ? ESTADO_MULTA_COLOR.bonificada
+                          : ESTADO_MULTA_COLOR_OUTLINE.bonificada,
+                      )}
+                    >
+                      <Gift className="h-3.5 w-3.5" /> Bonificada
+                    </button>
                     <Button variant="ghost" size="sm" onClick={() => {
-                      setEditando(m.id);
-                      setEstadoEdit(m.estado === 'cobrada' || m.estado === 'bonificada' ? 'pendiente' : m.estado);
+                      setEditandoNotas(m.id);
                       setNotasEdit(m.notas ?? '');
                     }}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setDeleteId(m.id)}>
-                      <Trash2 className="h-3.5 w-3.5 text-danger" />
-                    </Button>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           ))}
         </div>
       )}
-
-      <ConfirmDialog
-        open={deleteId !== null}
-        onOpenChange={open => !open && setDeleteId(null)}
-        title="Eliminar multa"
-        description="Esta acción da de baja la multa del sistema. No se puede deshacer."
-        confirmLabel="Eliminar"
-        destructive
-        loading={loading}
-        onConfirm={async () => {
-          if (deleteId) {
-            await eliminarMulta(deleteId);
-            setDeleteId(null);
-            cargar();
-          }
-        }}
-      />
 
       <ConfirmDialog
         open={cobrarId !== null}

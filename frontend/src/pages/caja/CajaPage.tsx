@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Trash2, TrendingUp, TrendingDown, DollarSign,
-  ChevronRight, Car, CreditCard, RefreshCw,
+  ChevronRight, Car, RefreshCw,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { useCajaDia, useCrearPago, useEliminarPago } from '@/hooks/usePagos';
-import { formatCurrency, formatDate, extractError } from '@/lib/utils';
+import { formatCurrency, extractError } from '@/lib/utils';
 import { METODO_PAGO_LABEL } from '@/lib/constants';
 import type { Pago, Gasto, MetodoPago } from '@/types';
 import { PendientesSection } from './PendientesSection';

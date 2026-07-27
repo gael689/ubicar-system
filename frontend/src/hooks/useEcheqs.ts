@@ -4,16 +4,18 @@ import type { Echeq, EcheqCreate, EcheqUpdate } from '@/types';
 
 const KEY = 'echeqs';
 
-export function useEcheqs(params?: { estado?: string; tipo?: string }) {
+export function useEcheqs(params?: { estado?: string; tipo?: string; cliente_id?: number }) {
   return useQuery({
     queryKey: [KEY, params],
     queryFn: async () => {
       const qs = new URLSearchParams();
       if (params?.estado) qs.set('estado', params.estado);
       if (params?.tipo) qs.set('tipo', params.tipo);
+      if (params?.cliente_id) qs.set('cliente_id', String(params.cliente_id));
       const res = await api.get<{ data: Echeq[] }>(`/echeqs?${qs}`);
       return res.data.data;
     },
+    enabled: params?.cliente_id === undefined || !!params.cliente_id,
   });
 }
 

@@ -19,6 +19,7 @@ export const CATEGORIA_LABEL: Record<CategoriaVehiculo, string> = {
   sedan_sup: 'Sedán Superior',
   suv:       'SUV',
   camioneta: 'Pick up',
+  furgon:    'Furgón',
 };
 
 export const MODALIDAD_LABEL: Record<ModalidadItem, string> = {

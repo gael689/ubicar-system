@@ -39,35 +39,37 @@ Los conceptos del rubro que el modelo de datos todavía no conoce y que van a ha
 
 ### 1.1 Mapa real de módulos
 
-**Backend** (`backend/app/`): 19 routers, 17 modelos, 16 migraciones (008→016).
+> **⚠️ Esta sección es el diagnóstico ORIGINAL del 2026-07-25.** Se conserva como registro del punto de partida. El estado actualizado está en la columna "Hoy" — revisado el 2026-07-27, al cierre de la Fase 3-bis.
 
-| Módulo | Backend | Frontend | Conectado con | Veredicto |
-|---|---|---|---|---|
-| Flota | ✅ completo | ✅ | Reservas, Gastos, Docs, Servicios, Tarifas | Sólido |
-| Clientes | ✅ | ✅ 6 tabs | Reservas, Multas, CC, Docs, Tarjeta | Sólido |
-| Reservas / Alquileres | ✅ 1.000+ líneas | ✅ | Todo | El corazón, sano |
-| Ocupación | ✅ | ✅ timeline + agenda | Reservas | Muy bueno |
-| Dashboard | ✅ | ✅ | Reportes | Bueno |
-| Multas | ✅ | ✅ global + por cliente, con resolución cobrada/bonificada | Cliente, Alquiler, CC | Sólido (2026-07-26) |
-| Servicios/Mantenimiento | ✅ | ✅ | Vehículo (km) | Bueno |
-| Caja / Pagos | ✅ | ✅ | Alquiler, CC | ⚠️ Ver 2.4 |
-| Echeqs | ⚠️ mínimo | ✅ | **nada** | 🔴 Isla |
-| Cuentas Corrientes | ⚠️ básico | ✅ | Cliente, Pagos | 🔴 Sin ledger |
-| Notificaciones | ✅ motor + tabla | ✅ campana con leído/posponer/descartar/historial | Todo el sistema (25 reglas) | Hecho 2026-07-26, ver §4 |
-| Reportes | ✅ | ✅ | Pagos, Gastos | Bueno |
-| Recibos | ✅ (versión simplificada, sin imputación FIFO) | ✅ tab en Cliente | Cliente, CC | Hecho 2026-07-26, ver 3.6 |
-| Facturas / Comprobantes | ❌ no existe | ❌ | — | 🔴 A construir |
-| Cotizador | ❌ sin BD | ✅ frontend puro | **nada** | Isla deliberada |
-| Contratos | ❌ TODO | ❌ placeholder | Alquiler | 🔴 Bloqueante |
-| Público (web) | ❌ stub roto | — | — | 🔴 A construir |
+**Backend** (`backend/app/`): al 2026-07-27 son **24 routers, 21 modelos, 32 migraciones** (head: `034_echeq_reserva`). En el diagnóstico original eran 19/17/16.
 
-### 1.2 Las tres islas
+| Módulo | Veredicto original (25/07) | Hoy (27/07) |
+|---|---|---|
+| Flota | Sólido | ✅ + vencimientos VTV/póliza como campos propios (F3) |
+| Clientes | Sólido | ✅ 9 tabs (sumó CC, Recibos, Comprobantes, **Echeqs**) |
+| Reservas / Alquileres | El corazón, sano | ✅ + condición de pago, descuentos auditados, seña, cargos de cierre |
+| Ocupación | Muy bueno | ✅ calendario a pantalla completa sin bordes (F3-bis) |
+| Dashboard | Bueno | ✅ Flujo del día como módulo fijo + modal (F3-bis) |
+| Multas | Sólido | ✅ conectado a CC, sin opción de eliminar |
+| Servicios/Mantenimiento | Bueno | ✅ + notificaciones por km y por fecha |
+| Caja / Pagos | ⚠️ Ver 2.4 | ✅ `DELETE` es anulación con contra-asiento |
+| Echeqs | 🔴 **Isla** | ✅ **Conectado** — cliente, CC, reserva, alquiler + 4 reglas de notificación |
+| Cuentas Corrientes | 🔴 Sin ledger | ✅ **Ledger inmutable** con `saldo_posterior`, vencimientos y anulación |
+| Notificaciones | Hecho, ver §4 | ✅ 25 reglas + scheduler 08:00 ART + digest email + página propia |
+| Reportes | Bueno | ✅ (bug del envelope corregido en F3-bis) |
+| Recibos | Hecho, ver 3.6 | ✅ sin cambios |
+| Facturas / Comprobantes | 🔴 A construir | ✅ **Construido** (carga manual + PDF + vínculo a CC) |
+| Cotizador | Isla deliberada | ✅ sigue siendo isla a propósito (+ categoría Furgón) |
+| Contratos | 🔴 Bloqueante | 🔴 **Sigue pendiente** — `routers/contratos.py` es un stub de 19 líneas. Es la Fase 4 |
+| Público (web) | 🔴 A construir | 🔴 **Sigue pendiente** — `routers/public.py`, 41 líneas. Es la Fase 6 |
 
-El sistema está bien conectado **salvo en tres lugares**, y justamente son los tres que el pedido apunta:
+### 1.2 Las tres islas — ✅ las tres cerradas
 
-1. **Echeq ↔ Cliente ↔ Cuenta Corriente.** Hoy un echeq no sabe de qué cliente es. `models/echeq.py` guarda `contraparte` como texto libre de 255 caracteres. No hay `cliente_id`, no hay `cuenta_corriente_id`, no hay movimiento de CC generado. Si un cliente te paga con 3 echeqs, no hay forma de verlo desde su ficha.
-2. **Multas ↔ Cuenta Corriente.** Una multa imputada a un cliente no genera deuda. Queda en un estado `imputada` que no impacta en ningún saldo.
-3. **Notificaciones ↔ realidad.** Se computan en el momento en que abrís la campana. No hay envío, no hay historial, no hay "leído", y el generador de alertas que **sí** contempla echeqs y licencias (`services/alertas.py`) no lo consume nadie.
+El diagnóstico original identificó tres desconexiones. **Al 2026-07-27 no queda ninguna abierta:**
+
+1. ~~**Echeq ↔ Cliente ↔ Cuenta Corriente.**~~ ✅ **Cerrada en dos etapas.** El 26/07 (ítem 17, migración 020) el echeq ganó `cliente_id`, ciclo de vida completo y generación de movimiento en CC. El 27/07 (F3-bis, migración 034) se cerró el último tramo: el echeq **nace desde la reserva** cuando el medio de pago elegido es echeq (vía `Echeq.reserva_id`, porque el `Alquiler` todavía no existe), puede quedar como borrador con datos incompletos, y aparece en la ficha del cliente en su propia pestaña. El síntoma original —"si un cliente te paga con 3 echeqs, no hay forma de verlo desde su ficha"— ya no aplica.
+2. ~~**Multas ↔ Cuenta Corriente.**~~ ✅ Cerrada el 26/07: imputar una multa genera el débito; resolverla como cobrada/bonificada genera el crédito o el contra-asiento.
+3. ~~**Notificaciones ↔ realidad.**~~ ✅ Cerrada en la Fase 2 (26/07): tabla persistida con deduplicación, motor único de 25 reglas, scheduler real a las 08:00 ART, digest por email y página de historial. `services/alertas.py` (el generador huérfano) fue eliminado.
 
 ---
 
@@ -879,23 +881,24 @@ Verificado en vivo: `/reportes/flota?fecha_desde=2026-06-01&fecha_hasta=2026-06-
 
 ## 9. Orden de ejecución propuesto
 
-### 🔥 Fase 0 — Estabilización (1-2 semanas)
+### 🔥 Fase 0 — Estabilización (1-2 semanas) — ✅ completa, verificada el 2026-07-27
 Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `docs/ANALISIS_CICLO_RESERVA.md`.**
-1. Aplicar migraciones 010→016 pendientes y verificar `alembic current`
-2. Arreglar el crash de `/notificaciones` (bug 2.1)
-3. **Arreglar `Pago(usuario_id=)` → `cobrado_por=`** — hoy todo cobro en check-out/check-in devuelve error 500
-4. **Habilitar el check-in tardío** — separar la sincronización horaria de la finalización real (estado `VENCIDA`)
-5. **Corregir el cálculo de excedente** — mide contra `hora_inicio` en vez de `hora_fin`
+Varios ítems se habían corregido sobre la marcha en fases posteriores sin volver a marcarlos acá; el 2026-07-27 se auditó el código uno por uno y se cerró la fase.
+1. ✅ Aplicar migraciones 010→016 pendientes y verificar `alembic current` — hoy `alembic current` = `alembic heads` = `034_echeq_reserva`, sin pendientes
+2. ✅ Arreglar el crash de `/notificaciones` (bug 2.1) — router reescrito en la Fase 2 contra la tabla `notificaciones`
+3. ✅ **`Pago(usuario_id=)` → `cobrado_por=`** — verificado: `routers/pagos.py:161` y las 3 llamadas de `alquiler_service.py` usan `cobrado_por`
+4. ✅ **Check-in tardío habilitado** — `checkout()`/`checkin()`/`extender()` aceptan `ACTIVA` **y** `VENCIDA` (`alquiler_service.py:87,331,521`); `extender()` devuelve la reserva a `ACTIVA` si la nueva fecha queda en el futuro
+5. ✅ **Cálculo de excedente** — verificado: `datetime.combine(reserva.fecha_fin, hora_devolucion)` (`alquiler_service.py:91,351`), mide contra `fecha_fin` como corresponde. `hora_inicio` sólo se usa como fallback de *hora del día* cuando no hay late checkout acordado, que es el comportamiento correcto por D1
 6. ✅ **Corregir el precio semanal/mensual** — hecho 2026-07-26. Resultó ser un bug de UI, no de cálculo: `calcular_precio_total` (días × monto) siempre fue correcto, `monto` ya era precio por día en cualquier banda (test `test_siete_dias_tarifa_semanal` ya lo bloqueaba). Se agregaron labels/hints explícitos en `TarifasTab.tsx` + advertencia no bloqueante si el precio de una banda larga no es menor al de una corta
-7. **Dejar de duplicar el anticipo** — se cuenta dos veces y subestima la deuda
-8. **`extender()` deja de borrar el precio** cuando no encuentra tarifa
-9. Validar que el kilometraje no retroceda en el check-out
+7. ✅ **Anticipo sin duplicar** — se materializa una sola vez: en el `checkout()` se crea el `Pago` del anticipo guardado en la reserva y **un solo** crédito en CC (`alquiler_service.py:227-249`)
+8. ✅ **`extender()` ya no borra el precio** — si `seleccionar_tarifa()` no encuentra banda para la nueva duración, captura el `BusinessRuleError` y **conserva** `precio_anterior`/`tarifa_anterior_id` en vez de anularlos (`alquiler_service.py:556-566`)
+9. ✅ **Kilometraje no retrocede** — validado en las dos puntas: check-out contra `vehiculo.km_actual` (`alquiler_service.py:152`) y check-in contra `alquiler.checkout_km` (`:343`)
 10. ✅ Migrar todas las fechas `String` → `Date` — hecho 2026-07-26 (migración 018)
-11. Convertir `DELETE /pagos` en anulación con contra-asiento
-12. Exponer `licencia_numero`/`licencia_categoria` y permitir corregir DNI/CUIT y tipo de cliente
-13. Implementar la validación de baja de cliente con alquiler activo
-14. Limpiar archivos muertos (`pages/clientes/List.tsx`, `Detail.tsx`, 5 previews del cotizador)
-15. Resolver errores de TypeScript pendientes
+11. ✅ **`DELETE /pagos` es una anulación con contra-asiento** — `routers/pagos.py:189`, nunca borra el registro
+12. ✅ **Datos del cliente corregibles** — `ClienteUpdate` expone `dni_cuit`, `tipo`, `licencia_numero`, `licencia_categoria`, `licencia_vencimiento` (`schemas/cliente.py:97-118`)
+13. ✅ **Baja de cliente validada** — `ClienteService.deactivate()` rechaza con `cliente_con_reservas_activas` si tiene reservas en `pendiente`/`confirmada`/`activa`/`vencida` (el auto puede estar afuera)
+14. ✅ **Archivos muertos limpiados** — `pages/clientes/List.tsx`/`Detail.tsx` y 4 de los 5 previews del cotizador ya no existían; el 2026-07-27 se eliminó `components/clientes/ClienteTable.tsx` (0 referencias — el listado real usa un `ClienteRow` propio dentro de `ClientesList.tsx`). `CotizacionPreview3.tsx` **no** es muerto: lo usa `CotizadorPage.tsx`
+15. ✅ **Cero errores de TypeScript** — 2026-07-27, de 13 a 0 (`npx tsc --noEmit`, `npm run build` en verde). Entre ellos había **un bug real**: `ESTADO_ECHEQ_LABEL`/`ESTADO_ECHEQ_COLOR` no tenían la clave `pendiente` (estado legacy), así que un echeq en ese estado renderizaba sin estilo; y `MantenimientoTab.tsx` le pasaba a `ConfirmDialog` un prop `onCancel` inexistente en vez de `onOpenChange`, con lo cual cerrar el diálogo por ESC/overlay no limpiaba el estado
 
 ### 💰 Fase 1 — Finanzas conectadas + reglas de negocio (3-4 semanas)
 16. ✅ Rediseñar cuenta corriente como ledger inmutable (`saldo_posterior`, `condicion`, `fecha_vencimiento`, anulación, FKs) — hecho 2026-07-26 (migración 019). Ver detalle abajo
@@ -930,6 +933,29 @@ Sin esto no se puede construir arriba. **Los 12 bugs P0 están detallados en `do
 41. ✅ Unificar paleta e íconos — se auditó el sistema real: `--primary` en `index.css` ya vale `#407EC9` (la paleta oficial), así que `bg-primary`/`text-primary` de shadcn **ya son** el color de marca. Los tokens semánticos (`danger`/`warning`/`success`) también coinciden en hex exacto con `red-600`/`amber-600`/`emerald-600`, así que esos no eran una inconsistencia real. El único desvío visual genuino era **indigo** (`#4F46E5`, un azul distinto al de marca) usado como color de acción primaria en 7 archivos (`ReservaModal.tsx`, `OcupacionPage.tsx`, `ReservasList.tsx`, `GarantiaTarjetaSection.tsx`, `MantenimientoTab.tsx`, `ExtenderModal.tsx`, `Dashboard.tsx`) — reemplazado por `primary` en sus ~10 variantes de opacidad. Íconos: la migración parcial a Heroicons que mencionaba `PROGRESO.md` eran sólo 2 archivos (`Dashboard.tsx`, `ReservaModal.tsx`) — migrados a sus equivalentes de lucide-react y **se desinstaló `@heroicons/react`** del proyecto; ahora hay un solo set de íconos en todo el frontend
 42. ✅ Búsqueda global Cmd+K — `GET /buscar?q=` (nuevo router `busqueda.py`) reutiliza los mismos filtros `q` que ya tenían los listados de Clientes/Flota/Reservas (no duplica lógica), agrega match directo por ID si `q` es numérico, tope de 5 resultados por tipo. Frontend: `GlobalSearch.tsx` — Dialog con atajo Cmd/Ctrl+K global, debounce de 200ms, navegación con flechas + Enter, agrupado por tipo. Botón visible "Buscar…" en el `Header` (con el atajo mostrado) para que no dependa sólo de que alguien lo descubra por teclado — en mobile es un ícono
 
+### 🩹 Fase 3-bis — Pulido de uso real (2026-07-27)
+No estaba en el plan original — surgió de usar el sistema en vivo después de cerrar la Fase 3. Se agrupa acá, fuera de la numeración 1-64, para no correrla.
+
+- ✅ **Reservas/Check-in/Extender, tanda de fricciones de uso real**: colores sólidos (no `bg-x/10` transparente) en Late Checkout y el cartel de check-out pendiente; chips de lugar de entrega/devolución predefinidos (Paraguay 241, Alsina 350, Aeropuerto Comandante Espora, Juan Francisco Seguí 3607) + "Otro"; **bug real corregido**: `PATCH /reservas/{id}` tiraba 409 al editar una reserva `activa`/`vencida` (p.ej. para agregar una nota post-checkout) — `reserva_service.py::update()` sólo aceptaba `pendiente`/`confirmada`, ahora también esas dos, igual que ya hacía `extender()`; botón "Editar" restaurado en `ReservasList.tsx` para alquileres activos (se perdía apenas había checkout); `ExtenderModal.tsx` rediseñado de tema oscuro a la paleta clara, con precio de la extensión como **extra** por día/total (sugerido según la tarifa vigente, editable) y el total nuevo aparte, informativo; `CheckinModal.tsx`: "Cobrar al cliente ahora" reubicado justo debajo de "Resumen financiero" con estilo sólido, y cartel de confirmación obligatorio si se registra el check-in sin marcarlo habiendo saldo pendiente.
+- ✅ **Cartel "Check-out pendiente" consciente de fechas**: antes se disparaba siempre que el vehículo estaba `alquilado`, sin mirar si la reserva nueva realmente chocaba. Ahora compara la fecha de devolución esperada del vehículo contra el inicio de la reserva nueva — sólo alarma si hay riesgo real; si hay margen, es un texto chico informativo.
+- ✅ **Bug real corregido — reporte "Flota" crasheaba**: `useReportes.ts` no desenvolvía el envelope `{data, success, message}` del backend (`useReporteFlota`/`useReporteIngresos` tipaban la respuesta como si viniera directa). `ReporteFlota` hacía `data.map` sobre el envelope entero → `TypeError`. `ReporteIngresos` tenía el mismo bug pero no crasheaba (usaba `?? []`) — quedaba en silencio mostrando "sin datos".
+- ✅ **Menú: disuelto el grupo "Más"** (3 puntitos + desplegable) — Reportes/Notificaciones/Cotizador/Configuración pasan a ser ítems directos, como el resto. `NavGroup.principal` nuevo en `constants.ts` para destacar con texto en negrita los 5 grupos núcleo (Ocupación/Reservas/Flota/Clientes/Finanzas) en vez de esconder los secundarios.
+- ✅ **Módulo de Notificaciones dedicado** (`/notificaciones`, `NotificacionesPage.tsx`) — antes sólo existía la campana (activas) y un diálogo chico de historial (sólo leída/descartada/resuelta). Ahora hay una página con filtros por día exacto o año/mes, cards grandes, paginación. `NotificacionService.list_historial()` ganó params `solo_resueltas`/`fecha`/`anio`/`mes` (default mantiene el comportamiento viejo de la campana). Se eliminó `HistorialNotificacionesDialog.tsx`, reemplazado por la página.
+- ✅ **Onboarding Empresa/Particular al alta de cliente** — `ClienteFormDialog.tsx` ya tenía toda la lógica condicional por tipo; sólo faltaba que la elección fuera el primer paso (dos tarjetas grandes) en vez de un `<select>` perdido al final del formulario. Sólo aplica al crear — editar sigue directo al formulario.
+- ✅ **Multas — mismo criterio de colores sólidos + acciones directas**: `ESTADO_MULTA_COLOR` pasó de `bg-x/15` a sólido; se agregó `ESTADO_MULTA_COLOR_OUTLINE` para que los botones de estado no activo mantengan su color característico (no gris genérico). Los botones Pendiente/Imputada/Apelando/Cobrada/Bonificada quedan siempre visibles y son un click directo (antes había que entrar a "Editar" y elegir de un `<select>`). **Se sacó la opción de Eliminar** de `MultasPage.tsx`/`MultasTab.tsx` (y `eliminarMulta` del hook) — consistente con [[regla_nunca_eliminar]]; el endpoint de baja lógica en el backend queda, sólo no hay botón que lo dispare.
+- ✅ **Recibo — texto en letras**: `monto_a_letras()` (`domain/monto_letras.py`) decía "...con 00/100" (notación de cheque) hasta con importes exactos, lo cual confundía. Ahora omite la parte decimal si no hay centavos, y dice "con N centavos" en vez de "N/100" cuando sí hay.
+- ✅ **Condición de pago por reserva + tipo de factura + seguimiento de vencimientos** (migración `033_condicion_pago_reserva`) — el más grande de la tanda. Antes no había forma de decidir, al cargar una reserva, si el saldo se paga al contado o a 15/30/60/90 días, ni desde cuándo se cuentan esos días. Se descubrió que la infraestructura de vencimientos **ya existía y ya estaba conectada a notificaciones** (`MovimientoCuentaCorriente.condicion`/`fecha_vencimiento`, `CuentaCorrienteService.registrar_movimiento()`, y las reglas `cc_vencimiento_proximo`/`cc_vencida` en `domain/notificaciones_reglas.py` ya disparan T-3/T-0 y escalado post-vencimiento para cualquier débito con vencimiento) — sólo que nada la alimentaba desde el checkout. Ahora:
+  - `Reserva` suma `condicion_pago` (contado/cta_cte_15/30/60/90), `condicion_pago_ancla` (**sin default oculto** — lo elige la persona que carga la reserva: Check-out / Check-in / Otra fecha específica), `condicion_pago_fecha_ancla`, `tipo_factura` (A/B/C, sólo descriptivo — sin AFIP real, ver decisión #5), `factura_a_nombre_de`.
+  - `AlquilerService.checkout()` pasa la condición de la reserva al débito; si el ancla es check-in, el vencimiento queda sin calcular a propósito (no se puede saber antes de tiempo) — `CuentaCorrienteService.registrar_movimiento()` ganó el parámetro `sin_vencimiento_automatico` para eso.
+  - `AlquilerService.checkin()` completa el vencimiento pendiente cuando corresponde.
+  - **Editar vencimiento a mano, siempre con motivo obligatorio** (`CuentaCorrienteService.editar_vencimiento()`, `PATCH /cuentas-corrientes/movimientos/{id}/vencimiento`, nuevo botón en `CuentaCorrienteTab.tsx`) — para extensiones, renegociaciones, o cuando el check-in tarda; sin roles todavía que restrinjan quién puede hacerlo (todos son admin por ahora), el motivo es lo que queda de rastro.
+  - `CuentaCorrienteTab.tsx` suma un bloque "Próximo vencimiento" (lo que todavía no venció, no sólo el aging de lo vencido). `ClientesList.tsx` suma un badge "Pago pendiente" (débito vencido o a ≤3 días) — nuevo endpoint `GET /cuentas-corrientes/pendientes`.
+- ✅ **Echeqs conectado a la reserva, "Flujo del día" en un botón, Ocupación sin bordes, menú por colores** (migración `034_echeq_reserva`) — segunda tanda del mismo día, cuatro pedidos que llegaron juntos:
+  - **Echeqs dejó de ser una isla**: `Reserva` suma `echeq_banco`/`echeq_numero_cheque`/`echeq_fecha_cobro` (los tres opcionales — "podés completarlo ahora o dejarlo pendiente"). Si al cargar la reserva el medio de pago (previsto o del anticipo) es "echeq", `ReservaService.create()` genera un `Echeq` en el momento (`tipo="recibido"`, vinculado por el nuevo `Echeq.reserva_id` porque el `Alquiler` todavía no existe), con crédito en cuenta corriente sólo si hubo cobro real ya. `Echeq.banco`/`numero_cheque`/`fecha_cobro` pasaron a nullable para permitir el borrador; el response calcula `datos_completos` (sin columna nueva) para el badge "Pendiente de completar". `AlquilerService.checkout()` completa el `alquiler_id` del echeq heredado de la reserva. La lógica de "crear echeq + generar crédito" se extrajo a `EcheqService.crear_recibido()`, compartida entre `ReservaService` y el router de alta manual (que también ganó selector de cliente, antes inexistente). Nueva pestaña **Echeqs** en la ficha del cliente (`EcheqsTab.tsx`) con acción "Completar datos" inline y cambio de estado (incluye rechazo con motivo, revierte el crédito). `EcheqUpdate` ganó `banco`/`numero_cheque` para poder completar el borrador desde ahí.
+  - **"Flujo del día"**: se sacó el resizer manual (arrastrar para agrandar/achicar, quedaba "bugueado"). Ahora hay un módulo fijo y permanente debajo del calendario (con scroll propio) y un botón centrado "Ver flujo del día" que abre un modal con la lista completa — nunca vuelve a tapar el calendario.
+  - **Calendario de Ocupación sin bordes**: `/ocupacion` pasó a `fullBleed` en `AppLayout`, y la grilla perdió el borde/sombra — ocupa todo el ancho/alto disponible.
+  - **Menú lateral con un color por sección** (`NAV_GROUP_COLOR` en `constants.ts`): Hoy sigue en el azul de marca; Reservas en índigo, Flota en verde azulado, Clientes en rosa, Finanzas en verde esmeralda. Reportes/Notificaciones/Cotizador/Configuración quedan neutros (utilidad, no sección núcleo).
+
 ### 🔐 Fase 3.5 — Auth con Clerk (3-5 días)
 Adelantada respecto del plan original: hoy todo se graba con un usuario ficticio, y **cada recibo, pago y asiento de cuenta corriente que se emita mientras tanto queda sin autor real**. Cuanto antes se cierre, menos historial contable queda sin firmar.
 43. Clerk en el frontend (React SPA + React Router — ya hay skills del stack disponibles)
@@ -941,10 +967,45 @@ Adelantada respecto del plan original: hoy todo se graba con un usuario ficticio
 49. Audit log de operaciones sensibles + override de bloqueos con motivo registrado
 
 ### 📄 Fase 4 — Contratos y parte de daños (2 semanas)
-50. **Definir el texto legal del contrato** ← pedir ya, tiene el lead time más largo
-51. Generación de PDF (reutiliza el pipeline de la Fase 1) + firma en canvas + hard block en checkout
-52. Parte de daños con croquis y fotos en check-out/check-in, con daños preexistentes precargados
-53. Valorización de daños y ejecución contra la garantía
+50. ⏸️ **Definir el texto legal del contrato** ← **bloqueado, depende de Franco/Martín.** Tiene el lead time más largo: pedirlo ya
+51. ⏸️ Generación de PDF (reutiliza el pipeline de la Fase 1) + firma en canvas + hard block en checkout — bloqueado por el 50. `routers/contratos.py` sigue siendo un stub de 19 líneas
+52. ✅ **Parte de daños con fotos en check-out/check-in, con daños preexistentes precargados** — hecho 2026-07-27 (migración `035_danios_vehiculo`). Ver detalle abajo
+53. ✅ **Valorización de daños** — hecho 2026-07-27, junto con el 52
+
+**Detalle de los ítems 52-53 (parte de daños):**
+
+El estado del vehículo sólo se registraba como texto libre en
+`alquileres.checkout_descripcion`/`checkin_descripcion`. No había forma de
+saber qué daño ya estaba antes, cuál apareció durante el alquiler, ni de
+cobrarlo. Ahora:
+
+- **El daño le pertenece al vehículo, no al alquiler** (`danios.vehiculo_id`
+  obligatorio, `alquiler_id` nullable). Por eso los daños no reparados
+  sobreviven al cierre del alquiler y se precargan en el próximo check-out —
+  que es exactamente lo que evita imputarle a un cliente un rayón que ya
+  estaba. Un daño puede nacer en un check-out, en un check-in, o cargarse a
+  mano sobre la ficha del vehículo (`momento`).
+- **Detectar ≠ cobrar.** Registrar un daño no mueve plata. `responsable`
+  arranca en `sin_definir` y lo decide una persona — el sistema no deduce
+  culpas. Recién `POST /danios/{id}/imputar` genera el débito en la cuenta
+  corriente, con monto editable (puede ser menor al costo estimado: el costo
+  es un dato del taller, la imputación es una decisión comercial).
+  `POST /danios/{id}/bonificar` lo revierte con un contra-asiento y motivo
+  obligatorio — mismo patrón que multas. `movimientos_cuenta_corriente` sumó
+  `danio_id`, como cualquier otro origen de asiento.
+- **Fotos**: reutilizan el `IStorage` que ya usan Documentos y Comprobantes,
+  así que funcionan igual con almacenamiento local hoy y con R2 cuando se
+  migre. Las fotos sí se borran de verdad (son un adjunto, no una entidad de
+  dominio); el daño nunca — `activo=False`, y un daño ya imputado ni siquiera
+  se puede dar de baja sin bonificarlo antes.
+- **Frontend**: pestaña "Daños" en la ficha del vehículo, bloque sólido de
+  daños preexistentes en el check-out ("no son responsabilidad de este
+  cliente") y alta de daños nuevos dentro del check-in.
+- **Lo que quedó afuera a propósito**: el **croquis** interactivo del ítem
+  original. Se reemplazó por un campo `zona` con sugerencias (`datalist` de 20
+  zonas, pero se puede escribir cualquier otra) — cubre el mismo caso de uso
+  sin el costo de un SVG con hotspots, y no obliga a migrar nada si después se
+  quiere agregar el croquis encima.
 
 ### 🌐 Fase 5 — Cimientos para la web (3 semanas)
 54. Categorías de vehículo + migrar la flota existente (la tarifa por categoría de la F1 ya la espera)
@@ -958,10 +1019,111 @@ Adelantada respecto del plan original: hoy todo se graba con un usuario ficticio
 60. Endpoint de disponibilidad real por cupo
 61. Sistema de holds con expiración
 62. Integración Mercado Pago + webhook idempotente
-63. Landing + flujo de 3 pasos
+63. Landing + flujo de 3 pasos ← **ya no se arranca de cero**, ver 9.1
 64. Bandeja de Reservas Web en el sistema con aceptar/rechazar
 
 **Total estimado: 18-21 semanas.** Las fases 0-3.5 (9-10 semanas) ya dejan el sistema interno completo, sólido y con auth real — es el corte natural si se quiere poner en producción antes de encarar la web.
+
+---
+
+## 9.1 La landing ya existe — plan de migración a Next.js
+
+**Descubierto el 2026-07-27.** Ya hay una landing de Ubicar hecha y aprobada
+("gustó mucho") en `Desktop/1. Clientes/ubicar-rent-pro`. El ítem 63 no
+arranca de cero: se migra esto y se le suma el flujo de reserva.
+
+### Qué es hoy
+
+Una **landing de marketing, no una app de reservas**: 3.705 líneas, 3 rutas
+(`/`, `/maquinaria`, 404) y 15 componentes — Hero, VehiclesSection,
+AccessoriesSection, EmpresasSection, LocationSection (692 líneas, el más
+grande), ContactSection, MaquinariaCTA, InstagramStrip, FloatingWhatsApp,
+Footer, Header.
+
+| | Landing actual | Sistema (`frontend/`) |
+|---|---|---|
+| Build | Vite 5 | Vite 5 |
+| React | 18.3 | 18 |
+| Router | react-router-dom 6 | react-router-dom 6 |
+| UI | shadcn/ui + Radix | shadcn/ui + Radix |
+| Estilos | Tailwind 3 | Tailwind 3 |
+| Datos | TanStack Query (instalado, sin backend) | TanStack Query |
+| Animación | framer-motion 12 | — |
+
+**El stack es prácticamente idéntico al del sistema.** Eso es lo que hace la
+migración barata: los componentes de UI (Radix + Tailwind) son isomórficos,
+no hay nada atado a Vite salvo el entrypoint, el router y los imports de
+assets.
+
+### Por qué Next.js sí conviene acá
+
+No es sólo preferencia: la landing ya tiene dos cosas que hoy están a medias
+por ser SPA pura.
+
+1. **SEO.** Una landing de alquiler de autos vive de Google. Hoy es un SPA
+   que sirve un `<div id="root">` vacío. Con SSG/SSR el contenido llega
+   renderizado.
+2. **Meta Pixel + API de Conversiones.** `src/lib/meta-pixel.ts` ya intenta
+   hacer el tracking del lado del servidor desde el navegador — eso necesita
+   un endpoint propio para no exponer el token. Es literalmente una API route.
+
+Además, el flujo de reserva que viene (holds, Mercado Pago, webhook) necesita
+server-side sí o sí: el **webhook de Mercado Pago no puede vivir en un SPA**.
+
+### Cómo migrar (orden propuesto)
+
+1. **`create-next-app` con App Router + TypeScript + Tailwind**, y copiar
+   `tailwind.config.ts` + los tokens de `index.css` tal cual — la identidad
+   visual no se toca en ningún momento.
+2. **Copiar `src/components/ui/` completo.** shadcn no cambia entre Vite y
+   Next; sólo hay que agregar `"use client"` arriba de los que usan hooks o
+   Radix con estado.
+3. **Rutas:** `/` → `app/page.tsx`, `/maquinaria` → `app/maquinaria/page.tsx`,
+   404 → `app/not-found.tsx`. `react-router-dom` desaparece;
+   `<Link>`/`<NavLink>` pasan a `next/link` (`NavLink.tsx`, 28 líneas, se
+   reescribe).
+4. **Assets: el punto más pesado.** Hay **12 MB** en `src/assets/` importados
+   como módulos de Vite. Pasan a `/public` y los `<img>` a `next/image` — que
+   de paso resuelve el peso con WebP/AVIF y lazy loading automático. Esto
+   solo justifica buena parte de la migración.
+5. **Componentes:** mayormente copy-paste. `ScrollReveal.tsx` y todo lo que
+   toque `window`/`IntersectionObserver` va con `"use client"`.
+   `framer-motion` funciona igual, también como client component.
+6. **`meta-pixel.ts` → `app/api/track/route.ts`**, con el token en variable
+   de entorno del servidor en vez de en el bundle.
+7. **Datos hoy hardcodeados** que pasan a venir del backend cuando se conecte:
+   los 3 bloques de vehículos por categoría de `VehiclesSection.tsx` (hoy
+   compacto / sedán intermedio / sedán superior, con CTA a WhatsApp), que son
+   justamente las **categorías** que ya existen en el sistema (ítem 54).
+   Teléfonos, WhatsApp, mail e Instagram de `lib/constants.ts` se quedan como
+   constantes — no justifican una tabla.
+
+### Lo NUEVO que se suma encima
+
+La landing hoy termina siempre en un **link de WhatsApp**: no hay reserva, no
+hay precio real, no hay disponibilidad. Lo que se agrega:
+
+- Buscador de disponibilidad por **categoría** + fechas (necesita el ítem 60).
+- Flujo de reserva de 3 pasos con hold temporal (ítem 61).
+- Checkout con seña por Mercado Pago (ítem 62) — el webhook como API route.
+- Las reservas caen en la bandeja del sistema para aceptar/rechazar (ítem 64).
+
+**El WhatsApp no se saca**: sigue siendo el canal que funciona hoy. Convive
+con la reserva online.
+
+### Dependencias
+
+Esto **no se puede empezar antes que la Fase 5**: sin `reserva por categoría`
+(ítem 58, `vehiculo_id` nullable) y sin el motor de precios por calendario
+(ítem 57), la web no tiene qué vender ni a qué precio. La migración a Next.js
+en sí (pasos 1-6) **sí se puede hacer en paralelo**, porque es puramente de
+presentación y no toca el backend.
+
+### Hueco a cerrar antes
+
+**0 de 16 vehículos tienen categoría asignada** (2026-07-27), aunque las 6
+categorías están cargadas y la tarifa por categoría funciona. Es la segunda
+mitad del ítem 54 y es requisito de todo lo anterior: la web vende categorías.
 
 ### 📐 Después de la Fase 1 — Diagramas
 Cuando el modelo esté estabilizado, generar en Mermaid (versionados junto al código): diagrama de estados de reserva y vehículo, ER actualizado (`docs/er-diagram.html` quedó viejo), flujo operativo de punta a punta, mapa de conexiones entre módulos, y flujo de la web. **No antes**: hoy el modelo va a cambiar bastante y un diagrama hecho ahora nace desactualizado. Detalle en `docs/CASOS_DE_USO.md`.

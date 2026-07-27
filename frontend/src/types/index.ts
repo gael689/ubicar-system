@@ -93,14 +93,27 @@ export interface Echeq {
   tipo: 'emitido' | 'recibido';
   monto: string;
   fecha_emision: string;
-  fecha_cobro: string;
+  fecha_cobro: string | null;
+  fecha_acreditacion: string | null;
   estado: EstadoEcheq;
   contraparte: string;
-  banco: string;
-  numero_cheque: string;
+  banco: string | null;
+  numero_cheque: string | null;
+  cliente_id: number | null;
+  cliente_nombre?: string | null;
+  proveedor_nombre: string | null;
+  motivo_rechazo: string | null;
+  reserva_id: number | null;
   alquiler_id: number | null;
   gasto_id: number | null;
+  cuenta_corriente_id: number | null;
+  movimiento_cc_id: number | null;
   notas: string | null;
+  activo: boolean;
+  creado_por: number | null;
+  created_at: string;
+  /** false si falta banco, número o fecha de cobro — "pendiente de completar" */
+  datos_completos: boolean;
 }
 
 export interface EcheqCreate {
@@ -111,6 +124,9 @@ export interface EcheqCreate {
   contraparte: string;
   banco: string;
   numero_cheque: string;
+  cliente_id?: number | null;
+  proveedor_nombre?: string | null;
+  reserva_id?: number | null;
   alquiler_id?: number | null;
   gasto_id?: number | null;
   notas?: string | null;
@@ -119,6 +135,8 @@ export interface EcheqCreate {
 export interface EcheqUpdate {
   estado?: EstadoEcheq;
   notas?: string | null;
+  banco?: string | null;
+  numero_cheque?: string | null;
   fecha_cobro?: string | null;
   motivo_rechazo?: string; // requerido si estado='rechazado' (422 si falta)
 }
@@ -158,6 +176,9 @@ export interface MovimientoCC {
   anulado_por_movimiento_id?: number | null;
   creado_por?: number | null;
   created_at?: string;
+  vencimiento_editado_motivo?: string | null;
+  vencimiento_editado_por?: number | null;
+  vencimiento_editado_en?: string | null;
 }
 
 export interface MovimientoCCCreate {
@@ -617,6 +638,14 @@ export interface Reserva {
   descuento_autorizado_por?: number | null;
   con_factura?: boolean;
   motivo_cancelacion?: string | null;
+  condicion_pago?: string;
+  condicion_pago_ancla?: 'checkout' | 'checkin' | 'fecha_especifica' | null;
+  condicion_pago_fecha_ancla?: string | null;
+  tipo_factura?: 'A' | 'B' | 'C' | null;
+  factura_a_nombre_de?: string | null;
+  echeq_banco?: string | null;
+  echeq_numero_cheque?: string | null;
+  echeq_fecha_cobro?: string | null;
   // D2 solape
   bloqueada_por_solape: boolean;
   // Garantía
@@ -666,6 +695,14 @@ export interface ReservaCreate {
   anticipo_medio_pago?: string | null;
   con_factura?: boolean;
   descuento_motivo?: string | null;
+  condicion_pago?: string;
+  condicion_pago_ancla?: 'checkout' | 'checkin' | 'fecha_especifica' | null;
+  condicion_pago_fecha_ancla?: string | null;
+  tipo_factura?: 'A' | 'B' | 'C' | null;
+  factura_a_nombre_de?: string | null;
+  echeq_banco?: string | null;
+  echeq_numero_cheque?: string | null;
+  echeq_fecha_cobro?: string | null;
 }
 
 export interface ReservaUpdate {
@@ -780,6 +817,7 @@ export interface PreviewExcedente {
 export interface ExtenderRequest {
   nueva_fecha_fin: string;
   nueva_hora_fin: string;
+  precio_total?: number | null;
 }
 
 export interface ExtenderResponse {
@@ -824,6 +862,75 @@ export interface EventoOcupacion {
 export interface OcupacionResponse {
   vehiculos: VehiculoOcupacion[];
   eventos: EventoOcupacion[];
+}
+
+// ─── Daños (parte de daños) ──────────────────────────────────────────────────
+
+export type MomentoDanio = 'checkout' | 'checkin' | 'preexistente';
+export type TipoDanio =
+  | 'rayon' | 'abolladura' | 'rotura' | 'faltante'
+  | 'cristal' | 'tapizado' | 'mecanico' | 'otro';
+export type SeveridadDanio = 'leve' | 'moderado' | 'grave';
+export type ResponsableDanio = 'sin_definir' | 'cliente' | 'desgaste' | 'terceros';
+export type EstadoDanio = 'detectado' | 'valorizado' | 'imputado' | 'reparado' | 'bonificado';
+
+export interface FotoDanio {
+  id: number;
+  danio_id: number;
+  archivo_key: string;
+  descripcion: string | null;
+  /** URL servida por el backend (relativa a la API, pasar por resolveAssetUrl) */
+  url: string | null;
+  created_at: string;
+}
+
+export interface Danio {
+  id: number;
+  vehiculo_id: number;
+  alquiler_id: number | null;
+  cliente_id: number | null;
+  momento: MomentoDanio;
+  zona: string;
+  tipo: TipoDanio;
+  severidad: SeveridadDanio;
+  descripcion: string | null;
+  fecha_deteccion: string;
+  costo_estimado: string | null;
+  monto_imputado: string | null;
+  responsable: ResponsableDanio;
+  estado: EstadoDanio;
+  movimiento_cc_id: number | null;
+  motivo_bonificacion: string | null;
+  activo: boolean;
+  registrado_por: number | null;
+  created_at: string;
+  fotos: FotoDanio[];
+  vehiculo_patente: string | null;
+  cliente_nombre: string | null;
+}
+
+export interface DanioCreate {
+  vehiculo_id: number;
+  alquiler_id?: number | null;
+  cliente_id?: number | null;
+  momento?: MomentoDanio;
+  zona: string;
+  tipo?: TipoDanio;
+  severidad?: SeveridadDanio;
+  descripcion?: string | null;
+  fecha_deteccion?: string | null;
+  costo_estimado?: number | null;
+  responsable?: ResponsableDanio;
+}
+
+export interface DanioUpdate {
+  zona?: string;
+  tipo?: TipoDanio;
+  severidad?: SeveridadDanio;
+  descripcion?: string | null;
+  costo_estimado?: number | null;
+  responsable?: ResponsableDanio;
+  estado?: 'detectado' | 'valorizado' | 'reparado';
 }
 
 // ─── Multas ──────────────────────────────────────────────────────────────────

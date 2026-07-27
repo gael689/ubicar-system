@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Car } from 'lucide-react';
 import { useAlquileres } from '@/hooks/useAlquileres';
+import { DaniosPreexistentes } from '@/components/flota/DaniosPreexistentes';
 import type { Reserva } from '@/types';
 
 interface Props {
@@ -207,6 +208,11 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estado del vehículo</label>
+            <DaniosPreexistentes vehiculoId={reserva.vehiculo_id} />
           </div>
 
           <div className="space-y-1.5">

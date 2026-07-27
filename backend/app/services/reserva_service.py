@@ -24,6 +24,7 @@ from app.models.tarifa import Tarifa
 from app.repositories.reserva_repo import ReservaRepo
 from app.repositories.alquiler_repo import AlquilerRepo
 from app.services.cuenta_corriente_service import CuentaCorrienteService
+from app.services.echeq_service import EcheqService
 
 
 class ReservaService:
@@ -32,6 +33,7 @@ class ReservaService:
         self.reserva_repo = ReservaRepo(db)
         self.alquiler_repo = AlquilerRepo(db)
         self.cc_service = CuentaCorrienteService(db)
+        self.echeq_service = EcheqService(db)
 
     # ── Lectura ───────────────────────────────────────────────────────────────
 
@@ -141,6 +143,14 @@ class ReservaService:
         conductor_id: int | None = None,
         con_factura: bool = False,
         descuento_motivo: str | None = None,
+        condicion_pago: str = "contado",
+        condicion_pago_ancla: str | None = None,
+        condicion_pago_fecha_ancla: date | None = None,
+        tipo_factura: str | None = None,
+        factura_a_nombre_de: str | None = None,
+        echeq_banco: str | None = None,
+        echeq_numero_cheque: str | None = None,
+        echeq_fecha_cobro: date | None = None,
         usuario_id: int = 0,
     ) -> tuple[Reserva, list[dict]]:
         """
@@ -215,6 +225,22 @@ class ReservaService:
         if precio_total is None:
             precio_total = precio_lista
 
+        # Condición de pago: si no es "contado", el ancla es obligatoria — no
+        # hay default implícito (antes se contaba siempre desde el checkout
+        # sin que nadie lo hubiera decidido).
+        if condicion_pago != "contado":
+            if condicion_pago_ancla not in ("checkout", "checkin", "fecha_especifica"):
+                raise BusinessRuleError(
+                    "ancla_requerida",
+                    "Con una condición de pago a plazo hay que indicar a partir de cuándo se cuentan los días "
+                    "(check-out, check-in, u otra fecha).",
+                )
+            if condicion_pago_ancla == "fecha_especifica" and not condicion_pago_fecha_ancla:
+                raise BusinessRuleError(
+                    "fecha_ancla_requerida",
+                    "Falta la fecha a partir de la cual se cuenta el plazo de pago.",
+                )
+
         descuento_autorizado_por = None
         if precio_lista is not None and precio_total is not None and precio_total != precio_lista:
             if not descuento_motivo or not descuento_motivo.strip():
@@ -246,6 +272,14 @@ class ReservaService:
                 descuento_motivo=descuento_motivo,
                 descuento_autorizado_por=descuento_autorizado_por,
                 con_factura=con_factura,
+                condicion_pago=condicion_pago,
+                condicion_pago_ancla=condicion_pago_ancla if condicion_pago != "contado" else None,
+                condicion_pago_fecha_ancla=condicion_pago_fecha_ancla if condicion_pago_ancla == "fecha_especifica" else None,
+                tipo_factura=tipo_factura if con_factura else None,
+                factura_a_nombre_de=factura_a_nombre_de if con_factura else None,
+                echeq_banco=echeq_banco,
+                echeq_numero_cheque=echeq_numero_cheque,
+                echeq_fecha_cobro=echeq_fecha_cobro,
                 tarifa_aplicada_id=tarifa_id,
                 garantia_tipo=garantia_tipo,
                 garantia_monto=garantia_monto,
@@ -261,7 +295,32 @@ class ReservaService:
                 usuario_id=usuario_id,
             )
             self.reserva_repo.create(reserva)
-            
+
+            # Si el medio de pago (previsto, o el del anticipo ya cobrado) es
+            # "echeq", se crea el Echeq vinculado a esta reserva — puede
+            # quedar "pendiente de completar" (banco/número/fecha en None),
+            # no es obligatorio cargarlo todo ahora. Sólo genera el crédito
+            # en cuenta corriente si hubo un cobro real ya hecho (anticipo o
+            # pagado) — si es sólo la forma de pago prevista a futuro, el
+            # echeq queda como borrador sin mover el saldo todavía.
+            hubo_cobro_ahora = estado_pago != "pendiente"
+            es_echeq = forma_pago_prevista == "echeq" or (hubo_cobro_ahora and anticipo_medio_pago == "echeq")
+            if es_echeq:
+                monto_echeq = anticipo_monto if (hubo_cobro_ahora and anticipo_monto) else precio_total
+                if monto_echeq:
+                    self.echeq_service.crear_recibido(
+                        cliente_id=cliente_id,
+                        contraparte=cliente.nombre_completo,
+                        monto=Decimal(str(monto_echeq)),
+                        fecha_emision=anticipo_fecha if (hubo_cobro_ahora and anticipo_fecha) else date.today(),
+                        creado_por=usuario_id,
+                        banco=echeq_banco,
+                        numero_cheque=echeq_numero_cheque,
+                        fecha_cobro=echeq_fecha_cobro,
+                        reserva_id=reserva.id,
+                        generar_credito=hubo_cobro_ahora,
+                    )
+
             # Actualizar estado del vehículo a reservado si corresponde
             nuevo_estado = estado_tras_confirmar_reserva(
                 EstadoVehiculo(vehiculo.estado)
@@ -295,10 +354,21 @@ class ReservaService:
         anticipo_fecha: date | None = None,
         anticipo_medio_pago: str | None = None,
     ) -> tuple[Reserva, list[dict]]:
-        """Actualiza una reserva en estado pendiente o confirmada (D8)."""
+        """Actualiza una reserva en estado pendiente, confirmada, activa o vencida (D8).
+
+        Activa/vencida se permiten porque después del checkout el operador
+        sigue necesitando editar (agregar una nota, ajustar el lugar de
+        devolución, etc.) — igual que `AlquilerService.extender()` ya permite
+        esos dos estados por la misma razón."""
         reserva = self.get(id)
 
-        if reserva.estado not in (EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value):
+        ESTADOS_EDITABLES = (
+            EstadoReserva.PENDIENTE.value,
+            EstadoReserva.CONFIRMADA.value,
+            EstadoReserva.ACTIVA.value,
+            EstadoReserva.VENCIDA.value,
+        )
+        if reserva.estado not in ESTADOS_EDITABLES:
             raise ConflictError(f"estado_invalido|No se puede modificar una reserva en estado '{reserva.estado}'")
 
         # Si es confirmada, no se puede cambiar cliente

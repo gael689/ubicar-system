@@ -79,20 +79,6 @@ export function useMultas() {
     }
   }, []);
 
-  const eliminarMulta = useCallback(async (id: number): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
-      await api.delete(`/multas/${id}`);
-    } catch (e: any) {
-      const msg = e?.response?.data?.detail || 'Error al eliminar multa';
-      setError(typeof msg === 'string' ? msg : msg?.message || 'Error');
-      throw e;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   const resolverMulta = useCallback(async (id: number, payload: ResolverMultaPayload): Promise<Multa> => {
     setLoading(true);
     setError(null);
@@ -108,5 +94,5 @@ export function useMultas() {
     }
   }, []);
 
-  return { loading, error, listMultas, buscarResponsable, crearMulta, actualizarMulta, eliminarMulta, resolverMulta };
+  return { loading, error, listMultas, buscarResponsable, crearMulta, actualizarMulta, resolverMulta };
 }

@@ -1,4 +1,4 @@
-export type CategoriaVehiculo = 'compacto' | 'sedan' | 'sedan_sup' | 'suv' | 'camioneta';
+export type CategoriaVehiculo = 'compacto' | 'sedan' | 'sedan_sup' | 'suv' | 'camioneta' | 'furgon';
 export type ModalidadItem = 'mensual' | 'dias' | 'libre';
 export type ModoCotizacion = 'categoria' | 'unidad';
 

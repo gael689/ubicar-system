@@ -4,6 +4,17 @@ import type { CuentaCorriente, MovimientoCC, MovimientoCCCreate } from '@/types'
 
 const KEY = 'cuentas-corrientes';
 
+export function useClientesConPagoPendiente() {
+  return useQuery({
+    queryKey: [KEY, 'pendientes'],
+    queryFn: async () => {
+      const res = await api.get<{ data: number[] }>('/cuentas-corrientes/pendientes');
+      return res.data.data;
+    },
+    staleTime: 60_000,
+  });
+}
+
 export function useCuentasCorrientes() {
   return useQuery({
     queryKey: [KEY],
@@ -41,6 +52,17 @@ export function useAgregarMovimiento(ccId: number) {
   return useMutation({
     mutationFn: (payload: MovimientoCCCreate) =>
       api.post<MovimientoCC>(`/cuentas-corrientes/${ccId}/movimientos`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [KEY] });
+    },
+  });
+}
+
+export function useEditarVencimiento() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ movimientoId, ...payload }: { movimientoId: number; fecha_vencimiento: string | null; motivo: string; condicion?: string | null }) =>
+      api.patch<{ data: MovimientoCC }>(`/cuentas-corrientes/movimientos/${movimientoId}/vencimiento`, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
     },

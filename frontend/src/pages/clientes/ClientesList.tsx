@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Users, Phone, Mail, Star } from 'lucide-react';
+import { Plus, Users, Phone, Mail, Star, CircleDollarSign } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import { LicenciaBadge } from '@/components/clientes/LicenciaBadge';
 import { ClienteFormDialog } from '@/components/clientes/ClienteFormDialog';
 
 import { useClientes, type ClienteFilters } from '@/hooks/useClientes';
+import { useClientesConPagoPendiente } from '@/hooks/useCuentasCorrientes';
 import { useDebounce } from '@/hooks/useDebounce';
 import type { Cliente } from '@/types';
 
@@ -34,6 +35,7 @@ export function ClientesList() {
   };
 
   const { data, isLoading } = useClientes(filters);
+  const { data: pendientes = [] } = useClientesConPagoPendiente();
   const clientes = data?.data ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / 20);
@@ -127,7 +129,7 @@ export function ClientesList() {
       ) : (
         <Card className="divide-y divide-border overflow-hidden">
           {clientes.map(c => (
-            <ClienteRow key={c.id} cliente={c} />
+            <ClienteRow key={c.id} cliente={c} pagoPendiente={pendientes.includes(c.id)} />
           ))}
         </Card>
       )}
@@ -152,7 +154,7 @@ export function ClientesList() {
   );
 }
 
-function ClienteRow({ cliente }: { cliente: Cliente }) {
+function ClienteRow({ cliente, pagoPendiente }: { cliente: Cliente; pagoPendiente: boolean }) {
   const iniciales = cliente.nombre_completo
     .split(' ')
     .slice(0, 2)
@@ -174,6 +176,14 @@ function ClienteRow({ cliente }: { cliente: Cliente }) {
           <span className="text-sm font-medium text-foreground">{cliente.nombre_completo}</span>
           {cliente.es_frecuente && (
             <Star className="h-3.5 w-3.5 text-warning fill-warning" />
+          )}
+          {pagoPendiente && (
+            <span
+              className="inline-flex items-center gap-1 rounded-md bg-warning px-1.5 py-0.5 text-[10px] font-semibold text-white"
+              title="Tiene un pago vencido o próximo a vencer"
+            >
+              <CircleDollarSign className="h-3 w-3" /> Pago pendiente
+            </span>
           )}
           {!cliente.activo && (
             <span className="inline-flex items-center rounded-md bg-muted/40 border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">

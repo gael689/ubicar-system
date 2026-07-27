@@ -14,6 +14,7 @@ from app.domain.control_24hs import (
     calcular_excedente, ResultadoExcedente,
     GRACIA_MINUTOS, MULTIPLICADOR_HORA_EXCEDENTE, TOPE_HORAS_ANTES_DIA_EXTRA,
 )
+from app.domain.cuenta_corriente import calcular_vencimiento
 from app.domain.enums import EstadoReserva, EstadoVehiculo, DecisionExcedente
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.tarifas import (
@@ -22,6 +23,7 @@ from app.domain.tarifas import (
 from app.domain.transiciones import estado_tras_checkout, estado_tras_checkin
 from app.domain.ventana import VentanaReserva
 from app.models.alquiler import Alquiler
+from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.models.pago import Pago
 from app.models.reserva import Reserva
 from app.models.vehiculo import Vehiculo
@@ -31,6 +33,7 @@ from app.repositories.reserva_repo import ReservaRepo
 from app.schemas.alquiler import PagoInmediato
 from app.services.configuracion_service import ConfiguracionService
 from app.services.cuenta_corriente_service import CuentaCorrienteService
+from app.services.echeq_service import EcheqService
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,7 @@ class AlquilerService:
         self.reserva_repo = ReservaRepo(db)
         self.cc_service = CuentaCorrienteService(db)
         self.config_service = ConfiguracionService(db)
+        self.echeq_service = EcheqService(db)
 
     def _params_excedente(self) -> dict:
         """Lee gracia/multiplicador/tope de la tabla `configuracion` (Fase 3,
@@ -181,6 +185,11 @@ class AlquilerService:
             self.alquiler_repo.create(alquiler)
             self.db.flush()  # Para obtener alquiler.id
 
+            # El echeq de esta reserva (si lo hay) se creó antes de que
+            # existiera este Alquiler — recién ahora se puede completar el
+            # vínculo (mismo patrón que fecha_vencimiento en condicion_pago).
+            self.echeq_service.completar_alquiler(reserva.id, alquiler.id)
+
             # Ledger completo: el checkout factura el alquiler completo como
             # un débito automático en la cuenta corriente del cliente,
             # exista o no un pago inmediato. Cualquier cobro (abajo) genera
@@ -191,6 +200,16 @@ class AlquilerService:
                 + (cargo_checkout_tardio or Decimal("0"))
             )
             if monto_facturado > 0:
+                # Condición de pago: decisión de la reserva (D-?), no el
+                # default del cliente. Si el ancla es 'checkin', todavía no
+                # sabemos cuándo vuelve el auto — queda sin vencimiento hasta
+                # que el check-in lo complete (o alguien lo edite a mano).
+                ancla = reserva.condicion_pago_ancla
+                fecha_vencimiento_checkout = None
+                if ancla == "fecha_especifica" and reserva.condicion_pago_fecha_ancla:
+                    fecha_vencimiento_checkout = calcular_vencimiento(
+                        reserva.condicion_pago_fecha_ancla, reserva.condicion_pago
+                    )
                 self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="debito",
@@ -198,6 +217,9 @@ class AlquilerService:
                     monto=monto_facturado,
                     fecha=checkout_fecha,
                     creado_por=usuario_id,
+                    condicion=reserva.condicion_pago,
+                    fecha_vencimiento=fecha_vencimiento_checkout,
+                    sin_vencimiento_automatico=(ancla == "checkin"),
                     alquiler_id=alquiler.id,
                     reserva_id=reserva.id,
                 )
@@ -376,6 +398,23 @@ class AlquilerService:
             )
             self.reserva_repo.update(reserva, estado=EstadoReserva.FINALIZADA.value)
 
+            # Si la condición de pago cuenta los días desde el check-in, recién
+            # ahora se puede calcular — el débito del checkout quedó sin
+            # `fecha_vencimiento` a propósito (ver checkout()).
+            if reserva.condicion_pago_ancla == "checkin" and reserva.condicion_pago != "contado":
+                debito_pendiente = (
+                    self.db.query(MovimientoCuentaCorriente)
+                    .filter(
+                        MovimientoCuentaCorriente.reserva_id == reserva.id,
+                        MovimientoCuentaCorriente.tipo == "debito",
+                        MovimientoCuentaCorriente.anulado == False,
+                        MovimientoCuentaCorriente.fecha_vencimiento.is_(None),
+                    )
+                    .first()
+                )
+                if debito_pendiente:
+                    debito_pendiente.fecha_vencimiento = calcular_vencimiento(checkin_fecha, reserva.condicion_pago)
+
             # Ledger completo: el excedente que efectivamente se decidió
             # cobrar (D-19) es un cargo adicional al alquiler — débito.
             # Si se bonificó (cargo_excedente == 0), no genera movimiento.
@@ -465,10 +504,13 @@ class AlquilerService:
         nueva_fecha_fin: date,
         nueva_hora_fin: time,
         usuario_id: int,
+        precio_manual: Decimal | None = None,
     ) -> Alquiler:
         """
         Extiende un alquiler activo a una nueva fecha de fin.
-        Recalcula tarifa (puede cambiar de banda).
+        Recalcula tarifa (puede cambiar de banda), salvo que venga un
+        `precio_manual` — la extensión respeta entonces el precio pactado
+        (puede tener descuento) en vez de forzar el de lista.
         Verifica solapamientos en el rango ampliado.
         """
         alquiler = self.get(alquiler_id)
@@ -522,6 +564,9 @@ class AlquilerService:
             tarifa_no_encontrada = True
             nuevo_precio = precio_anterior
             nueva_tarifa_id = tarifa_anterior_id
+
+        if precio_manual is not None:
+            nuevo_precio = precio_manual
 
         # Si la reserva estaba 'vencida' y la nueva fecha/hora de fin queda en el
         # futuro, vuelve a 'activa' (ya no está fuera de término). Si la nueva

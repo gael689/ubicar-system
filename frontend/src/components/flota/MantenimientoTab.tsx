@@ -175,7 +175,8 @@ export function MantenimientoTab({ vehiculoId, kmActual, kmProximoService, kmEnt
         description="¿Seguro que querés eliminar este registro de servicio?"
         confirmLabel="Eliminar"
         onConfirm={async () => { if (deleteId) { await eliminar.mutateAsync(deleteId); setDeleteId(null); } }}
-        onCancel={() => setDeleteId(null)}
+        onOpenChange={open => !open && setDeleteId(null)}
+        destructive
       />
     </div>
   );

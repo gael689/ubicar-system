@@ -122,6 +122,14 @@ def create_reserva(
             anticipo_medio_pago=payload.anticipo_medio_pago,
             con_factura=payload.con_factura,
             descuento_motivo=payload.descuento_motivo,
+            condicion_pago=payload.condicion_pago,
+            condicion_pago_ancla=payload.condicion_pago_ancla,
+            condicion_pago_fecha_ancla=payload.condicion_pago_fecha_ancla,
+            tipo_factura=payload.tipo_factura,
+            factura_a_nombre_de=payload.factura_a_nombre_de,
+            echeq_banco=payload.echeq_banco,
+            echeq_numero_cheque=payload.echeq_numero_cheque,
+            echeq_fecha_cobro=payload.echeq_fecha_cobro,
             usuario_id=current_user.id,
         )
         db.commit()

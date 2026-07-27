@@ -19,6 +19,7 @@ import { TarjetaTab } from '@/components/clientes/TarjetaTab';
 import { MultasTab } from '@/components/clientes/MultasTab';
 import { CuentaCorrienteTab } from '@/components/clientes/CuentaCorrienteTab';
 import { RecibosTab } from '@/components/clientes/RecibosTab';
+import { EcheqsTab } from '@/components/clientes/EcheqsTab';
 import { ComprobantesTab } from '@/components/clientes/ComprobantesTab';
 
 import { useCliente, useDeactivateCliente, useReactivateCliente } from '@/hooks/useClientes';
@@ -160,6 +161,7 @@ export function ClienteDetail() {
           <TabsTrigger value="multas">Multas</TabsTrigger>
           <TabsTrigger value="cuenta-corriente">Cta. Corriente</TabsTrigger>
           <TabsTrigger value="recibos">Recibos</TabsTrigger>
+          <TabsTrigger value="echeqs">Echeqs</TabsTrigger>
           <TabsTrigger value="comprobantes">Comprobantes</TabsTrigger>
         </TabsList>
 
@@ -244,6 +246,10 @@ export function ClienteDetail() {
 
         <TabsContent value="recibos">
           <RecibosTab clienteId={cliente.id} />
+        </TabsContent>
+
+        <TabsContent value="echeqs">
+          <EcheqsTab clienteId={cliente.id} />
         </TabsContent>
 
         <TabsContent value="comprobantes">

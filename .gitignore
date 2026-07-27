@@ -32,8 +32,13 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Alembic
-backend/alembic/versions/*.py
-!backend/alembic/versions/.gitkeep
+# Las migraciones SON codigo fuente: sin ellas un clone limpio no puede
+# construir la base. Esta carpeta estuvo ignorada por error hasta 2026-07-27
+# (16 de 33 migraciones quedaron sin versionar, incluida la inicial).
+
+# Almacenamiento local de archivos subidos (documentos, comprobantes, fotos
+# de danios). Es data de runtime, no codigo.
+backend/storage_local/
 
 # Testing
 coverage/

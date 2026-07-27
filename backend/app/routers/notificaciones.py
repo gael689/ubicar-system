@@ -49,10 +49,17 @@ def list_notificaciones(
 def historial_notificaciones(
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
+    solo_resueltas: bool = Query(True),
+    fecha: date | None = Query(None),
+    anio: int | None = Query(None),
+    mes: int | None = Query(None, ge=1, le=12),
     service: NotificacionService = Depends(_service),
     _: Usuario = Depends(get_current_user),
 ):
-    items, total = service.list_historial(page=page, page_size=page_size)
+    items, total = service.list_historial(
+        page=page, page_size=page_size, solo_resueltas=solo_resueltas,
+        fecha=fecha, anio=anio, mes=mes,
+    )
     return paginated([NotificacionResponse.model_validate(i) for i in items], total, page, page_size)
 
 

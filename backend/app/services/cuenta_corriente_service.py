@@ -8,7 +8,7 @@ del que lo llama (ver AlquilerService, que ya envuelve todo en
 `begin_nested()`).
 """
 from __future__ import annotations
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -40,6 +40,7 @@ class CuentaCorrienteService:
         creado_por: int | None,
         condicion: str | None = None,
         fecha_vencimiento: date | None = None,
+        sin_vencimiento_automatico: bool = False,
         alquiler_id: int | None = None,
         reserva_id: int | None = None,
         pago_id: int | None = None,
@@ -47,13 +48,22 @@ class CuentaCorrienteService:
         multa_id: int | None = None,
         recibo_id: int | None = None,
         comprobante_id: int | None = None,
+        danio_id: int | None = None,
     ) -> MovimientoCuentaCorriente:
         if monto is None or monto <= 0:
             raise ValueError("El monto del movimiento debe ser > 0")
 
         cc = self.get_or_create(cliente_id)
         condicion_efectiva = condicion or cc.condicion_pago
-        vencimiento = fecha_vencimiento or calcular_vencimiento(fecha, condicion_efectiva)
+        # Ancla = check-in (D-?): todavía no sabemos cuándo vuelve el auto,
+        # así que no hay que calcular nada contra la fecha de este asiento
+        # (que sería la del checkout) — queda sin vencimiento hasta que el
+        # check-in real lo complete, o hasta que alguien lo edite a mano
+        # (ver editar_vencimiento).
+        if sin_vencimiento_automatico:
+            vencimiento = fecha_vencimiento
+        else:
+            vencimiento = fecha_vencimiento or calcular_vencimiento(fecha, condicion_efectiva)
         nuevo_saldo = aplicar_movimiento(Decimal(str(cc.saldo)), tipo, Decimal(str(monto)))
 
         mov = MovimientoCuentaCorriente(
@@ -72,6 +82,7 @@ class CuentaCorrienteService:
             multa_id=multa_id,
             recibo_id=recibo_id,
             comprobante_id=comprobante_id,
+            danio_id=danio_id,
             creado_por=creado_por,
         )
         self.db.add(mov)
@@ -122,6 +133,43 @@ class CuentaCorrienteService:
         cc.saldo = nuevo_saldo
         self.db.flush()
         return contra
+
+    def editar_vencimiento(
+        self,
+        movimiento_id: int,
+        fecha_vencimiento: date | None,
+        motivo: str,
+        usuario_id: int | None,
+        condicion: str | None = None,
+    ) -> MovimientoCuentaCorriente:
+        """
+        Corrige a mano la fecha de vencimiento (y opcionalmente la condición)
+        de un débito — no toca `monto` ni `saldo_posterior`, no es una
+        excepción a la inmutabilidad contable del ledger. Cubre: completar el
+        vencimiento cuando el ancla era check-in y el auto ya volvió, correr
+        el plazo por una extensión, o cualquier renegociación puntual.
+        Siempre exige motivo — no hay roles todavía que restrinjan quién
+        puede hacerlo, así que el rastro de auditoría es lo que queda.
+        """
+        if not motivo or not motivo.strip():
+            raise ValueError("Editar el vencimiento requiere un motivo")
+
+        mov = self.db.get(MovimientoCuentaCorriente, movimiento_id)
+        if not mov:
+            raise ValueError(f"Movimiento {movimiento_id} no encontrado")
+        if mov.tipo != "debito":
+            raise ValueError("Sólo se puede editar el vencimiento de un débito")
+        if mov.anulado:
+            raise ValueError("El movimiento está anulado")
+
+        if condicion is not None:
+            mov.condicion = condicion
+        mov.fecha_vencimiento = fecha_vencimiento
+        mov.vencimiento_editado_motivo = motivo
+        mov.vencimiento_editado_por = usuario_id
+        mov.vencimiento_editado_en = datetime.utcnow()
+        self.db.flush()
+        return mov
 
     def anular_por_pago(self, pago_id: int, motivo: str, creado_por: int | None) -> MovimientoCuentaCorriente | None:
         """Anula el movimiento vinculado a un pago, si existe. None si no había ninguno."""

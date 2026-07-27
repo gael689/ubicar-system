@@ -6,6 +6,10 @@ import type {
   TipoDocumento,
   TipoGasto,
   TipoTarifa,
+  TipoDanio,
+  SeveridadDanio,
+  EstadoDanio,
+  ResponsableDanio,
 } from '@/types';
 
 // ─── Vehículos ───────────────────────────────────────────────────────────────
@@ -60,6 +64,7 @@ export const ESTADO_ECHEQ_LABEL: Record<EstadoEcheq, string> = {
   rechazado: 'Rechazado',
   cobrado: 'Cobrado',
   vencido: 'Vencido',
+  pendiente: 'Pendiente',  // legacy — no se usa en registros nuevos
 };
 
 export const ESTADO_ECHEQ_COLOR: Record<EstadoEcheq, string> = {
@@ -69,7 +74,70 @@ export const ESTADO_ECHEQ_COLOR: Record<EstadoEcheq, string> = {
   rechazado: 'bg-danger/15 text-danger border-danger/30',
   cobrado: 'bg-success/15 text-success border-success/30',
   vencido: 'bg-muted/40 text-muted-foreground border-border',
+  pendiente: 'bg-muted/40 text-muted-foreground border-border',
 };
+
+// ─── Daños (parte de daños) ──────────────────────────────────────────────────
+
+export const TIPO_DANIO_LABEL: Record<TipoDanio, string> = {
+  rayon: 'Rayón',
+  abolladura: 'Abolladura',
+  rotura: 'Rotura',
+  faltante: 'Faltante',
+  cristal: 'Cristal',
+  tapizado: 'Tapizado',
+  mecanico: 'Mecánico',
+  otro: 'Otro',
+};
+
+export const SEVERIDAD_DANIO_LABEL: Record<SeveridadDanio, string> = {
+  leve: 'Leve',
+  moderado: 'Moderado',
+  grave: 'Grave',
+};
+
+// Sólidos: la severidad es justamente lo que hay que ver de un vistazo.
+export const SEVERIDAD_DANIO_COLOR: Record<SeveridadDanio, string> = {
+  leve: 'bg-slate-500 text-white',
+  moderado: 'bg-warning text-white',
+  grave: 'bg-danger text-white',
+};
+
+export const ESTADO_DANIO_LABEL: Record<EstadoDanio, string> = {
+  detectado: 'Detectado',
+  valorizado: 'Valorizado',
+  imputado: 'Imputado',
+  reparado: 'Reparado',
+  bonificado: 'Bonificado',
+};
+
+export const ESTADO_DANIO_COLOR: Record<EstadoDanio, string> = {
+  detectado: 'bg-muted text-muted-foreground border-border',
+  valorizado: 'bg-primary/15 text-primary border-primary/30',
+  imputado: 'bg-warning/15 text-warning border-warning/30',
+  reparado: 'bg-success/15 text-success border-success/30',
+  bonificado: 'bg-secondary/40 text-primary border-secondary',
+};
+
+export const RESPONSABLE_DANIO_LABEL: Record<ResponsableDanio, string> = {
+  sin_definir: 'Sin definir',
+  cliente: 'Cliente',
+  desgaste: 'Desgaste de uso',
+  terceros: 'Terceros',
+};
+
+/** Zonas sugeridas. Es un `datalist`, no un enum: se puede escribir cualquier otra. */
+export const ZONAS_DANIO = [
+  'Paragolpes delantero', 'Paragolpes trasero',
+  'Capot', 'Techo', 'Baúl',
+  'Puerta delantera izq.', 'Puerta delantera der.',
+  'Puerta trasera izq.', 'Puerta trasera der.',
+  'Guardabarros izq.', 'Guardabarros der.',
+  'Espejo izq.', 'Espejo der.',
+  'Parabrisas', 'Luneta trasera',
+  'Llanta / cubierta', 'Óptica delantera', 'Óptica trasera',
+  'Interior / tapizado', 'Tablero',
+];
 
 // ─── Documentos del vehículo ─────────────────────────────────────────────────
 
@@ -129,12 +197,26 @@ export const ESTADO_MULTA_LABEL: Record<string, string> = {
   apelando: 'Apelando',
 };
 
+// Colores sólidos — a diferencia del resto de los badges informativos del
+// sistema, el estado de una multa es una decisión que hay que notar de un
+// vistazo (quién debe, a quién se le perdonó), no un dato pasivo.
 export const ESTADO_MULTA_COLOR: Record<string, string> = {
-  pendiente: 'bg-warning/15 text-warning border-warning/30',
-  imputada: 'bg-primary/15 text-primary border-primary/30',
-  cobrada: 'bg-success/15 text-success border-success/30',
-  bonificada: 'bg-muted/40 text-muted-foreground border-border',
-  apelando: 'bg-muted/40 text-muted-foreground border-border',
+  pendiente: 'bg-warning text-white border-warning',
+  imputada: 'bg-primary text-white border-primary',
+  cobrada: 'bg-success text-white border-success',
+  bonificada: 'bg-slate-500 text-white border-slate-500',
+  apelando: 'bg-violet-600 text-white border-violet-600',
+};
+
+// Versión "sin rellenar" del mismo color — para botones de acción que no
+// son el estado actual: cada uno mantiene su color característico (nunca
+// gris genérico), sólo que sin el relleno sólido que sí lleva el activo.
+export const ESTADO_MULTA_COLOR_OUTLINE: Record<string, string> = {
+  pendiente: 'bg-white text-warning border-warning hover:bg-warning hover:text-white',
+  imputada: 'bg-white text-primary border-primary hover:bg-primary hover:text-white',
+  cobrada: 'bg-white text-success border-success hover:bg-success hover:text-white',
+  bonificada: 'bg-white text-slate-500 border-slate-500 hover:bg-slate-500 hover:text-white',
+  apelando: 'bg-white text-violet-600 border-violet-600 hover:bg-violet-600 hover:text-white',
 };
 
 export const CONDICION_IVA_LABEL: Record<string, string> = {
@@ -192,34 +274,61 @@ export interface NavGroup {
   label: string;
   icon: string;
   items: { path: string; label: string; icon: string }[];
+  // Se destaca con un color de texto distinto en vez de esconderlo bajo un
+  // desplegable — reemplaza al viejo grupo "Más" (3 puntitos), que agrupaba
+  // secciones secundarias detrás de un click extra.
+  principal?: boolean;
 }
 
 export const NAV_GROUPS: NavGroup[] = [
-  { label: 'Hoy', icon: 'LayoutDashboard', items: [
+  { label: 'Hoy', icon: 'LayoutDashboard', principal: true, items: [
     { path: '/ocupacion', label: 'Ocupación', icon: 'LayoutDashboard' },
   ] },
-  { label: 'Reservas', icon: 'ClipboardList', items: [
+  { label: 'Reservas', icon: 'ClipboardList', principal: true, items: [
     { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
     { path: '/contratos', label: 'Contratos', icon: 'FileText' },
   ] },
-  { label: 'Flota', icon: 'Car', items: [
+  { label: 'Flota', icon: 'Car', principal: true, items: [
     { path: '/flota', label: 'Vehículos', icon: 'Car' },
     { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
   ] },
-  { label: 'Clientes', icon: 'Users', items: [
+  { label: 'Clientes', icon: 'Users', principal: true, items: [
     { path: '/clientes', label: 'Clientes', icon: 'Users' },
   ] },
-  { label: 'Finanzas', icon: 'Wallet', items: [
+  { label: 'Finanzas', icon: 'Wallet', principal: true, items: [
     { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
   ] },
-  { label: 'Más', icon: 'MoreHorizontal', items: [
+  { label: 'Reportes', icon: 'BarChart2', items: [
     { path: '/reportes', label: 'Reportes', icon: 'BarChart2' },
+  ] },
+  { label: 'Notificaciones', icon: 'Bell', items: [
+    { path: '/notificaciones', label: 'Notificaciones', icon: 'Bell' },
+  ] },
+  { label: 'Cotizador', icon: 'Calculator', items: [
     { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
+  ] },
+  { label: 'Configuración', icon: 'Settings', items: [
     { path: '/configuracion', label: 'Configuración', icon: 'Settings' },
   ] },
 ];
 
-// Rutas donde el sidebar arranca colapsado y se expande al pasar el mouse
-// (plan maestro §5.1, punto 2): recupera ancho útil en las dos pantallas
-// que más lo necesitan.
-export const SIDEBAR_AUTOCOLLAPSE_PREFIXES = ['/reservas', '/ocupacion'];
+// Un color de acento por sección núcleo (grupos `principal`) — antes todo el
+// menú usaba el mismo azul para todo, sin distinguir secciones. Los grupos
+// secundarios (Reportes/Notificaciones/Cotizador/Configuración) se quedan
+// neutros a propósito, no son "secciones" del negocio. Clases completas
+// (nunca interpolación de string) para que Tailwind no las purgue.
+export interface NavGroupColor {
+  /** Fondo + texto cuando el grupo/ítem está activo */
+  active: string;
+  /** Color de texto cuando es `principal` pero no está activo — el ícono
+   * hereda el mismo color vía `currentColor`, no necesita clase propia. */
+  text: string;
+}
+
+export const NAV_GROUP_COLOR: Record<string, NavGroupColor> = {
+  Hoy:       { active: 'bg-primary/10 text-primary',        text: 'text-foreground' },
+  Reservas:  { active: 'bg-indigo-500/10 text-indigo-600',  text: 'text-indigo-700' },
+  Flota:     { active: 'bg-teal-500/10 text-teal-600',      text: 'text-teal-700' },
+  Clientes:  { active: 'bg-rose-500/10 text-rose-600',      text: 'text-rose-700' },
+  Finanzas:  { active: 'bg-emerald-500/10 text-emerald-600', text: 'text-emerald-700' },
+};

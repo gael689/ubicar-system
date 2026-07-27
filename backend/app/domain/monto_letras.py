@@ -55,9 +55,14 @@ def _entero_a_letras(n: int) -> str:
 
 def monto_a_letras(monto: Decimal, moneda: str = "pesos") -> str:
     """
-    Formato estándar de recibo: "Pesos quince mil doscientos cincuenta con 30/100".
+    Formato de recibo: "Pesos quince mil doscientos cincuenta con 30 centavos".
+    Sin centavos, no se menciona la parte decimal (antes decía "con 00/100",
+    una notación de cheque que confundía más de lo que aclaraba).
     """
     monto = Decimal(str(monto)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     entero = int(monto)
     centavos = int((monto - entero) * 100)
-    return f"{moneda.capitalize()} {_entero_a_letras(entero)} con {centavos:02d}/100"
+    base = f"{moneda.capitalize()} {_entero_a_letras(entero)}"
+    if centavos == 0:
+        return base
+    return f"{base} con {centavos} centavo{'s' if centavos != 1 else ''}"

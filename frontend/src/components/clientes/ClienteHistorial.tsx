@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, CheckCircle2, Car, Flag, XCircle } from 'lucide-react';
+import { CheckCircle2, Car, Flag, XCircle } from 'lucide-react';
 import { useReservas } from '@/hooks/useReservas';
 import { Reserva } from '@/types';
 import { Card } from '@/components/ui/card';

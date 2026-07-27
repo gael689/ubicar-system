@@ -9,7 +9,6 @@ import {
   usePosponerNotificacion,
   useDescartarNotificacion,
 } from '@/hooks/useNotificaciones';
-import { HistorialNotificacionesDialog } from './HistorialNotificacionesDialog';
 import { extractError } from '@/lib/utils';
 import type { NotificacionItem, UrgenciaNot } from '@/types';
 
@@ -54,7 +53,6 @@ const TIPO_GRUPO: Record<string, string> = {
 
 export function NotificacionesPanel() {
   const [open, setOpen] = useState(false);
-  const [historialOpen, setHistorialOpen] = useState(false);
   const { data, isLoading, isFetching } = useNotificaciones();
   const generar = useGenerarNotificaciones();
   const navigate = useNavigate();
@@ -122,9 +120,9 @@ export function NotificacionesPanel() {
                   <RefreshCw className={`h-3.5 w-3.5 ${isFetching || generar.isPending ? 'animate-spin' : ''}`} />
                 </button>
                 <button
-                  onClick={() => setHistorialOpen(true)}
+                  onClick={() => handleNavigate('/notificaciones')}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title="Ver historial"
+                  title="Ver todas las notificaciones"
                 >
                   <History className="h-3.5 w-3.5" />
                 </button>
@@ -174,8 +172,6 @@ export function NotificacionesPanel() {
           </div>
         </>
       )}
-
-      {historialOpen && <HistorialNotificacionesDialog open={historialOpen} onClose={() => setHistorialOpen(false)} />}
     </div>
   );
 }

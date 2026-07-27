@@ -17,7 +17,7 @@ from app.routers import (
     contratos, pagos, gastos, echeqs, documentos,
     cotizador, reportes, public, tarifas, ocupacion, tarjetas, multas,
     servicios, notificaciones, cuentas_corrientes, recibos, categorias,
-    comprobantes, configuracion, busqueda,
+    comprobantes, configuracion, busqueda, danios,
 )
 
 logger = logging.getLogger(__name__)
@@ -138,6 +138,7 @@ app.include_router(cuentas_corrientes.router, prefix=API_PREFIX)
 app.include_router(recibos.router, prefix=API_PREFIX)
 app.include_router(categorias.router, prefix=API_PREFIX)
 app.include_router(comprobantes.router, prefix=API_PREFIX)
+app.include_router(danios.router, prefix=API_PREFIX)
 app.include_router(configuracion.router, prefix=API_PREFIX)
 app.include_router(busqueda.router, prefix=API_PREFIX)
 

@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
+import { User, Building2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -62,8 +63,12 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
   const isEdit = !!cliente;
   const create = useCreateCliente();
   const update = useUpdateCliente();
+  // Onboarding: al dar de alta, primero se elige Empresa/Particular y recién
+  // después se muestra el formulario (ya tenía toda la lógica condicional
+  // por tipo, sólo faltaba el orden). Al editar no aplica: el tipo ya existe.
+  const [step, setStep] = useState<'onboarding' | 'form'>('onboarding');
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, control, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       tipo: 'particular',
@@ -77,6 +82,7 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
 
   useEffect(() => {
     if (open) {
+      setStep(isEdit ? 'form' : 'onboarding');
       const hasConductor = isEdit && (cliente?.conductores_adicionales?.length ?? 0) > 0;
       reset(cliente ? {
         nombre_completo: cliente.nombre_completo,
@@ -177,7 +183,48 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
           <DialogTitle>{isEdit ? 'Editar cliente' : 'Nuevo cliente'}</DialogTitle>
         </DialogHeader>
 
+        {!isEdit && step === 'onboarding' ? (
+          <div className="py-4 space-y-4">
+            <p className="text-sm text-muted-foreground">¿El cliente es una empresa o una persona particular?</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => { setValue('tipo', 'particular'); setStep('form'); }}
+                className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-accent/40 transition-colors p-6 text-center"
+              >
+                <User className="h-8 w-8 text-primary" />
+                <span className="text-base font-semibold text-foreground">Particular</span>
+                <span className="text-xs text-muted-foreground">Persona física — alquila a título personal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setValue('tipo', 'empresa'); setStep('form'); }}
+                className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-accent/40 transition-colors p-6 text-center"
+              >
+                <Building2 className="h-8 w-8 text-primary" />
+                <span className="text-base font-semibold text-foreground">Empresa</span>
+                <span className="text-xs text-muted-foreground">Razón social, condición de IVA, contactos con puesto</span>
+              </button>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancelar
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+          {!isEdit && (
+            <button
+              type="button"
+              onClick={() => setStep('onboarding')}
+              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              {tipoCliente === 'empresa' ? <Building2 className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
+              <span className="font-medium">{tipoCliente === 'empresa' ? 'Empresa' : 'Particular'}</span>
+              <span className="underline">Cambiar</span>
+            </button>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Nombre completo" error={errors.nombre_completo?.message} required>
               <input {...register('nombre_completo')} placeholder="Juan Pérez"
@@ -305,12 +352,14 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
 
           <div className="border-t border-border pt-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Tipo de cliente" error={errors.tipo?.message} required>
-                <select {...register('tipo')} className="input-base">
-                  <option value="particular">Particular</option>
-                  <option value="empresa">Empresa</option>
-                </select>
-              </Field>
+              {isEdit && (
+                <Field label="Tipo de cliente" error={errors.tipo?.message} required>
+                  <select {...register('tipo')} className="input-base">
+                    <option value="particular">Particular</option>
+                    <option value="empresa">Empresa</option>
+                  </select>
+                </Field>
+              )}
               <div className="flex items-end pb-1">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input type="checkbox" {...register('es_frecuente')}
@@ -335,6 +384,7 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
             </Button>
           </DialogFooter>
         </form>
+        )}
       </DialogContent>
     </Dialog>
   );

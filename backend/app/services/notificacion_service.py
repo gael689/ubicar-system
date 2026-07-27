@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -140,8 +141,30 @@ class NotificacionService:
         )
         return items + pospuestas
 
-    def list_historial(self, page: int = 1, page_size: int = 30) -> tuple[list[Notificacion], int]:
-        q = self.db.query(Notificacion).filter(Notificacion.estado.in_(("leida", "descartada", "resuelta")))
+    def list_historial(
+        self,
+        page: int = 1,
+        page_size: int = 30,
+        solo_resueltas: bool = True,
+        fecha: date | None = None,
+        anio: int | None = None,
+        mes: int | None = None,
+    ) -> tuple[list[Notificacion], int]:
+        """Historial de notificaciones. `solo_resueltas=True` (default) mantiene
+        el comportamiento de siempre (leída/descartada/resuelta, usado por el
+        diálogo chico de la campana). El módulo dedicado (`/notificaciones`)
+        pasa `solo_resueltas=False` para ver todas, con filtros de fecha sobre
+        `created_at` — día exacto si viene `fecha`, si no año/mes por separado."""
+        q = self.db.query(Notificacion)
+        if solo_resueltas:
+            q = q.filter(Notificacion.estado.in_(("leida", "descartada", "resuelta")))
+        if fecha is not None:
+            q = q.filter(func.date(Notificacion.created_at) == fecha)
+        else:
+            if anio is not None:
+                q = q.filter(extract("year", Notificacion.created_at) == anio)
+            if mes is not None:
+                q = q.filter(extract("month", Notificacion.created_at) == mes)
         total = q.count()
         items = q.order_by(Notificacion.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return items, total

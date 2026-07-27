@@ -13,6 +13,7 @@ import { MultasPage } from '@/pages/multas/MultasPage';
 import { FinanzasPage } from '@/pages/finanzas/FinanzasPage';
 import { ReportesPage } from '@/pages/reportes/ReportesPage';
 import { ConfiguracionPage } from '@/pages/configuracion/ConfiguracionPage';
+import { NotificacionesPage } from '@/pages/notificaciones/NotificacionesPage';
 
 export default function App() {
   return (
@@ -21,7 +22,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/ocupacion" replace />} />
         <Route
           path="/ocupacion"
-          element={<AppLayout title="Ocupación"><Dashboard /></AppLayout>}
+          element={<AppLayout title="Ocupación" fullBleed><Dashboard /></AppLayout>}
         />
         <Route
           path="/flota"
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/cuentas-corrientes" element={<Navigate to="/finanzas" replace />} />
         <Route path="/echeqs" element={<Navigate to="/finanzas" replace />} />
         <Route path="/reportes" element={<AppLayout title="Reportes"><ReportesPage /></AppLayout>} />
+        <Route path="/notificaciones" element={<AppLayout title="Notificaciones"><NotificacionesPage /></AppLayout>} />
         <Route path="/configuracion" element={<AppLayout title="Configuración"><ConfiguracionPage /></AppLayout>} />
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>

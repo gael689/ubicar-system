@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, CalendarClock, Pencil } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,6 +9,7 @@ import {
   useCuentaCorrienteCliente,
   useMovimientosCC,
   useAgregarMovimiento,
+  useEditarVencimiento,
 } from '@/hooks/useCuentasCorrientes';
 import { formatCurrency, formatDate, extractError } from '@/lib/utils';
 
@@ -30,7 +31,30 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
   const { data: cc, isLoading: loadingCC } = useCuentaCorrienteCliente(clienteId);
   const { data: movimientos = [], isLoading: loadingMovs } = useMovimientosCC(cc?.id);
   const agregar = useAgregarMovimiento(cc?.id ?? 0);
+  const editarVencimiento = useEditarVencimiento();
   const [showForm, setShowForm] = useState(false);
+  const [editandoVencId, setEditandoVencId] = useState<number | null>(null);
+  const [nuevaFechaVenc, setNuevaFechaVenc] = useState('');
+  const [motivoVenc, setMotivoVenc] = useState('');
+
+  async function handleGuardarVencimiento(movId: number) {
+    if (!motivoVenc.trim()) {
+      toast.error('Indicá el motivo del cambio');
+      return;
+    }
+    try {
+      await editarVencimiento.mutateAsync({
+        movimientoId: movId,
+        fecha_vencimiento: nuevaFechaVenc || null,
+        motivo: motivoVenc.trim(),
+      });
+      toast.success('Vencimiento actualizado');
+      setEditandoVencId(null);
+      setMotivoVenc('');
+    } catch (err) {
+      toast.error(extractError(err));
+    }
+  }
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<MovForm>({
     resolver: zodResolver(movSchema),
@@ -72,6 +96,14 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
     else aging.d90mas += monto;
   }
   const totalVencido = aging.d0_30 + aging.d31_60 + aging.d61_90 + aging.d90mas;
+
+  // Seguimiento de lo que todavía no venció — el aging de arriba sólo mira
+  // deuda vencida; esto es lo que se viene, para hacerle seguimiento antes
+  // de que llegue la fecha.
+  const proximosVencimientos = movimientos
+    .filter(m => m.tipo === 'debito' && !m.anulado && m.fecha_vencimiento && new Date(m.fecha_vencimiento) >= hoy)
+    .sort((a, b) => (a.fecha_vencimiento! < b.fecha_vencimiento! ? -1 : 1))
+    .slice(0, 3);
 
   return (
     <div className="space-y-4">
@@ -115,6 +147,32 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
           </div>
         )}
       </Card>
+
+      {/* Próximo vencimiento — seguimiento de lo que todavía no venció */}
+      {proximosVencimientos.length > 0 && (
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <CalendarClock className="h-4 w-4 text-primary" />
+            <p className="text-sm font-semibold text-foreground">Próximo vencimiento</p>
+          </div>
+          <div className="space-y-2">
+            {proximosVencimientos.map(m => {
+              const dias = Math.ceil((new Date(m.fecha_vencimiento!).getTime() - hoy.getTime()) / 86400000);
+              return (
+                <div key={m.id} className="flex items-center justify-between gap-3 rounded-lg bg-primary/10 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm text-foreground truncate">{m.concepto}</p>
+                    <p className="text-xs text-primary font-medium">
+                      Vence el {formatDate(m.fecha_vencimiento!)} ({dias === 0 ? 'hoy' : `en ${dias} día${dias === 1 ? '' : 's'}`})
+                    </p>
+                  </div>
+                  <span className="text-sm font-bold text-foreground shrink-0">{formatCurrency(m.monto)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Formulario */}
       {showForm && (
@@ -178,23 +236,79 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
         ) : (
           <div className="divide-y divide-border">
             {movimientos.map(m => (
-              <div key={m.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20">
-                <div className={`p-1.5 rounded-lg ${m.tipo === 'credito' ? 'bg-success/10' : 'bg-danger/10'}`}>
-                  {m.tipo === 'credito'
-                    ? <TrendingUp className="h-3.5 w-3.5 text-success" />
-                    : <TrendingDown className="h-3.5 w-3.5 text-danger" />
-                  }
+              <div key={m.id} className="px-4 py-3 hover:bg-muted/20">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-lg ${m.tipo === 'credito' ? 'bg-success/10' : 'bg-danger/10'}`}>
+                    {m.tipo === 'credito'
+                      ? <TrendingUp className="h-3.5 w-3.5 text-success" />
+                      : <TrendingDown className="h-3.5 w-3.5 text-danger" />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-foreground truncate">{m.concepto}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(m.fecha)}
+                      {m.alquiler_id ? ` · Alquiler #${m.alquiler_id}` : ''}
+                      {m.tipo === 'debito' && !m.anulado && (
+                        m.fecha_vencimiento
+                          ? ` · Vence ${formatDate(m.fecha_vencimiento)}`
+                          : ' · Sin vencimiento todavía'
+                      )}
+                    </p>
+                  </div>
+                  <span className={`text-sm font-bold shrink-0 ${m.tipo === 'credito' ? 'text-success' : 'text-danger'}`}>
+                    {m.tipo === 'credito' ? '+' : '−'}{formatCurrency(m.monto)}
+                  </span>
+                  {m.tipo === 'debito' && !m.anulado && (
+                    <button
+                      onClick={() => {
+                        setEditandoVencId(editandoVencId === m.id ? null : m.id);
+                        setNuevaFechaVenc(m.fecha_vencimiento ?? '');
+                        setMotivoVenc('');
+                      }}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent shrink-0"
+                      title="Editar vencimiento"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground truncate">{m.concepto}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDate(m.fecha)}
-                    {m.alquiler_id ? ` · Alquiler #${m.alquiler_id}` : ''}
-                  </p>
-                </div>
-                <span className={`text-sm font-bold shrink-0 ${m.tipo === 'credito' ? 'text-success' : 'text-danger'}`}>
-                  {m.tipo === 'credito' ? '+' : '−'}{formatCurrency(m.monto)}
-                </span>
+                {editandoVencId === m.id && (
+                  <div className="mt-2 ml-10 flex flex-wrap items-end gap-2 rounded-lg bg-muted/40 p-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Nueva fecha de vencimiento</label>
+                      <input
+                        type="date"
+                        value={nuevaFechaVenc}
+                        onChange={e => setNuevaFechaVenc(e.target.value)}
+                        className="block mt-0.5 px-2.5 py-1.5 border border-border rounded-lg text-sm bg-background"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="text-xs text-muted-foreground">Motivo *</label>
+                      <input
+                        type="text"
+                        value={motivoVenc}
+                        onChange={e => setMotivoVenc(e.target.value)}
+                        placeholder="Ej: se extendió el alquiler, el auto volvió más tarde..."
+                        className="w-full mt-0.5 px-2.5 py-1.5 border border-border rounded-lg text-sm bg-background"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setEditandoVencId(null)}
+                      className="px-3 py-1.5 text-sm text-muted-foreground border border-border rounded-lg hover:text-foreground"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => handleGuardarVencimiento(m.id)}
+                      disabled={editarVencimiento.isPending}
+                      className="px-4 py-1.5 text-sm bg-primary text-white rounded-lg disabled:opacity-50"
+                    >
+                      {editarVencimiento.isPending ? 'Guardando...' : 'Guardar'}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

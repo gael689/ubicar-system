@@ -62,6 +62,7 @@ class MovimientoCuentaCorriente(Base):
     multa_id: Mapped[int | None] = mapped_column(ForeignKey("multas.id"), nullable=True)
     recibo_id: Mapped[int | None] = mapped_column(ForeignKey("recibos.id"), nullable=True)
     comprobante_id: Mapped[int | None] = mapped_column(ForeignKey("comprobantes.id"), nullable=True)
+    danio_id: Mapped[int | None] = mapped_column(ForeignKey("danios.id"), nullable=True)
 
     anulado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     anulado_por_movimiento_id: Mapped[int | None] = mapped_column(
@@ -69,6 +70,13 @@ class MovimientoCuentaCorriente(Base):
     )
     creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Rastro de edición manual de `fecha_vencimiento`/`condicion` (no altera
+    # monto ni saldo_posterior — sólo metadata de cuándo vence). Siempre con
+    # motivo obligatorio, ver CuentaCorrienteService.editar_vencimiento().
+    vencimiento_editado_motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vencimiento_editado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    vencimiento_editado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     cuenta_corriente: Mapped["CuentaCorriente"] = relationship(
         back_populates="movimientos", foreign_keys=[cuenta_corriente_id]

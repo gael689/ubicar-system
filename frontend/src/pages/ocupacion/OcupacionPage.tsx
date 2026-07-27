@@ -304,9 +304,9 @@ export function OcupacionPage() {
   );
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
+    <div className="space-y-3 h-full flex flex-col p-3">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Calendario de Ocupación</h1>
         </div>
@@ -341,7 +341,7 @@ export function OcupacionPage() {
       {viewMode === 'timeline' && (
         <div
           ref={scrollContainerRef}
-          className="flex-1 min-h-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-auto relative"
+          className="flex-1 min-h-0 bg-white overflow-auto relative"
         >
           {loading ? (
             <div className="flex items-center justify-center h-60">

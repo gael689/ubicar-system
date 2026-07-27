@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Plus, AlertTriangle, CheckCircle2, Clock, RefreshCw, ChevronDown } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { Plus, AlertTriangle, CheckCircle2, RefreshCw, ChevronDown } from 'lucide-react';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { useEcheqs, useCrearEcheq, useActualizarEcheq } from '@/hooks/useEcheqs';
+import { useClientes } from '@/hooks/useClientes';
 import { formatCurrency, formatDate, extractError } from '@/lib/utils';
 import { ESTADO_ECHEQ_LABEL, ESTADO_ECHEQ_COLOR } from '@/lib/constants';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
@@ -28,6 +29,7 @@ const schema = z.object({
   contraparte: z.string().min(1, 'Requerido'),
   banco: z.string().min(1, 'Requerido'),
   numero_cheque: z.string().min(1, 'Requerido'),
+  cliente_id: z.coerce.number().optional().nullable(),
   alquiler_id: z.coerce.number().optional().nullable(),
   notas: z.string().optional(),
 });
@@ -38,6 +40,7 @@ function EcheqCard({ e, onEstado }: { e: Echeq; onEstado: (echeq: Echeq, estado:
   const transiciones = ESTADOS_TRANSICION[e.estado] ?? [];
 
   const diasParaCobro = (() => {
+    if (!e.fecha_cobro) return null;
     const hoy = new Date().toISOString().slice(0, 10);
     if (e.fecha_cobro < hoy) return -1;
     const diff = Math.round((new Date(e.fecha_cobro).getTime() - new Date(hoy).getTime()) / 86400000);
@@ -56,9 +59,16 @@ function EcheqCard({ e, onEstado }: { e: Echeq; onEstado: (echeq: Echeq, estado:
             <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${e.tipo === 'recibido' ? 'bg-success/10 text-success border-success/30' : 'bg-danger/10 text-danger border-danger/30'}`}>
               {e.tipo === 'recibido' ? '← Recibido' : '→ Emitido'}
             </span>
+            {!e.datos_completos && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-warning text-white font-semibold">
+                Pendiente de completar
+              </span>
+            )}
           </div>
-          <p className="text-sm text-foreground font-medium mt-1">{e.contraparte}</p>
-          <p className="text-xs text-muted-foreground">{e.banco} · #{e.numero_cheque}</p>
+          <p className="text-sm text-foreground font-medium mt-1">
+            {e.cliente_nombre ?? e.contraparte}
+          </p>
+          <p className="text-xs text-muted-foreground">{e.banco ?? 'Sin banco'} · #{e.numero_cheque ?? '—'}</p>
         </div>
 
         {transiciones.length > 0 && (
@@ -91,12 +101,16 @@ function EcheqCard({ e, onEstado }: { e: Echeq; onEstado: (echeq: Echeq, estado:
 
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span>Emisión: {formatDate(e.fecha_emision)}</span>
-        <span className={diasParaCobro < 0 ? 'text-danger font-medium' : diasParaCobro <= 7 ? 'text-warning font-medium' : ''}>
-          Cobro: {formatDate(e.fecha_cobro)}
-          {diasParaCobro === 0 && ' (hoy)'}
-          {diasParaCobro > 0 && diasParaCobro <= 7 && ` (en ${diasParaCobro}d)`}
-          {diasParaCobro < 0 && e.estado === 'en_cartera' && ' ⚠ vencido'}
-        </span>
+        {e.fecha_cobro && diasParaCobro !== null ? (
+          <span className={diasParaCobro < 0 ? 'text-danger font-medium' : diasParaCobro <= 7 ? 'text-warning font-medium' : ''}>
+            Cobro: {formatDate(e.fecha_cobro)}
+            {diasParaCobro === 0 && ' (hoy)'}
+            {diasParaCobro > 0 && diasParaCobro <= 7 && ` (en ${diasParaCobro}d)`}
+            {diasParaCobro < 0 && e.estado === 'en_cartera' && ' ⚠ vencido'}
+          </span>
+        ) : (
+          <span className="italic">Sin fecha de cobro todavía</span>
+        )}
         {e.alquiler_id && <span>Alq. #{e.alquiler_id}</span>}
       </div>
 
@@ -118,18 +132,21 @@ export function EcheqsPage() {
   const crear = useCrearEcheq();
   const actualizar = useActualizarEcheq();
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       tipo: 'recibido',
       fecha_emision: new Date().toISOString().slice(0, 10),
     },
   });
+  const tipoForm = useWatch({ control, name: 'tipo' });
+  const { data: clientesData } = useClientes({ page_size: 200 });
 
   async function onSubmit(data: FormData) {
     try {
       await crear.mutateAsync({
         ...data,
+        cliente_id: data.tipo === 'recibido' ? (data.cliente_id || null) : null,
         alquiler_id: data.alquiler_id || null,
         notas: data.notas || null,
       });
@@ -166,7 +183,7 @@ export function EcheqsPage() {
   }
 
   const proximos = echeqs.filter(e => {
-    if (!['en_cartera', 'depositado', 'pendiente'].includes(e.estado)) return false;
+    if (!e.fecha_cobro || !['en_cartera', 'depositado', 'pendiente'].includes(e.estado)) return false;
     const hoy = new Date().toISOString().slice(0, 10);
     const en7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     return e.fecha_cobro <= en7 && e.fecha_cobro >= hoy;
@@ -253,6 +270,20 @@ export function EcheqsPage() {
                   className="w-full mt-0.5 px-2.5 py-1.5 border border-border rounded-lg text-sm bg-background" />
                 {errors.contraparte && <p className="text-xs text-danger">{errors.contraparte.message}</p>}
               </div>
+              {tipoForm === 'recibido' && (
+                <div>
+                  <label className="text-xs text-muted-foreground">Cliente (opcional)</label>
+                  <select {...register('cliente_id')} className="w-full mt-0.5 px-2.5 py-1.5 border border-border rounded-lg text-sm bg-background">
+                    <option value="">Sin vincular a un cliente</option>
+                    {(clientesData?.data ?? []).filter(c => c.activo).map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre_completo}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Vinculado, este echeq genera el crédito en la cuenta corriente del cliente y aparece en su ficha.
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="text-xs text-muted-foreground">Banco</label>
                 <input {...register('banco')} placeholder="Banco Galicia"
