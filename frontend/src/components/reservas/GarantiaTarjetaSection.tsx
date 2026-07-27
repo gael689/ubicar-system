@@ -141,7 +141,7 @@ export function GarantiaTarjetaSection({ clienteId, clienteNombre }: Props) {
         )}
 
         {/* Preview tarjeta registrada */}
-        <div className="rounded-xl bg-gradient-to-br from-indigo-600/80 to-blue-700/80 border border-indigo-500/30 p-4 text-white">
+        <div className="rounded-xl bg-gradient-to-br from-primary/80 to-blue-700/80 border border-primary/30 p-4 text-white">
           <div className="flex justify-between items-start mb-3">
             <span className="text-[10px] opacity-60 uppercase tracking-widest">Tarjeta registrada</span>
             <CreditCard className="h-5 w-5 opacity-70" />
@@ -225,7 +225,7 @@ export function GarantiaTarjetaSection({ clienteId, clienteNombre }: Props) {
         <button
           type="button"
           onClick={() => setShowRegistro(v => !v)}
-          className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-medium"
+          className="flex items-center gap-2 text-xs text-primary/60 hover:text-primary/35 transition-colors font-medium"
         >
           {showRegistro ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           {showRegistro ? 'Cerrar' : 'Registrar tarjeta ahora'}
@@ -241,7 +241,7 @@ export function GarantiaTarjetaSection({ clienteId, clienteNombre }: Props) {
               onClick={() => setModoRegistro('datos')}
               className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
                 modoRegistro === 'datos'
-                  ? 'bg-indigo-600 text-white'
+                  ? 'bg-primary text-white'
                   : 'text-slate-400 hover:text-slate-300'
               }`}
             >
@@ -252,7 +252,7 @@ export function GarantiaTarjetaSection({ clienteId, clienteNombre }: Props) {
               onClick={() => setModoRegistro('foto')}
               className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
                 modoRegistro === 'foto'
-                  ? 'bg-indigo-600 text-white'
+                  ? 'bg-primary text-white'
                   : 'text-slate-400 hover:text-slate-300'
               }`}
             >
@@ -277,7 +277,7 @@ export function GarantiaTarjetaSection({ clienteId, clienteNombre }: Props) {
                 Subí una foto de la tarjeta del cliente. Se guarda como documento en su perfil.
               </p>
               <div
-                className="border-2 border-dashed border-white/20 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-500/50 transition-colors"
+                className="border-2 border-dashed border-white/20 rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
                 onClick={() => fileRef.current?.click()}
               >
                 {foto ? (
@@ -305,7 +305,7 @@ export function GarantiaTarjetaSection({ clienteId, clienteNombre }: Props) {
                 <button
                   type="submit"
                   disabled={subiendoFoto}
-                  className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="w-full py-2 rounded-xl bg-primary hover:bg-primary text-white text-xs font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {subiendoFoto && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   {subiendoFoto ? 'Subiendo...' : 'Guardar foto en perfil'}
@@ -334,7 +334,7 @@ interface MiniCardFormProps {
 }
 
 function MiniCardForm({ form, setForm, onSubmit, guardando, soloReferencia = false }: MiniCardFormProps) {
-  const inputCls = 'w-full px-2.5 py-1.5 rounded-lg bg-slate-700 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500';
+  const inputCls = 'w-full px-2.5 py-1.5 rounded-lg bg-slate-700 border border-white/10 text-white text-xs focus:outline-none focus:border-primary';
   return (
     <div className="space-y-2.5">
       <div className="grid grid-cols-2 gap-2">
@@ -396,7 +396,7 @@ function MiniCardForm({ form, setForm, onSubmit, guardando, soloReferencia = fal
           type="submit"
           onClick={onSubmit}
           disabled={guardando || !form.nombre_completo || !form.nro_tarjeta}
-          className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+          className="w-full py-2 rounded-xl bg-primary hover:bg-primary text-white text-xs font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {guardando && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {guardando ? 'Guardando...' : '💾 Guardar tarjeta en perfil del cliente'}

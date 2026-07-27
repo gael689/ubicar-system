@@ -125,14 +125,14 @@ export function ReservasList() {
               <button
                 onClick={() => setDensidad('comoda')}
                 title="Densidad cómoda"
-                className={cn('p-1.5 rounded-md transition-colors', !compacta ? 'bg-indigo-100 text-indigo-800' : 'text-slate-400 hover:text-slate-600')}
+                className={cn('p-1.5 rounded-md transition-colors', !compacta ? 'bg-primary/15 text-primary' : 'text-slate-400 hover:text-slate-600')}
               >
                 <Rows2 className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setDensidad('compacta')}
                 title="Densidad compacta"
-                className={cn('p-1.5 rounded-md transition-colors', compacta ? 'bg-indigo-100 text-indigo-800' : 'text-slate-400 hover:text-slate-600')}
+                className={cn('p-1.5 rounded-md transition-colors', compacta ? 'bg-primary/15 text-primary' : 'text-slate-400 hover:text-slate-600')}
               >
                 <Rows3 className="w-4 h-4" />
               </button>
@@ -141,13 +141,13 @@ export function ReservasList() {
               onClick={() => setFiltersOpen(v => !v)}
               className={cn(
                 'px-3 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center gap-2',
-                filtersOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50',
+                filtersOpen ? 'bg-primary/10 border-primary/25 text-primary' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50',
               )}
             >
               <SlidersHorizontal className="w-4 h-4" />
               Filtros
               {activeFiltersCount > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[10px] font-bold">
                   {activeFiltersCount}
                 </span>
               )}
@@ -155,7 +155,7 @@ export function ReservasList() {
             </button>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
+              className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
             >
               <Plus className="w-4 h-4" />
               Nueva Reserva
@@ -174,7 +174,7 @@ export function ReservasList() {
                   placeholder="Buscar por nombre o DNI/CUIT del cliente..."
                   value={search}
                   onChange={e => { setSearch(e.target.value); setPage(1); }}
-                  className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/35"
                 />
                 {search && (
                   <button onClick={() => { setSearch(''); setPage(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -207,7 +207,7 @@ export function ReservasList() {
                   onClick={() => { setEstado(e.value); setPage(1); }}
                   className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${
                     estado === e.value
-                      ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                      ? 'bg-primary/15 text-primary border-primary/25'
                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
@@ -261,7 +261,7 @@ export function ReservasList() {
       <div className="rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <div className="flex items-center justify-center h-40">
-            <div className="animate-spin w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full" />
+            <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
           </div>
         ) : reservas.length === 0 ? (
           <div className="text-center py-16 text-slate-500">

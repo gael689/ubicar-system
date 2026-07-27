@@ -48,7 +48,7 @@ function AsyncCheckoutModal({
   if (isLoading) return (
     <div className="fixed inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-50">
       <div className="bg-white p-6 rounded-xl shadow-xl flex items-center gap-3 text-slate-700">
-        <Clock className="w-5 h-5 animate-spin text-indigo-600" />
+        <Clock className="w-5 h-5 animate-spin text-primary" />
         <span className="font-medium text-sm">Cargando reserva...</span>
       </div>
     </div>
@@ -278,7 +278,7 @@ export function OcupacionPage() {
 
       <button
         onClick={goToday}
-        className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg border border-slate-200 bg-white shadow-sm transition-colors"
+        className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-primary hover:bg-primary/10 rounded-lg border border-slate-200 bg-white shadow-sm transition-colors"
       >
         Hoy
       </button>
@@ -287,14 +287,14 @@ export function OcupacionPage() {
       <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
         <button
           onClick={() => setViewMode('timeline')}
-          className={`p-2 transition-colors ${viewMode === 'timeline' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`p-2 transition-colors ${viewMode === 'timeline' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
           title="Vista timeline"
         >
           <LayoutList className="w-4 h-4" />
         </button>
         <button
           onClick={() => setViewMode('agenda')}
-          className={`p-2 transition-colors ${viewMode === 'agenda' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`p-2 transition-colors ${viewMode === 'agenda' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
           title="Vista agenda (mobile)"
         >
           <Calendar className="w-4 h-4" />
@@ -314,7 +314,7 @@ export function OcupacionPage() {
           {renderControls()}
           <button
             onClick={() => setShowReservaModal(true)}
-            className="px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors flex items-center gap-2"
+            className="px-4 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors flex items-center gap-2"
           >
             <Plus className="w-4 h-4" /> Nueva Reserva
           </button>
@@ -345,7 +345,7 @@ export function OcupacionPage() {
         >
           {loading ? (
             <div className="flex items-center justify-center h-60">
-              <div className="animate-spin w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full" />
+              <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
             </div>
           ) : (
             <table className="min-w-full text-sm table-fixed border-collapse">
@@ -368,12 +368,12 @@ export function OcupacionPage() {
                       <th
                         key={i}
                         className={`py-2 text-center border-r border-slate-200 sticky top-0 z-40 ${
-                          today ? 'bg-indigo-50/90 text-indigo-700' :
+                          today ? 'bg-primary/10/90 text-primary/90' :
                           weekend ? 'bg-slate-100/90 text-slate-600' : 'bg-slate-50/90 text-slate-600'
                         }`}
                         style={{ minWidth: '180px', width: '180px' }}
                       >
-                        <div className={`font-bold text-[13px] ${today ? 'text-indigo-700' : 'text-slate-800'}`}>
+                        <div className={`font-bold text-[13px] ${today ? 'text-primary/90' : 'text-slate-800'}`}>
                           {day.getDate()}/{day.getMonth() + 1}/{day.getFullYear()}
                         </div>
                         <div className="text-[10px] uppercase tracking-wider font-bold opacity-80 mt-0.5">
@@ -422,7 +422,7 @@ export function OcupacionPage() {
                           });
                           const today = isToday(day);
                           const weekend = day.getDay() === 0 || day.getDay() === 6;
-                          const bgClass = today ? 'bg-indigo-50/30' : weekend ? 'bg-slate-50/50' : 'bg-white';
+                          const bgClass = today ? 'bg-primary/10/30' : weekend ? 'bg-slate-50/50' : 'bg-white';
 
                           if (eventsToRender.length > 0) {
                             eventsToRender.forEach(e => processedEvents.add(e.id));
@@ -434,7 +434,7 @@ export function OcupacionPage() {
                                 onClick={() => openReserva(vehiculo.id, formatDate(day))}
                               >
                                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity z-0">
-                                  <Plus className="w-5 h-5 text-indigo-300" />
+                                  <Plus className="w-5 h-5 text-primary/35" />
                                 </div>
                                 {eventsToRender.map(ev => {
                                   const { leftPercent, widthPercent } = getEventSpan(ev, day, vehiculoEvents);
@@ -495,7 +495,7 @@ export function OcupacionPage() {
                               onClick={() => openReserva(vehiculo.id, formatDate(day))}
                             >
                               <div className="w-full h-full flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity">
-                                <Plus className="w-5 h-5 text-indigo-300" />
+                                <Plus className="w-5 h-5 text-primary/35" />
                               </div>
                             </td>
                           );
@@ -553,7 +553,7 @@ export function OcupacionPage() {
                   setActiveCheckout({ id: checkoutPrompt.id, defaultTime: checkoutPrompt.hora.slice(0, 5), defaultDate: checkoutPrompt.fecha });
                   setCheckoutPrompt(null);
                 }}
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors"
+                className="w-full py-2.5 bg-primary hover:bg-primary/90 text-white rounded-lg font-semibold transition-colors"
               >
                 Sí, en tiempo y forma
               </button>
@@ -716,9 +716,9 @@ function AgendaView({
                 onClick={() => onDateChange(day)}
                 className={`relative flex flex-col items-center justify-center h-12 transition-colors
                   ${isSelected
-                    ? 'bg-indigo-600 text-white rounded-xl mx-1 my-0.5 font-bold shadow-md'
+                    ? 'bg-primary text-white rounded-xl mx-1 my-0.5 font-bold shadow-md'
                     : isT
-                    ? 'text-indigo-600 font-bold'
+                    ? 'text-primary font-bold'
                     : 'text-slate-700 hover:bg-slate-50'
                   }`}
               >
@@ -752,7 +752,7 @@ function AgendaView({
           </h3>
           <button
             onClick={() => onNuevaReserva(0, formatDate(agendaDate))}
-            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+            className="flex items-center gap-1 text-xs text-primary hover:text-primary font-medium"
           >
             <Plus className="w-3.5 h-3.5" /> Nueva reserva
           </button>
@@ -760,7 +760,7 @@ function AgendaView({
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <div className="animate-spin w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full" />
+            <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
           </div>
         ) : selectedEvents.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-slate-400 gap-2">
@@ -778,7 +778,7 @@ function AgendaView({
               <div
                 key={ev.id}
                 onClick={() => onReservaClick(ev.id)}
-                className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex gap-3 items-start relative cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all"
+                className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex gap-3 items-start relative cursor-pointer hover:border-primary/35 hover:shadow-md transition-all"
               >
                 {isOverdue && (
                   <button 

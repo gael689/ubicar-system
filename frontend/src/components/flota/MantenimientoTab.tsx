@@ -51,7 +51,7 @@ export function MantenimientoTab({ vehiculoId, kmActual, kmProximoService, kmEnt
   }
 
   function inputCls(extra = '') {
-    return `w-full px-3 py-2 rounded-xl bg-slate-800 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500 ${extra}`;
+    return `w-full px-3 py-2 rounded-xl bg-slate-800 border border-white/10 text-white text-sm focus:outline-none focus:border-primary ${extra}`;
   }
 
   return (
@@ -63,7 +63,7 @@ export function MantenimientoTab({ vehiculoId, kmActual, kmProximoService, kmEnt
       <div className="flex justify-end">
         <button
           onClick={() => setShowForm(v => !v)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary text-white text-sm font-medium transition-colors"
         >
           <Plus className="h-4 w-4" />
           {showForm ? 'Cancelar' : 'Registrar servicio'}
@@ -86,7 +86,7 @@ export function MantenimientoTab({ vehiculoId, kmActual, kmProximoService, kmEnt
                   onClick={() => setForm(f => ({ ...f, tipo: value }))}
                   className={`py-2 px-2 rounded-xl border text-xs font-medium transition-all flex items-center gap-1.5 ${
                     form.tipo === value
-                      ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                      ? 'bg-primary/20 border-primary/40 text-primary/35'
                       : 'bg-slate-800 border-white/10 text-slate-400 hover:border-white/20'
                   }`}
                 >
@@ -144,7 +144,7 @@ export function MantenimientoTab({ vehiculoId, kmActual, kmProximoService, kmEnt
               Cancelar
             </button>
             <button type="submit" disabled={crear.isPending}
-              className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2">
+              className="px-5 py-2 rounded-xl bg-primary hover:bg-primary text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2">
               {crear.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Guardar
             </button>

@@ -141,7 +141,7 @@ export function ExtenderModal({
                 value={nuevaFecha}
                 min={fechaFinActual}
                 onChange={e => setNuevaFecha(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-white/10 text-white text-sm focus:outline-none focus:border-primary"
                 required
               />
             </div>
@@ -151,7 +151,7 @@ export function ExtenderModal({
                 type="time"
                 value={nuevaHora}
                 onChange={e => setNuevaHora(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-white/10 text-white text-sm focus:outline-none focus:border-primary"
                 required
               />
             </div>
@@ -175,7 +175,7 @@ export function ExtenderModal({
           <button
             onClick={handleSubmit as any}
             disabled={loading}
-            className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2"
+            className="px-5 py-2 rounded-xl bg-primary hover:bg-primary text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2"
           >
             {loading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
             📅 Confirmar extensión

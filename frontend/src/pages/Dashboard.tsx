@@ -3,18 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { OcupacionPage } from './ocupacion/OcupacionPage';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { formatCurrency } from '@/lib/utils';
-import { CalendarIcon, BanknotesIcon, KeyIcon, ArrowDownOnSquareStackIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
+import { Calendar, Banknote, Key, ArrowDownToLine, DollarSign } from 'lucide-react';
 
 const ICONS = {
-  nueva_reserva: CalendarIcon,
-  check_out: KeyIcon,
-  devolucion: ArrowDownOnSquareStackIcon,
-  pago: BanknotesIcon,
-  gasto: CurrencyDollarIcon,
+  nueva_reserva: Calendar,
+  check_out: Key,
+  devolucion: ArrowDownToLine,
+  pago: Banknote,
+  gasto: DollarSign,
 };
 
 const COLORS = {
-  nueva_reserva: 'text-indigo-600 bg-indigo-100',
+  nueva_reserva: 'text-primary bg-primary/15',
   check_out: 'text-emerald-600 bg-emerald-100',
   devolucion: 'text-blue-600 bg-blue-100',
   pago: 'text-green-600 bg-green-100',
