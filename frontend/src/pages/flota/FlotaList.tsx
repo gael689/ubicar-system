@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Car, Plus, Tags } from 'lucide-react';
+import { toast } from 'sonner';
+import { codigoDeError, extractError } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -16,6 +18,7 @@ import { VehiculoFormDialog } from '@/components/flota/VehiculoFormDialog';
 
 import {
   useDeactivateVehiculo,
+  useInactivarVehiculo,
   useReactivateVehiculo,
   useVehiculos,
 } from '@/hooks/useVehiculos';
@@ -53,15 +56,31 @@ export function FlotaList() {
   const [deactivating, setDeactivating] = useState<Vehiculo | null>(null);
 
   const deactivate = useDeactivateVehiculo();
+  const inactivar = useInactivarVehiculo();
   const reactivate = useReactivateVehiculo();
+  // Mensaje del 409 cuando el auto tiene reservas sin cerrar. Mientras está
+  // seteado, el diálogo pide una segunda confirmación en vez de repetir la
+  // misma acción que ya falló.
+  const [conflicto, setConflicto] = useState<string | null>(null);
 
   const handleConfirmDeactivate = async () => {
     if (!deactivating) return;
     try {
-      await deactivate.mutateAsync(deactivating.id);
+      if (conflicto) {
+        // Segunda vuelta: la persona ya leyó qué reservas quedan afectadas.
+        await inactivar.mutateAsync(deactivating.id);
+      } else {
+        await deactivate.mutateAsync(deactivating.id);
+      }
       setDeactivating(null);
-    } catch {
-      // toast en el hook
+      setConflicto(null);
+    } catch (err) {
+      if (codigoDeError(err) === 'vehiculo_con_reservas') {
+        setConflicto(extractError(err));
+      } else {
+        toast.error(extractError(err));
+        setDeactivating(null);
+      }
     }
   };
 
@@ -143,16 +162,18 @@ export function FlotaList() {
 
       <ConfirmDialog
         open={!!deactivating}
-        onOpenChange={(open) => !open && setDeactivating(null)}
-        title="Dar de baja vehículo"
+        onOpenChange={(open) => { if (!open) { setDeactivating(null); setConflicto(null); } }}
+        title={conflicto ? 'El vehículo tiene reservas sin cerrar' : 'Dar de baja vehículo'}
         description={
-          deactivating
-            ? `Esto marca a ${deactivating.patente} como inactivo. No se elimina del sistema y podés reactivarlo cuando quieras.`
-            : ''
+          conflicto
+            ? `${conflicto} Si lo das de baja igual, esas reservas quedan sobre un vehículo inactivo y hay que reasignarlas a mano.`
+            : deactivating
+              ? `Esto marca a ${deactivating.patente} como inactivo. No se elimina del sistema y podés reactivarlo cuando quieras.`
+              : ''
         }
-        confirmLabel="Dar de baja"
+        confirmLabel={conflicto ? 'Darlo de baja igual' : 'Dar de baja'}
         destructive
-        loading={deactivate.isPending}
+        loading={deactivate.isPending || inactivar.isPending}
         onConfirm={handleConfirmDeactivate}
       />
     </div>

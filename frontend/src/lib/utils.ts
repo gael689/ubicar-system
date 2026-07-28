@@ -39,10 +39,36 @@ export function calcularDias(fechaInicio: string, fechaFin: string): number {
  * Extrae un mensaje legible de un error de axios.
  * El backend devuelve siempre { detail, success: false } para errores de negocio.
  */
+/**
+ * Los conflictos del backend vienen como `codigo|mensaje|extra` — el código lo
+ * usa la UI para decidir qué ofrecer, el extra lleva un id o un contador.
+ * Nada de eso es para leer: mostrarlo crudo le pone
+ * "vehiculo_con_reservas|..." adelante a la frase.
+ */
+function soloElMensaje(detail: string): string {
+  const partes = detail.split('|');
+  // Un código no tiene espacios. Si el primer tramo los tiene, el `|` era
+  // parte del texto y no un separador.
+  if (partes.length >= 2 && partes[0].length > 0 && !partes[0].includes(' ')) {
+    return partes[1];
+  }
+  return detail;
+}
+
+/** El código de un conflicto (`vehiculo_con_reservas`, `solapamiento`…), para
+ *  que la UI decida qué ofrecer. `null` si el error no trae uno. */
+export function codigoDeError(err: unknown): string | null {
+  if (!axios.isAxiosError(err)) return null;
+  const detail = err.response?.data?.detail;
+  if (typeof detail !== 'string') return null;
+  const codigo = detail.split('|')[0];
+  return codigo && !codigo.includes(' ') && detail.includes('|') ? codigo : null;
+}
+
 export function extractError(err: unknown, fallback = 'Algo salió mal'): string {
   if (axios.isAxiosError(err)) {
     const detail = err.response?.data?.detail;
-    if (typeof detail === 'string') return detail;
+    if (typeof detail === 'string') return soloElMensaje(detail);
     if (Array.isArray(detail) && detail[0]?.msg) {
       return detail.map((d: { msg: string }) => d.msg).join(', ');
     }

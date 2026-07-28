@@ -99,7 +99,14 @@ def deactivate_vehiculo(
     service: VehiculoService = Depends(_service),
     _: Usuario = Depends(get_current_user),
 ):
-    """Baja lógica. NUNCA elimina el registro. Reversible con POST /vehiculos/{id}/reactivar."""
+    """
+    Baja lógica. NUNCA elimina el registro. Reversible con
+    `POST /vehiculos/{id}/reactivar`.
+
+    Devuelve 409 si el vehículo tiene reservas sin cerrar. Para darlo de baja
+    igual está `PATCH /vehiculos/{id}/inactivar`, que pide confirmación y deja
+    ver antes qué reservas quedan afectadas.
+    """
     vehiculo = service.deactivate(vehiculo_id)
     return ok(service.to_response(vehiculo), "Vehículo dado de baja")
 
@@ -124,6 +131,47 @@ def reactivate_vehiculo(
     return ok(service.to_response(vehiculo), "Vehículo reactivado")
 
 
+def _historial_alquileres(db: Session, vehiculo_id: int) -> list[dict]:
+    """
+    Los alquileres de un vehículo, del más reciente al más viejo.
+
+    Se devuelve plano y resumido a propósito: es una línea de tiempo para
+    leer, no un listado para operar. Quien necesite el detalle entra a la
+    reserva.
+    """
+    from app.models.alquiler import Alquiler
+    from app.models.reserva import Reserva
+
+    filas = (
+        db.query(Alquiler, Reserva)
+        .join(Reserva, Reserva.id == Alquiler.reserva_id)
+        .filter(Reserva.vehiculo_id == vehiculo_id)
+        .order_by(Alquiler.checkout_fecha.desc(), Alquiler.id.desc())
+        .all()
+    )
+    return [
+        {
+            "alquiler_id": a.id,
+            "reserva_id": r.id,
+            "cliente": r.cliente.nombre_completo if r.cliente else None,
+            "checkout_fecha": a.checkout_fecha.isoformat() if a.checkout_fecha else None,
+            "checkin_fecha": a.checkin_fecha.isoformat() if a.checkin_fecha else None,
+            "checkout_km": a.checkout_km,
+            "checkin_km": a.checkin_km,
+            # Cuánto rodó en ese alquiler: es el dato que se busca acá y
+            # calcularlo a mano en el frontend invita a que dos pantallas den
+            # números distintos.
+            "km_recorridos": (
+                a.checkin_km - a.checkout_km
+                if a.checkin_km is not None and a.checkout_km is not None
+                else None
+            ),
+            "en_curso": a.checkin_fecha is None,
+        }
+        for a, r in filas
+    ]
+
+
 @router.get("/{vehiculo_id}/historial")
 def get_historial(
     vehiculo_id: int,
@@ -134,7 +182,11 @@ def get_historial(
 ):
     """
     Historial completo del vehículo (visible incluso si está inactivo).
-    F1: gastos + documentos + tarifas. F3 sumará el array `alquileres`.
+    Gastos, documentos, tarifas y **alquileres**.
+
+    Los alquileres llegaron último y por una razón: es el historial que
+    contesta "¿cuánto trabajó este auto?" cuando hay que decidir si conviene
+    venderlo. Estuvo devolviendo `[]` desde F1.
     """
     # Valida que el vehículo exista (404 si no).
     service.get(vehiculo_id)
@@ -152,7 +204,7 @@ def get_historial(
         gastos=[GastoResponse.model_validate(g) for g in gastos],
         documentos=[documento_service.to_response(d) for d in documentos],
         tarifas=[TarifaResponse.model_validate(t) for t in tarifas],
-        alquileres=[],
+        alquileres=_historial_alquileres(db, vehiculo_id),
     )
     return ok(payload)
 
@@ -197,7 +249,10 @@ def inactivar_vehiculo(
             status_code=400,
             detail="Se requiere confirmacion=true para inactivar el vehículo",
         )
-    vehiculo = service.deactivate(vehiculo_id)
+    # `forzar=True`: acá la persona ya vio las reservas afectadas
+    # (`GET /vehiculos/{id}/reservas-afectadas`) y confirmó igual. Este es el
+    # camino para hacerlo a sabiendas; el DELETE es el que frena.
+    vehiculo = service.deactivate(vehiculo_id, forzar=True)
     return ok(service.to_response(vehiculo), "Vehículo inactivado")
 
 

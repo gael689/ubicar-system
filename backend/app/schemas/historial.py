@@ -16,4 +16,6 @@ class HistorialVehiculoResponse(BaseModel):
     gastos: list[GastoResponse]
     documentos: list[DocumentoResponse]
     tarifas: list[TarifaResponse]
-    alquileres: list[dict] = []  # placeholder hasta F3
+    # Resumen por alquiler: fechas, cliente y km recorridos. Plano a
+    # propósito — es una línea de tiempo para leer, no para operar.
+    alquileres: list[dict] = []

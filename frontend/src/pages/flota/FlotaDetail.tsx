@@ -23,13 +23,15 @@ import { BloqueosTab } from '@/components/flota/BloqueosTab';
 
 import {
   useDeactivateVehiculo,
+  useInactivarVehiculo,
   useReactivateVehiculo,
   useUploadFoto,
   useVehiculo,
 } from '@/hooks/useVehiculos';
 import { resolveAssetUrl } from '@/lib/api';
 import { ESTADO_VEHICULO_COLOR, ESTADO_VEHICULO_LABEL, TIPO_VEHICULO_LABEL } from '@/lib/constants';
-import { cn, formatDate, formatNumber } from '@/lib/utils';
+import { toast } from 'sonner';
+import { cn, codigoDeError, extractError, formatDate, formatNumber } from '@/lib/utils';
 
 export function FlotaDetail() {
   const { id } = useParams<{ id: string }>();
@@ -40,8 +42,10 @@ export function FlotaDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [conflicto, setConflicto] = useState<string | null>(null);
 
   const deactivate = useDeactivateVehiculo();
+  const inactivar = useInactivarVehiculo();
   const reactivate = useReactivateVehiculo();
   const uploadFoto = useUploadFoto();
 
@@ -262,16 +266,32 @@ export function FlotaDetail() {
 
       <ConfirmDialog
         open={deactivateOpen}
-        onOpenChange={setDeactivateOpen}
-        title="Dar de baja vehículo"
-        description={`Esto marca a ${vehiculo.patente} como inactivo. No se elimina del sistema y podés reactivarlo cuando quieras.`}
-        confirmLabel="Dar de baja"
+        onOpenChange={(open) => { setDeactivateOpen(open); if (!open) setConflicto(null); }}
+        title={conflicto ? 'El vehículo tiene reservas sin cerrar' : 'Dar de baja vehículo'}
+        description={
+          conflicto
+            ? `${conflicto} Si lo das de baja igual, esas reservas quedan sobre un vehículo inactivo y hay que reasignarlas a mano.`
+            : `Esto marca a ${vehiculo.patente} como inactivo. No se elimina del sistema y podés reactivarlo cuando quieras.`
+        }
+        confirmLabel={conflicto ? 'Darlo de baja igual' : 'Dar de baja'}
         destructive
-        loading={deactivate.isPending}
+        loading={deactivate.isPending || inactivar.isPending}
         onConfirm={async () => {
-          await deactivate.mutateAsync(vehiculo.id);
-          setDeactivateOpen(false);
-          navigate('/flota');
+          try {
+            // Segunda vuelta: la persona ya leyó qué reservas quedan afectadas.
+            if (conflicto) await inactivar.mutateAsync(vehiculo.id);
+            else await deactivate.mutateAsync(vehiculo.id);
+            setDeactivateOpen(false);
+            setConflicto(null);
+            navigate('/flota');
+          } catch (err) {
+            if (codigoDeError(err) === 'vehiculo_con_reservas') {
+              setConflicto(extractError(err));
+            } else {
+              toast.error(extractError(err));
+              setDeactivateOpen(false);
+            }
+          }
         }}
       />
     </div>

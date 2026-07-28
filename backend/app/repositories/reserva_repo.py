@@ -40,6 +40,7 @@ class ReservaRepo:
         fecha: date | None = None,
         origen: str | None = None,
         categoria_id: int | None = None,
+        contrato: str | None = None,
         fecha_desde: date | None = None,
         fecha_hasta: date | None = None,
         page: int = 1,
@@ -62,6 +63,36 @@ class ReservaRepo:
             query = query.filter(Reserva.origen.in_([o.strip() for o in origen.split(",") if o.strip()]))
         if categoria_id:
             query = query.filter(Reserva.categoria_id == categoria_id)
+        if contrato:
+            # `contrato_estado` es una propiedad derivada, no una columna: se
+            # traduce a un EXISTS sobre contratos para no traer todas las
+            # reservas a Python y filtrarlas después (con la paginación eso
+            # daría páginas de tamaños distintos).
+            from sqlalchemy import exists
+            from app.models.contrato import Contrato
+
+            tiene = exists().where(
+                Contrato.reserva_id == Reserva.id,
+                Contrato.anulado.is_(False),
+                Contrato.activo.is_(True),
+            )
+            if contrato == "sin_emitir":
+                # Sólo las que de verdad necesitan uno: una cancelada no.
+                query = query.filter(
+                    ~tiene,
+                    Reserva.estado.in_(["pendiente", "confirmada", "activa", "vencida", "finalizada"]),
+                )
+            elif contrato == "emitido":
+                query = query.filter(tiene)
+            elif contrato == "sin_firmar":
+                query = query.filter(
+                    exists().where(
+                        Contrato.reserva_id == Reserva.id,
+                        Contrato.anulado.is_(False),
+                        Contrato.activo.is_(True),
+                        Contrato.firmado.is_(False),
+                    )
+                )
         if fecha_desde:
             query = query.filter(Reserva.fecha_fin >= fecha_desde)
         if fecha_hasta:

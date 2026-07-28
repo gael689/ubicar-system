@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import type {
   Reserva,
@@ -33,8 +34,26 @@ interface ListReservasParams {
   cliente_id?: number;
   q?: string;
   fecha?: string;
+  origen?: string;
+  categoria_id?: number;
+  /** sin_emitir | emitido | sin_firmar */
+  contrato?: string;
+  fecha_desde?: string;
+  fecha_hasta?: string;
   page?: number;
   page_size?: number;
+}
+
+/** Versión con React Query, para pantallas que sólo leen. */
+export function useListaReservas(params: ListReservasParams = {}) {
+  return useQuery({
+    queryKey: ['reservas', 'lista', params],
+    queryFn: async () => {
+      const { data } = await api.get<PaginatedResponse<Reserva>>('/reservas', { params });
+      return data;
+    },
+    placeholderData: (prev) => prev,
+  });
 }
 
 interface CreateReservaResult {

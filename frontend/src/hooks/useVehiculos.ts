@@ -92,6 +92,13 @@ export function useUpdateVehiculo() {
   });
 }
 
+/**
+ * Baja lógica. El backend devuelve 409 si el vehículo tiene reservas sin
+ * cerrar — antes lo daba de baja igual, incluso con el auto circulando.
+ *
+ * El error no se toastea acá: quien llama necesita distinguir "no se pudo" de
+ * "hay reservas y hay que confirmar", que son dos cosas distintas.
+ */
 export function useDeactivateVehiculo() {
   const qc = useQueryClient();
   return useMutation({
@@ -103,7 +110,42 @@ export function useDeactivateVehiculo() {
       qc.invalidateQueries({ queryKey: KEYS.all });
       toast.success(`${vehiculo.patente} dado de baja. Sigue visible en "Mostrar inactivos".`);
     },
+  });
+}
+
+/**
+ * La baja a sabiendas: se usa después de ver qué reservas quedan afectadas.
+ * Es el camino explícito para hacer lo que el DELETE frena.
+ */
+export function useInactivarVehiculo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { data } = await api.patch<ApiResponse<Vehiculo>>(
+        `/vehiculos/${id}/inactivar`, { confirmacion: true },
+      );
+      return data.data;
+    },
+    onSuccess: (vehiculo) => {
+      qc.invalidateQueries({ queryKey: KEYS.all });
+      qc.invalidateQueries({ queryKey: ['reservas'] });
+      toast.success(`${vehiculo.patente} dado de baja. Revisá las reservas que quedaron afectadas.`);
+    },
     onError: (err) => toast.error(extractError(err)),
+  });
+}
+
+/** Las reservas vivas de un vehículo: el dry-run antes de darlo de baja. */
+export function useReservasAfectadas(id: number | undefined, enabled = false) {
+  return useQuery({
+    queryKey: [...KEYS.all, 'reservas-afectadas', id],
+    queryFn: async () => {
+      const { data } = await api.get<ApiResponse<{ reservas_afectadas: unknown[]; total: number }>>(
+        `/vehiculos/${id}/reservas-afectadas`,
+      );
+      return data.data;
+    },
+    enabled: !!id && enabled,
   });
 }
 

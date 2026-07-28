@@ -206,17 +206,29 @@ class Reserva(Base):
         """
         Estado del contrato **de la reserva**, para verlo en el listado.
 
-        `"sin_emitir"` | `"emitido"` (falta la firma) | `"firmado"`.
+        `"no_aplica"` | `"sin_emitir"` | `"emitido"` (falta la firma) |
+        `"firmado"`.
 
-        Se muestra siempre, incluso en una reserva que todavía no se entregó:
-        el contrato ahora se puede emitir apenas se acuerda el alquiler, y sin
-        esta marca no había forma de saber cuáles faltaban hasta el día de la
-        entrega — que es tarde para hacer algo al respecto.
+        Se muestra en el listado incluso antes de entregar: el contrato ahora
+        se puede emitir apenas se acuerda el alquiler, y sin esta marca no
+        había forma de saber cuáles faltaban hasta el día de la entrega — que
+        es tarde para hacer algo al respecto.
+
+        `"no_aplica"` es la contracara: una reserva cancelada, o una solicitud
+        web que todavía no es una venta, **no necesita contrato**. Marcarlas
+        como "sin contrato" llenaría la lista de avisos que nadie puede
+        resolver, y una lista así se deja de mirar entera.
         """
         vigente = next((c for c in self.contratos if not c.anulado and c.activo), None)
-        if vigente is None:
-            return "sin_emitir"
-        return "firmado" if vigente.firmado else "emitido"
+        if vigente is not None:
+            return "firmado" if vigente.firmado else "emitido"
+        # `revision_sin_cupo` entra acá porque todavía no tiene auto asignado:
+        # no hay contrato posible hasta resolverla.
+        if self.estado in (
+            "cancelada", "pendiente_pago", "sin_disponibilidad", "revision_sin_cupo",
+        ):
+            return "no_aplica"
+        return "sin_emitir"
 
     @property
     def alquiler_estado(self) -> str | None:

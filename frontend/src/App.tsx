@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/pages/Dashboard';
-import { PlaceholderPage } from '@/pages/PlaceholderPage';
 import { FlotaList } from '@/pages/flota/FlotaList';
 import { FlotaDetail } from '@/pages/flota/FlotaDetail';
 import { CategoriasPage } from '@/pages/flota/CategoriasPage';
@@ -11,6 +10,7 @@ import { ReservasList } from '@/pages/reservas/ReservasList';
 import { CotizadorPage } from '@/pages/cotizador/CotizadorPage';
 import { MultasPage } from '@/pages/multas/MultasPage';
 import { FinanzasPage } from '@/pages/finanzas/FinanzasPage';
+import { ContratosPage } from '@/pages/contratos/ContratosPage';
 import { ReportesPage } from '@/pages/reportes/ReportesPage';
 import { ConfiguracionPage } from '@/pages/configuracion/ConfiguracionPage';
 import { FechasEspecialesPage } from '@/pages/fechas-especiales/FechasEspecialesPage';
@@ -54,7 +54,7 @@ export default function App() {
           element={<AppLayout title="Clientes"><ClienteDetail /></AppLayout>}
         />
         <Route path="/multas" element={<AppLayout title="Multas"><MultasPage /></AppLayout>} />
-        <Route path="/contratos" element={<AppLayout title="Contratos"><PlaceholderPage title="Contratos Digitales" /></AppLayout>} />
+        <Route path="/contratos" element={<AppLayout title="Contratos"><ContratosPage /></AppLayout>} />
         <Route path="/cotizador" element={<AppLayout title="Cotizador" fullBleed><CotizadorPage /></AppLayout>} />
         <Route path="/finanzas" element={<AppLayout title="Finanzas"><FinanzasPage /></AppLayout>} />
         <Route path="/caja" element={<Navigate to="/finanzas" replace />} />

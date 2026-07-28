@@ -697,7 +697,7 @@ export interface Reserva {
   /** D-34: el auto salió sin contrato firmado y sigue sin firmarse. */
   entregado_sin_contrato?: boolean;
   /** sin_emitir | emitido | firmado — el contrato cuelga de la reserva. */
-  contrato_estado?: 'sin_emitir' | 'emitido' | 'firmado';
+  contrato_estado?: 'no_aplica' | 'sin_emitir' | 'emitido' | 'firmado';
 }
 
 export interface ReservaCreate {

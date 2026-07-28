@@ -97,10 +97,46 @@ class VehiculoService:
         self.db.refresh(vehiculo)
         return vehiculo
 
-    def deactivate(self, vehiculo_id: int) -> Vehiculo:
-        """Baja lógica. NUNCA borra. Idempotente — si ya está inactivo, no falla."""
+    def reservas_que_bloquean(self, vehiculo_id: int) -> list:
+        """
+        Reservas vivas que impiden dar de baja el vehículo sin confirmar.
+
+        No es lo mismo "tiene reservas futuras" que "el auto está afuera": las
+        dos requieren decidir algo, pero la segunda es un problema hoy.
+        """
+        from app.repositories.reserva_repo import ReservaRepo
+
+        return ReservaRepo(self.db).find_activas_para_vehiculo(vehiculo_id)
+
+    def deactivate(self, vehiculo_id: int, forzar: bool = False) -> Vehiculo:
+        """
+        Baja lógica. NUNCA borra. Idempotente — si ya está inactivo, no falla.
+
+        **Se niega si el vehículo tiene reservas vivas**, salvo que le pasen
+        `forzar=True`. Antes no miraba nada: se podía dar de baja un auto que
+        estaba circulando con un cliente, y el sistema no decía una palabra.
+
+        No es un bloqueo duro sino un freno: quien quiera hacerlo igual lo hace
+        desde `/inactivar` con confirmación explícita, que además muestra qué
+        reservas quedan colgadas. El sistema informa, la persona decide — pero
+        para decidir hay que enterarse.
+        """
         vehiculo = self.get(vehiculo_id)
-        # TODO(F3): bloquear si tiene alquileres activos (raise ConflictError).
+
+        if not forzar and vehiculo.activo:
+            afectadas = self.reservas_que_bloquean(vehiculo_id)
+            if afectadas:
+                afuera = sum(1 for r in afectadas if r.estado in ("activa", "vencida"))
+                detalle = (
+                    f"{len(afectadas)} reserva(s) sin cerrar"
+                    + (f", {afuera} con el auto afuera ahora mismo" if afuera else "")
+                )
+                raise ConflictError(
+                    f"vehiculo_con_reservas|El vehículo tiene {detalle}. "
+                    "Revisalas y confirmá la baja desde la ficha del vehículo.|"
+                    f"{len(afectadas)}"
+                )
+
         vehiculo.activo = False
         self.db.commit()
         self.db.refresh(vehiculo)
