@@ -57,8 +57,17 @@ class Contrato(Base):
     )
     prefijo: Mapped[str] = mapped_column(String(5), nullable=False, default="C")
 
-    alquiler_id: Mapped[int] = mapped_column(
-        ForeignKey("alquileres.id"), nullable=False, index=True
+    # El contrato cuelga de la **reserva**, que existe desde que se acuerda el
+    # alquiler. Antes colgaba del alquiler y por eso sólo se podía emitir
+    # después del check-out — el peor momento para leerlo con calma.
+    reserva_id: Mapped[int] = mapped_column(
+        ForeignKey("reservas.id"), nullable=False, index=True
+    )
+    # Se completa al hacer el check-out. Sirve para saber sobre qué operación
+    # real se ejecutó el contrato; hasta entonces es `None` y no significa que
+    # falte nada.
+    alquiler_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alquileres.id"), nullable=True, index=True
     )
     # Con qué versión del clausulado se firmó. Es lo que hace reimprimible un
     # contrato viejo.
@@ -95,7 +104,8 @@ class Contrato(Base):
     link_prellenado: Mapped[str | None] = mapped_column(String(512), nullable=True)
     link_expiracion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    alquiler: Mapped["Alquiler"] = relationship("Alquiler", back_populates="contrato")
+    alquiler: Mapped["Alquiler | None"] = relationship("Alquiler", back_populates="contrato")
+    reserva: Mapped["Reserva"] = relationship("Reserva", back_populates="contratos")
 
     @property
     def numero_formateado(self) -> str:

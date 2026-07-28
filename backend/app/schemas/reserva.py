@@ -216,6 +216,9 @@ class ReservaResponse(BaseModel):
     alquiler_estado: str | None = None
     # D-34: constancia visible de que el auto salió sin contrato firmado.
     entregado_sin_contrato: bool = False
+    # sin_emitir | emitido | firmado — visible en el listado desde que se crea
+    # la reserva, no recién en la entrega.
+    contrato_estado: str = "sin_emitir"
     origen: str = "mostrador"
     web_resuelta_por: int | None = None
     web_resuelta_en: datetime | None = None

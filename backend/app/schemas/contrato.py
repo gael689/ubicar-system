@@ -4,7 +4,7 @@ from pydantic import BaseModel, field_validator
 
 
 class ContratoCreate(BaseModel):
-    alquiler_id: int
+    reserva_id: int
     # El anverso ya corregido por el operador. Si viene None se usa el que
     # arma `preparar()` — pero lo normal es que venga editado.
     snapshot: dict | None = None
@@ -58,7 +58,10 @@ class ContratoResponse(BaseModel):
     numero: int | None = None
     prefijo: str
     numero_formateado: str = "—"
-    alquiler_id: int
+    reserva_id: int
+    # `None` hasta el check-out: el contrato se puede emitir antes de la
+    # entrega, y eso no significa que le falte nada.
+    alquiler_id: int | None = None
     plantilla_id: int | None = None
     snapshot: dict | None = None
     firmado: bool

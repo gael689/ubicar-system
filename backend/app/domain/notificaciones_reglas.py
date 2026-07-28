@@ -1038,11 +1038,17 @@ def contrato_sin_emitir(db: Session, hoy: date) -> list[dict]:
     if not abiertos:
         return []
 
-    con_contrato = {c.alquiler_id for c in db.query(Contrato).filter(Contrato.anulado == False).all()}
+    # Por `reserva_id` y no por `alquiler_id`: el contrato se puede emitir
+    # antes de la entrega, y en ese momento todavía no hay alquiler al que
+    # apuntar. La reserva es el vínculo que existe siempre.
+    con_contrato = {
+        c.reserva_id
+        for c in db.query(Contrato).filter(Contrato.anulado == False).all()
+    }
 
     salida = []
     for a in abiertos:
-        if a.id in con_contrato:
+        if a.reserva_id in con_contrato:
             continue
         dias = (hoy - a.checkout_fecha).days if a.checkout_fecha else 0
         r = a.reserva

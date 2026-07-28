@@ -42,8 +42,10 @@ export function useCrearRecibo() {
 export function useEmitirReciboDePago() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ pagoId, concepto }: { pagoId: number; concepto: string }) =>
-      api.post<{ data: Recibo }>(`/pagos/${pagoId}/recibo`, { concepto }),
+    // `concepto` opcional: sin él, el backend lo arma con los datos del cobro.
+    // Es lo que permite que el botón del listado sea un solo click.
+    mutationFn: ({ pagoId, concepto }: { pagoId: number; concepto?: string }) =>
+      api.post<{ data: Recibo }>(`/pagos/${pagoId}/recibo`, { concepto: concepto ?? null }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
       qc.invalidateQueries({ queryKey: ['pagos'] });

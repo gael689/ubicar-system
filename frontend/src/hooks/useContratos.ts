@@ -8,38 +8,45 @@ const KEY = 'contratos';
  * El anverso precargado y editable. No persiste nada — lo que el operador
  * corrija acá es lo que después se congela en el snapshot del contrato.
  */
-export function usePrepararContrato(alquilerId: number | undefined, enabled = true) {
+export function usePrepararContrato(reservaId: number | undefined, enabled = true) {
   return useQuery({
-    queryKey: [KEY, 'preparar', alquilerId],
+    queryKey: [KEY, 'preparar', reservaId],
     queryFn: async () => {
-      const res = await api.get<{ data: ContratoPreparado }>(`/contratos/preparar/${alquilerId}`);
+      const res = await api.get<{ data: ContratoPreparado }>(`/contratos/preparar/${reservaId}`);
       return res.data.data;
     },
-    enabled: !!alquilerId && enabled,
+    enabled: !!reservaId && enabled,
   });
 }
 
-export function useContratoDeAlquiler(alquilerId: number | undefined) {
+/**
+ * El contrato de una reserva.
+ *
+ * Cuelga de la reserva y no del alquiler: el contrato se puede emitir al
+ * reservar, mucho antes de que el auto salga.
+ */
+export function useContratoDeReserva(reservaId: number | undefined) {
   return useQuery({
-    queryKey: [KEY, 'alquiler', alquilerId],
+    queryKey: [KEY, 'reserva', reservaId],
     queryFn: async () => {
       const res = await api.get<{ data: Contrato[] }>('/contratos', {
-        params: { alquiler_id: alquilerId },
+        params: { reserva_id: reservaId },
       });
-      return res.data.data[0] ?? null;
+      return res.data.data.find(c => !c.anulado) ?? null;
     },
-    enabled: !!alquilerId,
+    enabled: !!reservaId,
   });
 }
 
 export function useCrearContrato() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { alquiler_id: number; snapshot: ContratoSnapshot }) =>
+    mutationFn: (payload: { reserva_id: number; snapshot: ContratoSnapshot }) =>
       api.post<{ data: Contrato }>('/contratos', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
       qc.invalidateQueries({ queryKey: ['alquileres'] });
+      qc.invalidateQueries({ queryKey: ['reservas'] });
     },
   });
 }
@@ -57,6 +64,7 @@ export function useFirmarContrato() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
       qc.invalidateQueries({ queryKey: ['alquileres'] });
+      qc.invalidateQueries({ queryKey: ['reservas'] });
     },
   });
 }
@@ -69,6 +77,7 @@ export function useAnularContrato() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
       qc.invalidateQueries({ queryKey: ['alquileres'] });
+      qc.invalidateQueries({ queryKey: ['reservas'] });
     },
   });
 }

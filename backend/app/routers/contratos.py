@@ -5,7 +5,7 @@ Dos caras y dos naturalezas: el **anverso** es la liquidación de este alquiler
 puntual y se arma con datos vivos y editables; el **reverso** es el clausulado,
 que vive versionado en `contrato_plantillas`.
 
-`GET /contratos/{alquiler_id}/preparar` devuelve el anverso precargado sin
+`GET /contratos/preparar/{reserva_id}` devuelve el anverso precargado sin
 persistir nada — lo que el operador corrige ahí es lo que se congela.
 """
 import base64
@@ -70,9 +70,9 @@ def crear_plantilla(
 
 # ─── Emisión ─────────────────────────────────────────────────────────────────
 
-@router.get("/preparar/{alquiler_id}")
+@router.get("/preparar/{reserva_id}")
 def preparar_contrato(
-    alquiler_id: int,
+    reserva_id: int,
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
@@ -82,7 +82,7 @@ def preparar_contrato(
     """
     svc = ContratoService(db)
     try:
-        datos = svc.preparar(alquiler_id)
+        datos = svc.preparar(reserva_id)
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -101,7 +101,7 @@ def crear_contrato(
 ):
     svc = ContratoService(db)
     try:
-        contrato = svc.crear(payload.alquiler_id, payload.snapshot, current_user.id)
+        contrato = svc.crear(payload.reserva_id, payload.snapshot, current_user.id)
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except BusinessRuleError as e:
@@ -169,12 +169,15 @@ def anular_contrato(
 
 @router.get("")
 def list_contratos(
+    reserva_id: int | None = Query(None),
     alquiler_id: int | None = Query(None),
     solo_vigentes: bool = Query(True),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
     q = db.query(Contrato)
+    if reserva_id is not None:
+        q = q.filter(Contrato.reserva_id == reserva_id)
     if alquiler_id is not None:
         q = q.filter(Contrato.alquiler_id == alquiler_id)
     if solo_vigentes:

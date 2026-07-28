@@ -118,19 +118,24 @@ class ContratoService:
 
     # ── Snapshot: el anverso ──────────────────────────────────────────────
 
-    def preparar(self, alquiler_id: int) -> dict:
+    def preparar(self, reserva_id: int) -> dict:
         """
         Arma el anverso precargado desde los datos del sistema.
 
         Lo que sale de acá es **editable**: el operador corrige lo que haga
         falta y lo corregido es lo que se congela. Por eso `preparar` no
         persiste nada.
-        """
-        alquiler = self.db.get(Alquiler, alquiler_id)
-        if not alquiler:
-            raise NotFoundError("Alquiler", alquiler_id)
 
-        reserva: Reserva = alquiler.reserva
+        **Parte de la reserva, no del alquiler.** Si el check-out ya ocurrió se
+        usan los datos reales de salida (km, combustible); si no, se usa lo
+        previsto y esos dos campos quedan en blanco para completarlos al
+        entregar. Emitir el contrato antes es lo normal: da tiempo a leerlo y
+        corregirlo, en vez de resolverlo con el cliente esperando en la puerta.
+        """
+        reserva: Reserva | None = self.db.get(Reserva, reserva_id)
+        if not reserva:
+            raise NotFoundError("Reserva", reserva_id)
+        alquiler: Alquiler | None = reserva.alquiler
         cliente: Cliente | None = self.db.get(Cliente, reserva.cliente_id)
         vehiculo: Vehiculo | None = (
             self.db.get(Vehiculo, reserva.vehiculo_id) if reserva.vehiculo_id else None
@@ -142,7 +147,7 @@ class ContratoService:
         return {
             "empresa": self.datos_empresa(),
             "reserva_id": reserva.id,
-            "alquiler_id": alquiler.id,
+            "alquiler_id": alquiler.id if alquiler else None,
             "cliente": self._bloque_cliente(cliente),
             "conductor_adicional": self._bloque_conductor(conductor),
             "vehiculo": self._bloque_vehiculo(vehiculo, reserva),
@@ -202,17 +207,20 @@ class ContratoService:
             "categoria": _nombre_categoria(reserva),
         }
 
-    def _bloque_servicio(self, a: Alquiler, r: Reserva) -> dict:
+    def _bloque_servicio(self, a: Alquiler | None, r: Reserva) -> dict:
+        # Sin check-out todavía: la salida es la prevista, y km y combustible
+        # quedan vacíos. Precargarlos con un número inventado sería peor —
+        # el contrato es justamente donde ese dato se vuelve oponible.
         return {
-            "check_out_fecha": _iso(a.checkout_fecha),
-            "check_out_hora": _hora(a.checkout_hora),
+            "check_out_fecha": _iso(a.checkout_fecha) if a else _iso(r.fecha_inicio),
+            "check_out_hora": _hora(a.checkout_hora) if a else _hora(r.hora_inicio),
             "check_out_lugar": r.lugar_entrega,
-            "check_out_km": a.checkout_km,
+            "check_out_km": a.checkout_km if a else None,
             # El nivel de combustible de salida no está en el original, pero la
             # cláusula 1 obliga a devolver con el tanque lleno y la 6.(iv)
             # permite debitar la diferencia: reclamar eso sin haber dejado
             # escrito con cuánto salió es indefendible.
-            "check_out_combustible": a.checkout_combustible,
+            "check_out_combustible": a.checkout_combustible if a else None,
             # La devolución es la prevista: el contrato se firma al entregar.
             "check_in_fecha": _iso(r.fecha_fin),
             "check_in_hora": _hora(r.hora_devolucion_acordada or r.hora_fin),
@@ -327,36 +335,43 @@ class ContratoService:
 
     # ── Emisión ───────────────────────────────────────────────────────────
 
-    def crear(self, alquiler_id: int, snapshot: dict | None, usuario_id: int | None) -> Contrato:
-        alquiler = self.db.get(Alquiler, alquiler_id)
-        if not alquiler:
-            raise NotFoundError("Alquiler", alquiler_id)
-
-        vigente = (
+    def de_reserva(self, reserva_id: int) -> Contrato | None:
+        """El contrato vigente de una reserva, o `None`. Anulados no cuentan."""
+        return (
             self.db.query(Contrato)
             .filter(
-                Contrato.alquiler_id == alquiler_id,
+                Contrato.reserva_id == reserva_id,
                 Contrato.anulado.is_(False),
                 Contrato.activo.is_(True),
             )
             .first()
         )
+
+    def crear(self, reserva_id: int, snapshot: dict | None, usuario_id: int | None) -> Contrato:
+        reserva = self.db.get(Reserva, reserva_id)
+        if not reserva:
+            raise NotFoundError("Reserva", reserva_id)
+
+        vigente = self.de_reserva(reserva_id)
         if vigente:
             raise BusinessRuleError(
                 "contrato_ya_existe",
-                f"El alquiler ya tiene el contrato {vigente.numero_formateado}. "
+                f"La reserva ya tiene el contrato {vigente.numero_formateado}. "
                 "Anulalo antes de emitir uno nuevo.",
             )
 
         plantilla = self.plantilla_vigente()
-        datos = snapshot or self.preparar(alquiler_id)
+        datos = snapshot or self.preparar(reserva_id)
         # El nombre del operador se sella acá: es lo que se imprime en el pie.
         usuario = self.db.get(Usuario, usuario_id) if usuario_id else None
         datos["atendido_por"] = getattr(usuario, "nombre", None) or getattr(usuario, "email", "") or ""
         datos["emitido_at"] = datetime.utcnow().isoformat()
 
         contrato = Contrato(
-            alquiler_id=alquiler_id,
+            reserva_id=reserva_id,
+            # Si el auto ya salió, el contrato queda atado a esa operación en
+            # el acto; si no, se completa en el check-out.
+            alquiler_id=reserva.alquiler.id if reserva.alquiler else None,
             plantilla_id=plantilla.id,
             snapshot=datos,
             atendido_por=usuario_id,
@@ -388,9 +403,12 @@ class ContratoService:
         contrato.firmado_por_dni = dni
 
         # El alquiler es quien responde "¿este auto salió con contrato?" en el
-        # listado, así que el estado tiene que vivir también ahí.
-        alquiler = self.db.get(Alquiler, contrato.alquiler_id)
+        # listado, así que el estado tiene que vivir también ahí. Si todavía no
+        # hay alquiler —contrato firmado antes de la entrega— lo sella el
+        # check-out al crearlo.
+        alquiler = contrato.alquiler or (contrato.reserva.alquiler if contrato.reserva else None)
         if alquiler:
+            contrato.alquiler_id = alquiler.id
             alquiler.contrato_firmado = True
         self.db.flush()
         return contrato

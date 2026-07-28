@@ -4,25 +4,31 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import {
-  useContratoDeAlquiler, usePrepararContrato, useCrearContrato,
+  useContratoDeReserva, usePrepararContrato, useCrearContrato,
   useFirmarContrato, useAnularContrato, descargarPdfContrato,
 } from '@/hooks/useContratos';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
 interface Props {
-  alquilerId: number;
+  reservaId: number;
+  /** `true` si el auto todavía no salió: cambia el texto, no la función. */
+  antesDeEntregar?: boolean;
 }
 
 /**
- * Contrato de un alquiler: generar, firmar, descargar y anular.
+ * Contrato de una reserva: generar, firmar, descargar y anular.
+ *
+ * **Cuelga de la reserva, no del alquiler.** Se puede emitir apenas se acuerda
+ * el alquiler, que es cuando hay tiempo de leerlo y corregirlo — antes se
+ * emitía recién en el check-out, con el cliente esperando en la puerta.
  *
  * El anverso se precarga desde el sistema y **es editable**: lo que el
  * operador corrige es lo que se congela en el snapshot. Por eso la vista
  * previa muestra los datos ya resueltos y no los recalcula al vuelo.
  */
-export function ContratoPanel({ alquilerId }: Props) {
-  const { data: contrato, isLoading } = useContratoDeAlquiler(alquilerId);
-  const { data: preparado } = usePrepararContrato(alquilerId, !contrato && !isLoading);
+export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
+  const { data: contrato, isLoading } = useContratoDeReserva(reservaId);
+  const { data: preparado } = usePrepararContrato(reservaId, !contrato && !isLoading);
   const crear = useCrearContrato();
   const anular = useAnularContrato();
 
@@ -51,12 +57,20 @@ export function ContratoPanel({ alquilerId }: Props) {
           </div>
         )}
 
+        {antesDeEntregar && (
+          <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            El auto todavía no salió, así que el <strong>kilometraje y el combustible de
+            salida</strong> se imprimen en blanco para completar al entregar. Emitirlo
+            ahora da tiempo a revisarlo y a que el cliente lo lea antes.
+          </p>
+        )}
+
         {preparado && <ResumenAnverso snapshot={preparado.snapshot} />}
 
         <Button
           size="sm"
           disabled={!preparado || crear.isPending}
-          onClick={() => preparado && crear.mutate({ alquiler_id: alquilerId, snapshot: preparado.snapshot })}
+          onClick={() => preparado && crear.mutate({ reserva_id: reservaId, snapshot: preparado.snapshot })}
         >
           {crear.isPending ? 'Generando…' : 'Generar contrato'}
         </Button>

@@ -126,6 +126,11 @@ class Reserva(Base):
     usuario: Mapped["Usuario"] = relationship("Usuario", foreign_keys=[usuario_id])
     tarifa_aplicada: Mapped["Tarifa"] = relationship("Tarifa", foreign_keys=[tarifa_aplicada_id])
     alquiler: Mapped["Alquiler"] = relationship("Alquiler", back_populates="reserva", uselist=False)
+    # Lista y no uno solo: anular un contrato y emitir otro deja los dos. El
+    # vigente es el único no anulado — lo resuelve `ContratoService.de_reserva`.
+    contratos: Mapped[list["Contrato"]] = relationship(
+        "Contrato", back_populates="reserva", order_by="Contrato.id.desc()"
+    )
 
     # Coberturas y extras contratados (Fase 5, ítem 56). Cada línea congela su
     # precio: ver ReservaAdicional en models/adicional.py.
@@ -195,6 +200,23 @@ class Reserva(Base):
         """
         a = self.alquiler
         return bool(a and a.entregado_sin_contrato and not a.contrato_firmado)
+
+    @property
+    def contrato_estado(self) -> str:
+        """
+        Estado del contrato **de la reserva**, para verlo en el listado.
+
+        `"sin_emitir"` | `"emitido"` (falta la firma) | `"firmado"`.
+
+        Se muestra siempre, incluso en una reserva que todavía no se entregó:
+        el contrato ahora se puede emitir apenas se acuerda el alquiler, y sin
+        esta marca no había forma de saber cuáles faltaban hasta el día de la
+        entrega — que es tarde para hacer algo al respecto.
+        """
+        vigente = next((c for c in self.contratos if not c.anulado and c.activo), None)
+        if vigente is None:
+            return "sin_emitir"
+        return "firmado" if vigente.firmado else "emitido"
 
     @property
     def alquiler_estado(self) -> str | None:

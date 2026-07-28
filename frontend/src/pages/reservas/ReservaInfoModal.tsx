@@ -304,13 +304,13 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
           )}
         </div>
 
-        {/* Contrato — sólo tiene sentido una vez que hay alquiler: es el
-            documento de la entrega, no de la reserva. */}
-        {reserva.alquiler_id && (
-          <div className="px-6 pb-4">
-            <ContratoPanel alquilerId={reserva.alquiler_id} />
-          </div>
-        )}
+        {/* Contrato — siempre visible, con alquiler o sin él.
+            Antes aparecía sólo después del check-out, así que hasta el momento
+            de entregar el auto no había forma de saber si la reserva tenía
+            contrato ni de emitirlo con tiempo. */}
+        <div className="px-6 pb-4">
+          <ContratoPanel reservaId={reserva.id} antesDeEntregar={!reserva.alquiler_id} />
+        </div>
 
         {/* Acciones */}
         <div className="px-6 py-4 border-t border-border bg-muted/30 space-y-2 sticky bottom-0">

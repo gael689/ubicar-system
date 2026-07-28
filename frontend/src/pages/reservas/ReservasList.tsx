@@ -327,17 +327,34 @@ export function ReservasList() {
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase border ${ESTADO_COLORS[r.estado] ?? ''}`}>
                       {ESTADO_ICONS[r.estado]} {r.estado}
                     </span>
-                    {/* D-34: sólido y no transparente — es un estado que
-                        requiere acción, no un dato informativo. Desaparece
-                        solo en cuanto se firma el contrato. */}
-                    {r.entregado_sin_contrato && (
+                    {/* Estado del contrato, siempre visible.
+                        D-34: el que reclama acción va sólido y no
+                        transparente. "Sin contrato" con el auto ya afuera es
+                        lo más grave y por eso pisa a los demás. Los tres
+                        desaparecen solos: nadie tiene que acordarse de
+                        sacarlos. */}
+                    {r.entregado_sin_contrato ? (
                       <span
                         title="El vehículo se entregó sin contrato firmado"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-danger text-white text-xs font-bold uppercase"
+                      >
+                        Sin contrato
+                      </span>
+                    ) : r.contrato_estado === 'sin_emitir' ? (
+                      <span
+                        title="Todavía no se emitió el contrato de esta reserva"
                         className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning text-white text-xs font-bold uppercase"
                       >
                         Sin contrato
                       </span>
-                    )}
+                    ) : r.contrato_estado === 'emitido' ? (
+                      <span
+                        title="El contrato está emitido pero todavía sin firmar"
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-bold uppercase text-muted-foreground"
+                      >
+                        Sin firmar
+                      </span>
+                    ) : null}
                     {r.bloqueada_por_solape && !compacta && (
                       <div className="text-xs text-amber-600 mt-1 font-medium">⚠️ Solape pendiente</div>
                     )}

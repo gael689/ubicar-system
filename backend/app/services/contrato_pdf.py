@@ -124,8 +124,16 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> None:
     y_izq = _campo(c, izq, y_izq, "Check In",
                    f"{_fecha(servicio.get('check_in_fecha'))} {servicio.get('check_in_hora') or ''} "
                    f"{servicio.get('check_in_lugar') or ''}".strip())
-    y_izq = _campo(c, izq, y_izq, "Kilometraje", f"{servicio.get('check_out_km', '—')} km")
-    y_izq = _campo(c, izq, y_izq, "Combustible salida", f"{servicio.get('check_out_combustible', '—')} %")
+    # Un contrato emitido antes de la entrega todavía no tiene km ni
+    # combustible de salida. Se imprime una línea para completar a mano, no
+    # "None km": el papel se firma en el mostrador y ese dato se anota ahí.
+    _km = servicio.get("check_out_km")
+    _comb = servicio.get("check_out_combustible")
+    y_izq = _campo(c, izq, y_izq, "Kilometraje", f"{_km} km" if _km is not None else "______________")
+    y_izq = _campo(
+        c, izq, y_izq, "Combustible salida",
+        f"{_comb} %" if _comb is not None else "______________",
+    )
     y_izq = _campo(c, izq, y_izq, "Vehículo", vehiculo.get("descripcion") or "—")
 
     y_der = _titulo_bloque(c, der, y, col, "Datos administrativos")

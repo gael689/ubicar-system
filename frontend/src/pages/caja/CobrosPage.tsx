@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, X, FileText, ChevronLeft, ChevronRight, Receipt } from 'lucide-react';
+import { toast } from 'sonner';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { usePagos, type FiltrosCobros } from '@/hooks/usePagos';
 import { useClientes } from '@/hooks/useClientes';
-import { formatCurrency } from '@/lib/utils';
+import { useEmitirReciboDePago } from '@/hooks/useRecibos';
+import { formatCurrency, extractError } from '@/lib/utils';
 import { METODO_PAGO_LABEL } from '@/lib/constants';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -43,6 +45,7 @@ export function CobrosPage() {
   const clienteQ = useDebouncedValue(buscaCliente, 300);
 
   const { data, isLoading, isFetching } = usePagos(filtros);
+  const emitirRecibo = useEmitirReciboDePago();
   const { data: clientesData } = useClientes({ q: clienteQ, page: 1, page_size: 8 });
   const sugerencias = clienteQ.length >= 2 ? (clientesData?.data ?? []) : [];
 
@@ -243,8 +246,32 @@ export function CobrosPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {p.recibo_numero ?? '—'}
+                    {/* El recibo se emite de un click desde acá.
+                        Sigue siendo manual —es una decisión, no un
+                        automatismo— pero no cuesta más que apretar un botón:
+                        el concepto lo arma el backend con los datos del
+                        cobro. Obligar a tipearlo es lo que hacía que el
+                        recibo quedara sin emitir. */}
+                    <td className="px-3 py-2 text-xs">
+                      {p.recibo_numero ? (
+                        <span className="text-muted-foreground">{p.recibo_numero}</span>
+                      ) : (
+                        <button
+                          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
+                          disabled={emitirRecibo.isPending}
+                          onClick={async e => {
+                            e.stopPropagation();
+                            try {
+                              await emitirRecibo.mutateAsync({ pagoId: p.id });
+                              toast.success('Recibo emitido');
+                            } catch (err) {
+                              toast.error(extractError(err));
+                            }
+                          }}
+                        >
+                          <Receipt className="h-3 w-3" /> Emitir
+                        </button>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right font-semibold">{formatCurrency(p.monto)}</td>
                   </tr>

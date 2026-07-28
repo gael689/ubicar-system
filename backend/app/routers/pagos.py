@@ -358,11 +358,31 @@ def emitir_recibo_de_pago(
         raise HTTPException(status_code=404, detail="Pago no encontrado")
 
     recibo = ReciboService(db).emitir_para_pago(
-        pago, payload.concepto, usuario_id=current_user.id
+        pago, payload.concepto or _concepto_de(pago, db), usuario_id=current_user.id
     )
     db.commit()
     db.refresh(recibo)
     return ok(ReciboResponse.model_validate(recibo), "Recibo emitido")
+
+
+def _concepto_de(pago: Pago, db: Session) -> str:
+    """
+    El concepto que alguien escribiría a mano, armado solo.
+
+    Existe para que emitir el recibo sea un click desde el listado: obligar a
+    tipear "Alquiler #14" cada vez es lo que hace que el recibo no se emita.
+    """
+    if not pago.alquiler_id:
+        return "Pago a cuenta"
+
+    alquiler = db.get(Alquiler, pago.alquiler_id)
+    reserva = db.get(Reserva, alquiler.reserva_id) if alquiler else None
+    vehiculo = (
+        db.get(Vehiculo, reserva.vehiculo_id) if reserva and reserva.vehiculo_id else None
+    )
+    if vehiculo:
+        return f"Alquiler #{pago.alquiler_id} — {vehiculo.marca} {vehiculo.modelo} ({vehiculo.patente})"
+    return f"Alquiler #{pago.alquiler_id}"
 
 
 @router.delete("/{pago_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -27,7 +27,10 @@ class ReciboCreate(BaseModel):
 
 class ReciboDePagoRequest(BaseModel):
     """Emitir el recibo de un cobro que ya se registró. No mueve plata."""
-    concepto: str = "Pago a cuenta"
+    # Opcional a propósito: el recibo se emite de un click desde el listado de
+    # cobros y ahí no hay dónde escribir un concepto. Si no viene, el router lo
+    # arma con los datos del pago — que es lo que la persona escribiría igual.
+    concepto: str | None = None
 
 
 class AnularReciboRequest(BaseModel):

@@ -215,6 +215,18 @@ class AlquilerService:
             # vínculo (mismo patrón que fecha_vencimiento en condicion_pago).
             self.echeq_service.completar_alquiler(reserva.id, alquiler.id)
 
+            # El contrato también puede haberse emitido antes de esta entrega
+            # —es lo deseable, da tiempo a leerlo— así que acá se completa el
+            # vínculo con la operación real y se refleja si estaba firmado.
+            # Sin esto, `entregado_sin_contrato` diría que el auto salió sin
+            # papel aunque el cliente lo hubiera firmado la semana pasada.
+            from app.services.contrato_service import ContratoService
+
+            contrato = ContratoService(self.db).de_reserva(reserva.id)
+            if contrato is not None:
+                contrato.alquiler_id = alquiler.id
+                alquiler.contrato_firmado = contrato.firmado
+
             # Ledger completo: el checkout factura el alquiler completo como
             # un débito automático en la cuenta corriente del cliente,
             # exista o no un pago inmediato. Cualquier cobro (abajo) genera
@@ -771,13 +783,26 @@ class AlquilerService:
         return ventanas
 
     def _tiene_contrato_firmado(self, reserva_id: int) -> bool:
+        """
+        ¿Esta reserva tiene un contrato firmado?
+
+        Pregunta por el **contrato**, no por el alquiler. Miraba
+        `alquiler.contrato_firmado`, que en un check-out todavía no existe: el
+        alquiler se crea unas líneas más abajo. Eso funcionaba de casualidad
+        mientras el contrato sólo se podía emitir después de la entrega, pero
+        ahora se emite al reservar — y con la versión vieja, un contrato
+        firmado la semana pasada seguía pidiendo el "motivo por el que se
+        entrega sin contrato".
+        """
         from app.models.contrato import Contrato
-        from app.models.alquiler import Alquiler as AlquilerModel
-        alquiler = (
-            self.db.query(AlquilerModel)
-            .filter(AlquilerModel.reserva_id == reserva_id)
+
+        contrato = (
+            self.db.query(Contrato)
+            .filter(
+                Contrato.reserva_id == reserva_id,
+                Contrato.anulado.is_(False),
+                Contrato.activo.is_(True),
+            )
             .first()
         )
-        if alquiler and alquiler.contrato_firmado:
-            return True
-        return False
+        return bool(contrato and contrato.firmado)
