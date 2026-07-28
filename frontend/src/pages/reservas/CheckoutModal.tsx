@@ -45,6 +45,9 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
   const [localError, setLocalError] = useState<string | null>(null);
   const [cargoCheckoutTardio, setCargoCheckoutTardio] = useState('');
   const [motivoCheckoutTardio, setMotivoCheckoutTardio] = useState('');
+  // D-34: el contrato no bloquea la entrega, pero si el auto sale sin firmar
+  // el motivo es obligatorio y queda constancia visible en la ficha.
+  const [motivoSinContrato, setMotivoSinContrato] = useState('');
 
   const garantia = reserva.garantia_tipo && reserva.garantia_tipo !== 'no_aplica'
     ? reserva.garantia_tipo
@@ -78,6 +81,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
         checkout_estado_limpieza: limpieza,
         cargo_checkout_tardio: cargo,
         motivo_checkout_tardio: cargo > 0 ? motivoCheckoutTardio.trim() : null,
+        motivo_sin_contrato: motivoSinContrato.trim() || null,
       });
       onSuccess();
     } catch (err: any) {
@@ -223,6 +227,26 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
               rows={2}
               className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
               placeholder="Estado del vehículo al entregarse al cliente..."
+            />
+          </div>
+
+          {/* D-34 · Entrega sin contrato. No se bloquea —el día que falle el
+              PDF o se corte internet el negocio no se para— pero se advierte
+              fuerte y el motivo queda registrado y visible después. */}
+          <div className="space-y-2 rounded-xl bg-warning p-3 text-white">
+            <p className="text-xs font-semibold">
+              ¿El cliente ya firmó el contrato?
+            </p>
+            <p className="text-xs">
+              Si el auto sale sin contrato firmado, escribí el motivo. Se puede entregar igual,
+              pero queda registrado en la ficha del alquiler hasta que se firme.
+            </p>
+            <input
+              type="text"
+              value={motivoSinContrato}
+              onChange={e => setMotivoSinContrato(e.target.value)}
+              placeholder="Dejar vacío si ya está firmado. Ej: se firma al volver, impresora sin papel"
+              className="w-full px-3 py-2 rounded-lg border border-white/40 bg-white/95 text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
             />
           </div>
 

@@ -20,6 +20,7 @@ from app.models.tarifa_calendario import TarifaCalendario, DescuentoDuracion
 from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.recargo_edad import RecargoEdad
+from app.models.contrato import Contrato, ContratoPlantilla
 
 __all__ = [
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",

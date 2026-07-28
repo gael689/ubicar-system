@@ -370,6 +370,7 @@ def checkout(
             pago_inmediato=payload.pago_inmediato,
             cargo_checkout_tardio=payload.cargo_checkout_tardio,
             motivo_checkout_tardio=payload.motivo_checkout_tardio,
+            motivo_sin_contrato=payload.motivo_sin_contrato,
         )
         db.commit()
     except ConflictError as e:

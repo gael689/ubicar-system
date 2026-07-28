@@ -76,6 +76,13 @@ class Alquiler(Base):
     # ── Contrato ──────────────────────────────────────────────────────────────
     contrato_firmado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     contrato_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # D-34: entregar sin contrato firmado **es posible** — el día que falle el
+    # PDF o se corte internet, el negocio no se para. Pero queda constancia
+    # visible en el listado, no un dato enterrado en la auditoría.
+    entregado_sin_contrato: Mapped[bool] = mapped_column(
+        Boolean, server_default="false", default=False, nullable=False
+    )
+    motivo_sin_contrato: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── Relaciones ────────────────────────────────────────────────────────────
     reserva: Mapped["Reserva"] = relationship("Reserva", back_populates="alquiler")

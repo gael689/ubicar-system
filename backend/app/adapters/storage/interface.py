@@ -12,6 +12,11 @@ class IStorage(Protocol):
         """Guarda el contenido bajo `key` y retorna la misma key (idempotente: sobrescribe si existe)."""
         ...
 
+    def read(self, key: str) -> bytes:
+        """Devuelve el contenido. Lo necesita el generador de PDF para embeber
+        la firma del contrato sin pasar por HTTP."""
+        ...
+
     def delete(self, key: str) -> None:
         """Borra el archivo. No falla si la key no existe."""
         ...

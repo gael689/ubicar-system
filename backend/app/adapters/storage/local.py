@@ -25,6 +25,9 @@ class LocalStorage:
         target.write_bytes(content)
         return key
 
+    def read(self, key: str) -> bytes:
+        return self._path(key).read_bytes()
+
     def delete(self, key: str) -> None:
         target = self._path(key)
         if target.exists():

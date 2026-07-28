@@ -33,6 +33,9 @@ class CheckoutCreate(BaseModel):
     # D-17: late check-out (no hay estado NO_SHOW) — monto editable + motivo obligatorio
     cargo_checkout_tardio: Decimal = Decimal("0")
     motivo_checkout_tardio: str | None = None
+    # D-34: si el auto sale sin contrato firmado no se bloquea, pero el motivo
+    # es obligatorio y queda constancia visible en el listado de alquileres.
+    motivo_sin_contrato: str | None = None
 
     @model_validator(mode="after")
     def _validar_motivo_checkout_tardio(self):
@@ -133,6 +136,8 @@ class AlquilerResponse(BaseModel):
     # Contrato
     contrato_firmado: bool
     contrato_url: str | None
+    entregado_sin_contrato: bool = False
+    motivo_sin_contrato: str | None = None
     # Limpieza
     checkout_estado_limpieza: str | None = None
     checkin_estado_limpieza: str | None = None

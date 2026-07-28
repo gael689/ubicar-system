@@ -1,0 +1,461 @@
+from __future__ import annotations
+"""
+ContratoService — genera, firma y anula contratos de alquiler.
+
+**La regla que ordena todo: el contrato se congela al emitirse.** El snapshot
+guarda el anverso ya resuelto; el `plantilla_id` guarda con qué versión del
+clausulado se firmó. Reimprimir un contrato de hace dos años tiene que dar el
+mismo papel aunque el cliente se haya mudado, el auto se haya vendido y los
+precios hayan cambiado tres veces.
+
+Ver `docs/PLAN_CONTRATOS.md` para el mapeo campo por campo del anverso.
+"""
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy.orm import Session
+
+from app.core.exceptions import BusinessRuleError, NotFoundError
+from app.domain import contrato_clausulado
+from app.models.adicional import Adicional
+from app.models.alquiler import Alquiler
+from app.models.cliente import Cliente, ConductorAdicional
+from app.models.contrato import Contrato, ContratoPlantilla
+from app.models.reserva import Reserva
+from app.models.usuario import Usuario
+from app.models.vehiculo import Vehiculo
+from app.services.configuracion_service import ConfiguracionService
+
+
+# Claves de `configuracion` que arma el pie institucional del contrato.
+CLAVES_EMPRESA = [
+    "empresa.locador_nombre", "empresa.razon_social", "empresa.cuit",
+    "empresa.ingresos_brutos", "empresa.domicilio", "empresa.localidad",
+    "empresa.telefonos", "empresa.email", "empresa.jurisdiccion",
+]
+
+
+class ContratoService:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.config = ConfiguracionService(db)
+
+    # ── Plantilla ─────────────────────────────────────────────────────────
+
+    def plantilla_vigente(self) -> ContratoPlantilla:
+        """
+        La versión activa del clausulado. Si no hay ninguna, siembra la v1
+        desde `domain/contrato_clausulado.py` — así el módulo funciona desde
+        el primer arranque sin que nadie tenga que cargar 13 cláusulas a mano.
+        """
+        vigente = (
+            self.db.query(ContratoPlantilla)
+            .filter(ContratoPlantilla.activa.is_(True), ContratoPlantilla.activo.is_(True))
+            .order_by(ContratoPlantilla.version.desc())
+            .first()
+        )
+        if vigente:
+            return vigente
+
+        plantilla = ContratoPlantilla(
+            version=1,
+            titulo=contrato_clausulado.TITULO,
+            clausulas=contrato_clausulado.CLAUSULAS,
+            vigente_desde=date.today(),
+            activa=True,
+        )
+        self.db.add(plantilla)
+        self.db.flush()
+        return plantilla
+
+    def nueva_version(self, titulo: str, clausulas: list, usuario_id: int | None) -> ContratoPlantilla:
+        """
+        Publica una versión nueva del clausulado. **Nunca edita la anterior**:
+        los contratos ya firmados siguen apuntando a la suya.
+        """
+        ultima = (
+            self.db.query(ContratoPlantilla)
+            .order_by(ContratoPlantilla.version.desc())
+            .first()
+        )
+        self.db.query(ContratoPlantilla).filter(
+            ContratoPlantilla.activa.is_(True)
+        ).update({"activa": False})
+
+        plantilla = ContratoPlantilla(
+            version=(ultima.version + 1) if ultima else 1,
+            titulo=titulo,
+            clausulas=clausulas,
+            vigente_desde=date.today(),
+            activa=True,
+            creado_por=usuario_id,
+        )
+        self.db.add(plantilla)
+        self.db.flush()
+        return plantilla
+
+    # ── Datos de la empresa ───────────────────────────────────────────────
+
+    def datos_empresa(self) -> dict:
+        datos = {}
+        for clave in CLAVES_EMPRESA:
+            try:
+                datos[clave.split(".", 1)[1]] = self.config.get(clave).valor
+            except NotFoundError:
+                datos[clave.split(".", 1)[1]] = ""
+        return datos
+
+    def falta_datos_fiscales(self) -> bool:
+        """
+        D-C1 sigue pendiente: no se sabe quién es legalmente el locador.
+
+        Mientras el CUIT esté vacío, el contrato se puede generar igual (no
+        bloquear es lo que permite operar) pero **avisa**, para que el
+        placeholder no se vuelva permanente por olvido — que es exactamente lo
+        que pasa con estas cosas.
+        """
+        return not (self.datos_empresa().get("cuit") or "").strip()
+
+    # ── Snapshot: el anverso ──────────────────────────────────────────────
+
+    def preparar(self, alquiler_id: int) -> dict:
+        """
+        Arma el anverso precargado desde los datos del sistema.
+
+        Lo que sale de acá es **editable**: el operador corrige lo que haga
+        falta y lo corregido es lo que se congela. Por eso `preparar` no
+        persiste nada.
+        """
+        alquiler = self.db.get(Alquiler, alquiler_id)
+        if not alquiler:
+            raise NotFoundError("Alquiler", alquiler_id)
+
+        reserva: Reserva = alquiler.reserva
+        cliente: Cliente | None = self.db.get(Cliente, reserva.cliente_id)
+        vehiculo: Vehiculo | None = (
+            self.db.get(Vehiculo, reserva.vehiculo_id) if reserva.vehiculo_id else None
+        )
+        conductor: ConductorAdicional | None = (
+            self.db.get(ConductorAdicional, reserva.conductor_id) if reserva.conductor_id else None
+        )
+
+        return {
+            "empresa": self.datos_empresa(),
+            "reserva_id": reserva.id,
+            "alquiler_id": alquiler.id,
+            "cliente": self._bloque_cliente(cliente),
+            "conductor_adicional": self._bloque_conductor(conductor),
+            "vehiculo": self._bloque_vehiculo(vehiculo, reserva),
+            "servicio": self._bloque_servicio(alquiler, reserva),
+            "cargos": self._bloque_cargos(reserva),
+            "coberturas": self._bloque_coberturas(reserva),
+            "aceptacion": contrato_clausulado.ACEPTACION,
+        }
+
+    def _bloque_cliente(self, c: Cliente | None) -> dict:
+        if not c:
+            return {}
+        return {
+            "id": c.id,
+            "nombre": c.nombre_completo,
+            "dni_cuit": c.dni_cuit,
+            "domicilio": c.domicilio or "",
+            "localidad": c.localidad or "",
+            "provincia": c.provincia or "",
+            "codigo_postal": c.codigo_postal or "",
+            "pais": "ARGENTINA",
+            "telefono": c.telefono or "",
+            "email": c.email or "",
+            # Sólo si es empresa: un particular no tiene razón social y dejar
+            # el campo vacío en el papel se lee como un dato faltante.
+            "empresa": c.razon_social if c.tipo == "empresa" else "",
+            "licencia_numero": c.licencia_numero or "",
+            "licencia_vencimiento": _iso(c.licencia_vencimiento),
+            "licencia_pais": c.licencia_pais or "",
+            "licencia_categoria": c.licencia_categoria or "",
+        }
+
+    def _bloque_conductor(self, c: ConductorAdicional | None) -> dict:
+        if not c:
+            return {}
+        # La cláusula 2.h exige nombre, documento Y dirección para que la
+        # autorización del conductor adicional sea válida.
+        return {
+            "id": c.id,
+            "nombre": c.nombre_completo,
+            "dni": c.dni or "",
+            "domicilio": getattr(c, "domicilio", None) or "",
+            "licencia_numero": c.licencia_numero or "",
+            "licencia_vencimiento": _iso(c.licencia_vencimiento),
+        }
+
+    def _bloque_vehiculo(self, v: Vehiculo | None, reserva: Reserva) -> dict:
+        if not v:
+            return {"categoria": _nombre_categoria(reserva)}
+        return {
+            "id": v.id,
+            "descripcion": " ".join(
+                x for x in [v.marca, v.modelo, getattr(v, "version", None)] if x
+            ).upper(),
+            "patente": v.patente,
+            "interno": v.id,
+            "categoria": _nombre_categoria(reserva),
+        }
+
+    def _bloque_servicio(self, a: Alquiler, r: Reserva) -> dict:
+        return {
+            "check_out_fecha": _iso(a.checkout_fecha),
+            "check_out_hora": _hora(a.checkout_hora),
+            "check_out_lugar": r.lugar_entrega,
+            "check_out_km": a.checkout_km,
+            # El nivel de combustible de salida no está en el original, pero la
+            # cláusula 1 obliga a devolver con el tanque lleno y la 6.(iv)
+            # permite debitar la diferencia: reclamar eso sin haber dejado
+            # escrito con cuánto salió es indefendible.
+            "check_out_combustible": a.checkout_combustible,
+            # La devolución es la prevista: el contrato se firma al entregar.
+            "check_in_fecha": _iso(r.fecha_fin),
+            "check_in_hora": _hora(r.hora_devolucion_acordada or r.hora_fin),
+            "check_in_lugar": r.lugar_devolucion,
+        }
+
+    def _bloque_cargos(self, r: Reserva) -> dict:
+        """
+        El desglose del anverso. **"Valor estimado", no "total"**: al firmar el
+        auto todavía no volvió, y el excedente, el combustible y los daños se
+        liquidan en el check-in. Decir "total" sería prometer un número que el
+        propio contrato (cláusula 6) se reserva el derecho de aumentar.
+        """
+        lineas = []
+        dias = (r.fecha_fin - r.fecha_inicio).days
+        precio = Decimal(str(r.precio_total or 0))
+        if precio > 0:
+            lineas.append({
+                "concepto": "Días de alquiler",
+                "cantidad": dias,
+                "valor_unitario": float(precio / dias) if dias else float(precio),
+                "total": float(precio),
+            })
+
+        for a in r.adicionales:
+            lineas.append({
+                "concepto": a.nombre,
+                "cantidad": a.cantidad,
+                "valor_unitario": float(a.precio_unitario),
+                "total": float(a.subtotal),
+            })
+
+        if r.recargo_edad_monto and Decimal(str(r.recargo_edad_monto)) > 0:
+            lineas.append({
+                "concepto": f"{r.recargo_edad_nombre} ({r.recargo_edad_edad} años)",
+                "cantidad": 1,
+                "valor_unitario": float(r.recargo_edad_monto),
+                "total": float(r.recargo_edad_monto),
+            })
+
+        if r.cargo_late_checkout and Decimal(str(r.cargo_late_checkout)) > 0:
+            lineas.append({
+                "concepto": "Cargo por devolución fuera de horario",
+                "cantidad": 1,
+                "valor_unitario": float(r.cargo_late_checkout),
+                "total": float(r.cargo_late_checkout),
+            })
+
+        estimado = sum(Decimal(str(l["total"])) for l in lineas)
+
+        # El descuento se imprime como línea propia: `precio_lista` vs
+        # `precio_total` existe justamente para auditarlo (ítem 22), y
+        # esconderlo dentro de un unitario más bajo rompería esa auditoría en
+        # el único documento que el cliente se lleva.
+        descuento = Decimal("0")
+        if r.precio_lista and Decimal(str(r.precio_lista)) > precio:
+            descuento = Decimal(str(r.precio_lista)) - precio
+
+        return {
+            "lineas": lineas,
+            "descuento": float(descuento),
+            "valor_estimado": float(estimado),
+            "incluye_kilometraje": True,
+            # El IVA se desagrega sólo si se factura: para un consumidor final
+            # el precio es final y desglosarlo confunde sin aportar nada.
+            "discrimina_iva": bool(r.con_factura),
+        }
+
+    def _bloque_coberturas(self, r: Reserva) -> dict:
+        """
+        Coberturas contratadas y **el rechazo explícito de las que no**.
+
+        Esa segunda parte no es decoración: es la prueba de que se ofreció y el
+        cliente dijo que no. Sin esa línea, un cliente que choca puede alegar
+        que nunca le ofrecieron nada.
+        """
+        contratadas = [
+            {
+                "nombre": a.nombre,
+                # La franquicia es del catálogo, no de la línea contratada:
+                # es un dato de la cobertura, no del precio pactado.
+                "franquicia": (
+                    float(a.adicional.franquicia)
+                    if a.adicional and a.adicional.franquicia is not None else None
+                ),
+            }
+            for a in r.adicionales
+            if a.grupo == "cobertura"
+        ]
+        ids_contratadas = {a.adicional_id for a in r.adicionales}
+
+        no_contratadas = [
+            a.nombre
+            for a in self.db.query(Adicional)
+            .filter(Adicional.activo.is_(True), Adicional.grupo == "cobertura")
+            .all()
+            if a.id not in ids_contratadas
+        ]
+
+        # La franquicia que rige es la de la cobertura contratada; sin
+        # cobertura, la de configuración (D-C3).
+        if contratadas and contratadas[0]["franquicia"] is not None:
+            franquicia = contratadas[0]["franquicia"]
+        else:
+            franquicia = float(self.config.get_decimal("contrato.franquicia_default", Decimal("0")))
+
+        return {
+            "contratadas": contratadas,
+            "rechazadas": no_contratadas,
+            "franquicia": franquicia,
+        }
+
+    # ── Emisión ───────────────────────────────────────────────────────────
+
+    def crear(self, alquiler_id: int, snapshot: dict | None, usuario_id: int | None) -> Contrato:
+        alquiler = self.db.get(Alquiler, alquiler_id)
+        if not alquiler:
+            raise NotFoundError("Alquiler", alquiler_id)
+
+        vigente = (
+            self.db.query(Contrato)
+            .filter(
+                Contrato.alquiler_id == alquiler_id,
+                Contrato.anulado.is_(False),
+                Contrato.activo.is_(True),
+            )
+            .first()
+        )
+        if vigente:
+            raise BusinessRuleError(
+                "contrato_ya_existe",
+                f"El alquiler ya tiene el contrato {vigente.numero_formateado}. "
+                "Anulalo antes de emitir uno nuevo.",
+            )
+
+        plantilla = self.plantilla_vigente()
+        datos = snapshot or self.preparar(alquiler_id)
+        # El nombre del operador se sella acá: es lo que se imprime en el pie.
+        usuario = self.db.get(Usuario, usuario_id) if usuario_id else None
+        datos["atendido_por"] = getattr(usuario, "nombre", None) or getattr(usuario, "email", "") or ""
+        datos["emitido_at"] = datetime.utcnow().isoformat()
+
+        contrato = Contrato(
+            alquiler_id=alquiler_id,
+            plantilla_id=plantilla.id,
+            snapshot=datos,
+            atendido_por=usuario_id,
+            creado_por=usuario_id,
+        )
+        self.db.add(contrato)
+        self.db.flush()
+        self.db.refresh(contrato)
+        return contrato
+
+    def firmar(
+        self, contrato_id: int, firma_bytes: bytes | None,
+        nombre: str, dni: str, usuario_id: int | None,
+    ) -> Contrato:
+        contrato = self.get(contrato_id)
+        if contrato.anulado:
+            raise BusinessRuleError("contrato_anulado", "El contrato está anulado")
+        if contrato.firmado:
+            raise BusinessRuleError("contrato_ya_firmado", "El contrato ya está firmado")
+
+        if firma_bytes:
+            from app.core.deps import get_storage
+            key = f"contratos/{contrato.id}/firma.png"
+            contrato.firma_key = get_storage().upload(key, firma_bytes, "image/png")
+
+        contrato.firmado = True
+        contrato.firmado_at = datetime.utcnow()
+        contrato.firmado_por_nombre = nombre
+        contrato.firmado_por_dni = dni
+
+        # El alquiler es quien responde "¿este auto salió con contrato?" en el
+        # listado, así que el estado tiene que vivir también ahí.
+        alquiler = self.db.get(Alquiler, contrato.alquiler_id)
+        if alquiler:
+            alquiler.contrato_firmado = True
+        self.db.flush()
+        return contrato
+
+    def anular(self, contrato_id: int, motivo: str, usuario_id: int | None) -> Contrato:
+        """
+        Anula el contrato. **Nunca se borra** — un contrato emitido existió, lo
+        haya firmado el cliente o no.
+        """
+        contrato = self.get(contrato_id)
+        if contrato.anulado:
+            raise BusinessRuleError("contrato_ya_anulado", "El contrato ya está anulado")
+
+        contrato.anulado = True
+        contrato.motivo_anulacion = motivo
+        contrato.activo = False
+
+        alquiler = self.db.get(Alquiler, contrato.alquiler_id)
+        if alquiler:
+            alquiler.contrato_firmado = False
+        self.db.flush()
+        return contrato
+
+    # ── Lectura ───────────────────────────────────────────────────────────
+
+    def get(self, contrato_id: int) -> Contrato:
+        c = self.db.get(Contrato, contrato_id)
+        if not c:
+            raise NotFoundError("Contrato", contrato_id)
+        return c
+
+    def por_alquiler(self, alquiler_id: int) -> Contrato | None:
+        return (
+            self.db.query(Contrato)
+            .filter(Contrato.alquiler_id == alquiler_id, Contrato.anulado.is_(False))
+            .first()
+        )
+
+    def generar_pdf(self, contrato_id: int) -> bytes:
+        from app.services.contrato_pdf import generar_pdf_contrato
+
+        contrato = self.get(contrato_id)
+        plantilla = (
+            self.db.get(ContratoPlantilla, contrato.plantilla_id)
+            if contrato.plantilla_id else self.plantilla_vigente()
+        )
+        firma = None
+        if contrato.firma_key:
+            from app.core.deps import get_storage
+            try:
+                firma = get_storage().read(contrato.firma_key)
+            except Exception:
+                # Un adjunto perdido no puede impedir reimprimir el contrato.
+                firma = None
+        return generar_pdf_contrato(contrato, plantilla, firma)
+
+
+def _iso(v) -> str | None:
+    return v.isoformat() if v else None
+
+
+def _hora(v) -> str | None:
+    return v.strftime("%H:%M") if v else None
+
+
+def _nombre_categoria(r: Reserva) -> str:
+    cat = getattr(r, "categoria", None)
+    return getattr(cat, "nombre", "") if cat else ""

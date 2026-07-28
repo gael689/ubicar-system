@@ -797,6 +797,9 @@ export interface CheckoutCreate {
   pago_inmediato?: PagoInmediato;
   cargo_checkout_tardio?: number;
   motivo_checkout_tardio?: string | null;
+  // D-34: si el auto sale sin contrato firmado no se bloquea, pero el motivo
+  // es obligatorio y queda constancia visible.
+  motivo_sin_contrato?: string | null;
 }
 
 export interface CheckinCreate {
@@ -1400,3 +1403,72 @@ export interface BloqueoVehiculoCreate {
 export type BloqueoVehiculoUpdate = Partial<Omit<BloqueoVehiculoCreate, 'vehiculo_id'>> & {
   activo?: boolean;
 };
+
+
+// ─── Contratos (Fase 4, ítems 50-51) ─────────────────────────────────────────
+
+export interface ContratoPlantilla {
+  id: number;
+  version: number;
+  titulo: string;
+  clausulas: ClausulaContrato[];
+  vigente_desde: string;
+  activa: boolean;
+  created_at: string;
+}
+
+export interface ClausulaContrato {
+  numero: number;
+  titulo: string;
+  parrafos: { texto: string; subrayados?: number[][] }[];
+}
+
+export interface Contrato {
+  id: number;
+  numero: number | null;
+  prefijo: string;
+  numero_formateado: string;
+  alquiler_id: number;
+  plantilla_id: number | null;
+  // El anverso congelado al emitir. Reimprimir usa esto, nunca las tablas
+  // vivas: el contrato tiene que salir igual dentro de dos años.
+  snapshot: ContratoSnapshot | null;
+  firmado: boolean;
+  firmado_at: string | null;
+  firmado_por_nombre: string | null;
+  firmado_por_dni: string | null;
+  atendido_por: number | null;
+  anulado: boolean;
+  motivo_anulacion: string | null;
+  fecha_generacion: string;
+}
+
+export interface ContratoSnapshot {
+  empresa: Record<string, string>;
+  reserva_id: number;
+  alquiler_id: number;
+  cliente: Record<string, string | number | null>;
+  conductor_adicional: Record<string, string | number | null>;
+  vehiculo: Record<string, string | number | null>;
+  servicio: Record<string, string | number | null>;
+  cargos: {
+    lineas: { concepto: string; cantidad: number; valor_unitario: number; total: number }[];
+    descuento: number;
+    valor_estimado: number;
+    incluye_kilometraje: boolean;
+    discrimina_iva: boolean;
+  };
+  coberturas: {
+    contratadas: { nombre: string; franquicia: number | null }[];
+    rechazadas: string[];
+    franquicia: number;
+  };
+  aceptacion: string;
+  atendido_por?: string;
+}
+
+export interface ContratoPreparado {
+  snapshot: ContratoSnapshot;
+  // D-C1 sigue abierto: se puede emitir igual, pero el PDF lo advierte.
+  falta_datos_fiscales: boolean;
+}

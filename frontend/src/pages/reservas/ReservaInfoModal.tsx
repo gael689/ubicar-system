@@ -12,6 +12,7 @@ import { ReservaModal } from './ReservaModal';
 import { CheckoutModal } from './CheckoutModal';
 import { CheckinModal } from './CheckinModal';
 import { ExtenderModal } from './ExtenderModal';
+import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
 
 interface Props {
   reservaId: number;
@@ -302,6 +303,14 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
             </div>
           )}
         </div>
+
+        {/* Contrato — sólo tiene sentido una vez que hay alquiler: es el
+            documento de la entrega, no de la reserva. */}
+        {reserva.alquiler_id && (
+          <div className="px-6 pb-4">
+            <ContratoPanel alquilerId={reserva.alquiler_id} />
+          </div>
+        )}
 
         {/* Acciones */}
         <div className="px-6 py-4 border-t border-border bg-muted/30 space-y-2 sticky bottom-0">
