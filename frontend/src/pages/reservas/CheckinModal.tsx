@@ -68,7 +68,11 @@ export function CheckinModal({
 }: Props) {
   const { checkin, previewExcedente, getAlquiler, loading: alquilerLoading, error } = useAlquileres();
   const { data: pagosPendientes } = usePagosPendientes();
-  const createGasto = useCreateGasto(reserva.vehiculo_id);
+  // Si hay check-in hay alquiler, y si hay alquiler el vehículo está asignado
+  // (el backend bloquea el check-out de una reserva por categoría). El 0 es
+  // inalcanzable; está para no romper la regla de hooks incondicionales.
+  const vehiculoId = reserva.vehiculo_id ?? 0;
+  const createGasto = useCreateGasto(vehiculoId);
   const [gastoCombustibleMonto, setGastoCombustibleMonto] = useState('');
   const [gastoLimpiezaMonto, setGastoLimpiezaMonto] = useState('');
   const [gastoCombustibleHecho, setGastoCombustibleHecho] = useState(false);
@@ -731,9 +735,9 @@ export function CheckinModal({
 
           {/* Parte de daños — lo que ya estaba + lo que aparece al devolverlo */}
           <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
-            <DaniosPreexistentes vehiculoId={reserva.vehiculo_id} />
+            <DaniosPreexistentes vehiculoId={vehiculoId} />
             <DaniosTab
-              vehiculoId={reserva.vehiculo_id}
+              vehiculoId={vehiculoId}
               alquilerId={alquilerId}
               momento="checkin"
               compacto

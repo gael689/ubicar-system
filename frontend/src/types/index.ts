@@ -15,7 +15,11 @@ export type EstadoReserva =
   | 'activa'
   | 'vencida'
   | 'finalizada'
-  | 'cancelada';
+  | 'cancelada'
+  // Reservas web (migración 047). Ninguno ocupa calendario.
+  | 'pendiente_pago'        // hold tomado, esperando el pago
+  | 'sin_disponibilidad'    // D-04: solicitud sin cupo, sin cobrar
+  | 'revision_sin_cupo';    // decisión #4: pagó y el cupo se fue
 
 export type EstadoEcheq =
   | 'en_cartera'
@@ -622,7 +626,11 @@ export interface Semaforo {
 
 export interface Reserva {
   id: number;
-  vehiculo_id: number;
+  // Nullable desde la migración 042: la web reserva una CATEGORÍA y el auto
+  // puntual se asigna al entregar.
+  vehiculo_id: number | null;
+  categoria_id: number | null;
+  categoria?: { id: number; nombre: string } | null;
   cliente_id: number;
   conductor_id: number | null;
   fecha_inicio: string;   // ISO date "YYYY-MM-DD"
@@ -635,6 +643,14 @@ export interface Reserva {
   estado: EstadoReserva;
   usuario_id: number;
   created_at: string;
+  // Reservas web (migración 047)
+  origen?: 'mostrador' | 'web';
+  web_resuelta_por?: number | null;
+  web_resuelta_en?: string | null;
+  web_motivo_rechazo?: string | null;
+  web_contacto_nombre?: string | null;
+  web_contacto_email?: string | null;
+  web_contacto_telefono?: string | null;
   // D1 late checkout
   hora_devolucion_acordada: string | null;
   late_checkout: boolean;

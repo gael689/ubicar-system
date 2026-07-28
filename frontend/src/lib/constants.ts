@@ -46,6 +46,9 @@ export const ESTADO_RESERVA_LABEL: Record<EstadoReserva, string> = {
   vencida: 'Vencida',
   finalizada: 'Finalizada',
   cancelada: 'Cancelada',
+  pendiente_pago: 'Esperando pago',
+  sin_disponibilidad: 'Sin disponibilidad',
+  revision_sin_cupo: 'Pagó sin cupo',
 };
 
 export const ESTADO_RESERVA_COLOR: Record<EstadoReserva, string> = {
@@ -55,6 +58,11 @@ export const ESTADO_RESERVA_COLOR: Record<EstadoReserva, string> = {
   vencida: 'bg-danger/15 text-danger border-danger/30 animate-pulse',
   finalizada: 'bg-muted/40 text-muted-foreground border-border',
   cancelada: 'bg-danger/15 text-danger border-danger/30',
+  // Sólidos: son estados que requieren que alguien haga algo, no información
+  // pasiva. `pendiente_pago` sí es pasivo — espera al cliente, no a nosotros.
+  pendiente_pago: 'bg-muted/40 text-muted-foreground border-border',
+  sin_disponibilidad: 'bg-warning text-white border-warning',
+  revision_sin_cupo: 'bg-danger text-white border-danger animate-pulse',
 };
 
 // ─── Echeqs ──────────────────────────────────────────────────────────────────
@@ -311,6 +319,7 @@ export const NAV_GROUPS: NavGroup[] = [
   ] },
   { label: 'Reservas', icon: 'ClipboardList', principal: true, items: [
     { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
+    { path: '/reservas-web', label: 'Reservas web', icon: 'Globe' },
     { path: '/contratos', label: 'Contratos', icon: 'FileText' },
   ] },
   { label: 'Flota', icon: 'Car', principal: true, items: [

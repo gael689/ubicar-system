@@ -850,6 +850,36 @@ class ReservaService:
 
     # ── Helpers privados ──────────────────────────────────────────────────────
 
+    def validar_disponibilidad_vehiculo(
+        self,
+        vehiculo_id: int,
+        fecha_inicio: date,
+        hora_inicio: time,
+        fecha_fin: date,
+        hora_fin: time,
+        excluir_reserva_id: int | None = None,
+    ) -> None:
+        """
+        ¿Este auto está libre en este rango? Levanta `ConflictError` si no.
+
+        Lo usa la bandeja de reservas web al asignar un vehículo a una reserva
+        por categoría. **Revalida en el momento de aceptar** y no confía en lo
+        que se vio al abrir la bandeja: entre listar y aceptar pueden pasar
+        horas y entrar otra reserva sobre el mismo auto.
+
+        Pasa por el mismo `detectar_solapamientos` que todo lo demás — una
+        segunda validación paralela terminaría divergiendo.
+        """
+        inicio_dt = datetime.combine(fecha_inicio, hora_inicio)
+        fin_dt = datetime.combine(fecha_fin, hora_fin)
+        ventanas = [
+            v for v in self._cargar_ventanas(vehiculo_id)
+            if excluir_reserva_id is None or v.id != excluir_reserva_id
+        ]
+        resultado = detectar_solapamientos(vehiculo_id, inicio_dt, fin_dt, ventanas)
+        if resultado.hay_conflicto_bloqueante:
+            raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
+
     def _cargar_ventanas(self, vehiculo_id: int) -> list[VentanaReserva]:
         """
         Carga las ventanas que ocupan el vehículo: sus reservas **y sus

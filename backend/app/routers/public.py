@@ -8,14 +8,25 @@ de la flota en segundos.
 """
 from datetime import date, datetime, time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import BusinessRuleError, NotFoundError
 from app.core.responses import ok
 from app.database import get_db
 from app.domain.disponibilidad import validar_rango_web
 from app.models.adicional import Adicional
 from app.services.disponibilidad_service import DisponibilidadService
+from app.services.hold_service import MINUTOS_DEFAULT as HOLD_MINUTOS_DEFAULT, HoldService
+
+
+class HoldCreateRequest(BaseModel):
+    categoria_id: int
+    fecha_inicio: date
+    hora_inicio: time = time(10, 0)
+    fecha_fin: date
+    hora_fin: time = time(10, 0)
 
 router = APIRouter(prefix="/public", tags=["Público"])
 
@@ -110,9 +121,103 @@ def get_config_publica():
             "Paraguay 241",
             "Alsina 350",
             "Aeropuerto Comandante Espora",
-            "Juan Francisco Seguí 3607",
+            # D-39: sólo Bahía Blanca por ahora. "Juan Francisco Seguí 3607"
+            # es Capital Federal y se saca del flujo online — vender dos
+            # ciudades sin resolver si la flota es la misma prometería un auto
+            # que está a 700 km. Se retoma con D-39b.
         ],
+        "hold_minutos": HOLD_MINUTOS_DEFAULT,
     })
+
+
+# ─── Holds (ítem 61) ─────────────────────────────────────────────────────────
+
+@router.post("/holds", status_code=status.HTTP_201_CREATED)
+def crear_hold(payload: HoldCreateRequest, db: Session = Depends(get_db)):
+    """
+    Toma el cupo mientras el cliente completa el pago.
+
+    Verificar y tomar es **una sola operación** dentro del service: hacerlo en
+    dos pasos deja que dos requests simultáneos vean "queda 1" a la vez.
+    """
+    inicio_dt = datetime.combine(payload.fecha_inicio, payload.hora_inicio)
+    fin_dt = datetime.combine(payload.fecha_fin, payload.hora_fin)
+    try:
+        validar_rango_web(
+            inicio_dt, fin_dt, datetime.now(),
+            anticipacion_minima_horas=ANTICIPACION_MINIMA_HORAS,
+            duracion_maxima_dias=DURACION_MAXIMA_DIAS,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    try:
+        hold = HoldService(db).crear(
+            payload.categoria_id, payload.fecha_inicio, payload.hora_inicio,
+            payload.fecha_fin, payload.hora_fin,
+        )
+        db.commit()
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except BusinessRuleError as e:
+        # 409 y no 422: el request es válido, lo que falta es el cupo.
+        raise HTTPException(status_code=409, detail=str(e))
+
+    return ok(_hold_response(hold), "Cupo reservado")
+
+
+@router.get("/holds/{token}")
+def ver_hold(token: str, db: Session = Depends(get_db)):
+    """Estado y segundos restantes — alimenta la cuenta regresiva de la web."""
+    try:
+        hold = HoldService(db).get_por_token(token)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return ok(_hold_response(hold))
+
+
+@router.post("/holds/{token}/extender")
+def extender_hold(token: str, db: Session = Depends(get_db)):
+    """
+    Renueva la ventana. Se ofrece cuando faltan pocos minutos: es preferible
+    darle más tiempo a alguien que está pagando que perder la venta.
+    """
+    svc = HoldService(db)
+    try:
+        hold = svc.extender(token)
+        db.commit()
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except BusinessRuleError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return ok(_hold_response(hold), "Tiempo extendido")
+
+
+@router.delete("/holds/{token}")
+def liberar_hold(token: str, db: Session = Depends(get_db)):
+    """El cliente volvió atrás o cerró: el cupo se libera al instante."""
+    svc = HoldService(db)
+    try:
+        hold = svc.liberar(token)
+        db.commit()
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return ok(_hold_response(hold), "Cupo liberado")
+
+
+def _hold_response(hold) -> dict:
+    return {
+        "token": hold.token,
+        "categoria_id": hold.categoria_id,
+        "fecha_inicio": hold.fecha_inicio,
+        "hora_inicio": hold.hora_inicio,
+        "fecha_fin": hold.fecha_fin,
+        "hora_fin": hold.hora_fin,
+        "expira_en": hold.expira_en,
+        "segundos_restantes": hold.segundos_restantes,
+        "vigente": hold.vigente,
+        "estado": hold.estado,
+    }
 
 
 @router.post("/reservas")

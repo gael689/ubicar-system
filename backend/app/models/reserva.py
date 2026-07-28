@@ -35,7 +35,14 @@ class Reserva(Base):
     lugar_devolucion: Mapped[str] = mapped_column(String(255), nullable=False)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
     estado: Mapped[str] = mapped_column(
-        Enum("pendiente", "confirmada", "activa", "vencida", "finalizada", "cancelada", name="estado_reserva"),
+        Enum(
+            "pendiente", "confirmada", "activa", "vencida", "finalizada", "cancelada",
+            # Reservas web (migración 047). Ninguno ocupa calendario:
+            # `pendiente_pago` toma cupo vía el hold, no vía la reserva.
+            "pendiente_pago", "sin_disponibilidad", "revision_sin_cupo",
+            name="estado_reserva",
+            create_type=False,
+        ),
         nullable=False,
         default="pendiente",
     )
@@ -125,6 +132,22 @@ class Reserva(Base):
     adicionales: Mapped[list["ReservaAdicional"]] = relationship(
         "ReservaAdicional", cascade="all, delete-orphan"
     )
+
+    # ── Origen y bandeja web (migración 047) ─────────────────────────────────
+    # Sin `origen` no se puede armar la bandeja: una reserva web y una de
+    # mostrador son la misma tabla y hay que poder distinguirlas.
+    origen: Mapped[str] = mapped_column(
+        String(20), server_default="mostrador", default="mostrador", nullable=False, index=True
+    )
+    web_resuelta_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    web_resuelta_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    web_motivo_rechazo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # El contacto se guarda en la reserva y no sólo en el cliente porque una
+    # solicitud SIN_DISPONIBILIDAD puede no llegar nunca a crear un cliente, y
+    # ese contacto es justamente lo que no se quiere perder (D-04).
+    web_contacto_nombre: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    web_contacto_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    web_contacto_telefono: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     # ── Recargo por edad del conductor (D-38, migración 044) ─────────────────
     # Congelado igual que los adicionales: cambiar la tabla de recargos no

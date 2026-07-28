@@ -22,6 +22,7 @@ from app.domain.disponibilidad import (
     calcular_cupos,
 )
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
+from app.models.hold import Hold
 from app.models.categoria import Categoria
 from app.models.reserva import Reserva
 from app.models.vehiculo import Vehiculo
@@ -30,6 +31,11 @@ from app.services.precio_service import PrecioService
 # Estados de reserva que ocupan una unidad. Mismos que domain/solapamientos
 # más "pendiente": todavía no está confirmada, pero alguien la está esperando
 # y venderla dos veces es el problema que estamos evitando.
+# Los tres estados web de la migración 047 quedan AFUERA a propósito:
+# `pendiente_pago` ya ocupa vía su hold (contarlo también sería descontar el
+# cupo dos veces), y `sin_disponibilidad` / `revision_sin_cupo` son solicitudes
+# sin cupo asignado — si ocuparan, una solicitud que no se pudo cumplir
+# bloquearía un auto que sí está libre.
 ESTADOS_QUE_OCUPAN = ("pendiente", "confirmada", "activa", "vencida")
 
 
@@ -92,9 +98,26 @@ class DisponibilidadService:
                 origen="bloqueo",
             ))
 
-        # Holds: todavía no existe la tabla (ítem 61). Cuando entre, se suman
-        # acá con `origen="hold"` filtrando `expira_en > now()` — el motor de
-        # cupo ya los contempla, no hay que tocarlo.
+        # Holds vigentes (ítem 61). **El filtro por `expira_en` es lo que hace
+        # que un hold abandonado deje de ocupar sin que corra ningún job**: la
+        # expiración se evalúa acá, en el mismo instante de la consulta.
+        holds = (
+            self.db.query(Hold)
+            .filter(
+                Hold.estado == "vigente",
+                Hold.expira_en > datetime.utcnow(),
+                Hold.fecha_inicio <= hasta,
+                Hold.fecha_fin >= desde,
+            )
+            .all()
+        )
+        for h in holds:
+            ocupaciones.append(OcupacionCategoria(
+                inicio=datetime.combine(h.fecha_inicio, h.hora_inicio),
+                fin=datetime.combine(h.fecha_fin, h.hora_fin),
+                categoria_id=h.categoria_id,
+                origen="hold",
+            ))
 
         return ocupaciones
 
@@ -105,6 +128,7 @@ class DisponibilidadService:
         fecha_fin: date,
         hora_fin: time,
         solo_web: bool = True,
+        categoria_ids: list[int] | None = None,
     ) -> list[dict]:
         """
         Cupo y precio por categoría para el rango pedido.
@@ -119,6 +143,10 @@ class DisponibilidadService:
         q = self.db.query(Categoria).filter(Categoria.activo.is_(True))
         if solo_web:
             q = q.filter(Categoria.visible_web.is_(True))
+        if categoria_ids:
+            # Lo usa HoldService, que sólo necesita el cupo de la categoría
+            # que se está por tomar.
+            q = q.filter(Categoria.id.in_(categoria_ids))
         categorias = q.order_by(Categoria.orden, Categoria.nombre).all()
 
         flota = self._cargar_flota()

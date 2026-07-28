@@ -17,6 +17,7 @@ import { FechasEspecialesPage } from '@/pages/fechas-especiales/FechasEspeciales
 import { NotificacionesPage } from '@/pages/notificaciones/NotificacionesPage';
 import { PreciosPage } from '@/pages/precios/PreciosPage';
 import { AdicionalesPage } from '@/pages/adicionales/AdicionalesPage';
+import { ReservasWebPage } from '@/pages/reservas/ReservasWebPage';
 
 export default function App() {
   return (
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="/fechas-especiales" element={<AppLayout title="Fechas especiales"><FechasEspecialesPage /></AppLayout>} />
         <Route path="/precios" element={<AppLayout title="Calendario de precios"><PreciosPage /></AppLayout>} />
         <Route path="/adicionales" element={<AppLayout title="Adicionales"><AdicionalesPage /></AppLayout>} />
+        <Route path="/reservas-web" element={<AppLayout title="Reservas web"><ReservasWebPage /></AppLayout>} />
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>
     </BrowserRouter>

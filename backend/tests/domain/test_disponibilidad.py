@@ -192,3 +192,79 @@ class TestHelpers:
     def test_dias_de_alquiler_no_cuenta_el_dia_de_devolucion(self):
         from datetime import date
         assert dias_de_alquiler(date(2026, 9, 3), date(2026, 9, 10)) == 7
+
+
+# ─── Holds (ítem 61) ─────────────────────────────────────────────────────────
+
+class TestHoldsOcupanCupo:
+    """
+    El hold es la defensa real contra la sobreventa: si no ocupa cupo mientras
+    el cliente paga, dos personas compran la última unidad.
+
+    Nota: la expiración no se evalúa acá sino en el service, que filtra
+    `expira_en > now()` antes de armar la ocupación. Es a propósito — el
+    dominio no conoce el reloj, y así **un hold vencido deja de ocupar en el
+    mismo instante en que vence, sin que corra ningún job**.
+    """
+
+    def test_un_hold_baja_el_cupo(self):
+        hold = OcupacionCategoria(
+            inicio=datetime(2026, 3, 1, 10), fin=datetime(2026, 3, 5, 10),
+            categoria_id=1, origen="hold",
+        )
+        cupo = calcular_cupo(
+            1, datetime(2026, 3, 1, 10), datetime(2026, 3, 5, 10), FLOTA, [hold]
+        )
+        assert cupo.disponibles == 2  # de 3 compactos
+
+    def test_varios_holds_pueden_agotar_la_categoria(self):
+        holds = [
+            OcupacionCategoria(
+                inicio=datetime(2026, 3, 1, 10), fin=datetime(2026, 3, 5, 10),
+                categoria_id=1, origen="hold",
+            )
+            for _ in range(3)
+        ]
+        cupo = calcular_cupo(
+            1, datetime(2026, 3, 1, 10), datetime(2026, 3, 5, 10), FLOTA, holds
+        )
+        assert cupo.disponibles == 0
+
+    def test_un_hold_de_otra_categoria_no_afecta(self):
+        hold = OcupacionCategoria(
+            inicio=datetime(2026, 3, 1, 10), fin=datetime(2026, 3, 5, 10),
+            categoria_id=5, origen="hold",
+        )
+        cupo = calcular_cupo(
+            1, datetime(2026, 3, 1, 10), datetime(2026, 3, 5, 10), FLOTA, [hold]
+        )
+        assert cupo.disponibles == 3
+
+    def test_un_hold_fuera_del_rango_no_afecta(self):
+        hold = OcupacionCategoria(
+            inicio=datetime(2026, 5, 1, 10), fin=datetime(2026, 5, 5, 10),
+            categoria_id=1, origen="hold",
+        )
+        cupo = calcular_cupo(
+            1, datetime(2026, 3, 1, 10), datetime(2026, 3, 5, 10), FLOTA, [hold]
+        )
+        assert cupo.disponibles == 3
+
+    def test_hold_y_reserva_se_suman(self):
+        """Un hold no reemplaza a la reserva: mientras existan los dos, ocupan
+        los dos. Es lo que impide vender la misma unidad dos veces durante la
+        ventana de pago."""
+        ocupaciones = [
+            OcupacionCategoria(
+                inicio=datetime(2026, 3, 1, 10), fin=datetime(2026, 3, 5, 10),
+                categoria_id=1, vehiculo_id=1, origen="reserva",
+            ),
+            OcupacionCategoria(
+                inicio=datetime(2026, 3, 1, 10), fin=datetime(2026, 3, 5, 10),
+                categoria_id=1, origen="hold",
+            ),
+        ]
+        cupo = calcular_cupo(
+            1, datetime(2026, 3, 1, 10), datetime(2026, 3, 5, 10), FLOTA, ocupaciones
+        )
+        assert cupo.disponibles == 1

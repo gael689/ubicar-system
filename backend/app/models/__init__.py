@@ -21,6 +21,7 @@ from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.recargo_edad import RecargoEdad
 from app.models.contrato import Contrato, ContratoPlantilla
+from app.models.hold import Hold
 
 __all__ = [
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",

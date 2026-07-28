@@ -21,6 +21,11 @@ class TipoVehiculo(str, Enum):
 class EstadoReserva(str, Enum):
     PENDIENTE = "pendiente"
     CONFIRMADA = "confirmada"
+    # Reservas web (migración 047). Ninguno de los tres ocupa calendario:
+    # `pendiente_pago` sí toma cupo, pero vía el hold, no vía la reserva.
+    PENDIENTE_PAGO = "pendiente_pago"          # hold tomado, esperando el pago
+    SIN_DISPONIBILIDAD = "sin_disponibilidad"  # D-04: solicitud sin cupo, sin cobrar
+    REVISION_SIN_CUPO = "revision_sin_cupo"    # decisión #4: pagó y el cupo se fue
     ACTIVA = "activa"
     VENCIDA = "vencida"  # pasó fecha_fin/hora_fin y el auto no volvió (sin checkin)
     FINALIZADA = "finalizada"

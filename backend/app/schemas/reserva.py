@@ -214,6 +214,13 @@ class ReservaResponse(BaseModel):
     conductor: ConductorResumen | None = None
     alquiler_id: int | None = None
     alquiler_estado: str | None = None
+    origen: str = "mostrador"
+    web_resuelta_por: int | None = None
+    web_resuelta_en: datetime | None = None
+    web_motivo_rechazo: str | None = None
+    web_contacto_nombre: str | None = None
+    web_contacto_email: str | None = None
+    web_contacto_telefono: str | None = None
     model_config = {"from_attributes": True}
 
 

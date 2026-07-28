@@ -216,7 +216,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estado del vehículo</label>
-            <DaniosPreexistentes vehiculoId={reserva.vehiculo_id} />
+            {reserva.vehiculo_id && <DaniosPreexistentes vehiculoId={reserva.vehiculo_id} />}
           </div>
 
           <div className="space-y-1.5">
