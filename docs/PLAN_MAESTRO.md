@@ -9,6 +9,7 @@
 - **`docs/ANALISIS_CICLO_RESERVA.md`** — análisis fino del ciclo operativo: check-out, check-in tardío, excedentes, precios, clientes empresa/particular y vencimientos. Contiene los bugs P0 confirmados con archivo y línea.
 - **`docs/CASOS_DE_USO.md`** — registro trackeable de los ~195 casos de uso con ID, estado y prioridad. Es la lista de trabajo.
 - **`docs/PLAN_FRONTEND_UX.md`** — rediseño de la interfaz: formularios por pasos, componente `<Wizard>`, check-in como liquidación, navegación y consistencia visual.
+- **`docs/MANUAL_DEL_SISTEMA.md`** — **qué hace el sistema hoy, módulo por módulo.** Es el documento a leer para entender el alcance sin recorrer el código, y el que dice también qué NO hace y por qué.
 - **`docs/PLAN_CONTRATOS.md`** — el módulo de Contratos (Fase 4, ítems 50-51): anverso campo por campo, clausulado versionado, firma y decisiones abiertas.
 - **`docs/PLAN_RESERVAS_WEB.md`** + **`docs/DECISIONES_RESERVAS_WEB.md`** — la Fase 6 y las 10 preguntas que la traban.
 
