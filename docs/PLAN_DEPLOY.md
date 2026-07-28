@@ -89,7 +89,19 @@ Los tres necesitan HTTPS (Vercel y Railway lo dan automático) y que
 **Ninguno de estos es opcional.** Sin resolverlos, el sistema en producción
 pierde archivos, no manda avisos o queda abierto a cualquiera.
 
-### 3.1 🔴 El almacenamiento de archivos
+> **Estado al 2026-07-28: tres de los cinco ya están resueltos.**
+>
+> | | Bloqueante | Estado |
+> |---|---|---|
+> | 3.1 | Almacenamiento de archivos | ✅ **Hecho** — falta crear el bucket |
+> | 3.2 | Scheduler de las 08:00 | ✅ **Hecho** — funciona solo en Railway |
+> | 3.3 | Autenticación real | 🔴 **Pendiente** — necesita Clerk |
+> | 3.4 | Pool de conexiones | ✅ **Hecho** — `DB_SIN_POOL` |
+> | 3.5 | Rate limiting | ✅ **Hecho** y verificado en vivo |
+>
+> Lo único que queda del código es Clerk. El resto es configuración de cuentas.
+
+### 3.1 ✅ El almacenamiento de archivos
 
 **Qué pasa hoy.** `LocalStorage` escribe en `./storage_local`. En Railway con
 un volumen persistente eso funciona; en Vercel, no. Y en cualquiera de los
@@ -105,39 +117,45 @@ con cuatro métodos (`upload`, `read`, `delete`, `public_url`) y `LocalStorage`
 es sólo una implementación. **Agregar una segunda no toca ningún módulo de
 negocio.**
 
-**Qué hacer:**
-1. Escribir `BlobStorage` implementando `IStorage`. Con Vercel Blob o con R2 —
-   `boto3` ya está en las dependencias, así que R2 (que es compatible con S3)
-   no agrega nada nuevo.
-2. Elegir la implementación por variable de entorno en `core/deps.py::get_storage`.
-3. `public_url` pasa a devolver la URL del blob, y **desaparece el
-   `app.mount("/static")`**.
-4. Migrar lo que ya está subido (hoy es poco).
+**Estado: resuelto.** Está implementado:
 
-**Estimado:** 1 día.
+| Qué | Dónde |
+|---|---|
+| `S3Storage` (sirve para R2, S3 y MinIO) | `app/adapters/storage/s3.py` |
+| Elección por variable de entorno | `core/deps.py::get_storage` |
+| `/static` se monta **sólo** con `STORAGE_PROVIDER=local` | `app/main.py` |
+| Migrar los archivos que ya están en disco | `scripts/migrar_storage_a_blob.py` |
+| El `/health` **escribe y lee un archivo de prueba** | `app/main.py` |
 
-### 3.2 🔴 El scheduler de las 08:00
+Ese último punto importa: una credencial mal cargada no rompe el arranque —la
+API responde perfecto— y recién falla cuando alguien sube la foto de un daño.
+Por eso el health check lo prueba de verdad en vez de asumirlo.
+
+**Lo que falta es crear el bucket y cargar las credenciales** (`GUIA_DEPLOY.md`
+paso 1). No hay más código que escribir.
+
+### 3.2 ✅ El scheduler de las 08:00
 
 **Qué pasa hoy.** `main.py` levanta un `AsyncIOScheduler` en el `lifespan` que
-corre todos los días a las 08:00 hora Argentina y genera las 29 alertas.
+corre todos los días a las 08:00 hora Argentina y genera las **35 alertas** del
+catálogo.
 
 - **En Railway:** funciona tal cual. No hay nada que hacer.
 - **En Vercel:** nunca se dispara.
 
-**Qué hacer si va a Vercel.** El endpoint ya existe: `POST /notificaciones/generar`.
-Alcanza con un **Vercel Cron** que lo llame:
+**Estado: resuelto para los dos caminos.** En Railway el scheduler corre solo.
+Para Vercel existe `POST /notificaciones/cron`, protegido con `CRON_SECRET` y
+comparado con `secrets.compare_digest`. **Si la variable no está cargada el
+endpoint devuelve 404**, para que no quede abierto por olvido.
 
 ```json
-{ "crons": [{ "path": "/api/cron/notificaciones", "schedule": "0 11 * * *" }] }
+{ "crons": [{ "path": "/api/cron", "schedule": "0 11 * * *" }] }
 ```
 
-Dos detalles que importan:
-- **La hora va en UTC.** Las 08:00 de Argentina son las **11:00 UTC**. Poner
-  `0 8 * * *` haría correr el proceso a las 5 de la mañana.
-- **El endpoint tiene que quedar protegido** con un secreto, o cualquiera
-  puede dispararlo desde afuera.
+> **La hora va en UTC.** Las 08:00 de Argentina son las **11:00 UTC**. Poner
+> `0 8 * * *` haría correr el proceso a las 5 de la mañana.
 
-**Estimado:** 2 horas (sólo si va a Vercel).
+El mismo endpoint limpia los holds vencidos.
 
 ### 3.3 🔴 Autenticación real
 
@@ -159,7 +177,7 @@ stack disponibles). Alcance mínimo:
 
 **Estimado:** 3-5 días.
 
-### 3.4 🟠 El pool de conexiones
+### 3.4 ✅ El pool de conexiones
 
 **Qué pasa hoy.** `pool_size=10, max_overflow=20` por proceso.
 
@@ -167,23 +185,37 @@ stack disponibles). Alcance mínimo:
 - **En Vercel:** cada instancia serverless abre su propio pool. Diez requests
   en paralelo pueden pedir 300 conexiones y Postgres las rechaza.
 
-**Qué hacer si va a Vercel:** `poolclass=NullPool` en el engine y conectarse
-**por el pooler de Railway**, no directo a la base.
+**Estado: resuelto.** `DB_SIN_POOL=true` hace que `app/database.py` use
+`NullPool`. Los tamaños también son configurables (`DB_POOL_SIZE`,
+`DB_MAX_OVERFLOW`).
 
-**Estimado:** 1 hora (sólo si va a Vercel).
+Si va a Vercel: activar esa variable **y conectarse por el pooler de Railway**,
+no directo a la base.
 
-### 3.5 🟠 Rate limiting en los endpoints públicos
+### 3.5 ✅ Rate limiting en los endpoints públicos
 
-**Qué pasa hoy.** `/public/holds` no tiene límite. Un script puede pedir holds
-en loop y **dejar toda la flota sin cupo en segundos**, sin pagar nada.
+**El problema era real:** `/public/holds` toma cupo sin pedir nada a cambio, así
+que un script podía dejar la flota entera sin disponibilidad en segundos.
 
-**Qué hacer:**
-- Límite por IP en `/public/holds` y `/public/disponibilidad`.
-- Tope de holds vigentes simultáneos por IP.
-- El job de limpieza de holds vencidos ya existe (`HoldService.limpiar_vencidos`);
-  engancharlo al cron diario.
+**Estado: resuelto** en `app/core/rate_limit.py`. Ventana deslizante en memoria
+—no balde— para que nadie pueda mandar la ráfaga justo al cambiar el minuto:
 
-**Estimado:** medio día.
+| Endpoint | Límite |
+|---|---|
+| `/public/disponibilidad` | 60 / 60s |
+| `/public/holds` | 8 / 60s |
+| `/public/solicitudes` | 5 / 300s |
+
+Lee `X-Forwarded-For`, porque detrás del proxy de Railway todas las peticiones
+parecerían venir de la misma IP y el límite se aplicaría al tráfico entero como
+si fuera un solo visitante.
+
+Verificado en vivo: 7 holds creados, el 8° chocó con el cupo (409) y del 9° en
+adelante devolvió 429. La limpieza de holds vencidos va enganchada al cron.
+
+> ⚠️ **Con más de una instancia el límite se multiplica** por la cantidad de
+> instancias, porque cada una lleva su contador en memoria. Sigue frenando el
+> abuso grosero pero deja de ser exacto. Si escala, ahí sí hace falta Redis.
 
 ---
 
@@ -210,7 +242,10 @@ bundle.
 ### 5.1 Mercado Pago — el cobro online
 
 Es lo único que separa al flujo web de vender de verdad. Los pasos 1 a 3 ya
-están; el 4 hoy cierra por WhatsApp.
+están; el 4 hoy termina en `POST /public/solicitudes`, que registra la
+solicitud sin cobrar y **dispara un aviso instantáneo** en la campana del
+sistema (`NotificacionService.avisar_reserva_web`). Se atiende a mano desde la
+bandeja de Reservas web.
 
 **Qué hay que construir:**
 
@@ -276,6 +311,23 @@ flujo, y su `--limpiar` para sacarlos antes de producción. **No dejarlos.**
 | **D-30b** Descuento por pagar el 100% | Un valor de configuración |
 | **D-32b** Casilla de avisos | El mail inmediato |
 
+### 6.2-bis Lo que se cerró después de escribir este plan
+
+Todo esto ya está hecho y verificado, y **no hace falta volver a mirarlo**:
+
+| Qué | Por qué importaba |
+|---|---|
+| **Doble reserva del mismo auto** | `validar_disponibilidad` leía sin lock: dos personas confirmando el mismo auto veían las dos "libre" y grababan las dos. Se reprodujo el bug y se cerró con `SELECT FOR UPDATE` sobre la fila del vehículo. Hay un `scripts/verificar_concurrencia.py` en el checklist de deploy |
+| **Contrato antes de la entrega** (migr. 049) | Colgaba del alquiler, que sólo existe después del check-out. Ahora cuelga de la reserva y se emite apenas se acuerda el alquiler |
+| **Firmar en papel** (migr. 050) | Funcionaba pero no estaba contemplado ni registrado. Ahora es explícito y la reimpresión lo dice |
+| **Pantalla de Contratos** | `/contratos` era un placeholder en el menú. Era el último del sistema |
+| **Familia de avisos "falta completar"** | 5 reglas nuevas: fecha especial sin tarifa cargada (el caso Navidad), categoría con flota pero sin precio, vehículo sin categoría, contrato sin emitir, datos fiscales vacíos |
+| **Cola de prioridad en notificaciones** | Se ordenaban sólo por fecha: una crítica de ayer quedaba debajo de una baja de hoy |
+| **Política de caché en tres niveles** | Había un único `staleTime` de 2 min con `refetchOnWindowFocus` apagado. Con 3 personas eso significa ver la flota de hace 2 minutos |
+| **Filtros** | Cobros por medio/cliente/fecha/factura con desglose de caja; notificaciones por familia y urgencia; reservas por origen, categoría y estado de contrato |
+| **Baja de vehículo con reservas vivas** | Se podía dar de baja un auto circulando con un cliente sin que el sistema dijera nada |
+| **Total del PDF de reserva** | Mostraba `precio_total`, que no incluye adicionales: el cliente recibía un total menor al que iba a pagar |
+
 ### 6.3 Deuda técnica conocida
 
 **`extender()` no genera asiento en la cuenta corriente** (`PLAN_MAESTRO.md`
@@ -302,25 +354,32 @@ fecha de vencimiento le corresponde, y qué pasa si la extensión baja el precio
 
 ## 7. El orden de trabajo
 
-### Etapa 1 — Antes de poder deployar (1 semana)
+### Etapa 1 — Antes de poder deployar (1-2 días)
+
+Se acortó: el storage y el rate limiting **ya están hechos** (§3.1, §3.5).
 
 | # | Tarea | Días |
 |---|---|---|
-| 1 | **Storage a blob** (§3.1) | 1 |
-| 2 | **Arreglar `extender()`** (§6.3) — necesita las 3 decisiones | 1 |
-| 3 | **Rate limiting** en `/public/*` (§3.5) | 0,5 |
-| 4 | Variables de entorno separadas por ambiente y **rotar el token de Meta**, que estuvo público | 0,5 |
+| 1 | **Rotar el token de Meta**, que estuvo público en el bundle de la versión Vite | 0,5 |
+| 2 | **Arreglar `extender()`** (§6.3) — necesita las 3 decisiones, y toca plata | 1 |
+| 3 | Cargar los **datos fiscales de la empresa** (§6.2, D-C1). Mientras estén vacíos, **todo contrato sale marcado "DOCUMENTO PROVISORIO"**. Ya hay una notificación avisándolo | 0,25 |
+
+> El ítem 2 es el único que sigue siendo código, y es el que más conviene no
+> saltear: si un alquiler se extiende después del check-out, **el sistema
+> subfactura en silencio**.
 
 ### Etapa 2 — Deploy de infraestructura (3-4 días)
 
 | # | Tarea |
 |---|---|
+| 4 | Bucket R2 + credenciales (§3.1 ya está en código) |
 | 5 | Postgres en Railway + **backups activados y una restauración probada** |
-| 6 | Correr las migraciones contra la base de producción |
+| 6 | Correr las migraciones (**hasta la 050**) contra la base de producción |
 | 7 | API en Railway (o en Vercel con §4), con el cron de las 08:00 |
 | 8 | `web/` y `frontend/` en Vercel |
 | 9 | Dominios, HTTPS y CORS con los dominios reales |
-| 10 | Monitoreo de errores y health check |
+| 10 | Verificar `/health` (mira el `storage`) y correr `python -m scripts.verificar_concurrencia` |
+| 11 | Monitoreo de errores |
 
 **Al terminar esta etapa el sistema interno ya se puede usar en producción**,
 con la salvedad de que todavía no hay login real.
@@ -329,8 +388,8 @@ con la salvedad de que todavía no hay login real.
 
 | # | Tarea |
 |---|---|
-| 11 | **Clerk** (§3.3): login, verificación en el backend, roles |
-| 12 | Sacar `DEV_BYPASS_AUTH` de producción |
+| 12 | **Clerk** (§3.3): login, verificación en el backend, roles |
+| 13 | Sacar `DEV_BYPASS_AUTH` de producción |
 
 **Es el corte para que el sistema sea usable de verdad por varias personas** —
 y para que el contrato salga con el nombre de quien realmente atendió.
@@ -339,10 +398,10 @@ y para que el contrato salga con el nombre de quien realmente atendió.
 
 | # | Tarea |
 |---|---|
-| 13 | **Mercado Pago** (§5.1): preferencia, Checkout Pro, webhook idempotente |
-| 14 | Devoluciones con contra-asiento |
-| 15 | **Resend inmediato** (§5.2) |
-| 16 | Cargar los datos reales y sacar los de demo |
+| 14 | **Mercado Pago** (§5.1): preferencia, Checkout Pro, webhook idempotente |
+| 15 | Devoluciones con contra-asiento |
+| 16 | **Resend inmediato** (§5.2) |
+| 17 | Cargar los datos reales y sacar los de demo |
 
 **Al terminar esta etapa la web vende sola.**
 
@@ -350,29 +409,41 @@ y para que el contrato salga con el nombre de quien realmente atendió.
 
 | # | Tarea |
 |---|---|
-| 17 | `VehiclesSection` conectada al backend |
-| 18 | Cerrar las decisiones pendientes (§6.2) y regenerar el contrato sin la marca de provisorio |
-| 19 | Textos legales finales |
+| 18 | `VehiclesSection` conectada al backend |
+| 19 | Cerrar las decisiones pendientes (§6.2) y regenerar el contrato sin la marca de provisorio |
+| 20 | Textos legales finales |
+| 21 | **Módulo de auditoría** — el rastro ya existe (14 modelos guardan quién hizo qué), pero recién con Clerk el usuario registrado es real. Falta la pantalla que lo muestre |
 
 ---
 
 ## 8. Resumen
 
-**Total estimado hasta que la web venda sola: 3 a 4 semanas.**
+**Total estimado hasta que la web venda sola: 2 a 3 semanas.**
+
+Se acortó respecto de la primera versión de este plan porque tres de los cinco
+bloqueantes ya están resueltos en código.
 
 | Etapa | Qué habilita | Tiempo |
 |---|---|---|
-| 1 | Que el deploy no pierda datos | 1 semana |
-| 2 | El sistema interno en producción | 3-4 días |
+| 1 | Cerrar lo último del sistema | 1-2 días |
+| 2 | El sistema interno en producción | 2-3 días |
 | 3 | Varias personas usándolo, con auditoría real | 3-5 días |
 | 4 | La web vendiendo con cobro online | 1 semana |
 | 5 | Pulido | continuo |
 
 **Se puede cortar antes.** Terminadas las etapas 1 y 2, el sistema interno ya
 sirve para operar todos los días: reservas, entregas, devoluciones, cobros,
-cuentas corrientes, contratos y avisos. La web queda como está hoy —completa
-hasta el paso 4, cerrando por WhatsApp— que ya es mejor que lo que hay.
+cuentas corrientes, contratos, adicionales y avisos. La web queda completa
+hasta el paso 4 y las solicitudes entran por `POST /public/solicitudes`, que
+genera un aviso instantáneo en la campana del sistema — o sea que se pueden
+atender a mano desde el primer día, sin Mercado Pago.
 
-**Lo único que no se puede saltear es el storage (§3.1).** Deployar sin eso
-significa perder documentos, fotos de daños y firmas de contratos, que es
-justamente lo que se necesitaría el día que hay un reclamo.
+**Lo que no conviene saltear:**
+
+1. **Crear el bucket** (§3.1). El código está, pero sin bucket los documentos,
+   las fotos de daños y las firmas se pierden — justo lo que se necesitaría el
+   día que hay un reclamo. El `/health` avisa si está mal configurado.
+2. **Los datos fiscales** (§6.2, D-C1). Sin CUIT ni razón social, cada contrato
+   que se emita sale marcado **DOCUMENTO PROVISORIO**.
+3. **`extender()`** (§6.3). Es el único lugar del sistema donde el ledger puede
+   quedar desalineado sin que nadie se entere.

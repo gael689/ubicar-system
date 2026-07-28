@@ -3,8 +3,25 @@
 **Complementa a `PLAN_DEPLOY.md`**, que explica *qué* hay que hacer y *por qué*.
 Esto es el *cómo*: los comandos, la configuración de cada panel y el orden.
 
-**Tiempo estimado del deploy completo: media jornada**, si los bloqueantes de
-`PLAN_DEPLOY.md` §3 ya están resueltos.
+**Tiempo estimado del deploy completo: media jornada.**
+
+> **Antes de arrancar, lo que hay que tener a mano.** El código está listo —
+> tres de los cinco bloqueantes de `PLAN_DEPLOY.md` §3 ya se resolvieron y sólo
+> queda Clerk. Lo que falta son **cuentas y credenciales**:
+>
+> | Necesitás | Para qué | Paso |
+> |---|---|---|
+> | Cuenta de **Cloudflare** | Bucket R2 (documentos, fotos, firmas) | 1 |
+> | Cuenta de **Railway** | Postgres + la API | 2 y 3 |
+> | Cuenta de **Vercel** | Las dos aplicaciones de frontend | 4 y 5 |
+> | Dominio `ubicar-rent.com.ar` | Apuntar los DNS | 3, 4 y 5 |
+> | API key de **Resend** | Digest diario por mail | 3 |
+> | Token **rotado** de Meta | La web estuvo con el viejo público | 4 |
+> | **CUIT y razón social** de Ubicar | Sin esto todo contrato sale "PROVISORIO" | 6 |
+>
+> Clerk y Mercado Pago **no hacen falta para deployar**: el sistema arranca sin
+> ellos (con la protección por contraseña de Vercel mientras tanto) y la web
+> recibe solicitudes sin cobrar.
 
 ---
 
@@ -124,6 +141,11 @@ NOTIFICACIONES_DIGEST_DESTINATARIOS=franco@...,martin@...
    (`railway.toml`): si fallan, el deploy falla y queda sirviendo la versión
    anterior — que es lo que se quiere.
 
+> La última migración es la **050**. Un `alembic current` en la base nueva
+> tiene que terminar en `050_firma_medio`. Varias son irreversibles a
+> propósito: la 043 y la 049 levantan un `RuntimeError` con el motivo si se
+> intenta bajarlas con datos que el esquema viejo no admite.
+
 ### Verificar
 
 ```bash
@@ -231,19 +253,48 @@ empresa.
 python -m scripts.seed_demo_web --limpiar
 ```
 
-Y cargar desde el sistema: precios por categoría, fotos y specs de cada
-categoría, coberturas y extras, y las franjas de recargo por edad.
+Y cargar desde el sistema, **en este orden** — cada cosa depende de la anterior:
+
+| # | Qué | Dónde | Si falta |
+|---|---|---|---|
+| 1 | **CUIT y razón social** | Configuración → Empresa | Todo contrato sale "DOCUMENTO PROVISORIO" |
+| 2 | Categorías con foto y specs | Flota → Categorías | La web no las muestra |
+| 3 | Precio por categoría | Precios | La web dice "sin disponibilidad" **aunque haya autos libres** |
+| 4 | Categoría asignada a cada vehículo | Ficha del vehículo | El auto no aparece en la web ni se puede cotizar |
+| 5 | Coberturas y extras | Adicionales | El paso 2 de la reserva web sale vacío |
+| 6 | Franjas de recargo por edad | Precios → Recargos por edad | La edad no afecta el precio |
+| 7 | Fechas especiales y su tarifa | Fechas especiales / Precios | Los feriados se venden al precio de un martes |
+
+> **No hace falta acordarse de todo esto.** El sistema lo reclama solo: la
+> familia de avisos **"📌 Falta completar"** detecta los huecos 1 a 4 y 7, y
+> aparecen en la campana apenas corra el motor de reglas. Después de cargar los
+> datos, tocar "actualizar" en la campana y **la lista tiene que quedar
+> vacía de esa familia**.
 
 ### Verificación de punta a punta
 
-- [ ] `/health` responde ok
-- [ ] La web muestra categorías con precio real
-- [ ] Se puede tomar un hold y se ve la cuenta regresiva
-- [ ] Subir un documento a un cliente y **volver a abrirlo** (prueba el storage)
-- [ ] Generar un contrato y descargar el PDF
-- [ ] `POST /notificaciones/generar` crea notificaciones
-- [ ] El aviso de cookies aparece, y **rechazar no carga Meta ni Analytics**
+**Infraestructura**
+
+- [ ] `/health` responde ok y dice `storage: ok`
+- [ ] `alembic current` termina en `050_firma_medio`
 - [ ] `python -m scripts.verificar_concurrencia` dice OK
+- [ ] Subir un documento a un cliente y **volver a abrirlo** (prueba el storage de verdad)
+
+**Sistema interno**
+
+- [ ] Crear una reserva → se descarga el PDF de confirmación y el total incluye los adicionales
+- [ ] Emitir un contrato **desde la reserva, sin hacer check-out**, y descargar el PDF
+- [ ] Firmarlo en pantalla → el trazo cae **sobre la línea de firma**
+- [ ] Registrar un cobro → el botón **Emitir** del listado de Cobros genera el recibo de un click
+- [ ] `POST /notificaciones/generar` crea notificaciones, y **las críticas aparecen primero**
+- [ ] La campana no muestra nada de la familia "📌 Falta completar"
+
+**Web pública**
+
+- [ ] Muestra categorías con precio real
+- [ ] Se puede tomar un hold y se ve la cuenta regresiva
+- [ ] Completar una solicitud → **llega el aviso a la campana del sistema en el acto**
+- [ ] El aviso de cookies aparece, y **rechazar no carga Meta ni Analytics**
 
 > **Lo de concurrencia no es opcional.** Son tres personas trabajando sobre la
 > misma flota: si el lock del vehículo no funciona contra la base de
@@ -305,3 +356,9 @@ está cargada devuelve 404, para que no quede abierto por olvido.
 | 429 en la web | Rate limiting. Es lo esperado ante un script; si le pasa a un cliente real, subir los límites en `core/rate_limit.py` |
 | `/health` dice `storage: error` | Credenciales de R2 mal cargadas. La API igual responde, pero no se pueden subir archivos |
 | El deploy falla al arrancar | Una migración falló. Ver los logs: es intencional que no despliegue |
+| La web dice "sin disponibilidad" con autos libres | La categoría no tiene precio cargado. Lo avisa "📌 Falta completar" |
+| Un auto no aparece en la web | No tiene categoría asignada |
+| El contrato sale con "DOCUMENTO PROVISORIO" | Faltan `empresa.cuit` y `empresa.razon_social` en Configuración |
+| Dos reservas sobre el mismo auto | No debería pasar. Correr `scripts/verificar_concurrencia`: si falla, el lock no está funcionando contra esa base |
+| Una pantalla muestra datos viejos | El caché es de 15s para lo compartido y se revalida al volver a la pestaña. Si persiste, mirar `lib/queryClient.ts` |
+| El PDF del contrato no muestra la firma | Puede ser correcto: si se firmó **en papel** no hay imagen, y el pie del contrato lo aclara |
