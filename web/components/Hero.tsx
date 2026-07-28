@@ -6,7 +6,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { whatsappLinkCABA, WHATSAPP_GENERAL } from "@/lib/constants";
 import {
-  MapPin, ChevronDown, CalendarDays, Check, ShieldCheck, Zap, MessageCircle,
+  MapPin, ChevronDown, CalendarDays, Check, ShieldCheck, MessageCircle,
 } from "lucide-react";
 import { trackLeadEvent } from "@/lib/meta-pixel";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,7 +15,6 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { HeroFondo } from "@/components/HeroFondo";
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, "0");
@@ -89,7 +88,7 @@ const Hero = () => {
   };
 
   return (
-    <section className="relative flex min-h-screen items-center overflow-hidden pb-16 pt-28 lg:pb-20 lg:pt-32">
+    <section className="relative flex min-h-screen items-center overflow-hidden pb-16 pt-32 lg:pb-20 lg:pt-36">
       {/* Foto de fondo */}
       <Image
         src="https://images.pexels.com/photos/34775710/pexels-photo-34775710.jpeg?auto=compress&cs=tinysrgb&w=1920"
@@ -99,44 +98,33 @@ const Hero = () => {
         sizes="100vw"
         className="object-cover"
       />
-      {/* La capa es bastante más oscura que antes: el buscador blanco necesita
-          contraste real para leerse como el elemento principal. */}
+      {/* Un solo degradé, de oscuro a menos oscuro. El buscador blanco es lo
+          único que tiene que llamar la atención: cualquier textura detrás le
+          compite. */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(100deg, rgba(13,32,56,0.94) 0%, rgba(20,48,84,0.86) 38%, rgba(27,63,107,0.62) 70%, rgba(40,84,133,0.45) 100%)",
+            "linear-gradient(100deg, rgba(13,30,53,0.93) 0%, rgba(19,45,79,0.85) 42%, rgba(27,63,107,0.60) 100%)",
         }}
       />
-      <HeroFondo />
 
       <div className="container relative z-10 px-4">
         <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,470px)] lg:gap-14">
           {/* ── Columna izquierda: el mensaje ── */}
           <div className="order-2 lg:order-1">
-            <div className="mb-7 opacity-0 animate-fade-up">
-              <Image
-                src="/img/logo.png"
-                alt="Ubicar Rent"
-                width={190}
-                height={62}
-                priority
-                className="h-auto w-[150px] brightness-0 invert md:w-[185px]"
-              />
-            </div>
-
-            {/* Lo primero que se lee: acá se reserva online. */}
-            <span
-              className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wide text-white opacity-0 animate-fade-up backdrop-blur-sm md:text-sm"
+            {/* Una línea sobria en lugar de una píldora: dice lo mismo y no
+                compite con el titular. */}
+            <p
+              className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-[#7FB3E8] opacity-0 animate-fade-up"
               style={{ animationDelay: "0.08s" }}
             >
-              <Zap className="h-3.5 w-3.5" />
-              Reservá online en 4 pasos
-            </span>
+              Reservá online
+            </p>
 
             <h1
-              className="text-[2.1rem] font-bold leading-[1.06] text-white opacity-0 animate-fade-up sm:text-5xl lg:text-[3.4rem]"
-              style={{ animationDelay: "0.15s" }}
+              className="text-[2.2rem] font-bold leading-[1.08] tracking-tight text-white opacity-0 animate-fade-up sm:text-[3rem] lg:text-[3.5rem]"
+              style={{ animationDelay: "0.14s" }}
             >
               Alquiler de vehículos
               <br />
@@ -144,58 +132,40 @@ const Hero = () => {
             </h1>
 
             <p
-              className="mt-5 max-w-lg text-base text-white/80 opacity-0 animate-fade-up md:text-lg"
-              style={{ animationDelay: "0.22s" }}
+              className="mt-6 max-w-md text-base leading-relaxed text-white/75 opacity-0 animate-fade-up md:text-lg"
+              style={{ animationDelay: "0.2s" }}
             >
-              Mirá qué autos hay disponibles con su precio final y reservá el
-              tuyo ahora. Sin llamar, sin esperar respuesta.
+              Consultá disponibilidad, mirá el precio final y reservá tu vehículo
+              en cuatro pasos.
             </p>
 
-            {/* Los 4 pasos: hace visible que hay un sistema detrás */}
-            <ol
-              className="mt-7 flex flex-wrap items-center gap-x-2 gap-y-2 opacity-0 animate-fade-up"
-              style={{ animationDelay: "0.3s" }}
+            {/* Los cuatro pasos, como una línea de texto sobria: hace visible
+                que hay un sistema detrás sin convertirse en un gráfico. */}
+            <div
+              className="mt-8 border-t border-white/15 pt-6 opacity-0 animate-fade-up"
+              style={{ animationDelay: "0.28s" }}
             >
-              {PASOS.map((paso, i) => (
-                <li key={paso} className="flex items-center gap-2">
-                  <span className="flex items-center gap-1.5 text-sm text-white/85">
-                    <span className="grid h-5 w-5 place-items-center rounded-full bg-white/15 text-[11px] font-bold text-white">
-                      {i + 1}
+              <ol className="flex flex-wrap gap-x-7 gap-y-2.5">
+                {PASOS.map((paso, i) => (
+                  <li key={paso} className="text-sm text-white/70">
+                    <span className="mr-1.5 font-semibold text-white/40 tabular-nums">
+                      0{i + 1}
                     </span>
                     {paso}
-                  </span>
-                  {i < PASOS.length - 1 && (
-                    <span className="hidden h-px w-4 bg-white/25 sm:block" />
-                  )}
+                  </li>
+                ))}
+              </ol>
+
+              <ul className="mt-6 flex flex-wrap gap-x-7 gap-y-2 text-sm text-white/60">
+                <li className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-[#7FB3E8]" /> Kilometraje libre
                 </li>
-              ))}
-            </ol>
+                <li className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-[#7FB3E8]" /> Seguro incluido
+                </li>
+              </ul>
+            </div>
 
-            <ul
-              className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/70 opacity-0 animate-fade-up"
-              style={{ animationDelay: "0.38s" }}
-            >
-              <li className="flex items-center gap-1.5">
-                <Check className="h-4 w-4 text-[#7FB3E8]" /> Kilometraje libre
-              </li>
-              <li className="flex items-center gap-1.5">
-                <ShieldCheck className="h-4 w-4 text-[#7FB3E8]" /> Seguro incluido
-              </li>
-            </ul>
-
-            {/* La dirección, pedida explícitamente */}
-            <address
-              className="mt-7 flex items-start gap-2 text-sm not-italic text-white/65 opacity-0 animate-fade-up"
-              style={{ animationDelay: "0.45s" }}
-            >
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#7FB3E8]" />
-              <span>
-                <strong className="font-semibold text-white/85">Paraguay 241</strong>
-                {" · "}Alsina 350{" · "}Aeropuerto Comandante Espora
-                <br />
-                Bahía Blanca, Provincia de Buenos Aires
-              </span>
-            </address>
           </div>
 
           {/* ── Columna derecha: el buscador ── */}

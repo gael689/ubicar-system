@@ -91,7 +91,7 @@ const Header = () => {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            height: 68,
+            height: 92,
           }}
         >
           {/* Logo */}
@@ -104,7 +104,7 @@ const Header = () => {
               src={logo}
               alt="Ubicar Rent"
               style={{
-                height: 60,
+                height: 78,
                 width: "auto",
                 display: "block",
                 // Sobre el Hero (fondo azul oscuro) el logo original no se lee.
