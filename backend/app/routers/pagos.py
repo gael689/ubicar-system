@@ -1,9 +1,10 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_current_user
-from app.core.responses import ok
+from app.core.responses import ok, paginated
 from app.models.usuario import Usuario
 from app.models.pago import Pago
 from app.models.alquiler import Alquiler
@@ -61,23 +62,122 @@ def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
     return d
 
 
-@router.get("")
-def list_pagos(
-    alquiler_id: int | None = Query(None),
-    fecha_desde: date | None = Query(None),
-    fecha_hasta: date | None = Query(None),
-    db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+MEDIOS_PAGO = ["efectivo", "transferencia", "tarjeta", "cheque", "echeq", "cuenta_corriente"]
+
+
+def _filtrar_pagos(
+    db: Session,
+    alquiler_id: int | None,
+    cliente_id: int | None,
+    medio_pago: str | None,
+    con_factura: bool | None,
+    cobrado_por: int | None,
+    fecha_desde: date | None,
+    fecha_hasta: date | None,
+    monto_min: float | None,
+    monto_max: float | None,
 ):
+    """
+    Los filtros de cobros, en un solo lugar.
+
+    Existe aparte porque el listado y el resumen de caja tienen que filtrar
+    **exactamente igual**: si divergen, el total de abajo no coincide con las
+    filas de arriba y el listado deja de servir para cerrar la caja.
+    """
     q = db.query(Pago)
     if alquiler_id:
         q = q.filter(Pago.alquiler_id == alquiler_id)
+    if cliente_id:
+        # Un pago puede colgar del cliente (a cuenta) o del alquiler. Buscar por
+        # cliente tiene que encontrar los dos, si no los pagos a cuenta
+        # desaparecen del historial del cliente.
+        alqs = [
+            a.id for a in db.query(Alquiler.id, Alquiler.reserva_id)
+            .join(Reserva, Reserva.id == Alquiler.reserva_id)
+            .filter(Reserva.cliente_id == cliente_id).all()
+        ]
+        cond = Pago.cliente_id == cliente_id
+        if alqs:
+            cond = cond | Pago.alquiler_id.in_(alqs)
+        q = q.filter(cond)
+    if medio_pago:
+        # Coma-separado: la caja se cierra mirando "efectivo + transferencia"
+        # junto, no de a un medio por vez.
+        medios = [m.strip() for m in medio_pago.split(",") if m.strip()]
+        invalidos = [m for m in medios if m not in MEDIOS_PAGO]
+        if invalidos:
+            raise HTTPException(400, f"Medio de pago inválido: {', '.join(invalidos)}")
+        q = q.filter(Pago.medio_pago.in_(medios))
+    if con_factura is not None:
+        q = q.filter(Pago.con_factura == con_factura)
+    if cobrado_por:
+        q = q.filter(Pago.cobrado_por == cobrado_por)
     if fecha_desde:
         q = q.filter(Pago.fecha >= fecha_desde)
     if fecha_hasta:
         q = q.filter(Pago.fecha <= fecha_hasta)
-    pagos = q.order_by(Pago.fecha.desc(), Pago.id.desc()).all()
-    return ok([_enriquecer(p, db) for p in pagos])
+    if monto_min is not None:
+        q = q.filter(Pago.monto >= monto_min)
+    if monto_max is not None:
+        q = q.filter(Pago.monto <= monto_max)
+    return q
+
+
+@router.get("")
+def list_pagos(
+    alquiler_id: int | None = Query(None),
+    cliente_id: int | None = Query(None),
+    medio_pago: str | None = Query(None, description="Uno o varios separados por coma"),
+    con_factura: bool | None = Query(None),
+    cobrado_por: int | None = Query(None, description="Usuario que registró el cobro"),
+    fecha_desde: date | None = Query(None),
+    fecha_hasta: date | None = Query(None),
+    monto_min: float | None = Query(None, ge=0),
+    monto_max: float | None = Query(None, ge=0),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Listado de cobros con el filtrado que necesita la caja.
+
+    Devuelve además `resumen`: el total y el desglose **por medio de pago** de
+    todo lo filtrado, no sólo de la página. Cerrar la caja es exactamente eso
+    —cuánto entró en efectivo, cuánto por transferencia— y sumar a mano las
+    filas de una tabla paginada es donde aparecen las diferencias.
+    """
+    q = _filtrar_pagos(db, alquiler_id, cliente_id, medio_pago, con_factura,
+                       cobrado_por, fecha_desde, fecha_hasta, monto_min, monto_max)
+
+    total = q.count()
+    pagos = (
+        q.order_by(Pago.fecha.desc(), Pago.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    # El desglose se calcula en la base sobre el filtro completo, no sobre la
+    # página: si no, el total de caja cambiaría al pasar de página.
+    desglose = dict(
+        q.with_entities(Pago.medio_pago, func.coalesce(func.sum(Pago.monto), 0))
+        .group_by(Pago.medio_pago)
+        .all()
+    )
+
+    resp = paginated(
+        data=[_enriquecer(p, db) for p in pagos],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+    resp["resumen"] = {
+        "total": float(sum(desglose.values())),
+        "cantidad": total,
+        "por_medio": {m: float(desglose.get(m, 0)) for m in MEDIOS_PAGO},
+    }
+    return resp
 
 
 @router.get("/pendientes")

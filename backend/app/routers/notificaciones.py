@@ -31,11 +31,21 @@ def _service(db: Session = Depends(get_db)) -> NotificacionService:
 
 @router.get("/notificaciones", response_model=None)
 def list_notificaciones(
-    urgencia: str | None = Query(None),
+    urgencia: str | None = Query(None, description="Una o varias separadas por coma"),
+    tipo: str | None = Query(None, description="Una o varias separadas por coma"),
+    entidad_tipo: str | None = Query(None, description="reserva, vehiculo, cliente, echeq…"),
     service: NotificacionService = Depends(_service),
     _: Usuario = Depends(get_current_user),
 ):
-    items = service.list_activas(urgencia=urgencia)
+    """
+    Notificaciones activas, **las urgentes primero**.
+
+    `urgencia` y `tipo` admiten varios valores separados por coma
+    (`?urgencia=critica,alta`). Los contadores `criticas`/`urgentes` se
+    calculan sobre lo filtrado, así que el número del badge siempre coincide
+    con lo que se ve en la lista.
+    """
+    items = service.list_activas(urgencia=urgencia, tipo=tipo, entidad_tipo=entidad_tipo)
     criticas = sum(1 for i in items if i.urgencia == "critica")
     urgentes = sum(1 for i in items if i.urgencia in ("critica", "alta"))
     return ok(NotificacionesListResponse(
@@ -54,12 +64,16 @@ def historial_notificaciones(
     fecha: date | None = Query(None),
     anio: int | None = Query(None),
     mes: int | None = Query(None, ge=1, le=12),
+    tipo: str | None = Query(None, description="Una o varias separadas por coma"),
+    urgencia: str | None = Query(None, description="Una o varias separadas por coma"),
+    entidad_tipo: str | None = Query(None),
     service: NotificacionService = Depends(_service),
     _: Usuario = Depends(get_current_user),
 ):
     items, total = service.list_historial(
         page=page, page_size=page_size, solo_resueltas=solo_resueltas,
         fecha=fecha, anio=anio, mes=mes,
+        tipo=tipo, urgencia=urgencia, entidad_tipo=entidad_tipo,
     )
     return paginated([NotificacionResponse.model_validate(i) for i in items], total, page, page_size)
 

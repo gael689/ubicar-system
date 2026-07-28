@@ -6,6 +6,7 @@ Capa transaccional: cruza vehículo, cliente, reserva dentro de transacciones ex
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
@@ -850,6 +851,27 @@ class ReservaService:
 
     # ── Helpers privados ──────────────────────────────────────────────────────
 
+    def _lock_vehiculo(self, vehiculo_id: int | None) -> None:
+        """
+        Serializa las reservas de **un** vehículo hasta que termine la
+        transacción.
+
+        Es un `SELECT ... FOR UPDATE` sobre la fila del vehículo, el mismo
+        patrón que `HoldService` usa sobre la categoría. No bloquea la tabla:
+        dos personas reservando autos distintos siguen trabajando en paralelo,
+        y la única espera posible es sobre el mismo auto — que es exactamente
+        el caso que hay que serializar.
+
+        Con `vehiculo_id` en `None` no hay nada que bloquear: una reserva por
+        categoría no compite por un auto puntual sino por el cupo, y ése lo
+        serializa `HoldService` sobre la categoría.
+        """
+        if vehiculo_id is None:
+            return
+        self.db.execute(
+            select(Vehiculo.id).where(Vehiculo.id == vehiculo_id).with_for_update()
+        ).first()
+
     def validar_disponibilidad_vehiculo(
         self,
         vehiculo_id: int,
@@ -890,8 +912,22 @@ class ReservaService:
         libre. Un segundo camino de validación termina divergiendo del
         primero, y el resultado es una reserva aceptada sobre un auto que
         está en el taller.
+
+        **Toma un lock sobre el vehículo antes de leer.** Los cinco caminos
+        que llaman acá son leer-y-después-escribir: miran si el auto está
+        libre y, si lo está, insertan. Sin lock, dos personas que confirman el
+        mismo auto en el mismo instante leen las dos "libre" y graban las dos
+        — el sistema queda con el auto doblemente reservado y nadie se entera
+        hasta el día de la entrega. Son tres personas trabajando a la vez
+        sobre la misma flota, así que la ventana es chica pero real.
+
+        El lock va acá y no en cada caller por lo mismo que los bloqueos: un
+        segundo camino termina divergiendo. Es sobre la fila del vehículo, no
+        sobre la tabla, así que dos reservas de autos distintos no se estorban.
         """
+        self._lock_vehiculo(vehiculo_id)
         reservas = self.reserva_repo.list(vehiculo_id=vehiculo_id, page=1, page_size=9999)[0]
+
         ventanas = self._cargar_ventanas_bloqueos(vehiculo_id)
         for r in reservas:
             # "vencida" ocupa el vehículo tanto como "activa": el auto sigue afuera.

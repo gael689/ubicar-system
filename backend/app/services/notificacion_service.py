@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import extract, func
+from sqlalchemy import case, extract, func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -27,6 +27,22 @@ from app.models.notificacion import Notificacion, PreferenciaNotificacion
 from app.services.notificaciones import enviar_email
 
 ESTADOS_ACTIVOS = ("pendiente", "enviada", "pospuesta")
+
+# Orden de la cola: lo urgente primero, y recién después lo reciente.
+#
+# Se resuelve en la base y no en Python porque el historial viene paginado: si
+# el orden se armara después de traer la página, la página 1 no tendría las
+# críticas sino las últimas cargadas.
+PESO_URGENCIA = case(
+    {"critica": 0, "alta": 1, "media": 2, "baja": 3},
+    value=Notificacion.urgencia,
+    else_=4,
+)
+
+
+def _lista(valor: str) -> list[str]:
+    """`"critica,alta"` → `["critica", "alta"]`."""
+    return [v.strip() for v in valor.split(",") if v.strip()]
 
 
 def _clave_dedupe(c: dict) -> str:
@@ -162,21 +178,45 @@ class NotificacionService:
 
     # ── Consulta ─────────────────────────────────────────────────────────
 
-    def list_activas(self, urgencia: str | None = None) -> list[Notificacion]:
+    def list_activas(
+        self,
+        urgencia: str | None = None,
+        tipo: str | None = None,
+        entidad_tipo: str | None = None,
+    ) -> list[Notificacion]:
+        """
+        Las notificaciones activas, **ordenadas por urgencia y no por fecha**.
+
+        Antes se ordenaba sólo por `created_at desc`, y eso hacía que una
+        crítica de ayer —un auto que no volvió, un contrato sin emitir— quedara
+        debajo de una baja generada hoy. La campana muestra las primeras: lo
+        importante se hundía justamente por seguir importando el tiempo
+        suficiente como para no ser nuevo.
+
+        `urgencia` y `tipo` aceptan varios valores separados por coma, para
+        poder mirar "sólo críticas y altas" o una familia entera de una.
+        """
         ahora = datetime.utcnow()
-        q = self.db.query(Notificacion).filter(
-            Notificacion.estado.in_(("pendiente", "enviada")),
-        )
-        if urgencia:
-            q = q.filter(Notificacion.urgencia == urgencia)
-        items = q.order_by(Notificacion.created_at.desc()).all()
+
+        def filtrar(q):
+            if urgencia:
+                q = q.filter(Notificacion.urgencia.in_(_lista(urgencia)))
+            if tipo:
+                q = q.filter(Notificacion.tipo.in_(_lista(tipo)))
+            if entidad_tipo:
+                q = q.filter(Notificacion.entidad_tipo.in_(_lista(entidad_tipo)))
+            return q.order_by(PESO_URGENCIA, Notificacion.created_at.desc())
+
+        items = filtrar(
+            self.db.query(Notificacion).filter(Notificacion.estado.in_(("pendiente", "enviada")))
+        ).all()
         # Las pospuestas vuelven a aparecer solo cuando se cumple posponer_hasta.
-        pospuestas = (
-            self.db.query(Notificacion)
-            .filter(Notificacion.estado == "pospuesta", Notificacion.posponer_hasta <= ahora)
-            .order_by(Notificacion.created_at.desc())
-            .all()
-        )
+        pospuestas = filtrar(
+            self.db.query(Notificacion).filter(
+                Notificacion.estado == "pospuesta",
+                Notificacion.posponer_hasta <= ahora,
+            )
+        ).all()
         return items + pospuestas
 
     def list_historial(
@@ -187,6 +227,9 @@ class NotificacionService:
         fecha: date | None = None,
         anio: int | None = None,
         mes: int | None = None,
+        tipo: str | None = None,
+        urgencia: str | None = None,
+        entidad_tipo: str | None = None,
     ) -> tuple[list[Notificacion], int]:
         """Historial de notificaciones. `solo_resueltas=True` (default) mantiene
         el comportamiento de siempre (leída/descartada/resuelta, usado por el
@@ -203,7 +246,15 @@ class NotificacionService:
                 q = q.filter(extract("year", Notificacion.created_at) == anio)
             if mes is not None:
                 q = q.filter(extract("month", Notificacion.created_at) == mes)
+        if tipo:
+            q = q.filter(Notificacion.tipo.in_(_lista(tipo)))
+        if urgencia:
+            q = q.filter(Notificacion.urgencia.in_(_lista(urgencia)))
+        if entidad_tipo:
+            q = q.filter(Notificacion.entidad_tipo.in_(_lista(entidad_tipo)))
         total = q.count()
+        # El historial sí va por fecha: acá se busca "qué pasó tal día", no
+        # "qué atiendo primero".
         items = q.order_by(Notificacion.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return items, total
 
