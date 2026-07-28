@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { CACHE } from '@/lib/queryClient';
 import type { ApiResponse, ConfiguracionItem } from '@/types';
 
 export function useConfiguracion() {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: ['configuracion'],
     queryFn: async () => {
       const { data } = await api.get<ApiResponse<ConfiguracionItem[]>>('/configuracion');

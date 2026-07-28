@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { CACHE } from '@/lib/queryClient';
 import { extractError } from '@/lib/utils';
 import type { ApiResponse } from '@/types';
 
@@ -31,6 +32,7 @@ const KEYS = {
 
 export function useTarifas(vehiculoId: number, incluirInactivas = false) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [...KEYS.all(vehiculoId), { incluirInactivas }],
     queryFn: async () => {
       const { data } = await api.get<ApiResponse<Tarifa[]>>(

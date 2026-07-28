@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { CACHE } from '@/lib/queryClient';
 import type {
   CalcularPrecioRequest,
   CalendarioPrecios,
@@ -36,6 +37,7 @@ function useInvalidar() {
  */
 export function useCalcularPrecio(payload: CalcularPrecioRequest | null) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, 'calcular', payload],
     enabled: Boolean(
       payload?.fecha_inicio &&
@@ -58,6 +60,7 @@ export function useCalendarioPrecios(params: {
   canal?: Canal;
 }) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, 'calendario', params],
     queryFn: async () => {
       const qs = new URLSearchParams({ desde: params.desde, hasta: params.hasta });
@@ -78,6 +81,7 @@ export function useReglasPrecio(params?: {
   incluir_inactivas?: boolean;
 }) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, 'reglas', params],
     queryFn: async () => {
       const qs = new URLSearchParams();
@@ -131,6 +135,7 @@ export function useReactivarReglaPrecio() {
 
 export function useDescuentosDuracion(incluirInactivos = false) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, 'descuentos', incluirInactivos],
     queryFn: async () => {
       const qs = incluirInactivos ? '?incluir_inactivos=true' : '';

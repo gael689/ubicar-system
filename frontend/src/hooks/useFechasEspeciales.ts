@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { CACHE } from '@/lib/queryClient';
 import type { FechaEspecial, FechaEspecialCreate, FechaEspecialUpdate } from '@/types';
 
 const KEY = 'fechas-especiales';
@@ -13,6 +14,7 @@ interface Params {
 
 export function useFechasEspeciales(params?: Params) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, params],
     queryFn: async () => {
       const qs = new URLSearchParams();

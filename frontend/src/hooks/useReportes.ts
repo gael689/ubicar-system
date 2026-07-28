@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { CACHE } from '@/lib/queryClient';
 import type { ApiResponse, ReporteIngresos, ReporteVehiculo } from '@/types';
 
 export function useReporteIngresos(anio: number) {
   return useQuery({
+    ...CACHE.HISTORICO,
     queryKey: ['reportes', 'ingresos', anio],
     queryFn: async () => {
       const res = await api.get<ApiResponse<ReporteIngresos>>(`/reportes/ingresos?anio=${anio}`);
@@ -15,6 +17,7 @@ export function useReporteIngresos(anio: number) {
 
 export function useReporteFlota(fechaDesde: string, fechaHasta: string) {
   return useQuery({
+    ...CACHE.HISTORICO,
     queryKey: ['reportes', 'flota', fechaDesde, fechaHasta],
     queryFn: async () => {
       const res = await api.get<ApiResponse<ReporteVehiculo[]>>(

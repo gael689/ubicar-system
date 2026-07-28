@@ -43,7 +43,8 @@ const MEDIO_COLOR: Record<string, string> = {
 
 export function PagosTab({ alquilerId, precioTotal }: Props) {
   const [showForm, setShowForm] = useState(false);
-  const { data: pagos = [], isLoading } = usePagos(alquilerId);
+  const { data, isLoading } = usePagos({ alquiler_id: alquilerId });
+  const pagos = data?.data ?? [];
   const crear = useCrearPago();
   const eliminar = useEliminarPago();
 

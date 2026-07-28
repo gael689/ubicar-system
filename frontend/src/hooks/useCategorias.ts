@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { CACHE } from '@/lib/queryClient';
 import { extractError } from '@/lib/utils';
 import type { ApiResponse, Categoria, CategoriaCreate, CategoriaUpdate } from '@/types';
 import type { Tarifa, TarifaCreate } from '@/hooks/useTarifas';
@@ -9,6 +10,7 @@ const KEY = 'categorias';
 
 export function useCategorias(incluirInactivas = false) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, { incluirInactivas }],
     queryFn: async () => {
       const { data } = await api.get<ApiResponse<Categoria[]>>('/categorias', {
@@ -67,6 +69,7 @@ export function useDeactivateCategoria() {
 
 export function useTarifasCategoria(categoriaId: number, incluirInactivas = false) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, categoriaId, 'tarifas', { incluirInactivas }],
     queryFn: async () => {
       const { data } = await api.get<ApiResponse<Tarifa[]>>(

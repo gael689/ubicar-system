@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { CACHE } from '@/lib/queryClient';
 import type { RecargoEdad, RecargoEdadCreate, RecargoEdadUpdate } from '@/types';
 
 const KEY = 'recargos-edad';
 
 export function useRecargosEdad(incluirInactivos = false) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, incluirInactivos],
     queryFn: async () => {
       const res = await api.get<{ data: RecargoEdad[] }>('/recargos-edad', {

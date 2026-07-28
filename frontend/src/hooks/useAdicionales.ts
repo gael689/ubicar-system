@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { CACHE } from '@/lib/queryClient';
 import type {
   Adicional, AdicionalCreate, AdicionalUpdate, GrupoAdicional,
 } from '@/types';
@@ -17,6 +18,7 @@ export function useAdicionales(params?: {
   incluir_inactivos?: boolean;
 }) {
   return useQuery({
+    ...CACHE.CATALOGO,
     queryKey: [KEY, params],
     queryFn: async () => {
       const qs = new URLSearchParams();
