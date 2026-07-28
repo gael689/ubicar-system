@@ -11,6 +11,7 @@ import {
 } from '@/hooks/useNotificaciones';
 import { extractError } from '@/lib/utils';
 import type { NotificacionItem, UrgenciaNot } from '@/types';
+import { grupoDe } from '@/lib/notificaciones';
 
 const URGENCIA_CONFIG: Record<UrgenciaNot, { dot: string }> = {
   critica: { dot: 'bg-red-600' },
@@ -19,54 +20,6 @@ const URGENCIA_CONFIG: Record<UrgenciaNot, { dot: string }> = {
   baja: { dot: 'bg-slate-400' },
 };
 
-const TIPO_GRUPO: Record<string, string> = {
-  entrega_hoy: '🚗 Entregas de hoy',
-  devolucion_hoy: '🏁 Devoluciones de hoy',
-  checkout_pendiente: '🚗 Checkouts pendientes',
-  checkin_vencido: '🏁 Devoluciones vencidas',
-  contrato_no_firmado: '📝 Contratos sin firmar',
-  reserva_pendiente_24hs: '📋 Reservas sin confirmar',
-  echeq_proximo: '💰 Echeqs',
-  echeq_vence_hoy: '💰 Echeqs',
-  echeq_sin_acreditar: '💰 Echeqs',
-  echeq_rechazado: '💰 Echeqs',
-  cc_vencimiento_proximo: '💳 Cuenta corriente',
-  cc_vencida: '💳 Cuenta corriente',
-  limite_credito_superado: '💳 Cuenta corriente',
-  saldo_pendiente_alquiler: '💳 Cuenta corriente',
-  garantia_sin_resolver: '🔒 Garantías',
-  factura_pendiente_emitir: '🧾 Facturación',
-  doc_vehiculo_vencido: '📄 Documentos vehículos',
-  doc_vehiculo_por_vencer: '📄 Documentos vehículos',
-  doc_cliente_vencido: '👤 Documentos clientes',
-  doc_cliente_por_vencer: '👤 Documentos clientes',
-  service_km_vencido: '🔧 Mantenimiento',
-  service_km_proximo: '🔧 Mantenimiento',
-  service_fecha_vencido: '🔧 Mantenimiento',
-  service_fecha_proximo: '🔧 Mantenimiento',
-  licencia_cliente_por_vencer: '🪪 Licencias',
-  licencia_vencida_reserva_futura: '🪪 Licencias',
-  vehiculo_fuera_servicio_prolongado: '🛠️ Flota',
-  // VTV y póliza tienen sus propias reglas desde la Fase 3 pero nunca se
-  // agregaron acá: caían en "Otros", que es donde nadie mira. Son de los
-  // avisos que más cuestan si se pasan por alto.
-  vtv_vencimiento: '📄 Documentos vehículos',
-  poliza_vencimiento: '📄 Documentos vehículos',
-  multa_pendiente_imputar: '⚠️ Multas',
-  multa_imputada_sin_cobrar: '⚠️ Multas',
-  multa_por_vencer: '⚠️ Multas',
-  multa_vencida: '⚠️ Multas',
-  reserva_web_nueva: '🌐 Reservas web',
-  reserva_web_sin_atender: '🌐 Reservas web',
-  // "Falta completar": huecos de configuración, no hechos. Van juntos y
-  // arriba de todo porque son los únicos que se arreglan en dos minutos y
-  // evitan perder plata en silencio.
-  fecha_especial_sin_precio: '📌 Falta completar',
-  categoria_sin_precio: '📌 Falta completar',
-  vehiculo_sin_categoria: '📌 Falta completar',
-  datos_empresa_sin_cargar: '📌 Falta completar',
-  contrato_sin_emitir: '📝 Contratos sin firmar',
-};
 
 export function NotificacionesPanel() {
   const [open, setOpen] = useState(false);
@@ -80,7 +33,7 @@ export function NotificacionesPanel() {
   const items = data?.items ?? [];
 
   const grupos = items.reduce<Record<string, NotificacionItem[]>>((acc, item) => {
-    const grupo = TIPO_GRUPO[item.tipo] ?? 'Otros';
+    const grupo = grupoDe(item.tipo);
     if (!acc[grupo]) acc[grupo] = [];
     acc[grupo].push(item);
     return acc;

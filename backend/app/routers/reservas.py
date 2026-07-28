@@ -62,11 +62,15 @@ def _parse_conflicto(exc: ConflictError) -> dict:
 
 @router.get("")
 def list_reservas(
-    estado: str | None = Query(None),
+    estado: str | None = Query(None, description="Uno o varios separados por coma"),
     vehiculo_id: int | None = Query(None),
     cliente_id: int | None = Query(None),
     q: str | None = Query(None, description="Buscar por nombre o DNI/CUIT del cliente"),
     fecha: date | None = Query(None, description="Filtrar reservas activas en un día específico"),
+    origen: str | None = Query(None, description="sistema | web — de dónde vino la reserva"),
+    categoria_id: int | None = Query(None),
+    fecha_desde: date | None = Query(None, description="Reservas que terminan a partir de esta fecha"),
+    fecha_hasta: date | None = Query(None, description="Reservas que empiezan hasta esta fecha"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -79,6 +83,10 @@ def list_reservas(
         cliente_id=cliente_id,
         q=q,
         fecha=fecha,
+        origen=origen,
+        categoria_id=categoria_id,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
         page=page,
         page_size=page_size,
     )

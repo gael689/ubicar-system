@@ -70,6 +70,10 @@ class ReservaService:
         cliente_id: int | None = None,
         q: str | None = None,
         fecha=None,
+        origen: str | None = None,
+        categoria_id: int | None = None,
+        fecha_desde=None,
+        fecha_hasta=None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[Reserva], int]:
@@ -80,6 +84,10 @@ class ReservaService:
             cliente_id=cliente_id,
             q=q,
             fecha=fecha,
+            origen=origen,
+            categoria_id=categoria_id,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
             page=page,
             page_size=page_size,
         )

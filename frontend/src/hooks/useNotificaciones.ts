@@ -20,11 +20,16 @@ interface HistorialParams {
   fecha?: string | null;
   anio?: number | null;
   mes?: number | null;
+  /** Uno o varios `tipo`; el backend los acepta separados por coma. */
+  tipos?: string[];
+  urgencias?: string[];
 }
 
-export function useHistorialNotificaciones({ page = 1, soloResueltas = true, fecha, anio, mes }: HistorialParams = {}) {
+export function useHistorialNotificaciones({
+  page = 1, soloResueltas = true, fecha, anio, mes, tipos, urgencias,
+}: HistorialParams = {}) {
   return useQuery({
-    queryKey: ['notificaciones', 'historial', page, soloResueltas, fecha, anio, mes],
+    queryKey: ['notificaciones', 'historial', page, soloResueltas, fecha, anio, mes, tipos, urgencias],
     queryFn: async () => {
       const params: Record<string, string | number | boolean> = { page, solo_resueltas: soloResueltas };
       if (fecha) params.fecha = fecha;
@@ -32,6 +37,8 @@ export function useHistorialNotificaciones({ page = 1, soloResueltas = true, fec
         if (anio) params.anio = anio;
         if (mes) params.mes = mes;
       }
+      if (tipos?.length) params.tipo = tipos.join(',');
+      if (urgencias?.length) params.urgencia = urgencias.join(',');
       const { data } = await api.get<PaginatedResponse<NotificacionItem>>('/notificaciones/historial', { params });
       return data;
     },

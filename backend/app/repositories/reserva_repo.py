@@ -38,6 +38,10 @@ class ReservaRepo:
         cliente_id: int | None = None,
         q: str | None = None,
         fecha: date | None = None,
+        origen: str | None = None,
+        categoria_id: int | None = None,
+        fecha_desde: date | None = None,
+        fecha_hasta: date | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[Reserva], int]:
@@ -49,7 +53,19 @@ class ReservaRepo:
             joinedload(Reserva.cliente),
         )
         if estado:
-            query = query.filter(Reserva.estado == estado)
+            # Multivalor: la pantalla de reservas se mira casi siempre como
+            # "lo que está vivo" (pendiente + confirmada + activa), no de a un
+            # estado por vez.
+            estados = [e.strip() for e in estado.split(",") if e.strip()]
+            query = query.filter(Reserva.estado.in_(estados))
+        if origen:
+            query = query.filter(Reserva.origen.in_([o.strip() for o in origen.split(",") if o.strip()]))
+        if categoria_id:
+            query = query.filter(Reserva.categoria_id == categoria_id)
+        if fecha_desde:
+            query = query.filter(Reserva.fecha_fin >= fecha_desde)
+        if fecha_hasta:
+            query = query.filter(Reserva.fecha_inicio <= fecha_hasta)
         if vehiculo_id:
             query = query.filter(Reserva.vehiculo_id == vehiculo_id)
         if cliente_id:
