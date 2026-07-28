@@ -3,9 +3,10 @@ Router de Notificaciones — Fase 2 del plan maestro. Motor de reglas
 unificado sobre la tabla `notificaciones` (persistida, con historial),
 reemplazando el cómputo on-demand que tenía este router antes.
 """
+import secrets
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db
@@ -75,6 +76,53 @@ def generar_notificaciones(
     resultado = service.generar(hoy=date.today())
     db.commit()
     return ok(GenerarNotificacionesResponse(**resultado).model_dump(), "Motor de notificaciones ejecutado")
+
+
+@router.post("/notificaciones/cron")
+def cron_notificaciones(
+    request: Request,
+    db: Session = Depends(get_db),
+    service: NotificacionService = Depends(_service),
+):
+    """
+    La corrida diaria disparada por un cron **externo**.
+
+    Existe para el caso serverless: ahí no hay proceso vivo a las 08:00, así
+    que el scheduler interno nunca se dispara y hay que llamar al motor por
+    HTTP. En un contenedor de larga vida (Railway) esto no hace falta —
+    `main.py` ya corre el scheduler solo.
+
+    **Protegido por `CRON_SECRET`**, no por sesión: quien llama es una máquina,
+    no una persona logueada. Sin el secreto configurado el endpoint queda
+    deshabilitado, para que no sea un agujero abierto por olvido.
+
+    También limpia los holds vencidos, que es housekeeping puro: un hold
+    vencido ya dejó de ocupar cupo en el instante en que venció.
+    """
+    from app.config import settings
+    from app.services.hold_service import HoldService
+
+    if not settings.cron_secret:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="El endpoint de cron no está habilitado",
+        )
+
+    enviado = request.headers.get("authorization", "")
+    esperado = f"Bearer {settings.cron_secret}"
+    # Comparación en tiempo constante: una comparación normal filtra el
+    # secreto carácter por carácter midiendo cuánto tarda en fallar.
+    if not secrets.compare_digest(enviado, esperado):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autorizado")
+
+    resultado = service.generar(hoy=date.today())
+    holds_limpiados = HoldService(db).limpiar_vencidos()
+    db.commit()
+
+    return ok(
+        {**resultado, "holds_limpiados": holds_limpiados},
+        "Corrida diaria ejecutada",
+    )
 
 
 @router.post("/notificaciones/{id}/leer")

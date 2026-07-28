@@ -6,6 +6,11 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql://user:password@localhost:5432/ubicar_rent"
+    # Poner en true SOLO en serverless: ahi cada instancia abre su propio pool
+    # y Postgres termina rechazando conexiones. Ver app/database.py.
+    db_sin_pool: bool = False
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
 
     # Auth (Clerk — a configurar en Fase Clerk)
     clerk_publishable_key: str = ""
@@ -34,6 +39,11 @@ class Settings(BaseSettings):
     # del bucket, o uno propio). Sin esto, public_url firma URLs temporales
     # que caducan y no se pueden guardar.
     storage_public_base_url: str = ""
+
+    # Token del cron externo. Sólo hace falta en serverless, donde el
+    # scheduler del proceso no existe y hay que disparar el motor por HTTP.
+    # Vacío = el endpoint de cron queda deshabilitado.
+    cron_secret: str = ""
 
     # Email
     resend_api_key: str = ""

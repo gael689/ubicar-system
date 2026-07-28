@@ -175,8 +175,16 @@ if (settings.storage_provider or "local").lower() == "local":
 @app.get("/health", tags=["Sistema"])
 def health_check():
     """
-    Verifica que el servicio y la base de datos estén operativos.
-    Retorna 200 si todo está bien, 503 si la DB no responde.
+    Verifica que el servicio, la base y el almacenamiento estén operativos.
+
+    **Chequea el storage además de la base** porque una configuración mal
+    cargada ahí no rompe el arranque: la API responde perfecto y recién falla
+    cuando alguien sube una foto de un daño. Es exactamente la clase de error
+    que uno quiere ver en el health check y no en el mostrador.
+
+    Devuelve 503 si la base no responde. Un storage caído deja el servicio en
+    `degraded` pero con 200: se puede seguir operando, sólo que sin adjuntar
+    archivos.
     """
     db = SessionLocal()
     try:
@@ -188,13 +196,29 @@ def health_check():
     finally:
         db.close()
 
-    status_code = 200 if db_status == "ok" else 503
+    try:
+        from app.core.deps import get_storage
+
+        storage = get_storage()
+        # Escribir y leer de vuelta: que el cliente se construya no prueba que
+        # las credenciales sirvan ni que el bucket exista.
+        clave = ".health"
+        storage.upload(clave, b"ok", "text/plain")
+        storage_status = "ok" if storage.read(clave) == b"ok" else "error"
+    except Exception as e:
+        logger.error(f"Health check storage falló: {e}")
+        storage_status = "error"
+
+    todo_ok = db_status == "ok" and storage_status == "ok"
     return JSONResponse(
-        status_code=status_code,
+        # Sólo la base tira el servicio abajo: sin storage se puede operar.
+        status_code=200 if db_status == "ok" else 503,
         content={
-            "status": "ok" if db_status == "ok" else "degraded",
+            "status": "ok" if todo_ok else "degraded",
             "service": "ubicar-rent-api",
             "database": db_status,
+            "storage": storage_status,
+            "storage_provider": settings.storage_provider,
             "environment": settings.environment,
         },
     )

@@ -39,7 +39,11 @@ a la misma URL:
 | Proyecto | Variable | Valor |
 |---|---|---|
 | `web/` | `NEXT_PUBLIC_API_URL` | `https://api.ubicar-rent.com.ar/api/v1` |
-| `frontend/` | `VITE_API_URL` | `https://api.ubicar-rent.com.ar/api/v1` |
+| `frontend/` | `VITE_API_URL` | `https://api.ubicar-rent.com.ar` |
+
+> ⚠️ **Ojo con el `/api/v1`.** `web/` lo lleva en la variable; `frontend/`
+> **no**, porque su cliente ya lo agrega. Ponerlo en los dos termina pidiendo
+> `/api/v1/api/v1` y todo da 404.
 
 Y del otro lado, el backend tiene que **autorizar esos dos dominios** por CORS
 (`FRONTEND_URL` y `LANDING_URL`). Si eso falta, el navegador bloquea las
@@ -107,6 +111,12 @@ STORAGE_PUBLIC_BASE_URL=https://archivos.ubicar-rent.com.ar
 RESEND_API_KEY=...
 FROM_EMAIL=noreply@ubicar-rent.com.ar
 NOTIFICACIONES_DIGEST_DESTINATARIOS=franco@...,martin@...
+
+# Sólo si la API va a Vercel (en Railway el scheduler corre solo).
+# Sin esta variable el endpoint de cron queda deshabilitado, para que no
+# sea un agujero abierto por olvido.
+# CRON_SECRET=<token largo al azar>
+# DB_SIN_POOL=true
 ```
 
 5. *Settings* → **Networking** → *Custom Domain* → `api.ubicar-rent.com.ar`.
@@ -118,8 +128,22 @@ NOTIFICACIONES_DIGEST_DESTINATARIOS=franco@...,martin@...
 
 ```bash
 curl https://api.ubicar-rent.com.ar/health
-# {"status":"ok","database":"ok"}
 ```
+
+```json
+{
+  "status": "ok",
+  "database": "ok",
+  "storage": "ok",
+  "storage_provider": "r2",
+  "environment": "production"
+}
+```
+
+> **Mirá el `storage`.** El health check escribe y lee un archivo de prueba a
+> propósito: una credencial mal cargada no rompe el arranque — la API responde
+> perfecto y recién falla cuando alguien sube la foto de un daño. Si dice
+> `error`, revisá las variables de R2 antes de seguir.
 
 ### Si venís de la base de desarrollo
 
@@ -181,7 +205,8 @@ Segundo proyecto de Vercel, **desde el mismo repositorio**:
 | Output Directory | `dist` |
 
 ```bash
-VITE_API_URL=https://api.ubicar-rent.com.ar/api/v1
+# Sin /api/v1: el cliente de este proyecto ya lo agrega.
+VITE_API_URL=https://api.ubicar-rent.com.ar
 ```
 
 **Domain:** `sistema.ubicar-rent.com.ar`.
@@ -232,11 +257,31 @@ categoría, coberturas y extras, y las franjas de recargo por edad.
 Es viable pero hay que resolver tres cosas más. El detalle está en
 `PLAN_DEPLOY.md` §4; el resumen:
 
-| Qué | Por qué |
+| Qué | Cómo |
 |---|---|
 | `STORAGE_PROVIDER=r2` **obligatorio** | El disco es efímero |
-| **Vercel Cron** llamando a `/notificaciones/generar` | El scheduler del proceso no existe. `0 11 * * *` en UTC = 08:00 en Argentina |
-| `poolclass=NullPool` + el pooler de Railway | Cada instancia abre su propio pool y Postgres los rechaza |
+| **Vercel Cron** | Ver abajo |
+| Desactivar el pool | `DB_SIN_POOL=true` y conectarse por el **pooler** de Railway, no directo a la base |
+
+### El cron en Vercel
+
+En `vercel.json`:
+
+```json
+{
+  "crons": [{ "path": "/api/cron", "schedule": "0 11 * * *" }]
+}
+```
+
+Y esa ruta llama a `POST /api/v1/notificaciones/cron` con el header
+`Authorization: Bearer $CRON_SECRET`.
+
+> **La hora va en UTC.** Las 08:00 de Argentina son las **11:00 UTC**. Poner
+> `0 8 * * *` haría correr el proceso a las 5 de la mañana.
+
+El endpoint además limpia los holds vencidos. Está protegido por `CRON_SECRET`
+—quien llama es una máquina, no una persona logueada— y si esa variable no
+está cargada devuelve 404, para que no quede abierto por olvido.
 
 ---
 
@@ -249,4 +294,8 @@ Es viable pero hay que resolver tres cosas más. El detalle está en
 | Las fotos de categorías no cargan | `STORAGE_PUBLIC_BASE_URL` mal, o falta el host en `next.config.ts` |
 | Un documento subido "desaparece" | `STORAGE_PROVIDER` quedó en `local` |
 | No llegan notificaciones | El scheduler no arrancó (Railway) o falta el cron (Vercel) |
+| El cron devuelve 404 | Falta `CRON_SECRET`: sin esa variable el endpoint queda deshabilitado |
+| El cron devuelve 401 | El token del header no coincide con `CRON_SECRET` |
+| 429 en la web | Rate limiting. Es lo esperado ante un script; si le pasa a un cliente real, subir los límites en `core/rate_limit.py` |
+| `/health` dice `storage: error` | Credenciales de R2 mal cargadas. La API igual responde, pero no se pueden subir archivos |
 | El deploy falla al arrancar | Una migración falló. Ver los logs: es intencional que no despliegue |

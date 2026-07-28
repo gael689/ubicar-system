@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessRuleError, NotFoundError
+from app.core.rate_limit import limite_consultas, limite_holds, limite_solicitudes
 from app.core.responses import ok
 from app.database import get_db
 from app.domain.disponibilidad import validar_rango_web
@@ -36,7 +37,7 @@ ANTICIPACION_MINIMA_HORAS = 24
 DURACION_MAXIMA_DIAS = 90
 
 
-@router.get("/disponibilidad")
+@router.get("/disponibilidad", dependencies=[Depends(limite_consultas)])
 def get_disponibilidad(
     fecha_inicio: date = Query(..., description="Retiro, ISO YYYY-MM-DD"),
     fecha_fin: date = Query(..., description="Devolución, ISO YYYY-MM-DD"),
@@ -132,7 +133,8 @@ def get_config_publica():
 
 # ─── Holds (ítem 61) ─────────────────────────────────────────────────────────
 
-@router.post("/holds", status_code=status.HTTP_201_CREATED)
+@router.post("/holds", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(limite_holds)])
 def crear_hold(payload: HoldCreateRequest, db: Session = Depends(get_db)):
     """
     Toma el cupo mientras el cliente completa el pago.
@@ -238,7 +240,8 @@ class SolicitudSinCupoRequest(BaseModel):
     notas: str | None = None
 
 
-@router.post("/solicitudes", status_code=status.HTTP_201_CREATED)
+@router.post("/solicitudes", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(limite_solicitudes)])
 def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Depends(get_db)):
     """
     Deja la solicitud de alguien que quiso una categoría sin disponibilidad.
