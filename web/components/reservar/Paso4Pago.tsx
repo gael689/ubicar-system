@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CreditCard, MessageCircle, ShieldCheck, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { pesos, fechaCorta } from "@/lib/api";
@@ -36,6 +37,7 @@ interface Props {
  * "hola, quiero un auto".
  */
 export function Paso4Pago({ rango, categoriaNombre, cotizacion, cliente }: Props) {
+  const router = useRouter();
   const [pct, setPct] = useState<number>(30);
 
   const senia = Math.round((cotizacion.total * pct) / 100);
@@ -133,10 +135,17 @@ export function Paso4Pago({ rango, categoriaNombre, cotizacion, cliente }: Props
               </p>
             </div>
 
-            <Button asChild size="lg" className="w-full sm:w-auto">
-              <a href={whatsappLink(mensaje)} target="_blank" rel="noopener noreferrer">
-                <MessageCircle className="h-4 w-4" /> Confirmar por WhatsApp
-              </a>
+            <Button
+              size="lg"
+              className="w-full sm:w-auto"
+              onClick={() => {
+                window.open(whatsappLink(mensaje), "_blank", "noopener,noreferrer");
+                // Llevarlo a la confirmación: si se queda en el checkout no
+                // sabe si la reserva quedó hecha, y vuelve a escribir.
+                router.push("/reservar/listo");
+              }}
+            >
+              <MessageCircle className="h-4 w-4" /> Confirmar por WhatsApp
             </Button>
           </div>
         </div>

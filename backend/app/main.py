@@ -81,7 +81,15 @@ app = FastAPI(
 )
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
-origins = [settings.frontend_url, "http://localhost:3000", "http://localhost:5173"]
+# 5173 = frontend/ (Vite, sistema interno). 3200 = web/ (Next, landing y
+# flujo de reserva) — tiene puerto propio para no competir por el 3000, que
+# queda libre para lo que se levante a mano.
+origins = [
+    settings.frontend_url,
+    "http://localhost:3000",
+    "http://localhost:3200",
+    "http://localhost:5173",
+]
 if settings.landing_url:
     origins.append(settings.landing_url)
 

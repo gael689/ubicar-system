@@ -123,6 +123,22 @@ const Footer = () => {
           >
             <span style={{ color: "rgba(0,0,0,0.45)", fontSize: "0.8rem" }}>
               © {new Date().getFullYear()} Ubicar Rent · Bahía Blanca, Argentina
+              {" · "}
+              {/* La politica de privacidad es obligacion legal (Ley 25.326) y
+                  tiene que ser alcanzable desde cualquier pagina del sitio. */}
+              <a
+                href="/terminos"
+                style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}
+              >
+                Términos
+              </a>
+              {" · "}
+              <a
+                href="/privacidad"
+                style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}
+              >
+                Privacidad
+              </a>
             </span>
 
             <a
