@@ -220,23 +220,129 @@ def _hold_response(hold) -> dict:
     }
 
 
+class SolicitudSinCupoRequest(BaseModel):
+    """
+    Solicitud para una categoría agotada (D-04). **No lleva pago**, así que no
+    depende de Mercado Pago.
+    """
+    categoria_id: int
+    fecha_inicio: date
+    hora_inicio: time = time(10, 0)
+    fecha_fin: date
+    hora_fin: time = time(10, 0)
+    lugar_entrega: str
+    lugar_devolucion: str | None = None
+    nombre: str
+    email: str
+    telefono: str
+    notas: str | None = None
+
+
+@router.post("/solicitudes", status_code=status.HTTP_201_CREATED)
+def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Depends(get_db)):
+    """
+    Deja la solicitud de alguien que quiso una categoría sin disponibilidad.
+
+    **Es la mitad de D-04 que no necesita cobrar nada**, así que se puede usar
+    desde ya: la reserva entra como `sin_disponibilidad`, sin ocupar calendario
+    y sin pedir plata, y el equipo la ve en la bandeja para ofrecerle otra
+    categoría u otras fechas.
+
+    Lo que resuelve: hoy alguien que busca fechas sin cupo se va del sitio y
+    **ese contacto se pierde**. Acá queda registrado, con un aviso inmediato.
+
+    Los datos de contacto se guardan en la propia reserva y no sólo en un
+    cliente, porque esta solicitud puede no llegar nunca a convertirse en un
+    cliente — y ese contacto es justamente lo que no se quiere perder.
+    """
+    from app.domain.enums import EstadoReserva
+    from app.models.categoria import Categoria
+    from app.models.reserva import Reserva
+    from app.services.notificacion_service import NotificacionService
+
+    inicio_dt = datetime.combine(payload.fecha_inicio, payload.hora_inicio)
+    fin_dt = datetime.combine(payload.fecha_fin, payload.hora_fin)
+    try:
+        validar_rango_web(
+            inicio_dt, fin_dt, datetime.now(),
+            anticipacion_minima_horas=ANTICIPACION_MINIMA_HORAS,
+            duracion_maxima_dias=DURACION_MAXIMA_DIAS,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    categoria = db.get(Categoria, payload.categoria_id)
+    if categoria is None or not categoria.activo:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
+
+    # `cliente_id` y `usuario_id` son obligatorios en el modelo, pero esta
+    # solicitud no tiene ninguno de los dos: no hay cliente todavía y no la
+    # cargó un operador. Se usan los registros de sistema, y el contacto real
+    # vive en los campos `web_contacto_*`.
+    from app.models.cliente import Cliente
+    from app.models.usuario import Usuario
+
+    usuario_sistema = db.query(Usuario).order_by(Usuario.id).first()
+    cliente_generico = db.query(Cliente).order_by(Cliente.id).first()
+    if usuario_sistema is None or cliente_generico is None:
+        raise HTTPException(
+            status_code=503,
+            detail="El sistema todavía no está configurado para recibir solicitudes.",
+        )
+
+    reserva = Reserva(
+        categoria_id=payload.categoria_id,
+        vehiculo_id=None,
+        cliente_id=cliente_generico.id,
+        fecha_inicio=payload.fecha_inicio,
+        hora_inicio=payload.hora_inicio,
+        fecha_fin=payload.fecha_fin,
+        hora_fin=payload.hora_fin,
+        lugar_entrega=payload.lugar_entrega,
+        lugar_devolucion=payload.lugar_devolucion or payload.lugar_entrega,
+        notas=payload.notas,
+        estado=EstadoReserva.SIN_DISPONIBILIDAD.value,
+        origen="web",
+        usuario_id=usuario_sistema.id,
+        web_contacto_nombre=payload.nombre,
+        web_contacto_email=payload.email,
+        web_contacto_telefono=payload.telefono,
+    )
+    db.add(reserva)
+    db.flush()
+
+    # Aviso en el acto: esperar al barrido de las 08:00 significa que una
+    # solicitud del sábado a la tarde queda sin respuesta hasta el lunes.
+    NotificacionService(db).avisar_reserva_web(reserva)
+    db.commit()
+
+    return ok(
+        {"reserva_id": reserva.id, "categoria": categoria.nombre},
+        "Recibimos tu solicitud. Te contactamos para ofrecerte una alternativa.",
+    )
+
+
 @router.post("/reservas")
 async def crear_reserva_publica(db: Session = Depends(get_db)):
     """
-    Alta de reserva desde la web (ítems 61-62).
+    Alta de reserva **con pago** desde la web (ítem 62).
 
-    **Todavía no implementado, a propósito.** Depende de:
-    - los holds con expiración (ítem 61),
-    - Mercado Pago (ítem 62),
-    - y las decisiones #1, #4 y #5 de `docs/DECISIONES_RESERVAS_WEB.md`
-      (cuánto se cobra por adelantado, qué pasa si el pago se aprueba sin
-      cupo, y cómo se devuelve la plata).
+    **Todavía no implementado**: depende de Mercado Pago y de las decisiones
+    #4 y #5 de `docs/DECISIONES_RESERVAS_WEB.md` (qué pasa si el pago se
+    aprueba sin cupo, y cómo se devuelve la plata).
 
-    Devuelve **501 y no un 200 "Próximamente"** como antes: un stub que
-    responde OK le hace creer al front que la reserva se creó.
+    Cuando se implemente **tiene que llamar a
+    `NotificacionService.avisar_reserva_web(reserva)`** después de crearla: el
+    equipo necesita enterarse en el momento, no en el barrido de las 08:00.
+
+    Para la solicitud **sin** pago —una categoría agotada— ya existe
+    `POST /public/solicitudes`, que sí funciona.
+
+    Devuelve **501 y no un 200 "Próximamente"**: un stub que responde OK le
+    hace creer al front que la reserva se creó.
     """
     raise HTTPException(
         status_code=501,
-        detail="Las reservas online todavía no están habilitadas. "
-               "Escribinos por WhatsApp y te la cargamos.",
+        detail="El pago online todavía no está habilitado. "
+               "Escribinos por WhatsApp y cerramos la reserva.",
     )

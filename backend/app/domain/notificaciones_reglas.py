@@ -22,7 +22,7 @@ tocar el motor.
 
 Reglas del catálogo original (plan maestro §4.2) que NO están acá porque
 dependen de algo que todavía no existe en el sistema:
-- "Reserva nueva desde la web": no hay sistema de reservas web (Fase 5).
+
 - "Multa próxima a vencer con descuento por pronto pago": **el descuento por
   pronto pago no se modela** (D-28, decisión explícita). Sí se avisa del
   vencimiento en sí, más abajo.
@@ -821,6 +821,57 @@ def multa_vencida(db: Session, hoy: date) -> list[dict]:
     ]
 
 
+# ── Reservas web ─────────────────────────────────────────────────────────────
+
+def reserva_web_sin_atender(db: Session, hoy: date) -> list[dict]:
+    """
+    Solicitud que entró por la web y sigue esperando una respuesta.
+
+    **Esta regla es la red de seguridad, no el aviso principal.** Cuando entra
+    una reserva web se dispara una notificación en el acto
+    (`NotificacionService.avisar_reserva_web`), porque esperar al barrido de
+    las 08:00 significa que una reserva de un sábado a la tarde queda sin
+    respuesta hasta el lunes — y eso es una venta que se cae.
+
+    Lo que hace acá es no dejar que se pierda ninguna: si el aviso instantáneo
+    falló, o si nadie resolvió la solicitud, vuelve a aparecer cada mañana
+    hasta que alguien la atienda.
+
+    `pendiente_pago` queda afuera a propósito: esa espera al cliente, no a
+    nosotros.
+    """
+    reservas = (
+        db.query(Reserva)
+        .filter(
+            Reserva.origen == "web",
+            Reserva.estado.in_(["sin_disponibilidad", "revision_sin_cupo"]),
+        )
+        .all()
+    )
+    return [
+        {
+            "tipo": "reserva_web_sin_atender",
+            "titulo": (
+                "Reserva web PAGADA sin cupo"
+                if r.estado == "revision_sin_cupo"
+                else "Solicitud web sin disponibilidad"
+            ),
+            "descripcion": (
+                f"Reserva #{r.id} — {r.web_contacto_nombre or _cliente_nombre(r.cliente)} — "
+                f"{r.fecha_inicio.strftime('%d/%m')} al {r.fecha_fin.strftime('%d/%m')}"
+                + (f" — {r.web_contacto_telefono}" if r.web_contacto_telefono else "")
+            ),
+            # `revision_sin_cupo` es crítica: hay plata del cliente en juego.
+            "urgencia": "critica" if r.estado == "revision_sin_cupo" else "alta",
+            "entidad_tipo": "reserva",
+            "entidad_id": r.id,
+            "url_destino": "/reservas-web",
+            "fecha_objetivo": r.fecha_inicio,
+        }
+        for r in reservas
+    ]
+
+
 # ── Catálogo completo ────────────────────────────────────────────────────────
 
 REGLAS = [
@@ -853,6 +904,7 @@ REGLAS = [
     multa_imputada_sin_cobrar,
     multa_por_vencer,
     multa_vencida,
+    reserva_web_sin_atender,
 ]
 
 

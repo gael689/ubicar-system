@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Users, Briefcase, Snowflake, Cog, Car, MessageCircle } from "lucide-react";
+import { Users, Briefcase, Snowflake, Cog, Car, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, pesos, urlFoto } from "@/lib/api";
-import { whatsappLink } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { CategoriaDisponible } from "@/lib/types";
 import { BuscadorRango, type RangoBusqueda } from "./BuscadorRango";
+import { DialogoSinCupo } from "./DialogoSinCupo";
 
 interface Props {
   rango: RangoBusqueda;
@@ -23,6 +23,7 @@ export function Paso1Vehiculo({
   rango, lugares, anticipacionHoras, seleccionada, onCambiarRango, onElegir,
 }: Props) {
   const [categorias, setCategorias] = useState<CategoriaDisponible[] | null>(null);
+  const [sinCupo, setSinCupo] = useState<CategoriaDisponible | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,25 +92,33 @@ export function Paso1Vehiculo({
                 categoria={c}
                 elegida={seleccionada?.categoria_id === c.categoria_id}
                 onElegir={() => onElegir(c)}
+                onAvisarme={() => setSinCupo(c)}
                 indice={i}
-                rango={rango}
               />
             ))}
           </div>
         </>
+      )}
+
+      {sinCupo && (
+        <DialogoSinCupo
+          categoria={sinCupo}
+          rango={rango}
+          onCerrar={() => setSinCupo(null)}
+        />
       )}
     </div>
   );
 }
 
 function TarjetaCategoria({
-  categoria: c, elegida, onElegir, indice, rango,
+  categoria: c, elegida, onElegir, onAvisarme, indice,
 }: {
   categoria: CategoriaDisponible;
   elegida: boolean;
   onElegir: () => void;
+  onAvisarme: () => void;
   indice: number;
-  rango: RangoBusqueda;
 }) {
   const foto = urlFoto(c.foto_key);
   const disponible = c.hay_cupo;
@@ -214,16 +223,11 @@ function TarjetaCategoria({
                   Normalmente desde {pesos(c.precio.precio_dia_promedio)} por día
                 </p>
               )}
-              <Button variant="outline" asChild className="mt-3 w-full">
-                <a
-                  href={whatsappLink(
-                    `Hola! Quería consultar por un ${c.nombre} del ${rango.fechaInicio} al ${rango.fechaFin}. ¿Tienen alguna alternativa?`,
-                  )}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <MessageCircle className="h-4 w-4" /> Consultar alternativas
-                </a>
+              {/* Antes abría WhatsApp y el contacto se perdía si el visitante
+                  no escribía. Ahora la solicitud entra al sistema y el equipo
+                  recibe el aviso en el momento (D-04). */}
+              <Button variant="outline" onClick={onAvisarme} className="mt-3 w-full">
+                <BellRing className="h-4 w-4" /> Avisarme cuando haya
               </Button>
             </>
           )}

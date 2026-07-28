@@ -22,12 +22,18 @@ class Settings(BaseSettings):
     dev_admin_auth_sub: str = "dev-bypass-admin"
 
     # Storage
-    storage_provider: str = "local"   # "local" | "r2"
+    # "local" en desarrollo; "r2" / "s3" en produccion. En un hosting
+    # serverless el disco es efimero, asi que "local" pierde los archivos.
+    storage_provider: str = "local"
     storage_path: str = "./storage_local"
     storage_bucket: str = "ubicar-rent-docs"
     storage_access_key_id: str = ""
     storage_secret_access_key: str = ""
     storage_endpoint_url: str = ""
+    # Dominio desde el que el navegador lee los archivos (el dominio publico
+    # del bucket, o uno propio). Sin esto, public_url firma URLs temporales
+    # que caducan y no se pueden guardar.
+    storage_public_base_url: str = ""
 
     # Email
     resend_api_key: str = ""

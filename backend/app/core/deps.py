@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.config import settings
 from app.models.usuario import Usuario
-from app.adapters.storage import IStorage, LocalStorage
+from app.adapters.storage import IStorage, LocalStorage, S3Storage
 
 logger = logging.getLogger(__name__)
 
@@ -98,13 +98,34 @@ _storage_singleton: IStorage | None = None
 
 
 def get_storage() -> IStorage:
-    """Devuelve el adapter de storage configurado. Hoy solo LocalStorage."""
+    """
+    El adapter de storage según la configuración.
+
+    - `local` — disco. Es lo correcto en desarrollo y en un servidor con volumen
+      persistente.
+    - `r2` / `s3` — bucket compatible con S3. **Es lo que hay que usar en un
+      hosting serverless**, donde el disco es efímero y los archivos subidos
+      desaparecen.
+
+    Los módulos de negocio no saben cuál está activo: hablan con `IStorage`.
+    """
     global _storage_singleton
     if _storage_singleton is None:
-        if settings.storage_provider != "local":
-            raise RuntimeError(
-                f"storage_provider='{settings.storage_provider}' no soportado todavía. "
-                "Solo 'local' está implementado. Ver memoria storage-local-first."
+        proveedor = (settings.storage_provider or "local").lower()
+
+        if proveedor == "local":
+            _storage_singleton = LocalStorage(base_path=settings.storage_path)
+        elif proveedor in ("r2", "s3"):
+            _storage_singleton = S3Storage(
+                bucket=settings.storage_bucket,
+                access_key_id=settings.storage_access_key_id,
+                secret_access_key=settings.storage_secret_access_key,
+                endpoint_url=settings.storage_endpoint_url,
+                public_base_url=settings.storage_public_base_url,
             )
-        _storage_singleton = LocalStorage(base_path=settings.storage_path)
+        else:
+            raise RuntimeError(
+                f"storage_provider='{proveedor}' desconocido. "
+                "Valores válidos: 'local', 'r2', 's3'."
+            )
     return _storage_singleton

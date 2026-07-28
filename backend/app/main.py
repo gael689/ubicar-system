@@ -158,12 +158,17 @@ app.include_router(configuracion.router, prefix=API_PREFIX)
 app.include_router(busqueda.router, prefix=API_PREFIX)
 
 
-# ─── Archivos estáticos (storage local) ───────────────────────────────────────
-# Sirve fotos, documentos, etc. bajo /static/{key}. En prod con reverse proxy
-# conviene servir esto directo desde nginx para no pasar por uvicorn.
-_storage_dir = Path(settings.storage_path).resolve()
-_storage_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(_storage_dir)), name="static")
+# ─── Archivos estáticos ───────────────────────────────────────────────────────
+# Sólo con storage local: sirve fotos y documentos bajo /static/{key}.
+#
+# Con storage en bucket (r2/s3) esto **no se monta**: los archivos los sirve
+# el CDN del bucket directamente, que es más rápido y no pasa por la API. Es
+# también la configuración obligatoria en un hosting serverless, donde el
+# disco es efímero y montar un directorio no tendría sentido.
+if (settings.storage_provider or "local").lower() == "local":
+    _storage_dir = Path(settings.storage_path).resolve()
+    _storage_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=str(_storage_dir)), name="static")
 
 
 # ─── Health check ─────────────────────────────────────────────────────────────

@@ -1,0 +1,41 @@
+# Despliegue de la API en Railway.
+#
+# Railway corre contenedores de larga vida, que es lo que este backend
+# necesita: el scheduler de las 08:00 vive en el proceso, y el pool de
+# conexiones tiene sentido porque hay un proceso solo.
+#
+# Variables que hay que cargar en el panel de Railway (ninguna va al repo):
+#
+#   DATABASE_URL                  la que da el Postgres de Railway
+#   ENVIRONMENT                   production
+#   DEV_BYPASS_AUTH               false      <-- CRITICO
+#   FRONTEND_URL                  https://sistema.ubicar-rent.com.ar
+#   LANDING_URL                   https://ubicar-rent.com.ar
+#   STORAGE_PROVIDER              r2         <-- CRITICO: el disco es volatil
+#   STORAGE_BUCKET                ubicar-rent-docs
+#   STORAGE_ACCESS_KEY_ID         (de Cloudflare R2)
+#   STORAGE_SECRET_ACCESS_KEY     (de Cloudflare R2)
+#   STORAGE_ENDPOINT_URL          https://<account>.r2.cloudflarestorage.com
+#   STORAGE_PUBLIC_BASE_URL       https://archivos.ubicar-rent.com.ar
+#   RESEND_API_KEY                (de Resend)
+#   FROM_EMAIL                    noreply@ubicar-rent.com.ar
+#   NOTIFICACIONES_DIGEST_DESTINATARIOS   mails separados por coma
+#   CRON_SECRET                   un token largo al azar
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Las migraciones corren antes de levantar el servidor. Si fallan, el deploy
+# falla y queda la version anterior sirviendo — que es lo que se quiere: mejor
+# no desplegar que desplegar contra un esquema a medias.
+startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+
+# Un reinicio en loop por una variable mal cargada no tiene que quedar
+# reintentando para siempre.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

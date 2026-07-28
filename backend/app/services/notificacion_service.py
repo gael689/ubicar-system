@@ -101,6 +101,44 @@ class NotificacionService:
         self.db.flush()
         return notif
 
+    def avisar_reserva_web(self, reserva) -> Notificacion | None:
+        """
+        Aviso instantáneo de una reserva que entró por la web.
+
+        **No puede esperar al barrido de las 08:00.** Una reserva que llega un
+        sábado a la tarde quedaría sin respuesta hasta el lunes, y una reserva
+        web sin responder es una venta que se cae. Por eso se llama en el
+        momento de crearla, no desde el motor.
+
+        La regla `reserva_web_sin_atender` del catálogo sigue existiendo como
+        red de seguridad: si esto falla o nadie la atiende, vuelve a aparecer
+        cada mañana. La deduplicación por `clave_dedupe` evita que se dupliquen.
+        """
+        critica = reserva.estado == "revision_sin_cupo"
+        contacto = getattr(reserva, "web_contacto_nombre", None) or (
+            reserva.cliente.nombre_completo if getattr(reserva, "cliente", None) else "?"
+        )
+        telefono = getattr(reserva, "web_contacto_telefono", None)
+
+        return self.generar_una({
+            "tipo": "reserva_web_nueva",
+            "titulo": (
+                "Reserva web pagada SIN CUPO — resolver ya"
+                if critica else "Reserva nueva desde la web"
+            ),
+            "descripcion": (
+                f"Reserva #{reserva.id} — {contacto} — "
+                f"{reserva.fecha_inicio.strftime('%d/%m')} al "
+                f"{reserva.fecha_fin.strftime('%d/%m')}"
+                + (f" — {telefono}" if telefono else "")
+            ),
+            "urgencia": "critica" if critica else "alta",
+            "entidad_tipo": "reserva",
+            "entidad_id": reserva.id,
+            "url_destino": "/reservas-web",
+            "fecha_objetivo": reserva.fecha_inicio,
+        })
+
     def _auto_resolver(self, candidatos: list[dict]) -> int:
         """Si una notificación activa ya no aparece entre los candidatos
         actuales para su (tipo, entidad_tipo, entidad_id) — sin importar la

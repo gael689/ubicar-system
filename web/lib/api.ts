@@ -97,6 +97,31 @@ export const api = {
 
   adicionales: () => request<Adicional[]>("/public/adicionales"),
 
+  /**
+   * Deja los datos de alguien que quiso una categoría sin cupo (D-04).
+   *
+   * **No cobra nada**, así que no depende de Mercado Pago: es la mitad del
+   * flujo que ya se puede usar. Sin esto, quien busca fechas agotadas se va
+   * del sitio y ese contacto se pierde.
+   */
+  crearSolicitud: (body: {
+    categoria_id: number;
+    fecha_inicio: string;
+    hora_inicio: string;
+    fecha_fin: string;
+    hora_fin: string;
+    lugar_entrega: string;
+    lugar_devolucion?: string;
+    nombre: string;
+    email: string;
+    telefono: string;
+    notas?: string;
+  }) =>
+    request<{ reserva_id: number; categoria: string }>("/public/solicitudes", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   crearHold: (body: {
     categoria_id: number;
     fecha_inicio: string;
