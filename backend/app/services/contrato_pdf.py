@@ -92,7 +92,14 @@ def _titulo_bloque(c: canvas.Canvas, x: float, y: float, ancho: float, texto: st
     return y - 6 * mm
 
 
-def _anverso(c: canvas.Canvas, contrato, snap: dict) -> None:
+def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
+    """Dibuja el anverso y **devuelve la altura de la línea de firma**.
+
+    La devuelve porque esa línea flota: sube o baja según cuántos cargos y
+    cuántas líneas de aceptación haya. Quien dibuja la firma escaneada
+    necesita ese número — con una posición fija, el trazo caía al pie de la
+    página, lejos de la línea, y el papel parecía sin firmar.
+    """
     ancho, alto = A4
     util = ancho - 2 * _MARGEN
     col = util / 2 - 3 * mm
@@ -267,7 +274,12 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> None:
     for linea in _wrap(snap.get("aceptacion", ""), "Helvetica", 7.5, util):
         c.drawString(izq, y, linea)
         y -= 3.6 * mm
-    y -= 6 * mm
+
+    # Aire suficiente para que entre una firma arriba de la línea. Hace falta
+    # en los dos casos: si está firmado en el sistema, para que el trazo no
+    # pise el párrafo de aceptación; si se imprime en blanco, para que quepa
+    # una firma de puño y letra.
+    y -= 16 * mm
 
     firma_y = max(y, _MARGEN + 34 * mm)
     c.setStrokeColor(black)
@@ -317,6 +329,8 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> None:
         c.setFont("Helvetica-Bold", 6.5)
         c.drawString(_MARGEN, pie_y - 8 * mm,
                      "DOCUMENTO PROVISORIO — faltan cargar los datos fiscales del locador.")
+
+    return firma_y
 
 
 # ─── Reverso ─────────────────────────────────────────────────────────────────
@@ -415,14 +429,16 @@ def generar_pdf_contrato(contrato, plantilla, firma_bytes: bytes | None = None) 
     c = canvas.Canvas(buffer, pagesize=A4)
     snap = contrato.snapshot or {}
 
-    _anverso(c, contrato, snap)
+    firma_y = _anverso(c, contrato, snap)
 
     if firma_bytes:
         try:
+            # Apoyada sobre la línea de firma, no en una posición fija: la
+            # línea se mueve según el largo del detalle de cargos.
             c.drawImage(
                 ImageReader(BytesIO(firma_bytes)),
-                _MARGEN, _MARGEN + 20 * mm, width=55 * mm, height=14 * mm,
-                preserveAspectRatio=True, mask="auto",
+                _MARGEN, firma_y + 1.5 * mm, width=52 * mm, height=13 * mm,
+                preserveAspectRatio=True, anchor="sw", mask="auto",
             )
         except Exception:
             # Una firma ilegible no puede impedir reimprimir el contrato.
