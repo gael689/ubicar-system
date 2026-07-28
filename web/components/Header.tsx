@@ -103,7 +103,15 @@ const Header = () => {
             <img
               src={logo}
               alt="Ubicar Rent"
-              style={{ height: 60, width: "auto", display: "block" }}
+              style={{
+                height: 60,
+                width: "auto",
+                display: "block",
+                // Sobre el Hero (fondo azul oscuro) el logo original no se lee.
+                // Al scrollear, la barra se vuelve clara y vuelve a su color.
+                filter: scrolled ? "none" : "brightness(0) invert(1)",
+                transition: "filter 0.25s ease",
+              }}
             />
           </Link>
 
