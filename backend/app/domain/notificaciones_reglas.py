@@ -872,6 +872,240 @@ def reserva_web_sin_atender(db: Session, hoy: date) -> list[dict]:
     ]
 
 
+# ── Falta completar ──────────────────────────────────────────────────────────
+#
+# Esta familia es distinta al resto del catálogo. Las demás reglas miran
+# **hechos**: un echeq rebotó, un auto no volvió, una póliza venció. Estas
+# miran **huecos**: cosas que nadie cargó y que nadie nota hasta que llega el
+# día y ya es tarde.
+#
+# Todas se resuelven solas cuando el dato se carga, sin que nadie tenga que
+# descartar el aviso.
+
+
+def fecha_especial_sin_precio(db: Session, hoy: date) -> list[dict]:
+    """
+    Se viene una fecha especial y no tiene tarifa cargada.
+
+    El caso concreto: alguien cargó "Navidad" en el calendario y nadie cargó
+    el precio para esos días, así que **se va a vender al precio de un martes
+    cualquiera**. La plata perdida no aparece en ningún reporte porque no hubo
+    ningún error: se cobró exactamente lo que estaba configurado.
+
+    Avisa con 30 días, que es el tiempo razonable para decidir un precio,
+    discutirlo y cargarlo.
+    """
+    from app.models.fecha_especial import FechaEspecial
+    from app.models.tarifa_calendario import TarifaCalendario
+
+    proximas = (
+        db.query(FechaEspecial)
+        .filter(
+            FechaEspecial.activo == True,
+            FechaEspecial.fecha_hasta >= hoy,
+            FechaEspecial.fecha_desde <= hoy + timedelta(days=30),
+        )
+        .all()
+    )
+    if not proximas:
+        return []
+
+    reglas = db.query(TarifaCalendario).filter(TarifaCalendario.activo == True).all()
+    # Una fecha está cubierta si hay una regla colgada de ella, o una regla con
+    # rango propio que la solapa. Las dos formas son válidas: la primera es la
+    # que empuja la UI, la segunda la que queda si alguien cargó el rango a mano.
+    colgadas = {r.fecha_especial_id for r in reglas if r.fecha_especial_id}
+    por_rango = [r for r in reglas if not r.fecha_especial_id and r.fecha_desde and r.fecha_hasta]
+
+    salida = []
+    for fe in proximas:
+        if fe.id in colgadas:
+            continue
+        if any(r.fecha_desde <= fe.fecha_hasta and r.fecha_hasta >= fe.fecha_desde for r in por_rango):
+            continue
+
+        dias = (fe.fecha_desde - hoy).days
+        salida.append({
+            "tipo": "fecha_especial_sin_precio",
+            "titulo": f"{fe.nombre}: falta cargar el precio",
+            "descripcion": (
+                f"{'Ya empezó' if dias <= 0 else f'Empieza en {dias} día(s)'} "
+                f"({fe.fecha_desde.strftime('%d/%m')} al {fe.fecha_hasta.strftime('%d/%m')}) "
+                "y no tiene tarifa propia: se cobra el precio de un día común."
+            ),
+            # Crítica una vez empezada: cada día que pasa se vende barato.
+            "urgencia": "critica" if dias <= 0 else ("alta" if dias <= 7 else "media"),
+            "entidad_tipo": "fecha_especial",
+            "entidad_id": fe.id,
+            "url_destino": "/precios",
+            "fecha_objetivo": fe.fecha_desde,
+        })
+    return salida
+
+
+def categoria_sin_precio(db: Session, hoy: date) -> list[dict]:
+    """
+    Una categoría con autos disponibles que no se puede cotizar.
+
+    Sin precio, la web la devuelve como *sin disponibilidad* **aunque haya
+    unidades libres**: desde afuera parece que no hay autos, y no que falta un
+    dato. Es de los pocos huecos que se traducen directamente en ventas que no
+    entran.
+
+    Sólo avisa por categorías **con flota**: una categoría vacía no se vende
+    igual, y avisar por ella sería ruido permanente.
+    """
+    from app.models.categoria import Categoria
+    from app.models.tarifa import Tarifa
+
+    categorias = db.query(Categoria).filter(Categoria.activo == True).all()
+    if not categorias:
+        return []
+
+    con_flota = {
+        v.categoria_id
+        for v in db.query(Vehiculo).filter(Vehiculo.activo == True).all()
+        if v.categoria_id
+    }
+    tarifas = db.query(Tarifa).filter(Tarifa.activo == True).all()
+    con_tarifa = {t.categoria_id for t in tarifas if t.categoria_id}
+    # Una tarifa sin categoría ni vehículo aplica a todo: si existe, nada queda
+    # sin cotizar.
+    hay_general = any(t.categoria_id is None and t.vehiculo_id is None for t in tarifas)
+
+    if hay_general:
+        return []
+
+    return [
+        {
+            "tipo": "categoria_sin_precio",
+            "titulo": f"{c.nombre}: sin precio configurado",
+            "descripcion": (
+                "Tiene vehículos activos pero no se puede cotizar, así que la web "
+                "la muestra como sin disponibilidad."
+            ),
+            "urgencia": "alta",
+            "entidad_tipo": "categoria",
+            "entidad_id": c.id,
+            "url_destino": "/precios",
+            "fecha_objetivo": hoy,
+        }
+        for c in categorias
+        if c.id in con_flota and c.id not in con_tarifa
+    ]
+
+
+def vehiculo_sin_categoria(db: Session, hoy: date) -> list[dict]:
+    """
+    Un auto que no se puede vender por la web ni cotizar por categoría.
+
+    Desde D-08 el precio cuelga de la categoría. Un vehículo sin categoría
+    queda fuera de la disponibilidad web y del motor de precios: existe en la
+    flota pero es invisible para vender.
+    """
+    vehiculos = (
+        db.query(Vehiculo)
+        .filter(Vehiculo.activo == True, Vehiculo.categoria_id.is_(None))
+        .all()
+    )
+    return [
+        {
+            "tipo": "vehiculo_sin_categoria",
+            "titulo": f"{_vehiculo_desc(v)} sin categoría",
+            "descripcion": "No aparece en la web ni se puede cotizar hasta asignarle una categoría.",
+            "urgencia": "media",
+            "entidad_tipo": "vehiculo",
+            "entidad_id": v.id,
+            "url_destino": f"/flota/{v.id}",
+            "fecha_objetivo": hoy,
+        }
+        for v in vehiculos
+    ]
+
+
+def contrato_sin_emitir(db: Session, hoy: date) -> list[dict]:
+    """
+    El auto está afuera y **no existe ningún contrato**.
+
+    Es distinta de `contrato_no_firmado_entrega_hoy`, que mira las entregas del
+    día. Acá el auto ya salió —puede haber sido la semana pasada— y no hay
+    contrato ni emitido ni firmado. Es el peor escenario si aparece un daño o
+    una multa: no hay nada que oponer.
+    """
+    from app.models.contrato import Contrato
+
+    abiertos = db.query(Alquiler).filter(Alquiler.checkin_fecha.is_(None)).all()
+    if not abiertos:
+        return []
+
+    con_contrato = {c.alquiler_id for c in db.query(Contrato).filter(Contrato.anulado == False).all()}
+
+    salida = []
+    for a in abiertos:
+        if a.id in con_contrato:
+            continue
+        dias = (hoy - a.checkout_fecha).days if a.checkout_fecha else 0
+        r = a.reserva
+        salida.append({
+            "tipo": "contrato_sin_emitir",
+            "titulo": f"Alquiler #{a.id} sin contrato emitido",
+            "descripcion": (
+                f"{_cliente_nombre(r.cliente) if r else '—'} — "
+                f"{_vehiculo_desc(r.vehiculo) if r else '—'} — "
+                f"{'entregado hoy' if dias <= 0 else f'entregado hace {dias} día(s)'}, sin contrato"
+            ),
+            # Con el auto afuera y sin papel, cada día que pasa es peor.
+            "urgencia": "critica" if dias >= 2 else "alta",
+            "entidad_tipo": "alquiler",
+            "entidad_id": a.id,
+            "url_destino": "/reservas",
+            "fecha_objetivo": a.checkout_fecha or hoy,
+        })
+    return salida
+
+
+def datos_empresa_sin_cargar(db: Session, hoy: date) -> list[dict]:
+    """
+    Faltan los datos fiscales, así que **todo contrato sale como provisorio**.
+
+    Aparece una sola vez y desaparece sola en cuanto se cargan. Está para que
+    el placeholder no se vuelva permanente por olvido, que es exactamente lo
+    que pasa con estas cosas.
+    """
+    from app.models.configuracion import Configuracion
+
+    # Se lee el modelo directo y no el servicio: `ConfiguracionService.get()`
+    # levanta NotFoundError si la clave no existe, y acá la clave ausente es
+    # justamente uno de los casos que hay que reportar, no un error.
+    valores = {
+        c.clave: (c.valor or "").strip()
+        for c in db.query(Configuracion)
+        .filter(Configuracion.clave.in_(["empresa.razon_social", "empresa.cuit"]))
+        .all()
+    }
+    faltan = [
+        etiqueta
+        for clave, etiqueta in (("empresa.razon_social", "razón social"), ("empresa.cuit", "CUIT"))
+        if not valores.get(clave)
+    ]
+    if not faltan:
+        return []
+
+    return [{
+        "tipo": "datos_empresa_sin_cargar",
+        "titulo": "Faltan datos de la empresa",
+        "descripcion": (
+            f"Sin {' ni '.join(faltan)}, los contratos salen marcados como "
+            "DOCUMENTO PROVISORIO. Se cargan en Configuración."
+        ),
+        "urgencia": "alta",
+        "entidad_tipo": "configuracion",
+        "entidad_id": 0,
+        "url_destino": "/configuracion",
+        "fecha_objetivo": hoy,
+    }]
+
+
 # ── Catálogo completo ────────────────────────────────────────────────────────
 
 REGLAS = [
@@ -905,6 +1139,11 @@ REGLAS = [
     multa_por_vencer,
     multa_vencida,
     reserva_web_sin_atender,
+    fecha_especial_sin_precio,
+    categoria_sin_precio,
+    vehiculo_sin_categoria,
+    contrato_sin_emitir,
+    datos_empresa_sin_cargar,
 ]
 
 

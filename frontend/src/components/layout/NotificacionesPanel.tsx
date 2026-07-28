@@ -58,6 +58,14 @@ const TIPO_GRUPO: Record<string, string> = {
   multa_vencida: '⚠️ Multas',
   reserva_web_nueva: '🌐 Reservas web',
   reserva_web_sin_atender: '🌐 Reservas web',
+  // "Falta completar": huecos de configuración, no hechos. Van juntos y
+  // arriba de todo porque son los únicos que se arreglan en dos minutos y
+  // evitan perder plata en silencio.
+  fecha_especial_sin_precio: '📌 Falta completar',
+  categoria_sin_precio: '📌 Falta completar',
+  vehiculo_sin_categoria: '📌 Falta completar',
+  datos_empresa_sin_cargar: '📌 Falta completar',
+  contrato_sin_emitir: '📝 Contratos sin firmar',
 };
 
 export function NotificacionesPanel() {
