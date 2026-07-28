@@ -960,6 +960,27 @@ También están vacíos: los **adicionales** (coberturas y extras) y los
 
 ---
 
+## Verificado
+
+Lo de este manual no está escrito de memoria. Al 2026-07-28 se verificó contra
+el sistema corriendo:
+
+- **233 tests** de dominio en verde.
+- **130 endpoints** relevados del esquema OpenAPI real.
+- **Migraciones 043-047 aplicadas** a la base, con roundtrip completo de
+  bajada y subida sin alterar los saldos de cuenta corriente.
+- **Ciclo del contrato probado de punta a punta**: preparar → generar
+  (`C-00000001`) → firmar → PDF de 2 páginas con las 13 cláusulas, el locador
+  resuelto y sin rastros del contrato original → anular → emitir uno nuevo.
+  Emitir dos contratos vigentes del mismo alquiler devuelve 409.
+- **Flujo web de 4 pasos probado en navegador** contra datos reales: 6
+  categorías con cupo, hold tomado, y la recotización con adicionales exacta.
+
+Los datos de prueba que se cargaron para verificar (una tarifa, cuatro
+adicionales, un recargo por edad y dos contratos) **se borraron después**.
+
+---
+
 ## Documentos relacionados
 
 | Documento | Para qué |

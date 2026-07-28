@@ -115,6 +115,26 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """
+    **No es completamente reversible una vez que hay pagos a cuenta**, y eso es
+    esperable: habilitarlos era el punto de la migracion. Volver `alquiler_id`
+    a NOT NULL exigiria borrar esos cobros, o sea perder plata registrada.
+
+    Se falla con un mensaje que se entienda en vez de dejar que Postgres tire
+    un NotNullViolation que no le dice nada a nadie.
+    """
+    conn = op.get_bind()
+    sin_alquiler = conn.execute(
+        sa.text("SELECT COUNT(*) FROM pagos WHERE alquiler_id IS NULL")
+    ).scalar()
+    if sin_alquiler:
+        raise RuntimeError(
+            f"No se puede revertir: hay {sin_alquiler} pago(s) sin alquiler "
+            "(pagos a cuenta, senas de reservas web o cancelaciones de deuda). "
+            "Volver atras exigiria borrarlos. Si realmente hace falta, "
+            "reasignalos o eliminalos a mano primero y despues corre el downgrade."
+        )
+
     op.drop_index('ix_recibos_pago_id', table_name='recibos')
     op.drop_constraint('fk_recibos_pago', 'recibos', type_='foreignkey')
     op.drop_column('recibos', 'pago_id')
