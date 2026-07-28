@@ -98,7 +98,9 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 - Si un cliente paga con dos medios distintos en el momento (parte efectivo, parte transferencia), hoy hacen falta **dos recibos**, no uno.
 - No queda registrado en el sistema "este pago específico canceló esa deuda específica" — sólo que el saldo bajó. Para la mayoría de los casos (el cliente debe un monto y paga ese monto) da exactamente el mismo resultado. Para casos de pagos parciales contra múltiples deudas simultáneas, el saldo general sigue siendo correcto, pero no hay trazabilidad de "a qué se aplicó cada peso".
 
-**Estado:** 🔴 **BUG P0 CONFIRMADO — 2026-07-28.**
+**Estado:** ✅ **BUG P0 CONFIRMADO Y ARREGLADO — 2026-07-28**, migración `043_pago_recibo_un_solo_asiento`. El detalle de lo implementado está en `PLAN_MAESTRO.md` §2.12. Abajo queda el diagnóstico que lo originó.
+
+Lo que cambia para el uso diario: **emitir un recibo registra el cobro** — suma a la caja del día y baja el saldo. No hay que cargar el pago por separado, y un cobro ya registrado puede recibir su papel sin que el saldo se mueva.
 
 El usuario pidió revisar esto con una sospecha concreta:
 

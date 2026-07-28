@@ -31,8 +31,17 @@ class Recibo(Base):
 
     cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), nullable=False, index=True)
     cuenta_corriente_id: Mapped[int] = mapped_column(ForeignKey("cuentas_corrientes.id"), nullable=False)
-    movimiento_cc_id: Mapped[int] = mapped_column(
-        ForeignKey("movimientos_cuenta_corriente.id"), nullable=False
+
+    # El pago que este recibo documenta (migración 043). **El recibo no mueve
+    # plata**: el crédito en la cuenta corriente lo generó el `Pago`. Antes de
+    # esa migración el recibo generaba su propio asiento y el resultado era un
+    # doble crédito por el mismo cobro (PLAN_MAESTRO §2.12).
+    pago_id: Mapped[int | None] = mapped_column(ForeignKey("pagos.id"), nullable=True, index=True)
+
+    # Nullable desde la 043: los recibos nuevos no generan movimiento propio.
+    # Los emitidos antes conservan el suyo, que ahora cuelga del pago.
+    movimiento_cc_id: Mapped[int | None] = mapped_column(
+        ForeignKey("movimientos_cuenta_corriente.id"), nullable=True
     )
 
     fecha: Mapped[date] = mapped_column(Date(), nullable=False)

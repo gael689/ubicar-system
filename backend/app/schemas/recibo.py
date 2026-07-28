@@ -7,11 +7,15 @@ MedioPagoRecibo = Literal["efectivo", "transferencia", "tarjeta", "cheque", "ech
 
 
 class ReciboCreate(BaseModel):
+    """Cobrar y documentar en una acción: genera el `Pago` y su recibo."""
     cliente_id: int
     fecha: date
     monto: Decimal
     medio_pago: MedioPagoRecibo
     concepto: str = "Pago a cuenta"
+    # Opcional: si el cobro corresponde a un alquiler puntual, queda enlazado.
+    # Sin él es un pago a cuenta contra el saldo general.
+    alquiler_id: int | None = None
 
     @field_validator("monto")
     @classmethod
@@ -19,6 +23,11 @@ class ReciboCreate(BaseModel):
         if v <= 0:
             raise ValueError("El monto debe ser mayor a 0")
         return v
+
+
+class ReciboDePagoRequest(BaseModel):
+    """Emitir el recibo de un cobro que ya se registró. No mueve plata."""
+    concepto: str = "Pago a cuenta"
 
 
 class AnularReciboRequest(BaseModel):
@@ -45,7 +54,8 @@ class ReciboResponse(BaseModel):
     prefijo: str
     cliente_id: int
     cuenta_corriente_id: int
-    movimiento_cc_id: int
+    pago_id: int | None = None
+    movimiento_cc_id: int | None = None
     fecha: date
     monto: Decimal
     medio_pago: str

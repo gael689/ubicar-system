@@ -17,6 +17,11 @@ export function useRecibosCliente(clienteId: number | undefined) {
   });
 }
 
+/**
+ * Cobrar y documentar en una acción: el backend crea el `Pago` (que genera el
+ * crédito en la cuenta corriente) y su recibo. Por eso invalida también caja y
+ * pagos: el cobro aparece en el arqueo del día.
+ */
 export function useCrearRecibo() {
   const qc = useQueryClient();
   return useMutation({
@@ -24,10 +29,33 @@ export function useCrearRecibo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
       qc.invalidateQueries({ queryKey: ['cuentas-corrientes'] });
+      qc.invalidateQueries({ queryKey: ['pagos'] });
+      qc.invalidateQueries({ queryKey: ['caja'] });
     },
   });
 }
 
+/**
+ * El recibo de un cobro que ya se registró. **No mueve plata** — el crédito lo
+ * generó el pago cuando se creó, así que el saldo no cambia.
+ */
+export function useEmitirReciboDePago() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pagoId, concepto }: { pagoId: number; concepto: string }) =>
+      api.post<{ data: Recibo }>(`/pagos/${pagoId}/recibo`, { concepto }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [KEY] });
+      qc.invalidateQueries({ queryKey: ['pagos'] });
+      qc.invalidateQueries({ queryKey: ['caja'] });
+    },
+  });
+}
+
+/**
+ * Anula el papel, no el cobro. Si además hay que revertir la plata, se elimina
+ * el `Pago` — que es donde vive el asiento.
+ */
 export function useAnularRecibo() {
   const qc = useQueryClient();
   return useMutation({
@@ -36,6 +64,7 @@ export function useAnularRecibo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
       qc.invalidateQueries({ queryKey: ['cuentas-corrientes'] });
+      qc.invalidateQueries({ queryKey: ['pagos'] });
     },
   });
 }

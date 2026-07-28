@@ -54,7 +54,9 @@ export type MetodoPago = MedioPagoGasto | 'cuenta_corriente';
 
 export interface Pago {
   id: number;
-  alquiler_id: number;
+  // Nullable desde la migración 043: un pago puede ser a cuenta, sin alquiler.
+  alquiler_id: number | null;
+  cliente_id: number | null;
   monto: string;
   medio_pago: MetodoPago;
   con_factura: boolean;
@@ -64,6 +66,9 @@ export interface Pago {
   cliente_nombre: string | null;
   vehiculo_patente: string | null;
   reserva_id: number | null;
+  // El recibo emitido de este cobro, si lo hay.
+  recibo_id: number | null;
+  recibo_numero: string | null;
 }
 
 export interface PagoPendiente {
@@ -78,7 +83,8 @@ export interface PagoPendiente {
 }
 
 export interface PagoCreate {
-  alquiler_id: number;
+  alquiler_id?: number | null;
+  cliente_id?: number | null;
   monto: number;
   medio_pago: MetodoPago;
   con_factura?: boolean;
@@ -203,7 +209,9 @@ export interface Recibo {
   prefijo: string;
   cliente_id: number;
   cuenta_corriente_id: number;
-  movimiento_cc_id: number;
+  // El pago que documenta. El recibo no mueve plata: el crédito lo generó él.
+  pago_id: number | null;
+  movimiento_cc_id: number | null;
   fecha: string;
   monto: string;
   medio_pago: MedioPagoRecibo;
@@ -226,6 +234,7 @@ export interface ReciboCreate {
   monto: number;
   medio_pago: MedioPagoRecibo;
   concepto: string;
+  alquiler_id?: number | null;
 }
 
 // ─── Caja ─────────────────────────────────────────────────────────────────────

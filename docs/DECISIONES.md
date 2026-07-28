@@ -118,20 +118,13 @@ Más una opción **"Otro"** con texto libre para casos puntuales.
 - Cada punto lleva horario de atención, para poder avisar de retiros fuera de horario.
 - **Retiro y devolución pueden ser distintos.** Cuando difieren, se marca visualmente en la reserva (es el caso que después habilita el cargo one-way).
 
-### D-11 · Política de cancelación ⚠️ EN REVISIÓN desde 2026-07-28
+### D-11 · Política de cancelación ✅ DECIDIDO — **ratificado el 2026-07-28**
 
-> **⚠️ Contradicción abierta.** El 2026-07-28 el usuario dijo: ***"La seña no se pierde si el cliente no aparece"***. Eso choca de frente con lo que esta decisión dice abajo.
+> **La contradicción del 2026-07-28 quedó cerrada: era un malentendido de lectura, no un cambio de política.**
 >
-> Son dos situaciones distintas —**cancelar** (avisa que no viene) y **no aparecer** (no avisa nada)— pero la política resultante sería absurda: **al que avisa se le retiene la seña y al que no avisa se le devuelve**. Eso premia el peor comportamiento y es exactamente el incentivo que un rent-a-car no quiere dar.
+> Cuando el usuario dijo *"la seña no se pierde si el cliente no aparece"*, quería decir que **no se pierde para el negocio** — Ubicar la retiene. Aclarado en la misma sesión: *"para el cliente sí, no le devolvemos la seña, eso quise decir."*
 >
-> **Hay que elegir una sola política y escribirla en los términos y condiciones** (ver `docs/PLAN_TEXTOS_LEGALES.md`). Las tres coherentes:
-> 1. **La seña nunca se pierde** — se devuelve o queda como crédito a favor, cancele o no aparezca. Es la más comercial y la que menos conflictos genera.
-> 2. **La seña nunca se pierde si avisa con X horas de anticipación**, y se retiene si no avisa. Premia avisar, que es lo que el negocio necesita para revender el auto.
-> 3. **La seña se retiene siempre** (lo que decía esta decisión).
->
-> **Recomendación: la 2**, con 48 horas. Es la que alinea el incentivo del cliente con el interés del negocio: lo que cuesta plata no es la cancelación, es enterarse tarde.
->
-> Mientras no se resuelva, lo escrito abajo sigue siendo lo vigente en el sistema.
+> **Esta decisión queda tal cual estaba**, y aplica igual a la cancelación y al no-show: en los dos casos la seña la retiene el negocio.
 
 **Si pagó seña y cancela, no se le devuelve nada.** La seña se retiene íntegra.
 
@@ -441,6 +434,64 @@ Entregar un auto sin contrato firmado **es posible** (el día que falle el PDF o
 
 Mismo criterio que los bloqueos de vehículo (ítem 59) y que toda la regla del proyecto: *el sistema informa, la persona decide* — pero acá el sistema además **insiste**.
 
+### D-35 · Tarifa semanal y mensual: **sí hay prorrateo, por bloques** ✅ DECIDIDO
+> *"Se podría calcular estilo: precio de la reserva semanal + 3 días libres."*
+
+**Esto invierte lo que el sistema hace hoy.** Hasta ahora el `monto` de una tarifa era siempre un **precio por día**, y la banda sólo decidía cuál aplicaba. A partir de esta decisión, un alquiler se **descompone en bloques** y cada bloque se cobra a su tarifa:
+
+```
+Alquiler de 10 días
+  1 semana  → a precio semanal
+  3 días    → a precio diario
+  ─────────────────────────────
+  Total = precio_semana + (3 × precio_día)
+```
+
+```
+Alquiler de 40 días
+  1 mes     → a precio mensual
+  1 semana  → a precio semanal
+  3 días    → a precio diario
+```
+
+**Regla: se consumen siempre los bloques más grandes primero** (mes → semana → día). Es lo que da el precio más conveniente para el cliente y lo que hace que la escala de descuentos por volumen tenga sentido.
+
+**Consecuencia importante:** el campo `monto` de una tarifa **semanal pasa a ser el precio de la semana completa**, no el precio por día. Es exactamente lo que un operador esperaría al cargar "Semanal: $150.000", y elimina de raíz el riesgo de cobrar 7 veces de más.
+
+**Hoy no hay ninguna tarifa semanal ni mensual cargada en la base**, así que no hay datos que migrar. Pero hay que cambiar la UI de Tarifas, que hoy dice lo contrario ("Precio por día para alquileres de X a Y días").
+
+**Queda planteado y NO se implementa** (pendiente de validación del usuario): la **sugerencia de upsell** — *"por 14 días te sale sólo $X más"* cuando la diferencia entre lo que el cliente pidió y el siguiente bloque completo es chica. Es una buena idea comercial y encaja naturalmente con el cálculo por bloques, pero se construye después de confirmar el umbral de "poca diferencia".
+
+### D-38 · Edad: no hay mínimo, hay **recargo por franja etaria** ✅ DECIDIDO
+> *"Desde cualquier edad, pero de X edad a X edad el precio es otro, así se manejan las grandes empresas. Que los administradores, en su talonario, también puedan definir esto."*
+
+**No se rechaza a nadie por edad.** En vez de un mínimo que bloquea la venta, la edad **modifica el precio** — que es como opera el rubro (el *young driver surcharge* de las internacionales).
+
+**Es un ABM, no una constante:** los administradores definen las franjas y el recargo de cada una, igual que hacen con adicionales y con las reglas de precio. La lista no está cerrada y va a cambiar.
+
+| Concepto | Definición |
+|---|---|
+| Franja | `edad_desde` – `edad_hasta` (ej. 18-24) |
+| Recargo | Monto fijo **o** porcentaje |
+| Unidad | Por día o único |
+| Alcance | General o por categoría — una pick-up para alguien de 19 no es lo mismo que un compacto |
+
+**Dos consecuencias que importan:**
+
+1. **La fecha de nacimiento pasa a ser obligatoria en el paso 3 de la web**, y por un motivo más fuerte que validar: **sin ella no se puede cotizar bien**. Refuerza lo decidido en la pregunta #9 de `DECISIONES_RESERVAS_WEB.md`.
+2. **El recargo se congela en la reserva**, como los adicionales y como `precio_lista`. Cambiar la tabla de recargos no puede reescribir lo pactado.
+
+### D-39 · Sólo Bahía Blanca por ahora ✅ DECIDIDO
+> *"La idea es que de manera inicial sea sólo Bahía Blanca. Lo de Capital Federal dejalo como duda."*
+
+**La web opera únicamente en Bahía Blanca.** El punto de retiro de Capital Federal (`Juan Francisco Seguí 3607`) **se saca del flujo de reserva online**, y con él se cae el problema de la flota repartida en dos ciudades y el del one-way de 700 km.
+
+Esto **ratifica el ítem 55** (sucursales descartadas): con una sola ciudad no hay one-way que cobrar ni cupo que calcular por sede.
+
+**Qué se toca:** el selector del Hero y el de "devolver en otro lugar" quedan con los tres puntos de Bahía Blanca (Paraguay 241, Alsina 350, Aeropuerto Comandante Espora). **El `<h1>` de la web sigue diciendo "Bahía Blanca y Capital Federal"** — hay que decidir si se corrige o se deja como presencia comercial con contacto por WhatsApp.
+
+**Queda como duda abierta (D-39b):** qué se hace con Capital Federal. Sigue existiendo como operación (hay un WhatsApp propio para CABA y el chip existe en el sistema interno), sólo que **no se vende online**. Cuando se retome hay que contestar las tres preguntas de `PLAN_RESERVAS_WEB.md` §11: si se permite retirar en una ciudad y devolver en la otra, cuánto se cobra, y **si la flota de CABA es la misma** — que es la que puede romper la disponibilidad por cupo.
+
 ---
 
 ## Decisiones que quedan abiertas
@@ -449,23 +500,23 @@ Actualizado el **2026-07-28**. Ordenadas por urgencia.
 
 | # | Decisión | Bloquea | Urgencia |
 |---|---|---|---|
-| **D-11** | **¿La seña se pierde o no?** Contradicción abierta: "no se pierde si no aparece" vs. "se retiene al cancelar" | Los T&C, el contrato y el paso 3 de la web | 🔴 **Ya** |
 | **D-C1** | **Quién es el locador** del contrato: nombre, CUIT, II.BB, domicilio fiscal, contacto | Todo el módulo de Contratos | 🔴 **Ya** |
 | D-18 | **¿La devolución es a la hora que se carga, o siempre a la misma hora del retiro?** | El arreglo del cálculo de excedente — es un P0 | 🔴 Ya |
 | D-19 | **Umbral de día completo** por atraso: ¿bajar de 12 a 6 horas? | Cargo por excedente | 🔴 Ya |
-| **D-35** | **Tarifa semanal/mensual**: *¿cuánto cobrarían por 10 días?* Define si el monto cargado es por día o por período | Que carguen la primera tarifa semanal | 🟠 Antes de cargar precios |
 | **D-C3** | **Monto de la franquicia** — valor único para web, reserva y sistema. Los dueños lo cargan; falta entender cómo lo manejan hoy | Bloque de franquicia del contrato y de la web | 🟠 Fase 4 |
 | **D-36** | **Anticipación mínima** para reservar online + **horarios de entrega** | Validación del paso 1 de la web | 🟠 Fase 6 |
 | **D-37** | **¿Se pide garantía online?** Probablemente no, pero hay que definir cuál es la garantía en una reserva web | Paso 3 de la web | 🟠 Fase 6 |
+| **D-35b** | **Umbral del upsell** — cuánta diferencia es "poca" para sugerir el bloque siguiente ("por 14 días te sale $X más") | Sólo la sugerencia; el cálculo por bloques va igual | 🟡 Fase 6 |
+| **D-38b** | **Las franjas de edad y sus recargos** — los cargan los administradores, pero hace falta el primer juego de valores | Que el recargo por edad haga algo | 🟡 Fase 6 |
+| **D-39b** | **Qué se hace con Capital Federal** — no se vende online por ahora. Si se retoma: ¿one-way?, ¿cuánto?, ¿la flota es la misma? | La web multi-ciudad | 🟡 Diferida |
 | **D-30b** | **Cuánto** es el descuento por pagar el 100% por adelantado | Un valor de configuración, no bloquea código | 🟡 Fase 6 |
 | **D-32b** | **A qué casilla** llega el aviso de reserva web (¿Franco y Martín, o una casilla de la empresa?) | Configuración del envío | 🟡 Fase 6 |
 | D-20 | **Cargos fijos**: limpieza y precio del litro de combustible | Cargos de cierre en el check-in | 🟠 Fase 1 |
 | D-21 | **Km incluidos por día** — ¿hay límite o es libre? | Cargo por km excedido y el contrato | 🟠 Fase 1 |
 | D-22 | **Límite de crédito** por cliente con cuenta corriente | Alerta y bloqueo | 🟠 Fase 1 |
 | D-23 | **Descuento máximo** sin autorización del dueño | Control de márgenes | 🟠 Fase 1 |
-| D-17 | **Política de no-show** — queda subsumida en D-11 | — | 🟡 Ver D-11 |
 
-**Cerradas en esta ronda:** D-07 (texto del contrato — resuelto con el modelo aportado, ver D-33), D-25 a D-34, y el punto 7 de `VALIDAR_CON_DUENOS.md` (categorías de la flota, D-29), que era el bloqueante principal de la web.
+**Cerradas en esta ronda (2026-07-28):** D-07 (texto del contrato, ver D-33), **D-11** (ratificada: la seña la retiene el negocio, cancele o no aparezca — y con eso **D-17** queda subsumida), D-25 a D-34, **D-35** (prorrateo por bloques), **D-38** (recargo por edad en vez de mínimo), **D-39** (sólo Bahía Blanca), y el punto 7 de `VALIDAR_CON_DUENOS.md` (categorías de la flota, D-29) que era el bloqueante principal de la web.
 
 ---
 

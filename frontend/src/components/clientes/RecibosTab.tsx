@@ -91,6 +91,14 @@ export function RecibosTab({ clienteId }: Props) {
 
         {showForm && (
           <form onSubmit={handleSubmit(onSubmit)} className="mt-4 rounded-xl border border-border bg-muted/30 p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* El operador tiene que saber que esto NO es sólo imprimir un
+                papel: registra el cobro. Si no, va a registrar el pago aparte
+                "por las dudas" y el saldo va a quedar cobrado dos veces —
+                exactamente lo que la migración 043 vino a evitar. */}
+            <p className="col-span-2 sm:col-span-4 text-xs text-muted-foreground">
+              Emitir el recibo <strong className="text-foreground">registra el cobro</strong>: suma a la caja del día
+              y baja el saldo del cliente. No hace falta cargar el pago por separado.
+            </p>
             <div>
               <label className="text-xs text-muted-foreground">Fecha</label>
               <input {...register('fecha')} type="date" className="input-base" />

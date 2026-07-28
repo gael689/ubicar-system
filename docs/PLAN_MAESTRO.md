@@ -224,7 +224,45 @@ un problema transversal del módulo.
 
 ---
 
-### 2.12 🔴 P0 ABIERTO — `Pago` y `Recibo` acreditan dos veces el mismo cobro
+### 2.12 ✅ RESUELTO — `Pago` y `Recibo` acreditaban dos veces el mismo cobro
+
+> **Arreglado el 2026-07-28, migración `043_pago_recibo_un_solo_asiento`.** El
+> diagnóstico original queda abajo como registro. Lo implementado:
+>
+> - **`pagos.alquiler_id` es nullable** y se sumó **`pagos.cliente_id`** — con
+>   eso queda cerrado también el **bug 2.6**, abierto desde el diagnóstico
+>   original. Un pago ya puede ser a cuenta, la seña de una reserva sin
+>   alquiler, o el pago de una multa.
+> - **`recibos.pago_id`** — el recibo documenta un pago concreto.
+>   `movimiento_cc_id` pasó a nullable: los recibos nuevos no generan asiento.
+> - **`ReciboService.crear()` ya no toca el ledger por su cuenta**: crea el
+>   `Pago` (que genera el crédito) y su recibo, en una sola acción. Nuevo
+>   `emitir_para_pago()` para el caso "ya cobré, ahora quiero el papel", vía
+>   **`POST /pagos/{id}/recibo`**.
+> - **`saldo_anterior`/`saldo_posterior` del recibo se reconstruyen del
+>   movimiento del pago**, no del saldo actual de la cuenta: el papel tiene que
+>   imprimir el saldo *de ese momento*, no el de hoy.
+> - **No se puede borrar un pago que tiene recibo emitido** (409): primero se
+>   anula el papel, que es un acto explícito con motivo. Anular un recibo ya no
+>   revierte plata — salvo los emitidos antes de la 043, que se distinguen
+>   porque no tienen `pago_id`.
+> - Los pagos que crea el check-out/check-in ahora llevan `cliente_id`; sin eso
+>   no se les podía emitir recibo, que es el caso más frecuente de todos.
+> - En la UI de Recibos se explica que emitir **registra el cobro** — si no, el
+>   operador carga el pago aparte "por las dudas" y vuelve el doble crédito por
+>   la puerta de atrás.
+>
+> **Backfill:** a cada recibo ya emitido se le crea su `Pago` y **se le
+> reasigna el movimiento existente**. No se crea ni se anula ningún asiento
+> porque el saldo actual ya era correcto: hasta hoy no había UI que emitiera un
+> recibo sobre un pago, así que el doble crédito no llegó a ocurrir de forma
+> sistemática. Reasignar mantiene el saldo intacto y deja el ledger coherente.
+>
+> **Y desbloquea la Fase 6**: la seña de una reserva web es un cobro sin
+> alquiler todavía — exactamente lo que `Pago.alquiler_id NOT NULL` impedía.
+
+<details>
+<summary>Diagnóstico original (2026-07-28)</summary>
 
 > **Encontrado el 2026-07-28**, revisando el punto 4 de `VALIDAR_CON_DUENOS.md`
 > a pedido del usuario, que sospechaba que "no estaban 100% sincronizados".
@@ -279,6 +317,8 @@ cuántos recibos reales hay antes de empezar; si son pocos, es trivial.
 **Este arreglo también desbloquea la Fase 6:** la seña de una reserva web es un
 cobro **sin alquiler todavía**, exactamente lo que `Pago.alquiler_id NOT NULL`
 impide hoy.
+
+</details>
 
 ---
 

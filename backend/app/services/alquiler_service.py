@@ -243,6 +243,7 @@ class AlquilerService:
             if reserva.anticipo_monto and reserva.anticipo_monto > 0:
                 pago_anticipo = Pago(
                     alquiler_id=alquiler.id,
+                    cliente_id=reserva.cliente_id,
                     monto=reserva.anticipo_monto,
                     medio_pago=reserva.anticipo_medio_pago or "efectivo",
                     con_factura=False,
@@ -268,6 +269,7 @@ class AlquilerService:
             if pago_inmediato and pago_inmediato.monto > 0:
                 pago_checkout = Pago(
                     alquiler_id=alquiler.id,
+                    cliente_id=reserva.cliente_id,
                     monto=pago_inmediato.monto,
                     medio_pago=pago_inmediato.medio_pago,
                     con_factura=False,
@@ -469,6 +471,7 @@ class AlquilerService:
             if pago_inmediato and pago_inmediato.monto > 0:
                 pago_checkin = Pago(
                     alquiler_id=alquiler_id,
+                    cliente_id=reserva.cliente_id,
                     monto=pago_inmediato.monto,
                     medio_pago=pago_inmediato.medio_pago,
                     con_factura=False,

@@ -1,6 +1,13 @@
 """
-Router de Recibos — comprobantes de cobro con crédito automático en la
-cuenta corriente del cliente y descarga de PDF (ReportLab).
+Router de Recibos — el comprobante de un cobro, con descarga de PDF
+(ReportLab).
+
+**El recibo documenta un `Pago`; no mueve plata por su cuenta.** Hay dos
+caminos para emitirlo:
+
+- `POST /recibos` — cobrar y documentar de una: crea el `Pago` (que genera el
+  crédito en la cuenta corriente) y su recibo.
+- `POST /pagos/{id}/recibo` — el papel de un cobro ya registrado.
 """
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
@@ -43,7 +50,7 @@ def crear_recibo(
     recibo = svc.crear(payload, usuario_id=current_user.id)
     db.commit()
     db.refresh(recibo)
-    return ok(ReciboResponse.model_validate(recibo), "Recibo emitido")
+    return ok(ReciboResponse.model_validate(recibo), "Cobro registrado y recibo emitido")
 
 
 @router.get("/{recibo_id}")

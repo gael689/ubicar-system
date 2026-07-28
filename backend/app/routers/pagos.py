@@ -13,15 +13,19 @@ from app.models.vehiculo import Vehiculo
 from app.models.gasto import Gasto
 from app.schemas.pago import PagoCreate, PagoResponse, PagoDetalladoResponse, PagoPendienteResponse
 from app.schemas.gasto import GastoResponse
+from app.schemas.recibo import ReciboDePagoRequest, ReciboResponse
+from app.services.recibo_service import ReciboService
+from app.models.recibo import Recibo
 
 router = APIRouter(prefix="/pagos", tags=["Pagos"])
 
 
 def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
-    alquiler = db.get(Alquiler, pago.alquiler_id)
     cliente_nombre = None
     vehiculo_patente = None
     reserva_id = None
+
+    alquiler = db.get(Alquiler, pago.alquiler_id) if pago.alquiler_id else None
     if alquiler:
         reserva_id = alquiler.reserva_id
         reserva = db.get(Reserva, alquiler.reserva_id)
@@ -29,13 +33,31 @@ def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
             cliente = db.get(Cliente, reserva.cliente_id)
             if cliente:
                 cliente_nombre = cliente.nombre_completo
-            vehiculo = db.get(Vehiculo, reserva.vehiculo_id)
-            if vehiculo:
-                vehiculo_patente = vehiculo.patente
+            # `vehiculo_id` es nullable desde la 042 (reserva por categoría).
+            if reserva.vehiculo_id:
+                vehiculo = db.get(Vehiculo, reserva.vehiculo_id)
+                if vehiculo:
+                    vehiculo_patente = vehiculo.patente
+
+    # Un pago a cuenta no tiene alquiler, pero sí cliente.
+    if cliente_nombre is None and pago.cliente_id:
+        cliente = db.get(Cliente, pago.cliente_id)
+        if cliente:
+            cliente_nombre = cliente.nombre_completo
+
+    recibo = (
+        db.query(Recibo)
+        .filter(Recibo.pago_id == pago.id, Recibo.estado == "emitido")
+        .first()
+    )
+
     d = PagoDetalladoResponse.model_validate(pago)
     d.cliente_nombre = cliente_nombre
     d.vehiculo_patente = vehiculo_patente
     d.reserva_id = reserva_id
+    if recibo:
+        d.recibo_id = recibo.id
+        d.recibo_numero = f"{recibo.prefijo}-{recibo.numero:08d}"
     return d
 
 
@@ -163,36 +185,84 @@ def create_pago(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    alquiler = db.query(Alquiler).filter(Alquiler.id == payload.alquiler_id).first()
-    if not alquiler:
-        raise HTTPException(status_code=404, detail="Alquiler no encontrado")
+    # Desde la migración 043 un pago puede no tener alquiler (pago a cuenta,
+    # seña de una reserva sin alquiler todavía, cancelación de deuda vieja).
+    # Lo que no puede faltar es el cliente: siempre se le cobra a alguien.
+    cliente_id = payload.cliente_id
+    alquiler = None
+    if payload.alquiler_id is not None:
+        alquiler = db.query(Alquiler).filter(Alquiler.id == payload.alquiler_id).first()
+        if not alquiler:
+            raise HTTPException(status_code=404, detail="Alquiler no encontrado")
+        reserva = db.get(Reserva, alquiler.reserva_id)
+        if reserva:
+            cliente_id = cliente_id or reserva.cliente_id
 
-    pago = Pago(**payload.model_dump(), cobrado_por=current_user.id)
+    if cliente_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="El pago necesita un cliente, o un alquiler del que deducirlo",
+        )
+
+    pago = Pago(
+        **payload.model_dump(exclude={"cliente_id"}),
+        cliente_id=cliente_id,
+        cobrado_por=current_user.id,
+    )
     db.add(pago)
     db.flush()  # asegurar pago.id antes de enlazarlo al movimiento
 
     # Ledger completo: todo alquiler factura un débito automático en el
     # checkout (ver AlquilerService.checkout). Cualquier cobro posterior,
     # sea cual sea el medio de pago, genera el CRÉDITO que lo cancela.
-    reserva = db.get(Reserva, alquiler.reserva_id)
-    if reserva:
-        from decimal import Decimal
-        from app.services.cuenta_corriente_service import CuentaCorrienteService
+    from decimal import Decimal
+    from app.services.cuenta_corriente_service import CuentaCorrienteService
 
-        CuentaCorrienteService(db).registrar_movimiento(
-            cliente_id=reserva.cliente_id,
-            tipo="credito",
-            concepto=f"Cobro alquiler #{payload.alquiler_id} ({payload.medio_pago})",
-            monto=Decimal(str(payload.monto)),
-            fecha=payload.fecha,
-            creado_por=current_user.id,
-            alquiler_id=payload.alquiler_id,
-            pago_id=pago.id,
-        )
+    concepto = (
+        f"Cobro alquiler #{payload.alquiler_id} ({payload.medio_pago})"
+        if payload.alquiler_id is not None
+        else f"Cobro a cuenta ({payload.medio_pago})"
+    )
+    CuentaCorrienteService(db).registrar_movimiento(
+        cliente_id=cliente_id,
+        tipo="credito",
+        concepto=concepto,
+        monto=Decimal(str(payload.monto)),
+        fecha=payload.fecha,
+        creado_por=current_user.id,
+        alquiler_id=payload.alquiler_id,
+        pago_id=pago.id,
+    )
 
     db.commit()
     db.refresh(pago)
     return ok(_enriquecer(pago, db), "Pago registrado")
+
+
+@router.post("/{pago_id}/recibo", status_code=status.HTTP_201_CREATED)
+def emitir_recibo_de_pago(
+    pago_id: int,
+    payload: ReciboDePagoRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    El papel de un cobro que ya se registró.
+
+    **No mueve plata**: el crédito lo generó el pago cuando se creó. Por eso un
+    pago puede tener su recibo sin que el saldo cambie — que es exactamente lo
+    que antes no se podía hacer y llevaba a acreditar dos veces.
+    """
+    pago = db.query(Pago).filter(Pago.id == pago_id).first()
+    if not pago:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+
+    recibo = ReciboService(db).emitir_para_pago(
+        pago, payload.concepto, usuario_id=current_user.id
+    )
+    db.commit()
+    db.refresh(recibo)
+    return ok(ReciboResponse.model_validate(recibo), "Recibo emitido")
 
 
 @router.delete("/{pago_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -204,6 +274,24 @@ def delete_pago(
     pago = db.query(Pago).filter(Pago.id == pago_id).first()
     if not pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
+
+    # Si ya se le entregó un recibo al cliente, el papel manda: no se puede
+    # borrar el cobro por atrás y dejar circulando un comprobante que dice que
+    # existió. Primero se anula el recibo, que es un acto explícito y con
+    # motivo.
+    recibo = (
+        db.query(Recibo)
+        .filter(Recibo.pago_id == pago_id, Recibo.estado == "emitido")
+        .first()
+    )
+    if recibo:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"El pago tiene el recibo {recibo.prefijo}-{recibo.numero:08d} emitido. "
+                "Anulá el recibo antes de eliminar el cobro."
+            ),
+        )
 
     # Con el ledger completo, todo pago generó un crédito en la cuenta
     # corriente del cliente (ver create_pago). Antes de borrar el Pago, se
