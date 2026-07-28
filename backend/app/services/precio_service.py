@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, BusinessRuleError
 from app.domain.enums import TipoTarifa
 from app.domain.precios import (
+    AdicionalSolicitado,
     Cotizacion,
     DescuentoDuracionInfo,
     ReglaPrecio,
@@ -29,6 +30,7 @@ from app.domain.tarifas import (
     calcular_duracion_dias,
     seleccionar_tarifa,
 )
+from app.models.adicional import Adicional
 from app.models.categoria import Categoria
 from app.models.fecha_especial import FechaEspecial
 from app.models.tarifa import Tarifa
@@ -183,6 +185,46 @@ class PrecioService:
 
     # ─── Cotización ───────────────────────────────────────────────────────────
 
+    def _cargar_adicionales(
+        self, solicitados: list[tuple[int, int]]
+    ) -> list[AdicionalSolicitado]:
+        """
+        Resuelve los adicionales pedidos como (id, cantidad) contra la tabla,
+        tomando el precio vigente. Valida el tope de unidades acá porque el
+        dominio no conoce `max_cantidad` — es una regla del catálogo, no del
+        cálculo.
+        """
+        if not solicitados:
+            return []
+
+        ids = [aid for aid, _ in solicitados]
+        encontrados = {
+            a.id: a
+            for a in self.db.query(Adicional)
+            .filter(Adicional.id.in_(ids), Adicional.activo.is_(True))
+            .all()
+        }
+
+        resultado: list[AdicionalSolicitado] = []
+        for adicional_id, cantidad in solicitados:
+            a = encontrados.get(adicional_id)
+            if a is None:
+                raise NotFoundError("Adicional", adicional_id)
+            if a.max_cantidad is not None and cantidad > a.max_cantidad:
+                raise BusinessRuleError(
+                    "cantidad_excede_maximo",
+                    f"'{a.nombre}' admite hasta {a.max_cantidad} unidad(es) por reserva",
+                )
+            resultado.append(AdicionalSolicitado(
+                id=a.id,
+                nombre=a.nombre,
+                precio_unitario=Decimal(str(a.precio)),
+                unidad_cobro=a.unidad_cobro,
+                cantidad=cantidad,
+                grupo=a.grupo,
+            ))
+        return resultado
+
     def calcular(
         self,
         fecha_inicio: date,
@@ -190,6 +232,7 @@ class PrecioService:
         categoria_id: int | None = None,
         vehiculo_id: int | None = None,
         canal: str = "mostrador",
+        adicionales: list[tuple[int, int]] | None = None,
     ) -> tuple[Cotizacion, int | None]:
         """
         Cotiza un alquiler. Devuelve (cotización, categoria_id efectiva).
@@ -223,6 +266,7 @@ class PrecioService:
             vehiculo_id=vehiculo_id,
             canal=canal,
             nombre_fallback=nombre_fallback,
+            adicionales=self._cargar_adicionales(adicionales or []),
         )
         return cotizacion, categoria_id
 

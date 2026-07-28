@@ -322,3 +322,113 @@ class TestCotizar:
                     descuentos=[DescuentoDuracionInfo(
                         id=1, nombre="7+", dias_desde=7, porcentaje=Decimal("10"))])
         assert c.precio_dia_promedio == Decimal("90000.00")
+
+
+# ─── Adicionales ──────────────────────────────────────────────────────────────
+
+from app.domain.precios import (  # noqa: E402
+    AdicionalSolicitado,
+    cotizar_adicionales,
+    validar_seleccion_adicionales,
+)
+
+
+def adic(**kw) -> AdicionalSolicitado:
+    base = dict(id=1, nombre="Seguro full", precio_unitario=Decimal("10000"))
+    base.update(kw)
+    return AdicionalSolicitado(**base)
+
+
+class TestCotizarAdicionales:
+    def test_sin_adicionales(self):
+        cotizados, total = cotizar_adicionales([], 5)
+        assert cotizados == []
+        assert total == Decimal("0")
+
+    def test_por_dia_multiplica_por_la_duracion(self):
+        _, total = cotizar_adicionales([adic(unidad_cobro="por_dia")], 5)
+        assert total == Decimal("50000.00")
+
+    def test_unico_ignora_la_duracion(self):
+        _, total = cotizar_adicionales([adic(unidad_cobro="unico")], 5)
+        assert total == Decimal("10000.00")
+
+    def test_cantidad_multiplica(self):
+        _, total = cotizar_adicionales(
+            [adic(nombre="Silla de bebé", unidad_cobro="unico", cantidad=2)], 5
+        )
+        assert total == Decimal("20000.00")
+
+    def test_cantidad_y_dias_se_combinan(self):
+        _, total = cotizar_adicionales([adic(unidad_cobro="por_dia", cantidad=2)], 3)
+        assert total == Decimal("60000.00")
+
+    def test_cantidad_cero_falla(self):
+        with pytest.raises(BusinessRuleError) as e:
+            cotizar_adicionales([adic(cantidad=0)], 3)
+        assert e.value.rule == "cantidad_invalida"
+
+    def test_devuelve_el_detalle_de_cada_uno(self):
+        cotizados, _ = cotizar_adicionales([
+            adic(id=1, nombre="Seguro full", unidad_cobro="por_dia"),
+            adic(id=2, nombre="GPS", precio_unitario=Decimal("5000"), unidad_cobro="unico"),
+        ], 4)
+        assert [c.nombre for c in cotizados] == ["Seguro full", "GPS"]
+        assert [c.subtotal for c in cotizados] == [Decimal("40000.00"), Decimal("5000.00")]
+
+
+class TestValidarSeleccionAdicionales:
+    def test_una_sola_cobertura_es_valida(self):
+        validar_seleccion_adicionales([adic(grupo="cobertura")])
+
+    def test_dos_coberturas_fallan(self):
+        with pytest.raises(BusinessRuleError) as e:
+            validar_seleccion_adicionales([
+                adic(id=1, nombre="Intermedia", grupo="cobertura"),
+                adic(id=2, nombre="Full", grupo="cobertura"),
+            ])
+        assert e.value.rule == "coberturas_excluyentes"
+
+    def test_varios_extras_son_validos(self):
+        validar_seleccion_adicionales([
+            adic(id=1, nombre="GPS", grupo="extra"),
+            adic(id=2, nombre="Cadenas", grupo="extra"),
+            adic(id=3, nombre="Silla", grupo="extra"),
+        ])
+
+
+class TestCotizarConAdicionales:
+    def test_se_suman_al_total(self):
+        c = cotizar(date(2026, 5, 21), date(2026, 5, 24), [regla()],
+                    precio_fallback=Decimal("100000"),
+                    adicionales=[adic(unidad_cobro="por_dia")])
+        assert c.subtotal_vehiculo == Decimal("300000.00")
+        assert c.total_adicionales == Decimal("30000.00")
+        assert c.total == Decimal("330000.00")
+
+    def test_el_descuento_por_duracion_NO_toca_los_adicionales(self):
+        """El descuento bonifica el alquiler del auto, no el seguro."""
+        d = DescuentoDuracionInfo(id=1, nombre="7+", dias_desde=7, porcentaje=Decimal("10"))
+        c = cotizar(date(2026, 5, 1), date(2026, 5, 11), [regla()],
+                    precio_fallback=Decimal("100000"), descuentos=[d],
+                    adicionales=[adic(unidad_cobro="por_dia")])
+        assert c.subtotal == Decimal("1000000.00")
+        assert c.descuento_monto == Decimal("100000.00")
+        assert c.subtotal_vehiculo == Decimal("900000.00")
+        assert c.total_adicionales == Decimal("100000.00")   # 10.000 × 10 días, sin descuento
+        assert c.total == Decimal("1000000.00")
+
+    def test_dos_coberturas_rompen_la_cotizacion(self):
+        with pytest.raises(BusinessRuleError):
+            cotizar(date(2026, 5, 21), date(2026, 5, 24), [regla()],
+                    precio_fallback=Decimal("100000"),
+                    adicionales=[
+                        adic(id=1, nombre="Intermedia", grupo="cobertura"),
+                        adic(id=2, nombre="Full", grupo="cobertura"),
+                    ])
+
+    def test_precio_dia_promedio_excluye_adicionales(self):
+        c = cotizar(date(2026, 5, 21), date(2026, 5, 24), [regla()],
+                    precio_fallback=Decimal("100000"),
+                    adicionales=[adic(unidad_cobro="por_dia")])
+        assert c.precio_dia_promedio == Decimal("100000.00")

@@ -1228,6 +1228,10 @@ export interface Cotizacion {
   descuento_porcentaje: string;
   descuento_monto: string;
   descuento_nombre: string | null;
+  /** Alquiler del vehículo ya con el descuento, antes de los adicionales. */
+  subtotal_vehiculo: string;
+  adicionales: AdicionalCotizado[];
+  total_adicionales: string;
   total: string;
   precio_dia_promedio: string;
   total_referencia: string | null;
@@ -1243,6 +1247,7 @@ export interface CalcularPrecioRequest {
   categoria_id?: number | null;
   vehiculo_id?: number | null;
   canal?: Canal;
+  adicionales?: AdicionalSolicitado[];
 }
 
 export interface DiaCalendarioPrecio {
@@ -1266,4 +1271,59 @@ export interface CalendarioPrecios {
   hasta: string;
   canal: Canal;
   filas: FilaCalendarioPrecio[];
+}
+
+// ─── Adicionales (Fase 5, ítem 56) ───────────────────────────────────────────
+
+export type GrupoAdicional = 'cobertura' | 'extra';
+export type UnidadCobro = 'por_dia' | 'unico';
+
+export interface Adicional {
+  id: number;
+  codigo: string;
+  nombre: string;
+  descripcion: string | null;
+  grupo: GrupoAdicional;
+  precio: string;
+  unidad_cobro: UnidadCobro;
+  /** Cobertura que ya viene con el alquiler (se ofrece preseleccionada). */
+  incluido: boolean;
+  /** Sólo coberturas: monto a cargo del cliente ante un siniestro. */
+  franquicia: string | null;
+  max_cantidad: number | null;
+  visible_web: boolean;
+  orden: number;
+  activo: boolean;
+  created_at: string;
+}
+
+export interface AdicionalCreate {
+  codigo: string;
+  nombre: string;
+  descripcion?: string | null;
+  grupo?: GrupoAdicional;
+  precio: string;
+  unidad_cobro?: UnidadCobro;
+  incluido?: boolean;
+  franquicia?: string | null;
+  max_cantidad?: number | null;
+  visible_web?: boolean;
+  orden?: number;
+}
+
+export type AdicionalUpdate = Partial<Omit<AdicionalCreate, 'codigo'>> & { activo?: boolean };
+
+export interface AdicionalSolicitado {
+  adicional_id: number;
+  cantidad: number;
+}
+
+export interface AdicionalCotizado {
+  id: number;
+  nombre: string;
+  grupo: GrupoAdicional;
+  precio_unitario: string;
+  unidad_cobro: UnidadCobro;
+  cantidad: number;
+  subtotal: string;
 }

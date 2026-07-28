@@ -9,8 +9,9 @@ import { ReglasPrecioPanel } from '@/components/precios/ReglasPrecioPanel';
 import { DescuentosDuracionPanel } from '@/components/precios/DescuentosDuracionPanel';
 import { useCalendarioPrecios, useCalcularPrecio } from '@/hooks/usePrecios';
 import { useCategorias } from '@/hooks/useCategorias';
+import { useAdicionales } from '@/hooks/useAdicionales';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
-import type { Canal } from '@/types';
+import type { Adicional, Canal } from '@/types';
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -129,14 +130,37 @@ function Leyenda({ clase, texto }: { clase: string; texto: string }) {
  */
 function ProbadorDePrecio() {
   const { data: categorias = [] } = useCategorias();
+  const { data: adicionalesDisponibles = [] } = useAdicionales();
   const [categoriaId, setCategoriaId] = useState<string>('');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [canal, setCanal] = useState<Canal>('mostrador');
+  const [elegidos, setElegidos] = useState<number[]>([]);
+
+  function toggleAdicional(a: Adicional) {
+    setElegidos(prev => {
+      if (prev.includes(a.id)) return prev.filter(x => x !== a.id);
+      // Las coberturas son excluyentes: elegir una reemplaza a la anterior.
+      // El backend lo valida igual, pero acá evita el error en vez de mostrarlo.
+      if (a.grupo === 'cobertura') {
+        const otrasCoberturas = adicionalesDisponibles
+          .filter(x => x.grupo === 'cobertura')
+          .map(x => x.id);
+        return [...prev.filter(x => !otrasCoberturas.includes(x)), a.id];
+      }
+      return [...prev, a.id];
+    });
+  }
 
   const { data: cotizacion, isLoading, error } = useCalcularPrecio(
     categoriaId && fechaInicio && fechaFin
-      ? { fecha_inicio: fechaInicio, fecha_fin: fechaFin, categoria_id: Number(categoriaId), canal }
+      ? {
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin,
+          categoria_id: Number(categoriaId),
+          canal,
+          adicionales: elegidos.map(id => ({ adicional_id: id, cantidad: 1 })),
+        }
       : null
   );
 
@@ -176,6 +200,34 @@ function ProbadorDePrecio() {
           </select>
         </div>
       </div>
+
+      {adicionalesDisponibles.length > 0 && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">Adicionales</label>
+          <div className="flex flex-wrap gap-1.5">
+            {adicionalesDisponibles.map(a => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => toggleAdicional(a)}
+                className={cn(
+                  'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                  elegidos.includes(a.id)
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-border text-muted-foreground hover:border-primary/50'
+                )}
+              >
+                {a.nombre}
+                {Number(a.precio) > 0 && (
+                  <span className="ml-1 opacity-75">
+                    {formatCurrency(a.precio)}{a.unidad_cobro === 'por_dia' ? '/día' : ''}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isLoading && <Skeleton className="h-24 w-full" />}
 
@@ -220,6 +272,13 @@ function ProbadorDePrecio() {
                 clase="text-emerald-600"
               />
             )}
+            {cotizacion.adicionales.map(a => (
+              <Linea
+                key={a.id}
+                label={`${a.nombre}${a.cantidad > 1 ? ` ×${a.cantidad}` : ''}${a.unidad_cobro === 'por_dia' ? ` (${cotizacion.duracion_dias} días)` : ''}`}
+                valor={formatCurrency(a.subtotal)}
+              />
+            ))}
             <div className="flex items-center justify-between pt-1 border-t border-border">
               <span className="font-semibold text-foreground">Total</span>
               <div className="text-right">

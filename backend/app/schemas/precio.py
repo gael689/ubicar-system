@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.adicional import AdicionalCotizadoResponse, AdicionalSolicitadoRequest
+
 
 CanalTarifa = Literal["ambos", "web", "mostrador"]
 Canal = Literal["web", "mostrador"]
@@ -189,6 +191,7 @@ class CalcularPrecioRequest(BaseModel):
     categoria_id: int | None = None
     vehiculo_id: int | None = None
     canal: Canal = "mostrador"
+    adicionales: list[AdicionalSolicitadoRequest] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validar(self):
@@ -217,6 +220,9 @@ class CotizacionResponse(BaseModel):
     descuento_porcentaje: Decimal
     descuento_monto: Decimal
     descuento_nombre: str | None
+    subtotal_vehiculo: Decimal
+    adicionales: list[AdicionalCotizadoResponse]
+    total_adicionales: Decimal
     total: Decimal
     precio_dia_promedio: Decimal
     total_referencia: Decimal | None

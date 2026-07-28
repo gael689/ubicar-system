@@ -99,6 +99,35 @@ class DescuentoDuracionInfo:
     categoria_id: int | None = None
 
 
+@dataclass(frozen=True)
+class AdicionalSolicitado:
+    """
+    Un adicional a cotizar, con su precio ya resuelto por quien llama.
+
+    El dominio no sabe de dónde salió el precio: al cotizar sale de la tabla
+    `adicionales`, pero al recotizar una reserva vieja sale del precio
+    congelado en `reserva_adicionales`. Que el precio entre como dato es lo
+    que permite las dos cosas sin duplicar la fórmula.
+    """
+    id: int
+    nombre: str
+    precio_unitario: Decimal
+    unidad_cobro: str = "por_dia"   # por_dia | unico
+    cantidad: int = 1
+    grupo: str = "extra"
+
+
+@dataclass(frozen=True)
+class AdicionalCotizado:
+    id: int
+    nombre: str
+    precio_unitario: Decimal
+    unidad_cobro: str
+    cantidad: int
+    subtotal: Decimal
+    grupo: str = "extra"
+
+
 # ─── Salida ───────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -128,6 +157,11 @@ class Cotizacion:
     descuento_monto: Decimal
     total: Decimal
     duracion_dias: int
+    # Alquiler del vehículo ya con el descuento por duración aplicado, antes
+    # de sumar adicionales. Es la línea que el cliente reconoce como "el auto".
+    subtotal_vehiculo: Decimal = Decimal("0")
+    adicionales: list[AdicionalCotizado] = field(default_factory=list)
+    total_adicionales: Decimal = Decimal("0")
     descuento_id: int | None = None
     descuento_nombre: str | None = None
     # Total a precio de lista: lo que costaría sin ninguna promo. Sirve para
@@ -137,9 +171,14 @@ class Cotizacion:
 
     @property
     def precio_dia_promedio(self) -> Decimal:
+        """
+        Promedio por día del **vehículo**, sin adicionales. Es el número que
+        la web muestra como "desde $X por día": meterle el seguro y la silla
+        de bebé lo volvería incomparable entre categorías.
+        """
         if self.duracion_dias == 0:
             return Decimal("0")
-        return _redondear(self.total / Decimal(self.duracion_dias))
+        return _redondear(self.subtotal_vehiculo / Decimal(self.duracion_dias))
 
     @property
     def tiene_promocion(self) -> bool:
@@ -225,6 +264,69 @@ def resolver_regla_dia(
     )
 
 
+def cotizar_adicionales(
+    adicionales: list[AdicionalSolicitado],
+    duracion_dias: int,
+) -> tuple[list[AdicionalCotizado], Decimal]:
+    """
+    Resuelve el costo de cada adicional según su unidad de cobro.
+
+    - `por_dia`: precio × cantidad × días del alquiler (un seguro se paga
+      todos los días que el auto está afuera).
+    - `unico`: precio × cantidad, sin importar la duración (un portaequipaje
+      se cobra una vez).
+
+    **Los adicionales quedan fuera del descuento por duración a propósito**:
+    ese descuento es una bonificación sobre el alquiler del vehículo, y
+    aplicarlo también al seguro regalaría cobertura sin que nadie lo haya
+    decidido. Es el orden del pipeline del plan §7.2.
+    """
+    cotizados: list[AdicionalCotizado] = []
+    total = Decimal("0")
+
+    for a in adicionales:
+        if a.cantidad < 1:
+            raise BusinessRuleError(
+                "cantidad_invalida",
+                f"La cantidad de '{a.nombre}' debe ser al menos 1",
+            )
+        precio = Decimal(str(a.precio_unitario))
+        multiplicador = Decimal(a.cantidad)
+        if a.unidad_cobro == "por_dia":
+            multiplicador *= Decimal(duracion_dias)
+        subtotal = _redondear(precio * multiplicador)
+
+        cotizados.append(AdicionalCotizado(
+            id=a.id,
+            nombre=a.nombre,
+            precio_unitario=precio,
+            unidad_cobro=a.unidad_cobro,
+            cantidad=a.cantidad,
+            subtotal=subtotal,
+            grupo=a.grupo,
+        ))
+        total += subtotal
+
+    return cotizados, _redondear(total)
+
+
+def validar_seleccion_adicionales(adicionales: list[AdicionalSolicitado]) -> None:
+    """
+    Las coberturas son excluyentes: se elige una sola.
+
+    Se valida acá y no sólo en la UI porque la web es pública y hostil — un
+    request armado a mano con dos coberturas dejaría una reserva cobrando dos
+    seguros del mismo auto.
+    """
+    coberturas = [a for a in adicionales if a.grupo == "cobertura"]
+    if len(coberturas) > 1:
+        raise BusinessRuleError(
+            "coberturas_excluyentes",
+            "Sólo se puede elegir una cobertura: "
+            + ", ".join(c.nombre for c in coberturas),
+        )
+
+
 def seleccionar_descuento(
     duracion_dias: int,
     descuentos: list[DescuentoDuracionInfo],
@@ -258,6 +360,7 @@ def cotizar(
     vehiculo_id: int | None = None,
     canal: str = "mostrador",
     nombre_fallback: str = "Tarifa por duración",
+    adicionales: list[AdicionalSolicitado] | None = None,
 ) -> Cotizacion:
     """
     Cotiza un alquiler resolviendo el precio día por día.
@@ -328,13 +431,25 @@ def cotizar(
     descuento = seleccionar_descuento(duracion_dias, descuentos or [], categoria_id)
     porcentaje = Decimal(str(descuento.porcentaje)) if descuento else Decimal("0")
     descuento_monto = _redondear(subtotal * porcentaje / Decimal("100"))
-    total = _redondear(subtotal - descuento_monto)
+    subtotal_vehiculo = _redondear(subtotal - descuento_monto)
+
+    # Los adicionales se suman DESPUÉS del descuento por duración (plan §7.2).
+    solicitados = adicionales or []
+    validar_seleccion_adicionales(solicitados)
+    adicionales_cotizados, total_adicionales = cotizar_adicionales(
+        solicitados, duracion_dias
+    )
+
+    total = _redondear(subtotal_vehiculo + total_adicionales)
 
     return Cotizacion(
         dias=dias,
         subtotal=_redondear(subtotal),
         descuento_porcentaje=porcentaje,
         descuento_monto=descuento_monto,
+        subtotal_vehiculo=subtotal_vehiculo,
+        adicionales=adicionales_cotizados,
+        total_adicionales=total_adicionales,
         total=total,
         duracion_dias=duracion_dias,
         descuento_id=descuento.id if descuento else None,

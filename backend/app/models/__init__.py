@@ -17,6 +17,7 @@ from app.models.servicio import Servicio
 from app.models.danio import Danio, FotoDanio
 from app.models.fecha_especial import FechaEspecial
 from app.models.tarifa_calendario import TarifaCalendario, DescuentoDuracion
+from app.models.adicional import Adicional, ReservaAdicional
 
 __all__ = [
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",
@@ -25,4 +26,5 @@ __all__ = [
     "Echeq", "Gasto", "Documento", "Presupuesto", "TarjetaCliente",
     "Multa", "Servicio", "Danio", "FotoDanio", "FechaEspecial",
     "TarifaCalendario", "DescuentoDuracion",
+    "Adicional", "ReservaAdicional",
 ]

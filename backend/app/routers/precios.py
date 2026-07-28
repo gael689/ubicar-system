@@ -58,6 +58,7 @@ def calcular_precio(
             categoria_id=payload.categoria_id,
             vehiculo_id=payload.vehiculo_id,
             canal=payload.canal,
+            adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -71,6 +72,9 @@ def calcular_precio(
         descuento_porcentaje=cotizacion.descuento_porcentaje,
         descuento_monto=cotizacion.descuento_monto,
         descuento_nombre=cotizacion.descuento_nombre,
+        subtotal_vehiculo=cotizacion.subtotal_vehiculo,
+        adicionales=[a.__dict__ for a in cotizacion.adicionales],
+        total_adicionales=cotizacion.total_adicionales,
         total=cotizacion.total,
         precio_dia_promedio=cotizacion.precio_dia_promedio,
         total_referencia=cotizacion.total_referencia,

@@ -1042,8 +1042,21 @@ cobrarlo. Ahora:
     - `LGW669` Fiat Siena Essence · `AF865DD` Toyota Etios 1.5 XLS AT
     - `AG902AQ` VW Virtus 1.6 (candidato a "sedán superior", es el más equipado)
     Las categorías `SUV` y `Furgón` existen pero hoy no las usa ningún vehículo.
-55. Sucursales + cargos one-way
-56. Adicionales + adicionales por reserva
+55. ❌ **Sucursales + cargos one-way — descartado por ahora (decisión del usuario, 2026-07-27).**
+    *"Eso de sucursales de momento solo es en Bahía Blanca, de manera más local."*
+    Con toda la operación en una sola ciudad no hay one-way que cobrar ni
+    horarios de sucursal que validar: la tabla `sucursales` y el cargo por
+    devolver en otro lado no resuelven ningún problema real hoy. **Los puntos
+    de retiro ya están resueltos** desde la Fase 3-bis como chips predefinidos
+    en la reserva (`LUGARES_PREDEFINIDOS` en `ReservaModal.tsx`: Paraguay 241,
+    Alsina 350, Aeropuerto Comandante Espora, Juan Francisco Seguí 3607) más
+    "Otro" como texto libre — que es exactamente el nivel de formalidad que el
+    negocio necesita. Se retoma si abren en otra ciudad; hasta entonces,
+    modelar sucursales sería estructura sin uso.
+    **Impacto en el resto del plan:** el paso 1 del flujo web (§7.4) pierde el
+    selector de sucursal de retiro/devolución y queda sólo con fechas; el
+    pipeline de precios (§7.2) pierde la línea "+ cargo one-way".
+56. ✅ **Adicionales + adicionales por reserva** — hecho 2026-07-27 (migración `040_adicionales`). Ver detalle abajo
 57. ✅ **Motor de precios por calendario** + pantalla de administración — hecho 2026-07-27 (migración `039_motor_precios`). Ver detalle abajo
 58. **Reserva por categoría** (`vehiculo_id` nullable) — el cambio estructural
 59. Bloqueos de vehículo por fecha
@@ -1094,11 +1107,55 @@ explícitamente como su ancla. Migración `039_motor_precios`, dos tablas:
 - **No se sembró ninguna regla**: los precios los cargan Franco y Martín.
   Sembrar precios inventados sería peor que no tener ninguno.
 
+**Detalle del ítem 56 (adicionales):**
+
+Confirmado por el usuario el 2026-07-27: *"Los adicionales los cargan ellos,
+con precio y demás"*. Eso define el diseño — **es un ABM, no un enum en el
+código**: la lista no está cerrada y cambia con la temporada.
+
+- **Dos grupos con reglas de selección distintas** (plan §7.4, paso 2):
+  `cobertura` se elige **una sola** (son niveles del mismo seguro, no
+  complementos) y `extra` se eligen todas las que quiera. La exclusividad
+  vive en el grupo y no en una columna por fila, para que no se pueda cargar
+  un estado imposible de interpretar al cobrar. **Se valida en el backend**,
+  no sólo en la UI: la web es pública y un request armado a mano con dos
+  coberturas dejaría una reserva cobrando dos seguros del mismo auto.
+- **`reserva_adicionales` congela el precio al contratarse.** Si mañana suben
+  el precio de la cobertura full, las reservas ya cargadas siguen valiendo lo
+  pactado — mismo criterio que `Reserva.precio_lista`. Sin esto, cambiar un
+  precio reescribiría el pasado.
+- **`unidad_cobro`** (`por_dia` / `unico`): un seguro se paga todos los días
+  que el auto está afuera, un portaequipaje se cobra una vez.
+- **`franquicia` es un campo propio de las coberturas**, no una frase dentro
+  de `descripcion`: es el motivo #1 de conflictos post-siniestro y el plan
+  pide que esté explicada en una línea clara. Se rechaza cargarla en un extra.
+- **Los adicionales quedan fuera del descuento por duración**, a propósito:
+  ese descuento bonifica el alquiler del vehículo, y aplicarlo también al
+  seguro regalaría cobertura sin que nadie lo decida. Es el orden del
+  pipeline de §7.2. Por eso la cotización ahora expone `subtotal_vehiculo`
+  aparte de `total`, y `precio_dia_promedio` mide sólo el auto.
+- **`max_cantidad`** por adicional (2 sillas de bebé, 1 GPS), validado en el
+  service — es una regla del catálogo, no del cálculo.
+- **Pantalla `/adicionales`** con las coberturas y los extras separados, cada
+  grupo con su regla explicada. El probador de `/precios` ya cotiza con
+  adicionales, así que se puede verificar el total real antes de venderlo.
+- **No se sembró ninguno**: la lista y los precios los cargan Franco y Martín.
+
 **Lo que falta para cerrar el acople completo:** `ReservaService.create()`
 sigue calculando el precio con `seleccionar_tarifa` directo en vez de llamar
 al motor. Es seguro hacerlo (sin reglas cargadas da el mismo número), pero
 cambia cómo se cotiza toda reserva real, así que conviene hacerlo junto con
 el ítem 58 (reserva por categoría) y no suelto. Lo mismo el cotizador.
+
+**Con los adicionales pasa lo mismo y por el mismo motivo:** el catálogo y el
+cálculo están completos y probados, pero `ReservaCreate` todavía no acepta
+una lista de adicionales, así que hoy se pueden cargar y cotizar pero no
+contratar en una reserva del mostrador. Persistir `reserva_adicionales`
+implica tocar `ReservaService.create()` y el `precio_total` de la reserva —
+exactamente el mismo camino crítico que el acople del motor. **Los tres
+cambios (motor + adicionales + reserva por categoría) son un solo trabajo
+coherente**, y hacerlos por separado significa tocar tres veces la función
+más delicada del sistema.
 
 ### 🚀 Fase 6 — Reservas web (4 semanas)
 60. Endpoint de disponibilidad real por cupo
