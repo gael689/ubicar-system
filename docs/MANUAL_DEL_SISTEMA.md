@@ -24,7 +24,7 @@ la memoria. Lo que todavía no hace está en §17, con el motivo.
 | 7 | [El ciclo del alquiler](#7-el-ciclo-del-alquiler-check-out--check-in) | dentro de la reserva |
 | 8 | [Contratos](#8-contratos) | dentro del alquiler |
 | 9 | [Precios](#9-precios) | `/precios` |
-| 10 | [Adicionales y recargos](#10-adicionales-y-recargos) | `/adicionales` |
+| 10 | [Adicionales y recargos](#10-adicionales-y-recargos) | `/adicionales`, `/recargos-edad` |
 | 11 | [Caja y pagos](#11-caja-y-pagos) | `/finanzas` → Caja |
 | 12 | [Cuentas corrientes](#12-cuentas-corrientes) | `/finanzas` → Cuentas Corrientes |
 | 13 | [Echeqs, recibos y comprobantes](#13-echeqs-recibos-y-comprobantes) | `/finanzas` → Echeqs, ficha del cliente |
@@ -535,8 +535,9 @@ dejaría una reserva cobrando dos seguros del mismo auto.
 **No hay edad mínima para alquilar.** La edad **modifica el precio**, no rechaza
 al cliente — es como opera el rubro, y rechazar pierde la venta entera.
 
-Se cargan franjas: desde/hasta (o "de esta edad en adelante"), con **monto fijo
-o porcentaje**, por día o único, general o por categoría.
+Se cargan desde **`/recargos-edad`**: franja desde/hasta (o "de esta edad en
+adelante"), con **monto fijo o porcentaje**, por día o único, general o por
+categoría.
 
 Tres detalles:
 - **La edad se mide al retirar el auto**, no hoy. Quien cumple 25 antes de
@@ -798,6 +799,10 @@ reserva futura · vehículo fuera de servicio hace mucho.
 
 **Multas** — pendiente de imputar · imputada sin cobrar hace 15 días · **por
 vencer** · **vencida**.
+
+**Reservas web** — solicitud sin atender. Además, cuando entra una reserva web
+se dispara **un aviso en el acto**, sin esperar al barrido de las 08:00: una
+reserva del sábado a la tarde no puede quedar sin respuesta hasta el lunes.
 
 El catálogo completo, con urgencias y umbrales, está en
 `docs/CATALOGO_NOTIFICACIONES.md`.

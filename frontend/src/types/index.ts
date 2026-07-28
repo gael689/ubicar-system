@@ -694,6 +694,8 @@ export interface Reserva {
   conductor?: ConductorAdicional | null;
   alquiler_id?: number | null;
   alquiler_estado?: string | null;
+  /** D-34: el auto salió sin contrato firmado y sigue sin firmarse. */
+  entregado_sin_contrato?: boolean;
 }
 
 export interface ReservaCreate {
@@ -1488,3 +1490,36 @@ export interface ContratoPreparado {
   // D-C1 sigue abierto: se puede emitir igual, pero el PDF lo advierte.
   falta_datos_fiscales: boolean;
 }
+
+
+// ─── Recargos por edad (D-38) ────────────────────────────────────────────────
+
+export interface RecargoEdad {
+  id: number;
+  nombre: string;
+  descripcion: string | null;
+  edad_desde: number;
+  /** null = "de esta edad en adelante". */
+  edad_hasta: number | null;
+  /** Se carga monto O porcentaje, nunca los dos. */
+  monto: string | null;
+  porcentaje: string | null;
+  unidad_cobro: UnidadCobro;
+  /** null = aplica a todas las categorías. */
+  categoria_id: number | null;
+  activo: boolean;
+  created_at: string;
+}
+
+export interface RecargoEdadCreate {
+  nombre: string;
+  descripcion?: string | null;
+  edad_desde: number;
+  edad_hasta?: number | null;
+  monto?: number | null;
+  porcentaje?: number | null;
+  unidad_cobro: UnidadCobro;
+  categoria_id?: number | null;
+}
+
+export type RecargoEdadUpdate = Partial<RecargoEdadCreate> & { activo?: boolean };

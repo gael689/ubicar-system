@@ -214,6 +214,8 @@ class ReservaResponse(BaseModel):
     conductor: ConductorResumen | None = None
     alquiler_id: int | None = None
     alquiler_estado: str | None = None
+    # D-34: constancia visible de que el auto salió sin contrato firmado.
+    entregado_sin_contrato: bool = False
     origen: str = "mostrador"
     web_resuelta_por: int | None = None
     web_resuelta_en: datetime | None = None

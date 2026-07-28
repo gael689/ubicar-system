@@ -182,6 +182,21 @@ class Reserva(Base):
         return sum((a.subtotal for a in self.adicionales), Decimal("0"))
 
     @property
+    def entregado_sin_contrato(self) -> bool:
+        """
+        D-34: el auto salió sin contrato firmado y todavía no se firmó.
+
+        Es la constancia que el listado tiene que mostrar. No alcanza con
+        registrarlo en la ficha del alquiler: sin verlo en la lista, "se
+        entregó sin contrato" se vuelve invisible al día siguiente.
+
+        Deja de ser cierto en cuanto se firma, así que la marca desaparece
+        sola — no hay que acordarse de sacarla.
+        """
+        a = self.alquiler
+        return bool(a and a.entregado_sin_contrato and not a.contrato_firmado)
+
+    @property
     def alquiler_estado(self) -> str | None:
         """
         "activo" mientras el alquiler tiene checkout pero no checkin (el auto está afuera).

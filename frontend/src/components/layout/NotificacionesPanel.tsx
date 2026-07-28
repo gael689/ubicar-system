@@ -47,8 +47,17 @@ const TIPO_GRUPO: Record<string, string> = {
   licencia_cliente_por_vencer: '🪪 Licencias',
   licencia_vencida_reserva_futura: '🪪 Licencias',
   vehiculo_fuera_servicio_prolongado: '🛠️ Flota',
+  // VTV y póliza tienen sus propias reglas desde la Fase 3 pero nunca se
+  // agregaron acá: caían en "Otros", que es donde nadie mira. Son de los
+  // avisos que más cuestan si se pasan por alto.
+  vtv_vencimiento: '📄 Documentos vehículos',
+  poliza_vencimiento: '📄 Documentos vehículos',
   multa_pendiente_imputar: '⚠️ Multas',
   multa_imputada_sin_cobrar: '⚠️ Multas',
+  multa_por_vencer: '⚠️ Multas',
+  multa_vencida: '⚠️ Multas',
+  reserva_web_nueva: '🌐 Reservas web',
+  reserva_web_sin_atender: '🌐 Reservas web',
 };
 
 export function NotificacionesPanel() {

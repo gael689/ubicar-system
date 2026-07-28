@@ -327,6 +327,17 @@ export function ReservasList() {
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase border ${ESTADO_COLORS[r.estado] ?? ''}`}>
                       {ESTADO_ICONS[r.estado]} {r.estado}
                     </span>
+                    {/* D-34: sólido y no transparente — es un estado que
+                        requiere acción, no un dato informativo. Desaparece
+                        solo en cuanto se firma el contrato. */}
+                    {r.entregado_sin_contrato && (
+                      <span
+                        title="El vehículo se entregó sin contrato firmado"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning text-white text-xs font-bold uppercase"
+                      >
+                        Sin contrato
+                      </span>
+                    )}
                     {r.bloqueada_por_solape && !compacta && (
                       <div className="text-xs text-amber-600 mt-1 font-medium">⚠️ Solape pendiente</div>
                     )}

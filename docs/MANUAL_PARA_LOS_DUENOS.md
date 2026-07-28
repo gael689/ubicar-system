@@ -462,7 +462,7 @@ genera los avisos. Aparecen en la campana del menú y llegan por mail.
 Se pueden marcar como leídos, posponer o descartar. Y **se cierran solos**
 cuando el problema se resuelve.
 
-**29 avisos**, agrupados en cuatro familias:
+**30 avisos**, agrupados en cinco familias:
 
 **La mañana** — entregas de hoy · devoluciones de hoy · autos que tenían que
 salir y no salieron · autos que tenían que volver y no volvieron · entregas de
@@ -479,6 +479,10 @@ licencia vencida con reserva futura · autos hace mucho fuera de servicio.
 
 **Las multas** — sin imputar · imputadas sin cobrar hace 15 días · por vencer ·
 vencidas.
+
+**Las reservas web** — solicitudes sin atender. Y cuando entra una reserva por
+la web, el aviso llega **en el momento**, no en el resumen de la mañana: una
+reserva del sábado a la tarde no puede esperar hasta el lunes.
 
 ---
 

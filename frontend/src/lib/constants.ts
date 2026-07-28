@@ -344,6 +344,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { label: 'Precios', icon: 'CalendarRange', items: [
     { path: '/precios', label: 'Calendario de precios', icon: 'CalendarRange' },
     { path: '/adicionales', label: 'Adicionales', icon: 'Package' },
+    { path: '/recargos-edad', label: 'Recargos por edad', icon: 'CalendarClock' },
   ] },
   { label: 'Fechas especiales', icon: 'CalendarDays', items: [
     { path: '/fechas-especiales', label: 'Fechas especiales', icon: 'CalendarDays' },
