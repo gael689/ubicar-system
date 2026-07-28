@@ -16,7 +16,11 @@ from app.domain.ventana import VentanaReserva
 
 # Estados que bloquean nuevas reservas
 # "vencida" bloquea igual que "activa": el auto sigue afuera, no volvió.
-ESTADOS_BLOQUEANTES = {"confirmada", "activa", "vencida"}
+# "bloqueo" es un BloqueoVehiculo (mantenimiento, siniestro, uso interno):
+# entra como una ventana más para que un auto en el taller rechace reservas
+# por el mismo camino que una reserva confirmada, sin una segunda validación
+# paralela que después se desincronice.
+ESTADOS_BLOQUEANTES = {"confirmada", "activa", "vencida", "bloqueo"}
 
 # Estados que solo generan advertencia
 ESTADOS_ADVERTENCIA = {"pendiente"}

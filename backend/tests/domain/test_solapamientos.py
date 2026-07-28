@@ -130,3 +130,71 @@ class TestDetectarSolapamientos:
         res = detectar_solapamientos(1, dt(10), dt(15), ventanas)
         assert res.hay_conflicto_bloqueante is True
         assert res.hay_advertencia is True
+
+
+# ─── Bloqueos de vehículo (Fase 5, ítem 59) ──────────────────────────────────
+
+class TestBloqueosVehiculo:
+    """
+    Un bloqueo entra como una ventana más con estado "bloqueo". La gracia es
+    que no hay lógica nueva: rechaza reservas por el mismo camino que una
+    reserva confirmada.
+    """
+
+    def _bloqueo(self, inicio, fin, vehiculo_id=1, id=99):
+        return VentanaReserva(
+            id=id, vehiculo_id=vehiculo_id, inicio=inicio, fin=fin,
+            estado="bloqueo", cliente_nombre="En mantenimiento", tipo="bloqueo",
+        )
+
+    def test_bloqueo_es_bloqueante(self):
+        r = detectar_solapamientos(
+            1, datetime(2026, 6, 10), datetime(2026, 6, 15),
+            [self._bloqueo(datetime(2026, 6, 12), datetime(2026, 6, 14))],
+        )
+        assert r.hay_conflicto_bloqueante
+        assert r.conflictos_bloqueantes[0].tipo == "bloqueo"
+
+    def test_bloqueo_de_otro_vehiculo_no_molesta(self):
+        r = detectar_solapamientos(
+            1, datetime(2026, 6, 10), datetime(2026, 6, 15),
+            [self._bloqueo(datetime(2026, 6, 12), datetime(2026, 6, 14), vehiculo_id=2)],
+        )
+        assert not r.hay_conflicto_bloqueante
+
+    def test_reserva_antes_del_bloqueo_pasa(self):
+        r = detectar_solapamientos(
+            1, datetime(2026, 6, 1), datetime(2026, 6, 5),
+            [self._bloqueo(datetime(2026, 6, 12), datetime(2026, 6, 14))],
+        )
+        assert not r.hay_conflicto_bloqueante
+
+    def test_bloqueo_adyacente_no_solapa(self):
+        """El auto sale del taller el 12 a las 00:00 y se entrega ese mismo momento."""
+        r = detectar_solapamientos(
+            1, datetime(2026, 6, 12), datetime(2026, 6, 15),
+            [self._bloqueo(datetime(2026, 6, 10), datetime(2026, 6, 12))],
+        )
+        assert not r.hay_conflicto_bloqueante
+
+    def test_bloqueo_de_un_solo_dia_bloquea_ese_dia(self):
+        """
+        Un bloqueo del 12 al 12 se carga como [12 00:00, 13 00:00): tiene que
+        rechazar una reserva que empieza el 12. Si la ventana terminara el
+        mismo 12 a las 00:00 duraría cero y no bloquearía nada.
+        """
+        r = detectar_solapamientos(
+            1, datetime(2026, 6, 12, 10, 0), datetime(2026, 6, 14),
+            [self._bloqueo(datetime(2026, 6, 12), datetime(2026, 6, 13))],
+        )
+        assert r.hay_conflicto_bloqueante
+
+    def test_bloqueo_convive_con_reservas(self):
+        ventanas = [
+            self._bloqueo(datetime(2026, 6, 12), datetime(2026, 6, 14)),
+            VentanaReserva(id=1, vehiculo_id=1, inicio=datetime(2026, 6, 20),
+                           fin=datetime(2026, 6, 25), estado="pendiente"),
+        ]
+        r = detectar_solapamientos(1, datetime(2026, 6, 13), datetime(2026, 6, 22), ventanas)
+        assert r.hay_conflicto_bloqueante
+        assert r.hay_advertencia

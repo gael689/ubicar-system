@@ -851,7 +851,8 @@ export interface VehiculoOcupacion {
 export interface EventoOcupacion {
   id: number;
   vehiculo_id: number;
-  tipo: 'reserva' | 'alquiler';
+  tipo: 'reserva' | 'alquiler' | 'bloqueo';
+  /** Para un bloqueo, acá viene el motivo (mantenimiento, siniestro, …). */
   estado: string;
   fecha_inicio: string;
   hora_inicio: string;
@@ -1345,3 +1346,44 @@ export interface ReservaAdicional {
   unidad_cobro: UnidadCobro;
   subtotal: string;
 }
+
+// ─── Bloqueos de vehículo (Fase 5, ítem 59) ──────────────────────────────────
+
+export type MotivoBloqueo = 'mantenimiento' | 'siniestro' | 'uso_interno' | 'venta' | 'otro';
+
+export interface BloqueoVehiculo {
+  id: number;
+  vehiculo_id: number;
+  fecha_desde: string;
+  fecha_hasta: string;
+  motivo: MotivoBloqueo;
+  notas: string | null;
+  activo: boolean;
+  creado_por: number | null;
+  created_at: string;
+  /** Días que dura, contando ambos extremos. */
+  dias: number;
+  vehiculo_patente: string | null;
+  /** Sólo al crear: reservas que quedaron pisadas y hay que reasignar. */
+  reservas_en_conflicto?: ReservaEnConflicto[];
+}
+
+export interface ReservaEnConflicto {
+  id: number;
+  estado: string;
+  cliente: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+}
+
+export interface BloqueoVehiculoCreate {
+  vehiculo_id: number;
+  fecha_desde: string;
+  fecha_hasta: string;
+  motivo?: MotivoBloqueo;
+  notas?: string | null;
+}
+
+export type BloqueoVehiculoUpdate = Partial<Omit<BloqueoVehiculoCreate, 'vehiculo_id'>> & {
+  activo?: boolean;
+};

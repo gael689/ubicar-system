@@ -171,6 +171,53 @@ Nota relacionada: el PIN de la tarjeta de crédito del cliente (`Ubicar123`) est
 - Errores de TypeScript preexistentes listados en `PROGRESO.md` sin resolver.
 - **Migraciones 010→016 sin aplicar** según `PROGRESO.md`. Verificar con `alembic current` antes de cualquier cosa.
 
+### 2.11 🟠 ABIERTO — `extender()` no genera asiento en la cuenta corriente
+
+> **Encontrado el 2026-07-27** mientras se acoplaban los adicionales a la
+> reserva. **No fue introducido por ese cambio: ya estaba.** Queda anotado
+> acá para revisarlo con calma — el usuario lo va a mirar después.
+
+**Qué pasa.** `AlquilerService.extender()` (`alquiler_service.py:505`)
+actualiza `reserva.precio_total` con el precio de la duración nueva, pero
+**no registra ningún movimiento en la cuenta corriente** por la diferencia.
+El único débito que existe es el que generó el `checkout()` con el precio
+original.
+
+**Por qué importa.** El débito queda corto y **el sistema subfactura en
+silencio**: nadie ve un error, simplemente se cobra de menos. Y es peor que
+un número mal, porque rompe la invariante del ledger de la Fase 1 —
+`routers/pagos.py` calcula el saldo pendiente contra el `precio_total`
+nuevo, así que **la pantalla muestra un saldo que no coincide con la suma de
+los movimientos**. Tener dos fuentes de verdad que difieren es exactamente
+lo que el ledger inmutable vino a evitar (ver 2.4).
+
+**Ejemplo concreto.** Alquiler de 5 días a $100.000/día → checkout genera un
+débito de $500.000. Se extiende a 8 días → `precio_total` pasa a $800.000,
+pero en la cuenta corriente sigue habiendo un solo débito de $500.000. El
+cliente debe $300.000 que el libro mayor no registra.
+
+**Lo mismo aplica a los adicionales**: al extender se recalculan los que se
+cobran por día (correcto), pero ese aumento tampoco genera asiento — es el
+mismo hueco, no uno nuevo.
+
+**Qué hay que decidir antes de arreglarlo** (por eso no se tocó sobre la
+marcha):
+1. ¿Un **asiento nuevo por la diferencia** (respeta el ledger inmutable, deja
+   el rastro de la extensión) o anular el débito original y reemplazarlo?
+   Lo primero es coherente con cómo se resolvieron multas y daños.
+2. ¿Qué **fecha de vencimiento** le corresponde a ese asiento? La condición
+   de pago de la reserva se ancló en el check-out o el check-in original; una
+   extensión no tiene ancla definida.
+3. ¿Qué pasa si la extensión **baja** el precio (se devuelve antes)? Sería un
+   crédito, y hay que decidir si eso lo puede hacer cualquiera o requiere
+   autorización, como los descuentos (ítem 22).
+
+**Alcance real: es sólo `extender()`.** Se verificó el 2026-07-27 que
+`checkin()` **sí** registra sus movimientos como corresponde — genera el
+asiento del cargo por excedente (`alquiler_service.py:426`) y los otros dos
+cargos de cierre. Así que el arreglo está acotado a una sola función, no es
+un problema transversal del módulo.
+
 ---
 
 ## 3. Bloque A — Cuenta Corriente, Echeqs y Facturas como un solo sistema
@@ -1059,7 +1106,7 @@ cobrarlo. Ahora:
 56. ✅ **Adicionales + adicionales por reserva** — hecho 2026-07-27 (migración `040_adicionales`). Ver detalle abajo
 57. ✅ **Motor de precios por calendario** + pantalla de administración — hecho 2026-07-27 (migración `039_motor_precios`). Ver detalle abajo
 58. **Reserva por categoría** (`vehiculo_id` nullable) — el cambio estructural
-59. Bloqueos de vehículo por fecha
+59. ✅ **Bloqueos de vehículo por fecha** — hecho 2026-07-27 (migración `041_bloqueos_vehiculo`). Ver detalle abajo
 
 **Detalle del ítem 57 (motor de precios por calendario):**
 
@@ -1106,6 +1153,41 @@ explícitamente como su ancla. Migración `039_motor_precios`, dos tablas:
 - **41 tests** de dominio puro (`tests/domain/test_precios.py`), sin base.
 - **No se sembró ninguna regla**: los precios los cargan Franco y Martín.
   Sembrar precios inventados sería peor que no tener ninguno.
+
+**Detalle del ítem 59 (bloqueos de vehículo):**
+
+`Vehiculo.estado = fuera_de_servicio` es un **booleano del presente**: dice
+"hoy no está" pero no tiene fechas. Con eso no se puede contestar "¿está
+libre del 3 al 10 de septiembre?" — que es lo que necesita la disponibilidad
+de la web — ni cargar por adelantado que el auto entra a service el mes que
+viene. Un bloqueo es un rango, y por eso se puede planificar.
+
+- **Se integran como una ventana más en `domain/solapamientos.py`**, con
+  estado `"bloqueo"`. No hay lógica nueva de validación: un auto en el taller
+  rechaza reservas por el **mismo camino** que una reserva confirmada. Una
+  segunda validación paralela terminaría divergiendo, y el resultado sería
+  una reserva aceptada sobre un auto que no está.
+- **El rango es inclusivo en los dos extremos** (del 3 al 5 son tres días
+  completos). En la ventana eso se traduce a `[3 00:00, 6 00:00)`: si
+  terminara a las 00:00 del mismo día 5, un bloqueo de un solo día tendría
+  duración cero y no bloquearía nada. Hay un test para eso.
+- **Crear un bloqueo sobre reservas existentes no se impide, se advierte.**
+  El auto se rompe cuando se rompe y el sistema no puede negarse a
+  registrarlo; devuelve las reservas pisadas para que alguien las reasigne.
+  Hay un `GET /bloqueos/verificar` que las muestra **antes** de crear, así el
+  aviso llega mientras se completa el formulario y no después del hecho.
+  Consistente con "el sistema informa, la persona decide".
+- **Mensaje de conflicto propio** (`vehiculo_bloqueado`): decir "tiene una
+  reserva bloqueo en ese rango" no le sirve a nadie — quien carga necesita
+  saber que el auto está en mantenimiento para ofrecer otro.
+- **Se ven en el calendario de ocupación**, con rayado diagonal para que no se
+  confundan con una reserva, y no son clickeables (no tienen ficha; abrir
+  `ReservaInfoModal` con el id de un bloqueo mostraría la reserva
+  equivocada). La leyenda resume los 5 motivos en un solo ítem "Bloqueado".
+- **Baja lógica**: libera el vehículo pero deja el registro. Cuántas veces
+  estuvo en el taller y por cuánto tiempo es justamente lo que dice si
+  conviene venderlo.
+- UI: pestaña "Bloqueos" en la ficha del vehículo. 6 tests de dominio nuevos.
 
 **Detalle del ítem 56 (adicionales):**
 

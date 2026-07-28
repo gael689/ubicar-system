@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle, Ban, Wrench } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useOcupacion } from '@/hooks/useOcupacion';
 import { api } from '@/lib/api';
@@ -14,7 +14,22 @@ const ESTADO_COLORS_EVENTO: Record<string, string> = {
   vencida: 'bg-red-600 border-red-700 text-white animate-pulse',
   finalizada: 'bg-slate-500 border-slate-600 text-white',
   cancelada: 'bg-red-500 border-red-600 text-white line-through opacity-90',
+  // Bloqueos: el `estado` que llega es el motivo. Se pintan con rayado
+  // diagonal para que a simple vista no se confundan con una reserva — el
+  // auto no está alquilado, está fuera de circulación.
+  mantenimiento: 'bg-amber-600 border-amber-700 text-white bg-stripes',
+  siniestro: 'bg-red-700 border-red-800 text-white bg-stripes',
+  uso_interno: 'bg-primary border-primary text-white bg-stripes',
+  venta: 'bg-emerald-700 border-emerald-800 text-white bg-stripes',
+  otro: 'bg-slate-600 border-slate-700 text-white bg-stripes',
 };
+
+/** Los bloqueos ocupan el vehículo pero no son una reserva: no tienen ficha. */
+const ES_BLOQUEO = (tipo: string) => tipo === 'bloqueo';
+
+const ESTADOS_RESERVA_LEYENDA = [
+  'confirmada', 'activa', 'vencida', 'finalizada', 'cancelada',
+] as const;
 
 const ESTADO_COLORS_BADGE: Record<string, string> = {
   confirmada: 'bg-blue-100 text-blue-800',
@@ -22,6 +37,11 @@ const ESTADO_COLORS_BADGE: Record<string, string> = {
   vencida: 'bg-red-100 text-red-800',
   finalizada: 'bg-slate-200 text-slate-700',
   cancelada: 'bg-red-100 text-red-800 line-through',
+  mantenimiento: 'bg-amber-600 text-white',
+  siniestro: 'bg-red-700 text-white',
+  uso_interno: 'bg-primary text-white',
+  venta: 'bg-emerald-700 text-white',
+  otro: 'bg-slate-600 text-white',
 };
 
 const ESTADO_ICONS: Record<string, React.ReactNode> = {
@@ -30,6 +50,11 @@ const ESTADO_ICONS: Record<string, React.ReactNode> = {
   vencida: <AlertCircle className="w-3.5 h-3.5" />,
   finalizada: <Flag className="w-3.5 h-3.5" />,
   cancelada: <XCircle className="w-3.5 h-3.5" />,
+  mantenimiento: <Wrench className="w-3.5 h-3.5" />,
+  siniestro: <AlertTriangle className="w-3.5 h-3.5" />,
+  uso_interno: <Ban className="w-3.5 h-3.5" />,
+  venta: <Ban className="w-3.5 h-3.5" />,
+  otro: <Ban className="w-3.5 h-3.5" />,
 };
 
 function AsyncCheckoutModal({ 
@@ -323,14 +348,23 @@ export function OcupacionPage() {
 
       {/* Leyenda */}
       <div className="flex items-center gap-5 flex-wrap text-sm px-1">
-        {Object.entries(ESTADO_COLORS_EVENTO).map(([estado, cls]) => (
+        {/* Sólo los estados de reserva. Los 5 motivos de bloqueo no van uno
+            por uno: se resumen en un único ítem "Bloqueado" al final, con el
+            mismo rayado, para no convertir la leyenda en una lista de 10. */}
+        {ESTADOS_RESERVA_LEYENDA.map((estado) => (
           <div key={estado} className="flex items-center gap-2">
-            <div className={`flex items-center justify-center w-5 h-5 rounded border ${cls}`}>
+            <div className={`flex items-center justify-center w-5 h-5 rounded border ${ESTADO_COLORS_EVENTO[estado]}`}>
               {ESTADO_ICONS[estado]}
             </div>
             <span className="text-slate-600 font-medium capitalize">{estado}</span>
           </div>
         ))}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-5 h-5 rounded border bg-slate-600 border-slate-700 text-white bg-stripes">
+            <Ban className="w-3.5 h-3.5" />
+          </div>
+          <span className="text-slate-600 font-medium">Bloqueado</span>
+        </div>
       </div>
 
       {error && (
@@ -442,11 +476,21 @@ export function OcupacionPage() {
                                   const evDate = new Date(`${ev.fecha_inicio}T${ev.hora_inicio}`);
                                   const isOverdue = (!ev.tiene_alquiler && ev.estado === 'activa') || (ev.estado === 'confirmada' && evDate < new Date());
                                   
+                                  const esBloqueo = ES_BLOQUEO(ev.tipo);
+
                                   return (
                                     <div
-                                      key={ev.id}
-                                      onClick={(e) => { e.stopPropagation(); setReservaInfoId(ev.id); }}
-                                      className={`absolute inset-y-1 rounded-md border shadow-sm cursor-pointer transition-all z-10 overflow-hidden hover:brightness-110 ${colorClass}`}
+                                      key={`${ev.tipo}-${ev.id}`}
+                                      // Un bloqueo no tiene ficha de reserva: abrirla con su id
+                                      // mostraría la reserva equivocada.
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!esBloqueo) setReservaInfoId(ev.id);
+                                      }}
+                                      title={esBloqueo ? `${ev.cliente_nombre}${ev.notas ? ` — ${ev.notas}` : ''}` : undefined}
+                                      className={`absolute inset-y-1 rounded-md border shadow-sm transition-all z-10 overflow-hidden hover:brightness-110 ${
+                                        esBloqueo ? 'cursor-default' : 'cursor-pointer'
+                                      } ${colorClass}`}
                                       style={{ left: `calc(${leftPercent}% + 1px)`, width: `calc(${widthPercent}% - 2px)`, minWidth: 0, height: '52px' }}
                                     >
                                       {isOverdue && (
@@ -773,11 +817,18 @@ function AgendaView({
             const evDate = new Date(`${ev.fecha_inicio}T${ev.hora_inicio}`);
             const isOverdue = (!ev.tiene_alquiler && ev.estado === 'activa') || (ev.estado === 'confirmada' && evDate < new Date());
 
+            const esBloqueo = ES_BLOQUEO(ev.tipo);
+
             return (
               <div
-                key={ev.id}
-                onClick={() => onReservaClick(ev.id)}
-                className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex gap-3 items-start relative cursor-pointer hover:border-primary/35 hover:shadow-md transition-all"
+                key={`${ev.tipo}-${ev.id}`}
+                // Un bloqueo no tiene ficha de reserva que abrir.
+                onClick={() => { if (!esBloqueo) onReservaClick(ev.id); }}
+                className={`bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex gap-3 items-start relative transition-all ${
+                  esBloqueo
+                    ? 'cursor-default opacity-90'
+                    : 'cursor-pointer hover:border-primary/35 hover:shadow-md'
+                }`}
               >
                 {isOverdue && (
                   <button 

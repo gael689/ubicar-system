@@ -3,7 +3,7 @@ from __future__ import annotations
 ReservaService — orquesta la lógica de negocio de reservas.
 Capa transaccional: cruza vehículo, cliente, reserva dentro de transacciones explícitas.
 """
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -14,6 +14,18 @@ from app.domain.solapamientos import detectar_solapamientos
 from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
 from app.domain.tarifas import seleccionar_tarifa, calcular_duracion_dias, calcular_precio_total, TarifaInfo
 from app.models.adicional import Adicional, ReservaAdicional
+from app.models.bloqueo_vehiculo import BloqueoVehiculo
+
+
+# Etiquetas legibles del motivo, para que el mensaje de conflicto diga
+# "está en mantenimiento" y no "bloqueo|mantenimiento".
+MOTIVO_BLOQUEO_LABEL = {
+    "mantenimiento": "En mantenimiento",
+    "siniestro": "Siniestrado",
+    "uso_interno": "Uso interno",
+    "venta": "En venta",
+    "otro": "Bloqueado",
+}
 from app.domain.transiciones import (
     estado_tras_confirmar_reserva,
     estado_tras_cancelar_reserva_confirmada,
@@ -308,11 +320,7 @@ class ReservaService:
         resultado = detectar_solapamientos(vehiculo_id, inicio_dt, fin_dt, ventanas)
 
         if resultado.hay_conflicto_bloqueante:
-            conflicto = resultado.conflictos_bloqueantes[0]
-            raise ConflictError(
-                f"solapamiento|El vehículo tiene una reserva {conflicto.estado} en ese rango|"
-                f"{conflicto.id}|{conflicto.estado}|{conflicto.inicio.date()}|{conflicto.fin.date()}"
-            )
+            raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
 
         # 4. Construir warnings por solapamiento con pendientes
         warnings = [
@@ -522,10 +530,7 @@ class ReservaService:
         resultado = detectar_solapamientos(v_id, inicio_dt, fin_dt, ventanas, excluir_id=id)
 
         if resultado.hay_conflicto_bloqueante:
-            conflicto = resultado.conflictos_bloqueantes[0]
-            raise ConflictError(
-                f"solapamiento|Conflicto en el nuevo rango|{conflicto.id}|{conflicto.estado}"
-            )
+            raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
 
         warnings = [
             {"tipo": "solape_con_pendiente", "reserva_id": v.id}
@@ -751,9 +756,18 @@ class ReservaService:
     # ── Helpers privados ──────────────────────────────────────────────────────
 
     def _cargar_ventanas(self, vehiculo_id: int) -> list[VentanaReserva]:
-        """Carga ventanas de reservas existentes para el vehículo."""
+        """
+        Carga las ventanas que ocupan el vehículo: sus reservas **y sus
+        bloqueos** (mantenimiento, siniestro, uso interno).
+
+        Los bloqueos entran acá y no en una validación aparte para que
+        `detectar_solapamientos` sea el único que decide si un vehículo está
+        libre. Un segundo camino de validación termina divergiendo del
+        primero, y el resultado es una reserva aceptada sobre un auto que
+        está en el taller.
+        """
         reservas = self.reserva_repo.list(vehiculo_id=vehiculo_id, page=1, page_size=9999)[0]
-        ventanas = []
+        ventanas = self._cargar_ventanas_bloqueos(vehiculo_id)
         for r in reservas:
             # "vencida" ocupa el vehículo tanto como "activa": el auto sigue afuera.
             if r.estado in ("pendiente", "confirmada", "activa", "vencida"):
@@ -768,6 +782,58 @@ class ReservaService:
                     )
                 )
         return ventanas
+
+    @staticmethod
+    def _error_conflicto(conflicto: VentanaReserva) -> ConflictError:
+        """
+        Arma el 409 distinguiendo si el que ocupa el vehículo es otra reserva
+        o un bloqueo. Decir "tiene una reserva bloqueo en ese rango" no le
+        sirve a nadie: quien carga necesita saber que el auto está en el
+        taller para poder ofrecer otro.
+        """
+        if conflicto.tipo == "bloqueo":
+            # La ventana termina a las 00:00 del día siguiente; se muestra el
+            # último día realmente bloqueado.
+            ultimo_dia = (conflicto.fin - timedelta(days=1)).date()
+            return ConflictError(
+                f"vehiculo_bloqueado|El vehículo no está disponible en ese rango "
+                f"({conflicto.cliente_nombre})|"
+                f"{conflicto.id}|bloqueo|{conflicto.inicio.date()}|{ultimo_dia}"
+            )
+        return ConflictError(
+            f"solapamiento|El vehículo tiene una reserva {conflicto.estado} en ese rango|"
+            f"{conflicto.id}|{conflicto.estado}|{conflicto.inicio.date()}|{conflicto.fin.date()}"
+        )
+
+    def _cargar_ventanas_bloqueos(self, vehiculo_id: int) -> list[VentanaReserva]:
+        """
+        Bloqueos activos del vehículo, como ventanas ocupadas.
+
+        El rango del bloqueo es inclusivo en los dos extremos (del 3 al 5 son
+        tres días completos), así que la ventana termina a las 00:00 del día
+        SIGUIENTE a `fecha_hasta`. Si terminara a las 00:00 del mismo día, un
+        bloqueo de un solo día tendría duración cero y no bloquearía nada.
+        """
+        bloqueos = (
+            self.db.query(BloqueoVehiculo)
+            .filter(
+                BloqueoVehiculo.vehiculo_id == vehiculo_id,
+                BloqueoVehiculo.activo.is_(True),
+            )
+            .all()
+        )
+        return [
+            VentanaReserva(
+                id=b.id,
+                vehiculo_id=b.vehiculo_id,
+                inicio=datetime.combine(b.fecha_desde, time.min),
+                fin=datetime.combine(b.fecha_hasta + timedelta(days=1), time.min),
+                estado="bloqueo",
+                cliente_nombre=MOTIVO_BLOQUEO_LABEL.get(b.motivo, b.motivo),
+                tipo="bloqueo",
+            )
+            for b in bloqueos
+        ]
 
     def _cargar_tarifas_info(self, vehiculo_id: int) -> tuple[list[TarifaInfo], int | None]:
         """Carga las tarifas activas relevantes para el vehículo: las suyas

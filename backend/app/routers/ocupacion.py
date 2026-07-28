@@ -3,15 +3,17 @@ from __future__ import annotations
 Router de Ocupación — endpoint del calendario.
 GET /api/v1/ocupacion — devuelve vehículos + eventos para el timeline.
 """
-from datetime import date
+from datetime import date, time
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_current_user
 from app.core.responses import ok
+from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.usuario import Usuario
 from app.models.vehiculo import Vehiculo
+from app.services.reserva_service import MOTIVO_BLOQUEO_LABEL
 from app.repositories.reserva_repo import ReservaRepo
 from app.schemas.ocupacion import OcupacionResponse, VehiculoOcupacionItem, EventoOcupacion
 
@@ -62,6 +64,36 @@ def get_ocupacion(
             precio_total=float(r.precio_total) if r.precio_total else None,
             notas=r.notas,
             tiene_alquiler=r.alquiler is not None,
+        ))
+
+    # Bloqueos (mantenimiento, siniestro, uso interno). Van al calendario
+    # porque ocupan el vehículo igual que una reserva: si el auto está en el
+    # taller la semana que viene, eso cambia cómo se planifica la flota, y no
+    # verlo es exactamente lo que lleva a prometer un auto que no está.
+    bloqueos = (
+        db.query(BloqueoVehiculo)
+        .filter(
+            BloqueoVehiculo.activo.is_(True),
+            BloqueoVehiculo.vehiculo_id.in_(vehiculo_ids_activos),
+            BloqueoVehiculo.fecha_desde <= fecha_fin,
+            BloqueoVehiculo.fecha_hasta >= fecha_inicio,
+        )
+        .all()
+    )
+    for b in bloqueos:
+        eventos.append(EventoOcupacion(
+            id=b.id,
+            vehiculo_id=b.vehiculo_id,
+            tipo="bloqueo",
+            estado=b.motivo,
+            fecha_inicio=b.fecha_desde,
+            hora_inicio=time.min,
+            # El rango del bloqueo es inclusivo, así que ocupa el último día
+            # completo — de ahí el 23:59.
+            fecha_fin=b.fecha_hasta,
+            hora_fin=time(23, 59),
+            cliente_nombre=MOTIVO_BLOQUEO_LABEL.get(b.motivo, b.motivo),
+            notas=b.notas,
         ))
 
     return ok(OcupacionResponse(

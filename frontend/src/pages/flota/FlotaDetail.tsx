@@ -19,6 +19,7 @@ import { GastosMantenimientoTab } from '@/components/flota/GastosMantenimientoTa
 import { HistorialTab } from '@/components/flota/HistorialTab';
 import { HistorialReservasTab } from '@/components/flota/HistorialReservasTab';
 import { DaniosTab } from '@/components/flota/DaniosTab';
+import { BloqueosTab } from '@/components/flota/BloqueosTab';
 
 import {
   useDeactivateVehiculo,
@@ -194,6 +195,7 @@ export function FlotaDetail() {
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="gastos">Gastos / Mant.</TabsTrigger>
           <TabsTrigger value="danios">Daños</TabsTrigger>
+          <TabsTrigger value="bloqueos">Bloqueos</TabsTrigger>
           <TabsTrigger value="hist-reservas">Hist. Reservas</TabsTrigger>
           <TabsTrigger value="hist-gastos">Hist. Gastos</TabsTrigger>
         </TabsList>
@@ -237,6 +239,10 @@ export function FlotaDetail() {
 
         <TabsContent value="danios">
           <DaniosTab vehiculoId={vehiculo.id} />
+        </TabsContent>
+
+        <TabsContent value="bloqueos">
+          <BloqueosTab vehiculoId={vehiculo.id} />
         </TabsContent>
 
         <TabsContent value="hist-reservas">

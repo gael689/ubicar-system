@@ -59,6 +59,19 @@
     background-color: hsl(var(--border));
     border-radius: 3px;
   }
+
+  /* Rayado diagonal para los bloqueos del calendario de ocupación. El color
+     sólido lo pone la clase `bg-*` de al lado; esto le superpone las rayas,
+     que es lo que hace que un auto en el taller no se lea como una reserva. */
+  .bg-stripes {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 5px,
+      rgba(255, 255, 255, 0.22) 5px,
+      rgba(255, 255, 255, 0.22) 10px
+    );
+  }
 }
 
 @layer components {
