@@ -126,13 +126,26 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     y = _tabla_dos_columnas(c, filas_cliente, margin, y, width)
 
     # ── Bloque: vehículo ─────────────────────────────────────────────────
-    y = _seccion(c, "VEHÍCULO", margin, y, width)
-    y = _tabla_dos_columnas(c, [
-        ("Vehículo", f"{vehiculo.marca} {vehiculo.modelo}"),
-        ("Patente", vehiculo.patente),
-        ("Año", str(getattr(vehiculo, "anio", "") or "—")),
-        ("Color", getattr(vehiculo, "color", None) or "—"),
-    ], margin, y, width)
+    # Una reserva por categoría (ítem 58) todavía no tiene auto asignado: se
+    # informa la categoría contratada. **No se promete un modelo puntual** —
+    # el auto se asigna al entregar, y prometer una patente que después
+    # cambia es exactamente el conflicto que hay que evitar en el mostrador.
+    if vehiculo is not None:
+        y = _seccion(c, "VEHÍCULO", margin, y, width)
+        y = _tabla_dos_columnas(c, [
+            ("Vehículo", f"{vehiculo.marca} {vehiculo.modelo}"),
+            ("Patente", vehiculo.patente),
+            ("Año", str(getattr(vehiculo, "anio", "") or "—")),
+            ("Color", getattr(vehiculo, "color", None) or "—"),
+        ], margin, y, width)
+    else:
+        categoria = getattr(reserva, "categoria", None)
+        y = _seccion(c, "CATEGORÍA CONTRATADA", margin, y, width)
+        filas = [("Categoría", categoria.nombre if categoria else "—")]
+        if categoria is not None and getattr(categoria, "ejemplo_modelos", None):
+            filas.append(("Modelos", categoria.ejemplo_modelos))
+        filas.append(("Vehículo asignado", "Se asigna al momento de la entrega"))
+        y = _tabla_dos_columnas(c, filas, margin, y, width)
 
     # ── Bloque: período del alquiler ─────────────────────────────────────
     y = _seccion(c, "PERÍODO DEL ALQUILER", margin, y, width)

@@ -9,7 +9,23 @@ class Reserva(Base):
     __tablename__ = "reservas"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    vehiculo_id: Mapped[int] = mapped_column(ForeignKey("vehiculos.id"), nullable=False, index=True)
+    # Nullable desde la Fase 5 (ítem 58): una reserva web se hace **por
+    # categoría** y el auto puntual se asigna al entregar, que es como
+    # funcionan las rentadoras reales — si un auto se rompe se reemplaza sin
+    # tocar la reserva.
+    #
+    # **Invariante: al menos uno de `vehiculo_id` / `categoria_id` tiene que
+    # estar** (lo valida ReservaService, no un constraint, porque el mensaje
+    # de error importa). Una reserva sin vehículo NO es una reserva sin auto:
+    # descuenta cupo igual, sólo que todavía no se sabe cuál.
+    #
+    # `checkout()` sí exige `vehiculo_id`: no se puede entregar una categoría.
+    vehiculo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehiculos.id"), nullable=True, index=True
+    )
+    categoria_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categorias.id"), nullable=True, index=True
+    )
     cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), nullable=False, index=True)
     fecha_inicio: Mapped[date] = mapped_column(Date(), nullable=False)
     hora_inicio: Mapped[time] = mapped_column(Time(), nullable=False)
@@ -97,6 +113,7 @@ class Reserva(Base):
 
     # ── Relaciones ────────────────────────────────────────────────────────────
     vehiculo: Mapped["Vehiculo"] = relationship("Vehiculo")
+    categoria: Mapped["Categoria"] = relationship("Categoria")
     cliente: Mapped["Cliente"] = relationship("Cliente")
     conductor: Mapped["ConductorAdicional"] = relationship("ConductorAdicional")
     usuario: Mapped["Usuario"] = relationship("Usuario", foreign_keys=[usuario_id])

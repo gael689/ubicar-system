@@ -56,7 +56,10 @@ class ConductorResumen(BaseModel):
 # ── Request schemas ───────────────────────────────────────────────────────────
 
 class ReservaCreate(BaseModel):
-    vehiculo_id: int
+    # Uno de los dos es obligatorio (item 58): vehiculo puntual desde el
+    # mostrador, categoria desde la web. Lo valida ReservaService.
+    vehiculo_id: int | None = None
+    categoria_id: int | None = None
     cliente_id: int
     conductor_id: int | None = None
     fecha_inicio: date
@@ -155,7 +158,8 @@ class SolapeWarning(BaseModel):
 
 class ReservaResponse(BaseModel):
     id: int
-    vehiculo_id: int
+    vehiculo_id: int | None
+    categoria_id: int | None = None
     cliente_id: int
     conductor_id: int | None = None
     fecha_inicio: date

@@ -124,6 +124,17 @@ class AlquilerService:
         if not reserva:
             raise NotFoundError("Reserva", reserva_id)
 
+        # No se puede entregar una categoría (ítem 58): una reserva web nace
+        # por categoría y alguien tiene que asignarle un auto concreto antes
+        # de que el cliente se lo lleve. Es el punto donde la reserva por
+        # categoría vuelve a ser una reserva de un vehículo puntual.
+        if reserva.vehiculo_id is None:
+            raise BusinessRuleError(
+                "reserva_sin_vehiculo_asignado",
+                "La reserva es por categoría y todavía no tiene un vehículo asignado. "
+                "Asigná uno antes de hacer el check-out.",
+            )
+
         # Permitimos checkout cuando la reserva está confirmada (caso normal) o
         # cuando ya transicionó automáticamente a activa por cumplirse la hora
         # pero todavía no existe un alquiler creado (caso de alerta amarilla).

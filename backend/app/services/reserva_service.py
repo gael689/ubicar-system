@@ -15,6 +15,7 @@ from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionale
 from app.domain.tarifas import seleccionar_tarifa, calcular_duracion_dias, calcular_precio_total, TarifaInfo
 from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
+from app.models.categoria import Categoria
 
 
 # Etiquetas legibles del motivo, para que el mensaje de conflicto diga
@@ -247,7 +248,6 @@ class ReservaService:
 
     def create(
         self,
-        vehiculo_id: int,
         cliente_id: int,
         fecha_inicio: date,
         hora_inicio: time,
@@ -255,6 +255,10 @@ class ReservaService:
         hora_fin: time,
         lugar_entrega: str,
         lugar_devolucion: str,
+        # Uno de los dos es obligatorio (ítem 58): auto puntual desde el
+        # mostrador, categoría desde la web.
+        vehiculo_id: int | None = None,
+        categoria_id: int | None = None,
         notas: str | None = None,
         hora_devolucion_acordada: time | None = None,
         late_checkout: bool = False,
@@ -296,10 +300,29 @@ class ReservaService:
             NotFoundError: vehículo o cliente no existe o está inactivo.
             ConflictError: solapamiento contra reserva confirmada o alquiler activo.
         """
-        # 1. Verificar que vehículo y cliente existen y están activos
-        vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
-        if not vehiculo or not vehiculo.activo:
-            raise NotFoundError("Vehículo", vehiculo_id)
+        # 1. Verificar que vehículo/categoría y cliente existen y están activos.
+        #
+        # Desde la Fase 5 (ítem 58) una reserva puede ser **por categoría**,
+        # sin auto asignado todavía — así reserva la web. La invariante es que
+        # al menos uno de los dos esté: sin ninguno, la reserva no dice qué se
+        # está alquilando.
+        if vehiculo_id is None and categoria_id is None:
+            raise BusinessRuleError(
+                "reserva_sin_vehiculo_ni_categoria",
+                "La reserva necesita un vehículo o al menos una categoría",
+            )
+
+        vehiculo = None
+        if vehiculo_id is not None:
+            vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
+            if not vehiculo or not vehiculo.activo:
+                raise NotFoundError("Vehículo", vehiculo_id)
+            # El auto manda: su categoría real gana sobre la que hayan pedido.
+            categoria_id = vehiculo.categoria_id or categoria_id
+        else:
+            categoria = self.db.query(Categoria).filter(Categoria.id == categoria_id).first()
+            if not categoria or not categoria.activo:
+                raise NotFoundError("Categoría", categoria_id)
 
         cliente = self.db.query(Cliente).filter(Cliente.id == cliente_id).first()
         if not cliente or not cliente.activo:
@@ -315,15 +338,23 @@ class ReservaService:
         if inicio_dt >= fin_dt:
             raise BusinessRuleError("fechas_invalidas", "La fecha de fin debe ser posterior a la de inicio")
 
-        # 3. Detectar solapamientos
-        ventanas = self._cargar_ventanas(vehiculo_id)
-        resultado = detectar_solapamientos(vehiculo_id, inicio_dt, fin_dt, ventanas)
+        # 3. Detectar solapamientos — sólo si hay un auto puntual.
+        #
+        # Una reserva por categoría no puede solapar con "un vehículo": todavía
+        # no tiene ninguno. Lo que la limita es el **cupo** de la categoría, que
+        # es una pregunta distinta y la contesta `domain/disponibilidad.py`.
+        # Forzarla por este camino habría hecho que reservar una categoría
+        # bloqueara un auto arbitrario.
+        resultado = None
+        if vehiculo_id is not None:
+            ventanas = self._cargar_ventanas(vehiculo_id)
+            resultado = detectar_solapamientos(vehiculo_id, inicio_dt, fin_dt, ventanas)
 
-        if resultado.hay_conflicto_bloqueante:
-            raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
+            if resultado.hay_conflicto_bloqueante:
+                raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
 
         # 4. Construir warnings por solapamiento con pendientes
-        warnings = [
+        warnings = [] if resultado is None else [
             {
                 "tipo": "solape_con_pendiente",
                 "reserva_id": v.id,
@@ -343,7 +374,9 @@ class ReservaService:
         tarifa_id = None
         precio_lista: Decimal | None = None
         duracion = calcular_duracion_dias(fecha_inicio, fecha_fin)
-        tarifas_info, categoria_id = self._cargar_tarifas_info(vehiculo_id)
+        # Sin auto asignado no hay tarifa "del vehículo": se cotiza contra la
+        # categoría, que es exactamente lo que la web vende.
+        tarifas_info, _ = self._cargar_tarifas_info(vehiculo_id, categoria_id)
         try:
             tarifa = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
             precio_lista = calcular_precio_total(duracion, tarifa)
@@ -384,6 +417,7 @@ class ReservaService:
         with self.db.begin_nested():
             reserva = Reserva(
                 vehiculo_id=vehiculo_id,
+                categoria_id=categoria_id,
                 cliente_id=cliente_id,
                 conductor_id=conductor_id,
                 fecha_inicio=fecha_inicio,
@@ -455,12 +489,16 @@ class ReservaService:
             # cargo_late_checkout. Ver Reserva.total_adicionales.
             self.sincronizar_adicionales(reserva, adicionales)
 
-            # Actualizar estado del vehículo a reservado si corresponde
-            nuevo_estado = estado_tras_confirmar_reserva(
-                EstadoVehiculo(vehiculo.estado)
-            )
-            if nuevo_estado.value != vehiculo.estado:
-                vehiculo.estado = nuevo_estado.value
+            # Actualizar estado del vehículo a reservado si corresponde.
+            # En una reserva por categoría no hay auto que marcar: marcar uno
+            # arbitrario lo sacaría de circulación sin motivo, que es
+            # exactamente lo que la reserva por categoría viene a evitar.
+            if vehiculo is not None:
+                nuevo_estado = estado_tras_confirmar_reserva(
+                    EstadoVehiculo(vehiculo.estado)
+                )
+                if nuevo_estado.value != vehiculo.estado:
+                    vehiculo.estado = nuevo_estado.value
 
         self.db.refresh(reserva)
         return reserva, warnings
@@ -835,12 +873,19 @@ class ReservaService:
             for b in bloqueos
         ]
 
-    def _cargar_tarifas_info(self, vehiculo_id: int) -> tuple[list[TarifaInfo], int | None]:
-        """Carga las tarifas activas relevantes para el vehículo: las suyas
-        específicas, las de su categoría (si tiene una asignada), y las
-        generales. Devuelve (tarifas, categoria_id_del_vehiculo)."""
-        vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
-        categoria_id = vehiculo.categoria_id if vehiculo else None
+    def _cargar_tarifas_info(
+        self, vehiculo_id: int | None, categoria_id: int | None = None
+    ) -> tuple[list[TarifaInfo], int | None]:
+        """Carga las tarifas activas relevantes: las específicas del vehículo,
+        las de su categoría, y las generales. Devuelve (tarifas, categoria_id).
+
+        `vehiculo_id` puede ser None en una reserva por categoría (ítem 58):
+        en ese caso se cotiza contra la categoría recibida y sólo entran las
+        tarifas de categoría y las generales — no hay auto del cual tomar una
+        tarifa puntual."""
+        if vehiculo_id is not None:
+            vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
+            categoria_id = vehiculo.categoria_id if vehiculo else categoria_id
 
         tarifas = (
             self.db.query(Tarifa)

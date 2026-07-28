@@ -101,6 +101,7 @@ def create_reserva(
     try:
         reserva, warnings = svc.create(
             vehiculo_id=payload.vehiculo_id,
+            categoria_id=payload.categoria_id,
             cliente_id=payload.cliente_id,
             conductor_id=payload.conductor_id,
             fecha_inicio=payload.fecha_inicio,

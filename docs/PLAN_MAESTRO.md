@@ -149,7 +149,7 @@ El bloque 8 trae **todos los alquileres finalizados de la historia** y suma sus 
 
 **✅ Resuelto (Fase 2, 2026-07-26):** `GET /notificaciones` ahora es un `SELECT` sobre `notificaciones` con índice en `estado` — el cálculo pesado (`saldo_pendiente_alquiler` y las demás 24 reglas) sólo corre una vez al día en el motor, no en cada polling de la campana. La regla en sí (`saldo_pendiente_al_finalizar` en `notificaciones_reglas.py`) conserva la misma limitación N+1 de origen (trae todos los alquileres finalizados y suma pagos en Python) — pero ahora paga ese costo una vez por día, no 1.440 veces.
 
-### 2.8 🟡 `/public/disponibilidad` devuelve datos incorrectos
+### 2.8 ✅ `/public/disponibilidad` devolvía datos incorrectos — corregido 2026-07-27
 
 `routers/public.py` filtra por `Vehiculo.estado == 'disponible'` — el estado **actual** del vehículo. Recibe `fecha_inicio` y `fecha_fin` y **los ignora**. Un auto alquilado hoy pero libre el mes que viene aparece como no disponible; un auto libre hoy pero reservado para esas fechas aparece como disponible. La lógica correcta ya existe en `domain/solapamientos.py` y no se usa. Si esto se expone a la web tal cual, hay sobreventa el primer día.
 
@@ -1105,7 +1105,7 @@ cobrarlo. Ahora:
     pipeline de precios (§7.2) pierde la línea "+ cargo one-way".
 56. ✅ **Adicionales + adicionales por reserva** — hecho 2026-07-27 (migración `040_adicionales`). Ver detalle abajo
 57. ✅ **Motor de precios por calendario** + pantalla de administración — hecho 2026-07-27 (migración `039_motor_precios`). Ver detalle abajo
-58. **Reserva por categoría** (`vehiculo_id` nullable) — el cambio estructural
+58. ✅ **Reserva por categoría** (`vehiculo_id` nullable) — hecho 2026-07-27 (migración `042_reserva_por_categoria`). Ver `docs/PLAN_RESERVAS_WEB.md` §3
 59. ✅ **Bloqueos de vehículo por fecha** — hecho 2026-07-27 (migración `041_bloqueos_vehiculo`). Ver detalle abajo
 
 **Detalle del ítem 57 (motor de precios por calendario):**
@@ -1273,7 +1273,7 @@ la suma de los movimientos** — que es exactamente lo que el ledger inmutable
 de la Fase 1 vino a evitar. Vale arreglarlo antes de la web.
 
 ### 🚀 Fase 6 — Reservas web (4 semanas)
-60. Endpoint de disponibilidad real por cupo
+60. ✅ **Endpoint de disponibilidad real por cupo** — hecho 2026-07-27. `domain/disponibilidad.py` + `GET /public/disponibilidad`. Ver `docs/PLAN_RESERVAS_WEB.md` §4
 61. Sistema de holds con expiración
 62. Integración Mercado Pago + webhook idempotente
 63. Landing + flujo de 3 pasos ← **ya no se arranca de cero**, ver 9.1
