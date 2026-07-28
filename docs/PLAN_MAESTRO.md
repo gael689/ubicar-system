@@ -1144,8 +1144,8 @@ Adelantada respecto del plan original: hoy todo se graba con un usuario ficticio
 49. Audit log de operaciones sensibles + override de bloqueos con motivo registrado
 
 ### 📄 Fase 4 — Contratos y parte de daños (2 semanas)
-50. 🟡 **Definir el texto legal del contrato** — **desbloqueado el 2026-07-28.** El usuario aportó un contrato real de la competencia (SIXT / Compañía General de Vehículos S.A.) con la instrucción de replicarlo cambiando toda referencia a Ubicar Rent. **Plan completo en `docs/PLAN_CONTRATOS.md`**, con el mapeo campo por campo del anverso, las 13 cláusulas del reverso, los 7 pasajes que no se pueden copiar literal, y 7 decisiones (2 bloqueantes: quién es el locador y si el clausulado se adopta tal cual)
-51. 🟡 Generación de PDF (reutiliza el pipeline de la Fase 1) + firma en canvas + advertencia con motivo en el checkout — plan listo, esperando D-C1/D-C2. `routers/contratos.py` sigue siendo un stub de 19 líneas
+50. ✅ **Texto legal del contrato** — resuelto 2026-07-28 (D-33). El usuario aportó un contrato real de la competencia (SIXT / Compañía General de Vehículos S.A.) con la instrucción de replicarlo cambiando toda referencia a Ubicar Rent. **Plan completo en `docs/PLAN_CONTRATOS.md`**, con el mapeo campo por campo del anverso, las 13 cláusulas del reverso, los 7 pasajes que no se pueden copiar literal, y 7 decisiones (2 bloqueantes: quién es el locador y si el clausulado se adopta tal cual)
+51. ✅ **Generación de PDF + firma en canvas + advertencia con constancia en el check-out** — hecho 2026-07-28 (migración 046). `contrato_plantillas` versionado, `contratos.snapshot` congelado, PDF de dos páginas con ReportLab, firma ológrafa, y `entregado_sin_contrato` visible en la ficha (D-34). **Sólo queda D-C1**: quién es legalmente el locador. Mientras tanto el PDF sale marcado "DOCUMENTO PROVISORIO" para que el placeholder no se vuelva permanente por olvido
 52. ✅ **Parte de daños con fotos en check-out/check-in, con daños preexistentes precargados** — hecho 2026-07-27 (migración `035_danios_vehiculo`). Ver detalle abajo
 53. ✅ **Valorización de daños** — hecho 2026-07-27, junto con el 52
 
@@ -1185,7 +1185,7 @@ cobrarlo. Ahora:
   quiere agregar el croquis encima.
 
 ### 🌐 Fase 5 — Cimientos para la web (3 semanas)
-54. 🟡 **Categorías de vehículo + migrar la flota existente** — la entidad, las 6 categorías y la tarifa por categoría están hechas desde la F1 (ítem 21), y el selector existe en `VehiculoFormDialog`. Lo que faltaba era **cargar el dato**: al 2026-07-27 los 16 vehículos tenían `categoria_id = NULL`, con lo cual la tarifa por categoría nunca podía dispararse (sólo aplicaban las tarifas por vehículo puntual). **Asignadas las 7 pick-ups** (3 Hilux, Amarok, 2 Tunland, Titano), que no admiten discusión. **Quedan 9 autos sin categoría a propósito**, esperando la decisión #8: la segmentación compacto / sedán / sedán superior fija el tier de precio de la web, así que la definen Franco y Martín, no el sistema:
+54. ✅ **Categorías de vehículo + migrar la flota existente** — cerrado 2026-07-28 con **D-29** (el Corsa va a Sedán, corrigiendo la sugerencia). Se aplica con `backend/scripts/asignar_categorias.py`. La flota queda 1 compacto · 7 sedán · 1 sedán superior · 7 pick-up. Historia: la entidad, las 6 categorías y la tarifa por categoría están hechas desde la F1 (ítem 21), y el selector existe en `VehiculoFormDialog`. Lo que faltaba era **cargar el dato**: al 2026-07-27 los 16 vehículos tenían `categoria_id = NULL`, con lo cual la tarifa por categoría nunca podía dispararse (sólo aplicaban las tarifas por vehículo puntual). **Asignadas las 7 pick-ups** (3 Hilux, Amarok, 2 Tunland, Titano), que no admiten discusión. **Quedan 9 autos sin categoría a propósito**, esperando la decisión #8: la segmentación compacto / sedán / sedán superior fija el tier de precio de la web, así que la definen Franco y Martín, no el sistema:
     - `PMH625` Chevrolet Corsa Classic · `AH762UL` Fiat Argo Drive MT
     - `AG591WA` / `AH021RK` / `AH067LW` / `AH462EG` Fiat Cronos Drive 1.3
     - `LGW669` Fiat Siena Essence · `AF865DD` Toyota Etios 1.5 XLS AT
@@ -1376,10 +1376,10 @@ de la Fase 1 vino a evitar. Vale arreglarlo antes de la web.
 
 ### 🚀 Fase 6 — Reservas web (4 semanas)
 60. ✅ **Endpoint de disponibilidad real por cupo** — hecho 2026-07-27. `domain/disponibilidad.py` + `GET /public/disponibilidad`. Ver `docs/PLAN_RESERVAS_WEB.md` §4
-61. Sistema de holds con expiración
-62. Integración Mercado Pago + webhook idempotente
-63. Landing + flujo de 3 pasos ← **ya no se arranca de cero**, ver 9.1
-64. Bandeja de Reservas Web en el sistema con aceptar/rechazar
+61. ✅ **Sistema de holds con expiración** — hecho 2026-07-28 (migración 047). Verificar y tomar en una sola operación con `SELECT ... FOR UPDATE`; la expiración se evalúa al consultar disponibilidad, así que un hold abandonado deja de ocupar sin que corra ningún job
+62. ⏸️ Integración Mercado Pago + webhook idempotente ← **bloqueado por API externa**
+63. ⏸️ Landing + flujo de 3 pasos ← el paso 1 ya existe en el Hero, ver §11 de `PLAN_RESERVAS_WEB.md`. El paso 3 depende del 62
+64. ✅ **Bandeja de Reservas Web con aceptar/rechazar** — hecho 2026-07-28. Tres colas ordenadas por dónde hay plata del cliente en juego. Aceptar asigna un vehículo y revalida la disponibilidad en ese momento
 
 **Total estimado: 18-21 semanas.** Las fases 0-3.5 (9-10 semanas) ya dejan el sistema interno completo, sólido y con auth real — es el corte natural si se quiere poner en producción antes de encarar la web.
 
