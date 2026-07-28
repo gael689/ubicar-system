@@ -24,6 +24,10 @@ class Multa(Base):
     fecha_infraccion: Mapped[date] = mapped_column(Date(), nullable=False, index=True)
     hora_infraccion: Mapped[time | None] = mapped_column(Time(), nullable=True)
     monto: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # D-28: hasta la migración 045 no había forma de saber cuándo había que
+    # pagarla. Nullable porque muchas llegan sin fecha clara, y exigirla
+    # impediría cargar la multa — que es lo primero que hay que poder hacer.
+    fecha_vencimiento: Mapped[date | None] = mapped_column(Date(), nullable=True, index=True)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Estado de gestión

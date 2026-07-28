@@ -9,7 +9,7 @@ del plan maestro completa). Fuente de verdad del código:
 
 - **Motor.** Todos los días a las **08:00, hora Argentina**, un job de
   APScheduler (arrancado desde el `lifespan` de FastAPI en `main.py`) evalúa
-  las 25 reglas de abajo contra la base de datos real.
+  las 29 reglas de abajo contra la base de datos real.
 - **Persistencia.** Cada alerta que dispara una regla se guarda en la tabla
   `notificaciones` — no se recalcula cada vez que alguien abre la campana.
 - **Deduplicación.** Cada notificación tiene una `clave_dedupe`
@@ -94,6 +94,8 @@ Urgencia, de mayor a menor: **crítica** > **alta** > **media** > **baja**.
 |---|---|---|---|
 | `multa_pendiente_imputar` | Multa cargada sin asignar responsable todavía | 08:00 | Media |
 | `multa_imputada_sin_cobrar` | Multa imputada a un cliente hace más de 15 días, sin resolver (cobrada/bonificada) | Desde el día 16, 08:00 | Media |
+| `multa_por_vencer` | Multa con vencimiento cerca y todavía sin resolver | Ventana configurable, default 7 días | **Alta** |
+| `multa_vencida` | Multa que ya venció y sigue sin resolverse | Desde el día siguiente al vencimiento | **Crítica** |
 
 ## Agregadas en esta revisión (no estaban en el catálogo original del plan)
 
@@ -119,10 +121,15 @@ porque dependen de algo que el sistema todavía no tiene:
   todavía (Fase 5 del plan). Cuando exista, cada reserva que llegue por ahí
   debe generar una notificación de urgencia alta al instante, sin esperar
   al digest de las 08:00 (así está definido en el plan maestro §7).
-- **Multa próxima a vencer (descuento por pronto pago)** — el modelo
-  `Multa` no registra ninguna fecha límite de descuento por pronto pago.
-  Habría que agregar el campo y, antes, confirmar con Franco/Martín si las
-  multas que gestionan tienen ese beneficio en la práctica.
+- **Descuento por pronto pago en multas** — ❌ **descartado a propósito**
+  (D-28, 2026-07-28). Existe en la realidad, pero mantener plazos y
+  porcentajes que cambian por jurisdicción y por año es mucha estructura
+  para un beneficio que quien paga la multa ya conoce.
+  **Lo que sí se hizo** (migración 045): `Multa.fecha_vencimiento` — que no
+  existía, con lo cual no había forma de saber cuándo había que pagarla — y
+  las dos reglas `multa_por_vencer` / `multa_vencida` de la tabla de arriba.
+  La ventana de aviso es el parámetro `multas.dias_aviso_vencimiento` de la
+  pantalla de Configuración, default 7 días.
 
 Y, tal como se pidió, **implementado al final, después de todo lo demás**:
 

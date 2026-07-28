@@ -25,6 +25,40 @@ function formatMoney(v: string | number) {
 // resolución (generan el movimiento de cuenta corriente). El resto son
 // transiciones directas, un click, sin pasar por "Editar".
 const ESTADOS_DIRECTOS: EstadoMultaEditable[] = ['pendiente', 'imputada', 'apelando'];
+
+/**
+ * Chip de vencimiento (D-28). Sólo aparece si la multa tiene fecha y sigue
+ * sin resolverse — una multa ya cobrada no necesita apurar a nadie.
+ * Colores sólidos porque es un estado que requiere acción, no un dato pasivo.
+ */
+function vencimientoChip(m: Multa) {
+  if (!m.fecha_vencimiento) return null;
+  if (m.estado === 'cobrada' || m.estado === 'bonificada') return null;
+
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const vence = new Date(`${m.fecha_vencimiento}T00:00:00`);
+  const dias = Math.round((vence.getTime() - hoy.getTime()) / 86_400_000);
+
+  if (dias < 0) {
+    return (
+      <span className="inline-flex items-center rounded-md bg-danger px-2 py-0.5 text-xs font-semibold text-white">
+        Vencida hace {Math.abs(dias)}d
+      </span>
+    );
+  }
+  if (dias <= 7) {
+    return (
+      <span className="inline-flex items-center rounded-md bg-warning px-2 py-0.5 text-xs font-semibold text-white">
+        {dias === 0 ? 'Vence hoy' : `Vence en ${dias}d`}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
+      Vence {formatDate(m.fecha_vencimiento)}
+    </span>
+  );
+}
 const ESTADO_FILTROS: { value: string; label: string }[] = [
   { value: '', label: 'Todos' },
   ...(['pendiente', 'imputada', 'cobrada', 'bonificada', 'apelando'] as EstadoMulta[])
@@ -100,6 +134,7 @@ export function MultasPage() {
     await crearMulta({
       patente: form.patente,
       fecha_infraccion: form.fecha_infraccion,
+      fecha_vencimiento: form.fecha_vencimiento ?? null,
       hora_infraccion: form.hora_infraccion ?? undefined,
       monto: Number(form.monto),
       cliente_id: form.cliente_id ?? undefined,
@@ -270,6 +305,15 @@ export function MultasPage() {
                         />
                       </div>
                       <div className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground">Vence el</label>
+                        <input
+                          type="date"
+                          value={form.fecha_vencimiento ?? ''}
+                          onChange={e => setForm(f => ({ ...f, fecha_vencimiento: e.target.value || null }))}
+                          className="input-base"
+                        />
+                      </div>
+                      <div className="space-y-1">
                         <label className="text-xs font-medium text-muted-foreground">Descripción</label>
                         <input
                           value={form.descripcion ?? ''}
@@ -376,6 +420,7 @@ export function MultasPage() {
                       <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold', ESTADO_MULTA_COLOR[m.estado])}>
                         {ESTADO_MULTA_LABEL[m.estado]}
                       </span>
+                      {vencimientoChip(m)}
                     </div>
                     {m.cliente && (
                       <Link to={`/clientes/${m.cliente.id}`} className="text-sm text-primary hover:underline">

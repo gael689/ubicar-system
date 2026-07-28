@@ -23,6 +23,9 @@ class MultaCreate(BaseModel):
     alquiler_id: int | None = None
     fecha_infraccion: date
     hora_infraccion: time | None = None
+    # D-28: cuándo hay que pagarla. Opcional porque muchas llegan sin fecha
+    # clara, y exigirla impediría cargar la multa.
+    fecha_vencimiento: date | None = None
     monto: Decimal
     descripcion: str | None = None
     notas: str | None = None
@@ -31,6 +34,7 @@ class MultaCreate(BaseModel):
 class MultaUpdate(BaseModel):
     estado: EstadoMultaEditable | None = None
     monto: Decimal | None = None
+    fecha_vencimiento: date | None = None
     cliente_id: int | None = None
     alquiler_id: int | None = None
     descripcion: str | None = None
@@ -61,6 +65,7 @@ class MultaResponse(BaseModel):
     alquiler_id: int | None
     fecha_infraccion: date
     hora_infraccion: time | None
+    fecha_vencimiento: date | None = None
     monto: Decimal
     descripcion: str | None
     estado: str

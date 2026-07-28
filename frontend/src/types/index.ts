@@ -1002,6 +1002,8 @@ export interface Multa {
   alquiler_id: number | null;
   fecha_infraccion: string;
   hora_infraccion: string | null;
+  // D-28: cuándo hay que pagarla. Null si llegó sin fecha clara.
+  fecha_vencimiento: string | null;
   monto: string;
   descripcion: string | null;
   estado: EstadoMulta;
@@ -1023,6 +1025,7 @@ export interface MultaCreate {
   alquiler_id?: number | null;
   fecha_infraccion: string;
   hora_infraccion?: string | null;
+  fecha_vencimiento?: string | null;
   monto: number;
   descripcion?: string | null;
   notas?: string | null;
@@ -1031,6 +1034,7 @@ export interface MultaCreate {
 export interface MultaUpdate {
   estado?: EstadoMultaEditable;
   monto?: number;
+  fecha_vencimiento?: string | null;
   cliente_id?: number | null;
   alquiler_id?: number | null;
   descripcion?: string | null;

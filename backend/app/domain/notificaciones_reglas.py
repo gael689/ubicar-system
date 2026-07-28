@@ -23,8 +23,9 @@ tocar el motor.
 Reglas del catálogo original (plan maestro §4.2) que NO están acá porque
 dependen de algo que todavía no existe en el sistema:
 - "Reserva nueva desde la web": no hay sistema de reservas web (Fase 5).
-- "Multa próxima a vencer (descuento por pronto pago)": no se registra
-  fecha límite de descuento por pronto pago en el modelo de Multa.
+- "Multa próxima a vencer con descuento por pronto pago": **el descuento por
+  pronto pago no se modela** (D-28, decisión explícita). Sí se avisa del
+  vencimiento en sí, más abajo.
 """
 from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
@@ -745,6 +746,81 @@ def multa_imputada_sin_cobrar(db: Session, hoy: date) -> list[dict]:
     ]
 
 
+def multa_por_vencer(db: Session, hoy: date) -> list[dict]:
+    """
+    Multa con vencimiento cerca y todavía sin resolver (D-28).
+
+    La ventana sale de `configuracion` (`multas.dias_aviso_vencimiento`,
+    default 7) porque es un número que el negocio ajusta. Se lee con un import
+    diferido para que este módulo siga siendo importable sin sesión, como el
+    resto del catálogo.
+    """
+    from app.services.configuracion_service import ConfiguracionService
+
+    dias = ConfiguracionService(db).get_int("multas.dias_aviso_vencimiento", 7)
+    limite = hoy + timedelta(days=dias)
+
+    multas = (
+        db.query(Multa)
+        .filter(
+            Multa.activo == True,
+            Multa.estado.in_(["pendiente", "imputada"]),
+            Multa.fecha_vencimiento.isnot(None),
+            Multa.fecha_vencimiento >= hoy,
+            Multa.fecha_vencimiento <= limite,
+        )
+        .all()
+    )
+    return [
+        {
+            "tipo": "multa_por_vencer",
+            "titulo": f"Multa vence en {(m.fecha_vencimiento - hoy).days} día(s)",
+            "descripcion": (
+                f"Multa #{m.id} — ${m.monto} — {m.patente} — "
+                f"vence el {m.fecha_vencimiento.strftime('%d/%m/%Y')}"
+            ),
+            # Alta y no media: pasado el vencimiento la multa cuesta más plata,
+            # y eso es exactamente lo que este aviso existe para evitar.
+            "urgencia": "alta",
+            "entidad_tipo": "multa",
+            "entidad_id": m.id,
+            "url_destino": "/multas",
+            "fecha_objetivo": m.fecha_vencimiento,
+        }
+        for m in multas
+    ]
+
+
+def multa_vencida(db: Session, hoy: date) -> list[dict]:
+    """Multa que ya venció y sigue sin resolverse. Ya se está perdiendo plata."""
+    multas = (
+        db.query(Multa)
+        .filter(
+            Multa.activo == True,
+            Multa.estado.in_(["pendiente", "imputada"]),
+            Multa.fecha_vencimiento.isnot(None),
+            Multa.fecha_vencimiento < hoy,
+        )
+        .all()
+    )
+    return [
+        {
+            "tipo": "multa_vencida",
+            "titulo": f"Multa VENCIDA hace {(hoy - m.fecha_vencimiento).days} día(s)",
+            "descripcion": (
+                f"Multa #{m.id} — ${m.monto} — {m.patente} — "
+                f"venció el {m.fecha_vencimiento.strftime('%d/%m/%Y')}"
+            ),
+            "urgencia": "critica",
+            "entidad_tipo": "multa",
+            "entidad_id": m.id,
+            "url_destino": "/multas",
+            "fecha_objetivo": m.fecha_vencimiento,
+        }
+        for m in multas
+    ]
+
+
 # ── Catálogo completo ────────────────────────────────────────────────────────
 
 REGLAS = [
@@ -775,6 +851,8 @@ REGLAS = [
     vehiculo_fuera_de_servicio_prolongado,
     multa_pendiente_imputar,
     multa_imputada_sin_cobrar,
+    multa_por_vencer,
+    multa_vencida,
 ]
 
 
