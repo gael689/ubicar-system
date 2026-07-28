@@ -243,6 +243,12 @@ categoría, coberturas y extras, y las franjas de recargo por edad.
 - [ ] Generar un contrato y descargar el PDF
 - [ ] `POST /notificaciones/generar` crea notificaciones
 - [ ] El aviso de cookies aparece, y **rechazar no carga Meta ni Analytics**
+- [ ] `python -m scripts.verificar_concurrencia` dice OK
+
+> **Lo de concurrencia no es opcional.** Son tres personas trabajando sobre la
+> misma flota: si el lock del vehículo no funciona contra la base de
+> producción, dos pueden reservar el mismo auto y el problema recién aparece
+> el día de la entrega. El script tarda dos segundos.
 
 ### Google
 
