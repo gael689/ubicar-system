@@ -9,6 +9,7 @@
 - **`docs/ANALISIS_CICLO_RESERVA.md`** — análisis fino del ciclo operativo: check-out, check-in tardío, excedentes, precios, clientes empresa/particular y vencimientos. Contiene los bugs P0 confirmados con archivo y línea.
 - **`docs/CASOS_DE_USO.md`** — registro trackeable de los ~195 casos de uso con ID, estado y prioridad. Es la lista de trabajo.
 - **`docs/PLAN_FRONTEND_UX.md`** — rediseño de la interfaz: formularios por pasos, componente `<Wizard>`, check-in como liquidación, navegación y consistencia visual.
+- **`docs/GUIA_DEPLOY.md`** — el paso a paso del deploy: comandos, variables y verificación.
 - **`docs/PLAN_DEPLOY.md`** — **la puesta en producción**: dónde va cada pieza (Vercel + Railway), los cinco bloqueantes que hay que resolver antes, las APIs que faltan integrar y el orden de trabajo.
 - **`docs/MANUAL_PARA_LOS_DUENOS.md`** — el mismo sistema explicado en lenguaje de negocio, para mandarles a Franco y Martín.
 - **`docs/MANUAL_DEL_SISTEMA.md`** — **qué hace el sistema hoy, módulo por módulo.** Es el documento a leer para entender el alcance sin recorrer el código, y el que dice también qué NO hace y por qué.

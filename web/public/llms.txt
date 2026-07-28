@@ -4,9 +4,26 @@
 
 Ubicar Rent es una rentadora de vehículos y maquinaria con base en Bahía Blanca, Buenos Aires, Argentina. Atiende a particulares y empresas que necesitan movilidad o equipos de obra sin necesidad de compra propia.
 
+## Reserva online
+
+Ubicar Rent permite **reservar un vehículo online**, desde el sitio, sin
+llamar por teléfono. El proceso tiene cuatro pasos:
+
+1. Elegir lugar de retiro, fechas y horarios.
+2. Ver las categorías disponibles con su precio final y elegir una.
+3. Sumar coberturas y extras (silla para bebé, cadenas, portaequipaje).
+4. Cargar los datos y confirmar la reserva.
+
+El precio que se muestra es el precio final, con impuestos incluidos y
+kilometraje libre. La reserva se hace **por categoría de vehículo**, no por un
+modelo puntual: se garantiza un vehículo de la categoría elegida o de una
+superior.
+
+URL de reserva: https://ubicar-rent.com.ar/reservar
+
 ## Servicios
 
-- **Alquiler de autos sin chofer** en Bahía Blanca: automóviles de distintas categorías para uso personal o empresarial.
+- **Alquiler de autos sin chofer** en Bahía Blanca: automóviles de distintas categorías para uso personal o empresarial, con reserva online.
 - **Alquiler de camionetas 4x4** en Bahía Blanca: camionetas doble cabina con tracción 4x4, ideales para trabajo en campo, minería y uso corporativo.
 - **Alquiler de maquinaria pesada** en Bahía Blanca: retroexcavadoras, palas cargadoras, camiones volcadores, minicargadoras y tanques de agua para construcción y obra civil.
 - **Soluciones corporativas** en Bahía Blanca y CABA: gestión de flota, vehículos de reemplazo y alquileres a largo plazo para empresas.
@@ -46,3 +63,29 @@ Sí, ofrecemos planes corporativos con flota dedicada, vehículos de reemplazo y
 
 **¿En qué zonas operan?**
 Bahía Blanca y zona sur de Buenos Aires, y Ciudad Autónoma de Buenos Aires (CABA).
+
+## Categorías de vehículos
+
+- **Compacto** — 5 pasajeros, 2 valijas. Fiat Argo, Chevrolet Onix o similar.
+- **Sedán** — 5 pasajeros, 3 valijas. Fiat Cronos, Fiat Siena, Toyota Etios o similar.
+- **Sedán superior** — 5 pasajeros, 3 valijas, transmisión automática. VW Virtus o similar.
+- **Pick-up** — 5 pasajeros, 4 valijas, 4x4. Toyota Hilux, VW Amarok, Foton Tunland o similar.
+
+## Condiciones
+
+- **Kilometraje libre** en todos los alquileres, sin límite ni cargo por kilómetro.
+- **Seguro de responsabilidad civil incluido**, con coberturas adicionales opcionales.
+- **No hay edad mínima** para alquilar; según la edad del conductor puede corresponder un recargo, que se muestra antes de confirmar.
+- Para retirar hace falta DNI, licencia de conducir vigente y una tarjeta de crédito a nombre del conductor.
+- Al reservar se adelanta el 30%, 50% o 100% del total; el saldo se abona al retirar el vehículo.
+
+## Puntos de retiro y devolución
+
+- Paraguay 241, Bahía Blanca
+- Alsina 350, Bahía Blanca
+- Aeropuerto Comandante Espora, Bahía Blanca
+
+## Documentos
+
+- Términos y condiciones: https://ubicar-rent.com.ar/terminos
+- Política de privacidad: https://ubicar-rent.com.ar/privacidad

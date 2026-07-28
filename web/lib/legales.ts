@@ -209,8 +209,9 @@ export const PRIVACIDAD: SeccionLegal[] = [
     id: "cookies",
     titulo: "6. Cookies y tecnologías de seguimiento",
     parrafos: [
-      "Este sitio usa cookies propias y de terceros para recordar tus preferencias, entender cómo se navega el sitio y medir nuestras campañas publicitarias.",
-      "Podés bloquear o eliminar las cookies desde la configuración de tu navegador. Si lo hacés, algunas funciones del sitio pueden dejar de andar correctamente.",
+      "Este sitio usa cookies propias, necesarias para que funcione, y cookies de terceros para entender cómo se navega el sitio y medir nuestras campañas publicitarias.",
+      "Las cookies de terceros (Meta y Google Analytics) sólo se activan si las aceptás. Si elegís «Sólo necesarias», esos servicios no se cargan y no reciben ningún dato tuyo.",
+      "Podés cambiar tu decisión cuando quieras desde el botón de abajo, o bloquear y eliminar las cookies desde la configuración de tu navegador.",
     ],
   },
   {

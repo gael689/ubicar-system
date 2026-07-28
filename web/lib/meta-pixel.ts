@@ -10,6 +10,8 @@
  * la IP y el user-agent los toma el servidor de los headers.
  */
 
+import { aceptaPublicidad } from "@/lib/consentimiento";
+
 declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void;
@@ -23,6 +25,12 @@ function leerCookie(nombre: string): string | null {
 
 export async function trackLeadEvent(): Promise<void> {
   if (typeof window === "undefined") return;
+
+  // Sin consentimiento de publicidad no se manda nada — ni el pixel del
+  // navegador ni la Conversions API del servidor. El pixel ni siquiera está
+  // cargado (ver components/Analitica.tsx), pero la llamada al servidor sí
+  // saldría igual: es una petición nuestra, no de Meta.
+  if (!aceptaPublicidad()) return;
 
   window.fbq?.("track", "Lead");
 

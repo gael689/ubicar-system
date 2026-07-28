@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import Footer from "@/components/Footer";
 import type { SeccionLegal } from "@/lib/legales";
+import { BotonCookies } from "@/components/legales/BotonCookies";
 
 interface Props {
   titulo: string;
@@ -95,6 +96,10 @@ export function PaginaLegal({ titulo, bajada, version, vigenteDesde, secciones }
                       ))}
                     </ul>
                   )}
+
+                  {/* La política dice que se pueden ejercer los derechos: si
+                      no hay forma de revertir el consentimiento, no es cierto. */}
+                  {s.id === "cookies" && <BotonCookies />}
 
                   {/* Lo que falta definir se muestra, no se disimula: un dato
                       fiscal inventado es peor que un espacio en blanco. */}

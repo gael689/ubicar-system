@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
-import Script from "next/script";
+import { Analitica } from "@/components/Analitica";
+import { AvisoCookies } from "@/components/AvisoCookies";
 import "./globals.css";
 
 // Se auto-hostea: elimina el request bloqueante a fonts.googleapis.com que
@@ -82,11 +83,14 @@ const JSON_LD = {
   "@context": "https://schema.org",
   "@graph": [
     {
-      "@type": "LocalBusiness",
+      // `AutoRental` en vez de `LocalBusiness` a secas: es el tipo especifico
+      // de schema.org para una rentadora, y es el que los buscadores y los
+      // motores generativos usan para responder "donde alquilo un auto en X".
+      "@type": ["AutoRental", "LocalBusiness"],
       "@id": `${SITE}/#business`,
       name: "Ubicar Rent",
       description:
-        "Empresa de alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y Buenos Aires. Servicio para particulares y empresas con reserva por WhatsApp.",
+        "Empresa de alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y Buenos Aires. Reserva online con precio final y kilometraje libre, para particulares y empresas.",
       url: `${SITE}/`,
       logo: `${SITE}/og-image.jpeg`,
       image: `${SITE}/og-image.jpeg`,
@@ -109,6 +113,37 @@ const JSON_LD = {
         { "@type": "AdministrativeArea", name: "Sur de la Provincia de Buenos Aires" },
       ],
       sameAs: ["https://www.instagram.com/ubicar_rent/"],
+      // Los puntos de retiro, para las busquedas por cercania.
+      location: [
+        {
+          "@type": "Place",
+          name: "Ubicar Rent — Paraguay 241",
+          address: { "@type": "PostalAddress", streetAddress: "Paraguay 241", addressLocality: "Bahía Blanca", addressRegion: "Buenos Aires", addressCountry: "AR" },
+        },
+        {
+          "@type": "Place",
+          name: "Ubicar Rent — Alsina 350",
+          address: { "@type": "PostalAddress", streetAddress: "Alsina 350", addressLocality: "Bahía Blanca", addressRegion: "Buenos Aires", addressCountry: "AR" },
+        },
+        {
+          "@type": "Place",
+          name: "Ubicar Rent — Aeropuerto Comandante Espora",
+          address: { "@type": "PostalAddress", streetAddress: "Aeropuerto Comandante Espora", addressLocality: "Bahía Blanca", addressRegion: "Buenos Aires", addressCountry: "AR" },
+        },
+      ],
+      // Habilita el boton "Reservar" en los resultados enriquecidos.
+      potentialAction: {
+        "@type": "ReserveAction",
+        target: {
+          "@type": "EntryPoint",
+          urlTemplate: `${SITE}/reservar`,
+          actionPlatform: [
+            "http://schema.org/DesktopWebPlatform",
+            "http://schema.org/MobileWebPlatform",
+          ],
+        },
+        result: { "@type": "Reservation", name: "Reserva de vehículo" },
+      },
       hasOfferCatalog: {
         "@type": "OfferCatalog",
         name: "Servicios de alquiler de vehículos y maquinaria",
@@ -231,40 +266,12 @@ export default function RootLayout({
 
         {children}
 
-        {/* Meta Pixel — `afterInteractive` para no bloquear el primer render,
-            algo que la versión Vite sí hacía al tenerlo inline en el <head>. */}
-        <Script id="meta-pixel" strategy="afterInteractive">
-          {`!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-          n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-          if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-          n.queue=[];t=b.createElement(e);t.async=!0;
-          t.src=v;s=b.getElementsByTagName(e)[0];
-          s.parentNode.insertBefore(t,s)}(window, document,'script',
-          'https://connect.facebook.net/en_US/fbevents.js');
-          fbq('init', '${META_PIXEL_ID}');
-          fbq('track', 'PageView');`}
-        </Script>
-        <noscript>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            height="1"
-            width="1"
-            style={{ display: "none" }}
-            alt=""
-            src={`https://www.facebook.com/tr?id=${META_PIXEL_ID}&ev=PageView&noscript=1`}
-          />
-        </noscript>
-
-        <Script
-          src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
-          strategy="afterInteractive"
-        />
-        <Script id="ga4" strategy="afterInteractive">
-          {`window.dataLayer = window.dataLayer || [];
-          function gtag(){dataLayer.push(arguments);}
-          gtag('js', new Date());
-          gtag('config', '${GA_ID}');`}
-        </Script>
+        {/* El pixel de Meta y Analytics viven en `Analitica`, que sólo los
+            carga si el visitante aceptó las cookies. El `<noscript>` del pixel
+            se quitó junto con ellos: disparaba una petición a Meta sin ninguna
+            posibilidad de pedir consentimiento. */}
+        <Analitica metaPixelId={META_PIXEL_ID} gaId={GA_ID} />
+        <AvisoCookies />
       </body>
     </html>
   );
