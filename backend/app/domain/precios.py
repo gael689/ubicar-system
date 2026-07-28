@@ -1,0 +1,344 @@
+from __future__ import annotations
+"""
+Motor de precios por calendario (Fase 5, ítem 57 — plan §7.2).
+
+Lógica pura, sin SQLAlchemy ni FastAPI: entra una lista de reglas ya
+cargadas y sale el desglose. Eso es lo que la hace testeable de verdad y lo
+que permite reusarla desde el sistema interno, el cotizador y la web sin
+tres implementaciones distintas.
+
+**La idea central es una sola: una única fuente de precios.**
+
+    Para cada día del rango:
+      precio = la regla de MAYOR PRIORIDAD que cubre ese día
+               (si ninguna lo cubre → la tarifa por banda de siempre)
+      ↓
+    Subtotal = Σ precios diarios
+      ↓
+    − Descuento por duración
+      ↓
+    = TOTAL
+
+`domain/tarifas.py` (precio por banda diaria/semanal/mensual, sin fechas) no
+desaparece ni queda como un camino paralelo: pasa a ser **el caso particular
+de prioridad más baja** de este motor. Un sistema sin ninguna regla de
+calendario cargada sigue cotizando exactamente igual que antes — que es lo
+que permite que esto entre sin migrar nada ni romper las reservas que ya
+existen.
+
+Sobre qué días se cobran: el rango es [fecha_inicio, fecha_fin), o sea el día
+de devolución NO se cobra. Un alquiler del 21/05 al 23/05 son 2 días (21 y
+22), consistente con `tarifas.calcular_duracion_dias`. Si el desglose
+cobrara el día de devolución, este motor daría un total distinto al que el
+sistema viene calculando desde siempre.
+"""
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
+
+from app.core.exceptions import BusinessRuleError
+
+
+CENTAVO = Decimal("0.01")
+
+
+def _redondear(monto: Decimal) -> Decimal:
+    return monto.quantize(CENTAVO, rounding=ROUND_HALF_UP)
+
+
+# ─── Entrada ──────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class ReglaPrecio:
+    """
+    Una fila de `tarifas_calendario`, con el rango ya resuelto.
+
+    Si la regla apuntaba a una fecha especial, quien la construye (el
+    service) ya reemplazó `fecha_desde`/`fecha_hasta` por las de la fecha
+    especial. El dominio no sabe que las fechas especiales existen: recibe
+    rangos concretos y nada más.
+    """
+    id: int
+    nombre: str
+    precio_dia: Decimal
+    fecha_desde: date
+    fecha_hasta: date               # inclusivo: el rango de vigencia de la regla
+    prioridad: int = 0
+    categoria_id: int | None = None
+    vehiculo_id: int | None = None
+    dias_semana: list[int] | None = None   # ISO 1=lunes..7=domingo; None = todos
+    min_dias: int | None = None
+    max_dias: int | None = None
+    canal: str = "ambos"            # ambos | web | mostrador
+    es_promocional: bool = False
+    precio_referencia: Decimal | None = None
+    etiqueta_promo: str | None = None
+
+    @property
+    def especificidad(self) -> int:
+        """Vehículo puntual (2) > categoría (1) > general (0). Sólo desempata."""
+        if self.vehiculo_id is not None:
+            return 2
+        if self.categoria_id is not None:
+            return 1
+        return 0
+
+    @property
+    def amplitud_dias(self) -> int:
+        """Largo del rango. Entre dos reglas empatadas, la más corta es la más específica."""
+        return (self.fecha_hasta - self.fecha_desde).days
+
+
+@dataclass(frozen=True)
+class DescuentoDuracionInfo:
+    id: int
+    nombre: str
+    dias_desde: int
+    porcentaje: Decimal
+    dias_hasta: int | None = None
+    categoria_id: int | None = None
+
+
+# ─── Salida ───────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class DiaCotizado:
+    """
+    Un día del alquiler con su precio y de dónde salió.
+
+    El `origen` y el `regla_nombre` no son decoración: son lo que permite
+    contestar "¿por qué este día sale $95.000?" sin abrir la base. Es la
+    diferencia entre un motor debuggeable y una caja negra que factura mal.
+    """
+    fecha: date
+    precio: Decimal
+    origen: str                     # "calendario" | "banda"
+    regla_id: int | None = None
+    regla_nombre: str | None = None
+    es_promocional: bool = False
+    precio_referencia: Decimal | None = None
+    etiqueta_promo: str | None = None
+
+
+@dataclass(frozen=True)
+class Cotizacion:
+    dias: list[DiaCotizado]
+    subtotal: Decimal
+    descuento_porcentaje: Decimal
+    descuento_monto: Decimal
+    total: Decimal
+    duracion_dias: int
+    descuento_id: int | None = None
+    descuento_nombre: str | None = None
+    # Total a precio de lista: lo que costaría sin ninguna promo. Sirve para
+    # el "antes $X, ahora $Y" de la web. Igual al subtotal si no hubo promos.
+    total_referencia: Decimal | None = None
+    promociones: list[str] = field(default_factory=list)
+
+    @property
+    def precio_dia_promedio(self) -> Decimal:
+        if self.duracion_dias == 0:
+            return Decimal("0")
+        return _redondear(self.total / Decimal(self.duracion_dias))
+
+    @property
+    def tiene_promocion(self) -> bool:
+        return any(d.es_promocional for d in self.dias)
+
+
+# ─── Resolución día por día ───────────────────────────────────────────────────
+
+def regla_aplica(
+    regla: ReglaPrecio,
+    dia: date,
+    duracion_dias: int,
+    categoria_id: int | None,
+    vehiculo_id: int | None,
+    canal: str,
+) -> bool:
+    """
+    ¿Esta regla puede fijar el precio de este día para este alquiler?
+
+    Todas las condiciones son excluyentes: alcanza con que una falle.
+    """
+    if not (regla.fecha_desde <= dia <= regla.fecha_hasta):
+        return False
+
+    if regla.dias_semana and dia.isoweekday() not in regla.dias_semana:
+        return False
+
+    # Las restricciones de duración miran el alquiler completo, no el día:
+    # "precio de fin de semana largo, mínimo 3 días" se cumple o no se cumple
+    # para toda la cotización.
+    if regla.min_dias is not None and duracion_dias < regla.min_dias:
+        return False
+    if regla.max_dias is not None and duracion_dias > regla.max_dias:
+        return False
+
+    if regla.canal != "ambos" and regla.canal != canal:
+        return False
+
+    # Una regla de vehículo puntual sólo aplica a ese vehículo; una de
+    # categoría, sólo a esa categoría. Una general (ambos NULL) aplica a todo.
+    if regla.vehiculo_id is not None and regla.vehiculo_id != vehiculo_id:
+        return False
+    if regla.categoria_id is not None and regla.categoria_id != categoria_id:
+        return False
+
+    return True
+
+
+def resolver_regla_dia(
+    dia: date,
+    reglas: list[ReglaPrecio],
+    duracion_dias: int,
+    categoria_id: int | None = None,
+    vehiculo_id: int | None = None,
+    canal: str = "mostrador",
+) -> ReglaPrecio | None:
+    """
+    Devuelve la regla que gobierna este día, o None si ninguna lo cubre.
+
+    Orden de desempate, de mayor a menor peso:
+
+    1. **`prioridad` más alta.** Es el eje explícito, el que el dueño carga a
+       mano y el único que se ve en la pantalla. Manda sobre todo lo demás a
+       propósito: si alguien pone la promo de Navidad en 20, quiere que gane,
+       aunque exista un precio cargado para ese vehículo puntual. Para sacar
+       un vehículo de la promo se le carga su regla con prioridad ≥ 20 — es
+       una acción explícita, no un efecto lateral.
+    2. **Más específica**: vehículo > categoría > general.
+    3. **Rango más corto.** "Semana de Navidad" le gana a "temporada alta",
+       que es el mismo criterio que ya usa el calendario de fechas especiales.
+    4. **Id más alto** — la cargada más recientemente. Igual que
+       `tarifas.seleccionar_tarifa`. Nunca devuelve empate al azar.
+    """
+    candidatas = [
+        r for r in reglas
+        if regla_aplica(r, dia, duracion_dias, categoria_id, vehiculo_id, canal)
+    ]
+    if not candidatas:
+        return None
+    return max(
+        candidatas,
+        key=lambda r: (r.prioridad, r.especificidad, -r.amplitud_dias, r.id),
+    )
+
+
+def seleccionar_descuento(
+    duracion_dias: int,
+    descuentos: list[DescuentoDuracionInfo],
+    categoria_id: int | None = None,
+) -> DescuentoDuracionInfo | None:
+    """
+    Descuento por duración aplicable. Si hay varios, gana el de mayor
+    porcentaje (el cliente no puede salir perdiendo por un solapamiento mal
+    cargado), y a igualdad, el de la categoría por sobre el general.
+    """
+    aplicables = [
+        d for d in descuentos
+        if duracion_dias >= d.dias_desde
+        and (d.dias_hasta is None or duracion_dias <= d.dias_hasta)
+        and (d.categoria_id is None or d.categoria_id == categoria_id)
+    ]
+    if not aplicables:
+        return None
+    return max(aplicables, key=lambda d: (d.porcentaje, d.categoria_id is not None, d.id))
+
+
+# ─── Cotización completa ──────────────────────────────────────────────────────
+
+def cotizar(
+    fecha_inicio: date,
+    fecha_fin: date,
+    reglas: list[ReglaPrecio],
+    precio_fallback: Decimal | None = None,
+    descuentos: list[DescuentoDuracionInfo] | None = None,
+    categoria_id: int | None = None,
+    vehiculo_id: int | None = None,
+    canal: str = "mostrador",
+    nombre_fallback: str = "Tarifa por duración",
+) -> Cotizacion:
+    """
+    Cotiza un alquiler resolviendo el precio día por día.
+
+    `precio_fallback` es el precio por día de la tarifa por banda que ya
+    existía (`domain/tarifas.py`), usado para los días que ninguna regla de
+    calendario cubre. Puede ser None si no hay tarifa configurada: en ese
+    caso, si además falta alguna regla, se levanta `BusinessRuleError` en vez
+    de cotizar un día en $0 — cobrar de menos en silencio es peor que fallar.
+
+    Args:
+        fecha_inicio: primer día del alquiler (se cobra).
+        fecha_fin: día de devolución (NO se cobra).
+        canal: "web" o "mostrador" — filtra las reglas por canal.
+    """
+    duracion_dias = (fecha_fin - fecha_inicio).days
+    if duracion_dias <= 0:
+        raise BusinessRuleError(
+            "rango_invalido",
+            "La fecha de fin debe ser posterior a la de inicio",
+        )
+
+    dias: list[DiaCotizado] = []
+    subtotal = Decimal("0")
+    referencia = Decimal("0")
+    promociones: list[str] = []
+
+    for offset in range(duracion_dias):
+        dia = fecha_inicio + timedelta(days=offset)
+        regla = resolver_regla_dia(
+            dia, reglas, duracion_dias, categoria_id, vehiculo_id, canal
+        )
+
+        if regla is not None:
+            precio = Decimal(str(regla.precio_dia))
+            # El precio "tachado" sólo tiene sentido si es mayor al que se
+            # cobra. Si viene mal cargado, se ignora en vez de mostrarle al
+            # cliente un descuento negativo.
+            ref = regla.precio_referencia
+            precio_ref = Decimal(str(ref)) if ref is not None and Decimal(str(ref)) > precio else None
+            dias.append(DiaCotizado(
+                fecha=dia,
+                precio=precio,
+                origen="calendario",
+                regla_id=regla.id,
+                regla_nombre=regla.nombre,
+                es_promocional=regla.es_promocional,
+                precio_referencia=precio_ref,
+                etiqueta_promo=regla.etiqueta_promo if regla.es_promocional else None,
+            ))
+            referencia += precio_ref if precio_ref is not None else precio
+            if regla.es_promocional and regla.etiqueta_promo and regla.etiqueta_promo not in promociones:
+                promociones.append(regla.etiqueta_promo)
+        else:
+            if precio_fallback is None:
+                raise BusinessRuleError(
+                    "sin_precio_para_el_dia",
+                    f"No hay ninguna regla de precio ni tarifa configurada para el {dia.isoformat()}",
+                )
+            precio = Decimal(str(precio_fallback))
+            dias.append(DiaCotizado(
+                fecha=dia, precio=precio, origen="banda", regla_nombre=nombre_fallback,
+            ))
+            referencia += precio
+
+        subtotal += precio
+
+    descuento = seleccionar_descuento(duracion_dias, descuentos or [], categoria_id)
+    porcentaje = Decimal(str(descuento.porcentaje)) if descuento else Decimal("0")
+    descuento_monto = _redondear(subtotal * porcentaje / Decimal("100"))
+    total = _redondear(subtotal - descuento_monto)
+
+    return Cotizacion(
+        dias=dias,
+        subtotal=_redondear(subtotal),
+        descuento_porcentaje=porcentaje,
+        descuento_monto=descuento_monto,
+        total=total,
+        duracion_dias=duracion_dias,
+        descuento_id=descuento.id if descuento else None,
+        descuento_nombre=descuento.nombre if descuento else None,
+        total_referencia=_redondear(referencia),
+        promociones=promociones,
+    )

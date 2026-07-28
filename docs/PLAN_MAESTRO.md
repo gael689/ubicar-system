@@ -1044,9 +1044,61 @@ cobrarlo. Ahora:
     Las categorías `SUV` y `Furgón` existen pero hoy no las usa ningún vehículo.
 55. Sucursales + cargos one-way
 56. Adicionales + adicionales por reserva
-57. **Motor de precios por calendario** + pantalla de administración
+57. ✅ **Motor de precios por calendario** + pantalla de administración — hecho 2026-07-27 (migración `039_motor_precios`). Ver detalle abajo
 58. **Reserva por categoría** (`vehiculo_id` nullable) — el cambio estructural
 59. Bloqueos de vehículo por fecha
+
+**Detalle del ítem 57 (motor de precios por calendario):**
+
+Construido sobre `fechas_especiales` (migración 036), que se había hecho
+explícitamente como su ancla. Migración `039_motor_precios`, dos tablas:
+`tarifas_calendario` y `descuentos_duracion`.
+
+- **Las tres capas que describieron los dueños son la misma tabla con
+  distinta `prioridad`** (base anual 0 · fecha especial 10 · promo 20). La
+  de mayor prioridad que cubre el día gana **sin borrar lo de abajo**: dar de
+  baja la promo hace que el precio anterior vuelva a aplicar solo, que es la
+  propiedad que hace que esto sea usable todas las semanas sin miedo.
+- **El desempate es explícito y determinista** (`domain/precios.py::resolver_regla_dia`):
+  prioridad → especificidad (vehículo > categoría > general) → rango más
+  corto → id más alto. **La prioridad le gana a la especificidad a
+  propósito**: es el eje que el dueño carga a mano y el único que se ve en la
+  pantalla, así que una promo de categoría en 20 le gana a un precio de
+  vehículo puntual en 0. Para sacar un vehículo de una promo se le carga su
+  regla con prioridad ≥ 20 — una acción explícita, no un efecto lateral.
+- **`domain/tarifas.py` no quedó como camino paralelo**: es el caso de menor
+  prioridad del motor. Cada día que ninguna regla cubre usa la tarifa por
+  banda de siempre, así que **un sistema sin ninguna regla cargada cotiza
+  exactamente igual que antes**. Por eso esto entró sin migrar datos ni tocar
+  las reservas existentes. Si no hay ni regla ni tarifa, levanta
+  `BusinessRuleError` en vez de cotizar $0: cobrar de menos en silencio es
+  peor que fallar.
+- **`fecha_especial_id`** es el "acoplar todo a esto": una regla hereda el
+  rango de la fecha especial en vez de repetirlo. "Navidad 2026" se define
+  una sola vez y sirve para el calendario de ocupación **y** para el precio;
+  si se corrige el rango, los precios que cuelgan se corrigen solos.
+- **`canal`** (`ambos`/`web`/`mostrador`) en vez del `visible_web` booleano
+  del diseño original: es estrictamente más expresivo — cubre ocultar de la
+  web, y además la promo que existe **sólo** online.
+- **`POST /precios/calcular`** devuelve el **desglose día por día** con la
+  regla que originó cada precio. Es lo que hace el módulo debuggeable cuando
+  alguien discute un importe, y lo que va a consumir la web para el
+  "antes $X, ahora $Y" (`total_referencia` vs `total`).
+- **Pantalla `/precios`**: grilla categorías × días del mes con el precio ya
+  resuelto por celda (4 estados visuales, incluido "sin precio configurado"
+  en rojo para ver dónde falta cargar), ABM de reglas con las tres capas como
+  preset, descuentos por duración, y un **probador de precio** que cotiza
+  contra el mismo endpoint que las reservas — sin eso, entender qué paga el
+  cliente con tres reglas superpuestas es adivinar.
+- **41 tests** de dominio puro (`tests/domain/test_precios.py`), sin base.
+- **No se sembró ninguna regla**: los precios los cargan Franco y Martín.
+  Sembrar precios inventados sería peor que no tener ninguno.
+
+**Lo que falta para cerrar el acople completo:** `ReservaService.create()`
+sigue calculando el precio con `seleccionar_tarifa` directo en vez de llamar
+al motor. Es seguro hacerlo (sin reglas cargadas da el mismo número), pero
+cambia cómo se cotiza toda reserva real, así que conviene hacerlo junto con
+el ítem 58 (reserva por categoría) y no suelto. Lo mismo el cotizador.
 
 ### 🚀 Fase 6 — Reservas web (4 semanas)
 60. Endpoint de disponibilidad real por cupo

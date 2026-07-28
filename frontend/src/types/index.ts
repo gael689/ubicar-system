@@ -1132,3 +1132,138 @@ export interface ConfiguracionItem {
   updated_at: string;
 }
 
+
+// ─── Motor de precios por calendario (Fase 5, ítem 57) ───────────────────────
+
+export type CanalTarifa = 'ambos' | 'web' | 'mostrador';
+export type Canal = 'web' | 'mostrador';
+export type OrigenPrecio = 'calendario' | 'banda';
+
+export interface TarifaCalendario {
+  id: number;
+  nombre: string;
+  precio_dia: string;
+  categoria_id: number | null;
+  vehiculo_id: number | null;
+  fecha_especial_id: number | null;
+  fecha_desde: string | null;
+  fecha_hasta: string | null;
+  dias_semana: number[] | null;
+  prioridad: number;
+  min_dias: number | null;
+  max_dias: number | null;
+  canal: CanalTarifa;
+  es_promocional: boolean;
+  precio_referencia: string | null;
+  etiqueta_promo: string | null;
+  notas: string | null;
+  activo: boolean;
+  created_at: string;
+  categoria_nombre: string | null;
+  vehiculo_patente: string | null;
+  fecha_especial_nombre: string | null;
+  /** Rango efectivo: el propio, o el heredado de la fecha especial. */
+  vigencia_desde: string | null;
+  vigencia_hasta: string | null;
+}
+
+export interface TarifaCalendarioCreate {
+  nombre: string;
+  precio_dia: string;
+  categoria_id?: number | null;
+  vehiculo_id?: number | null;
+  fecha_especial_id?: number | null;
+  fecha_desde?: string | null;
+  fecha_hasta?: string | null;
+  dias_semana?: number[] | null;
+  prioridad?: number;
+  min_dias?: number | null;
+  max_dias?: number | null;
+  canal?: CanalTarifa;
+  es_promocional?: boolean;
+  precio_referencia?: string | null;
+  etiqueta_promo?: string | null;
+  notas?: string | null;
+}
+
+export type TarifaCalendarioUpdate = Partial<TarifaCalendarioCreate> & { activo?: boolean };
+
+export interface DescuentoDuracion {
+  id: number;
+  nombre: string;
+  dias_desde: number;
+  dias_hasta: number | null;
+  porcentaje: string;
+  categoria_id: number | null;
+  categoria_nombre: string | null;
+  activo: boolean;
+  created_at: string;
+}
+
+export interface DescuentoDuracionCreate {
+  nombre: string;
+  dias_desde: number;
+  dias_hasta?: number | null;
+  porcentaje: string;
+  categoria_id?: number | null;
+}
+
+export type DescuentoDuracionUpdate = Partial<DescuentoDuracionCreate> & { activo?: boolean };
+
+export interface DiaCotizado {
+  fecha: string;
+  precio: string;
+  origen: OrigenPrecio;
+  regla_id: number | null;
+  regla_nombre: string | null;
+  es_promocional: boolean;
+  precio_referencia: string | null;
+  etiqueta_promo: string | null;
+}
+
+export interface Cotizacion {
+  dias: DiaCotizado[];
+  duracion_dias: number;
+  subtotal: string;
+  descuento_porcentaje: string;
+  descuento_monto: string;
+  descuento_nombre: string | null;
+  total: string;
+  precio_dia_promedio: string;
+  total_referencia: string | null;
+  tiene_promocion: boolean;
+  promociones: string[];
+  categoria_id: number | null;
+  vehiculo_id: number | null;
+}
+
+export interface CalcularPrecioRequest {
+  fecha_inicio: string;
+  fecha_fin: string;
+  categoria_id?: number | null;
+  vehiculo_id?: number | null;
+  canal?: Canal;
+}
+
+export interface DiaCalendarioPrecio {
+  fecha: string;
+  precio: string | null;
+  origen: OrigenPrecio | 'sin_precio';
+  regla_id: number | null;
+  regla_nombre: string | null;
+  es_promocional: boolean;
+  etiqueta_promo: string | null;
+}
+
+export interface FilaCalendarioPrecio {
+  categoria_id: number;
+  categoria_nombre: string;
+  dias: DiaCalendarioPrecio[];
+}
+
+export interface CalendarioPrecios {
+  desde: string;
+  hasta: string;
+  canal: Canal;
+  filas: FilaCalendarioPrecio[];
+}

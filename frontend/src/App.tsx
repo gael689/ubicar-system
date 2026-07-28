@@ -15,6 +15,7 @@ import { ReportesPage } from '@/pages/reportes/ReportesPage';
 import { ConfiguracionPage } from '@/pages/configuracion/ConfiguracionPage';
 import { FechasEspecialesPage } from '@/pages/fechas-especiales/FechasEspecialesPage';
 import { NotificacionesPage } from '@/pages/notificaciones/NotificacionesPage';
+import { PreciosPage } from '@/pages/precios/PreciosPage';
 
 export default function App() {
   return (
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/notificaciones" element={<AppLayout title="Notificaciones"><NotificacionesPage /></AppLayout>} />
         <Route path="/configuracion" element={<AppLayout title="Configuración"><ConfiguracionPage /></AppLayout>} />
         <Route path="/fechas-especiales" element={<AppLayout title="Fechas especiales"><FechasEspecialesPage /></AppLayout>} />
+        <Route path="/precios" element={<AppLayout title="Calendario de precios"><PreciosPage /></AppLayout>} />
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>
     </BrowserRouter>
