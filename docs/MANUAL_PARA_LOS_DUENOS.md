@@ -331,11 +331,21 @@ franquicia— y **se puede corregir** antes de emitirlo.
 
 ### El flujo
 
-1. El sistema arma el frente con todo cargado.
-2. Se corrige lo que haga falta.
-3. Se genera: recibe un número (`C-00000042`) y **queda congelado**.
-4. El cliente firma en la pantalla, con el dedo o el mouse.
-5. Se descarga el PDF de dos páginas.
+1. **El sistema arma el frente solo**, con los datos de la reserva ya cargados.
+2. **Se corrige lo que haga falta** — todo el frente es editable.
+3. **Se genera.** Recibe su número (`C-00000042`) y queda congelado.
+4. **Se firma.** Hay dos maneras y las dos valen:
+   - **En pantalla**, si atienden con una tablet o una notebook: aparece un
+     recuadro en blanco, el cliente firma ahí con el dedo (tablet) o con el
+     mouse, y esa firma queda estampada dentro del PDF.
+   - **En papel**, si prefieren seguir como siempre: se imprime el PDF, el
+     cliente firma con lapicera, y en el sistema se registra que ya está
+     firmado, con el nombre y el documento de quien firmó.
+5. **Se descarga el PDF** de dos páginas para archivarlo o mandárselo.
+
+En los dos casos el sistema guarda **quién firmó y con qué documento**, que
+puede no ser el titular de la reserva — el caso típico es una empresa que
+reserva y manda a un empleado a retirar el auto.
 
 ### Tres detalles que importan
 
@@ -559,17 +569,6 @@ Sin esto la web no puede vender, aunque el sistema esté entero:
 - **Usuarios con nombre y contraseña** — hoy el sistema no distingue quién hizo
   cada cosa. Es lo que hay que resolver antes de que el nombre de quien atendió
   salga impreso en un contrato de verdad.
-- **Aviso por mail al instante** de una reserva web — hoy sólo llega en el
+- **Aviso por mail al instante** de una reserva web — hoy la reserva aparece
+  en la bandeja del sistema en el momento, pero el mail llega recién en el
   resumen de las 8 de la mañana.
-- **Factura electrónica AFIP** — decidimos dejarlo afuera por ahora: es un
-  proyecto en sí mismo. Las facturas se cargan a mano con su PDF.
-- **WhatsApp automático** — la API de Meta pide número verificado, plantillas
-  aprobadas y costo por mensaje.
-
-### Una recomendación
-
-Antes de hacer firmar el contrato a un cliente real, conviene que **un abogado
-lea el contrato y los términos y condiciones juntos**. El clausulado está
-adaptado del modelo que nos pasaron y ya tiene corregidos los pasajes que no
-aplicaban, pero media hora de un profesional sobre esos documentos es barata
-comparada con un solo reclamo mal parado.
