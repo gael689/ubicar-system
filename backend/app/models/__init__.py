@@ -22,8 +22,14 @@ from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.recargo_edad import RecargoEdad
 from app.models.contrato import Contrato, ContratoPlantilla
 from app.models.hold import Hold
+from app.models.categoria import Categoria
+from app.models.comprobante import Comprobante
+from app.models.configuracion import Configuracion
+from app.models.notificacion import Notificacion
+from app.models.recibo import Recibo
 
 __all__ = [
+    "Categoria", "Comprobante", "Configuracion", "Notificacion", "Recibo",
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",
     "Tarifa", "Reserva", "Alquiler", "Contrato", "Pago",
     "CuentaCorriente", "MovimientoCuentaCorriente",
