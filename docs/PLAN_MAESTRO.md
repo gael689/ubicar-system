@@ -224,6 +224,64 @@ un problema transversal del módulo.
 
 ---
 
+### 2.12 🔴 P0 ABIERTO — `Pago` y `Recibo` acreditan dos veces el mismo cobro
+
+> **Encontrado el 2026-07-28**, revisando el punto 4 de `VALIDAR_CON_DUENOS.md`
+> a pedido del usuario, que sospechaba que "no estaban 100% sincronizados".
+> **La sospecha era correcta.**
+
+**Qué pasa.** `routers/pagos.py:182` genera un crédito en la cuenta corriente
+por cada `Pago`. `services/recibo_service.py:58` genera **otro** crédito por
+cada `Recibo`. **`Recibo` no tiene `pago_id`** — los dos caminos no se conocen
+ni se validan entre sí.
+
+```
+El cliente debe $100.000 y paga $50.000 en efectivo.
+  Se registra el Pago  → CRÉDITO $50.000   (saldo: $50.000)
+  Se emite el Recibo   → CRÉDITO $50.000   (saldo: $0)  ← MAL
+```
+
+**Por qué es P0 y no una rareza.** La intención declarada del negocio es
+**emitir un recibo en cada cobro** ("cuando pagan con tarjeta, efectivo o lo
+que sea"). Con ese uso, el doble crédito no es un caso de borde: **pasa en
+todas las operaciones**, y todos los saldos quedan mal.
+
+**Segundo síntoma — plata invisible en la Caja.** `GET /pagos/caja/dia`
+(`routers/pagos.py:135`) arma los ingresos consultando **sólo la tabla
+`pagos`**. Un cobro documentado únicamente con un recibo no aparece en el
+arqueo del día: no suma a `total_ingresos`, no entra en `por_medio_pago`, no
+figura en el detalle.
+
+**Tercer síntoma — hoy no hay forma de hacerlo bien.** Las dos salidas están
+cerradas: no se puede emitir un recibo de un pago existente (`Recibo` no tiene
+`pago_id`), y no se puede crear un pago sin alquiler (`Pago.alquiler_id` es
+`NOT NULL` — **es el bug 2.6, que sigue abierto**). El módulo de Recibos nació
+como generador de crédito paralelo **porque era la única manera** de cobrarle a
+un cliente algo que no fuera un alquiler puntual.
+
+**El arreglo — un hecho económico, un asiento.** Es el principio de §3.1, que
+acá se violó. El `Pago` es el hecho; el `Recibo` es el papel que lo documenta,
+y un papel no mueve plata.
+
+| Cambio | Por qué |
+|---|---|
+| `Pago.alquiler_id` → **nullable** + `Pago.cliente_id` nuevo | **Cierra de paso el bug 2.6.** Habilita pago a cuenta, seña de reserva web, cancelación de deuda vieja y pago de multa |
+| `Recibo.pago_id` → **FK obligatoria** | El recibo documenta un pago concreto |
+| Emitir un recibo **deja de generar movimiento** | El crédito ya lo generó el `Pago` |
+| "Emitir recibo" desde la CC crea **`Pago` + `Recibo`** en una acción | El operador no tiene que acordarse de hacer dos cosas |
+| Botón "Emitir recibo" en cada `Pago` ya registrado | El caso "cobré, ahora quiero darle el papel" |
+| Caja del día: **sin cambios** | Sigue leyendo `pagos`, y ahora ve todo |
+
+**Migración de datos:** por cada recibo ya emitido, crear su `Pago` y anular
+uno de los dos créditos con contra-asiento — nunca borrarlo. Conviene contar
+cuántos recibos reales hay antes de empezar; si son pocos, es trivial.
+
+**Este arreglo también desbloquea la Fase 6:** la seña de una reserva web es un
+cobro **sin alquiler todavía**, exactamente lo que `Pago.alquiler_id NOT NULL`
+impide hoy.
+
+---
+
 ## 3. Bloque A — Cuenta Corriente, Echeqs y Facturas como un solo sistema
 
 Este es el pedido central: *"Echeqs iría de la mano con cuenta corriente pero siempre relacionado con el cliente"*. La forma correcta de resolverlo es que **la cuenta corriente sea el libro mayor del cliente**, y que pagos, echeqs, multas, alquileres y facturas sean todos generadores de asientos en ese libro.

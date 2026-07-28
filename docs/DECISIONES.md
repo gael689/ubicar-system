@@ -118,7 +118,21 @@ Más una opción **"Otro"** con texto libre para casos puntuales.
 - Cada punto lleva horario de atención, para poder avisar de retiros fuera de horario.
 - **Retiro y devolución pueden ser distintos.** Cuando difieren, se marca visualmente en la reserva (es el caso que después habilita el cargo one-way).
 
-### D-11 · Política de cancelación ✅ DECIDIDO
+### D-11 · Política de cancelación ⚠️ EN REVISIÓN desde 2026-07-28
+
+> **⚠️ Contradicción abierta.** El 2026-07-28 el usuario dijo: ***"La seña no se pierde si el cliente no aparece"***. Eso choca de frente con lo que esta decisión dice abajo.
+>
+> Son dos situaciones distintas —**cancelar** (avisa que no viene) y **no aparecer** (no avisa nada)— pero la política resultante sería absurda: **al que avisa se le retiene la seña y al que no avisa se le devuelve**. Eso premia el peor comportamiento y es exactamente el incentivo que un rent-a-car no quiere dar.
+>
+> **Hay que elegir una sola política y escribirla en los términos y condiciones** (ver `docs/PLAN_TEXTOS_LEGALES.md`). Las tres coherentes:
+> 1. **La seña nunca se pierde** — se devuelve o queda como crédito a favor, cancele o no aparezca. Es la más comercial y la que menos conflictos genera.
+> 2. **La seña nunca se pierde si avisa con X horas de anticipación**, y se retiene si no avisa. Premia avisar, que es lo que el negocio necesita para revender el auto.
+> 3. **La seña se retiene siempre** (lo que decía esta decisión).
+>
+> **Recomendación: la 2**, con 48 horas. Es la que alinea el incentivo del cliente con el interés del negocio: lo que cuesta plata no es la cancelación, es enterarse tarde.
+>
+> Mientras no se resuelva, lo escrito abajo sigue siendo lo vigente en el sistema.
+
 **Si pagó seña y cancela, no se le devuelve nada.** La seña se retiene íntegra.
 
 Al cancelar, el sistema genera automáticamente el asiento correspondiente (la seña queda como ingreso, no como saldo a favor del cliente) y pide **motivo de cancelación**, que queda en la auditoría.
@@ -284,7 +298,12 @@ El cliente elige "SUV" y el vehículo puntual se asigna al momento de la entrega
 
 El saldo restante se cobra al retirar el vehículo. El estado de pago de la reserva refleja cuál eligió.
 
-### D-04 · Confirmación de la reserva web ✅ DECIDIDO
+### D-04 · Confirmación de la reserva web ✅ DECIDIDO — **reconfirmado el 2026-07-28**
+
+> **Nota del 2026-07-28.** La pregunta #3 de `docs/DECISIONES_RESERVAS_WEB.md` volvió a plantear esto como si estuviera abierto, y **recomendaba lo contrario** (confirmación manual al principio). Fue un error de ese documento: **esta decisión ya estaba tomada.**
+>
+> El usuario, sin tener a la vista esta página, describió exactamente lo mismo: *"si hay vehículo de esta categoría disponible para la fecha seleccionada, se va a poder confirmar; a menos que ocurra un problema, si pasa esto se ofrece otro vehículo, o se devuelve el dinero"*. Coincide punto por punto con lo de abajo, así que **queda reconfirmado**, y la recomendación de confirmación manual se descarta.
+
 **Dos caminos según haya o no disponibilidad:**
 
 **Con vehículos disponibles de esa categoría en esas fechas:**
@@ -344,21 +363,109 @@ Se registra quién y cuándo, para cada uno de estos eventos:
 
 ---
 
+## Bloque 5 — Confirmadas el 2026-07-28
+
+> Estas ocho venían de `docs/VALIDAR_CON_DUENOS.md` (decisiones tomadas en ausencia de los dueños, esperando su ok) y de la ronda de respuestas del usuario sobre reservas web y contratos.
+
+### D-25 · La cuenta corriente es el libro de TODO ✅ DECIDIDO
+**Todo alquiler genera un débito automático** en la CC del cliente al hacer check-out, sin importar cómo se vaya a cobrar. **Todo cobro genera el crédito** que lo cancela, sea efectivo, transferencia, tarjeta o lo que sea.
+
+Consecuencia visible: la ficha de un cliente que siempre paga al contado va a mostrar movimientos igual (un débito y un crédito el mismo día, cancelándose). Eso es lo correcto: la CC pasa a ser el **historial de facturación** de cada cliente, no sólo el registro de lo que quedó debiendo.
+
+Implementado desde 2026-07-26. Código revisado el 2026-07-28: `CuentaCorrienteService` es el punto único de escritura, encadena `saldo_posterior`, y nunca commitea por su cuenta.
+
+### D-26 · Las multas imputadas generan débito automático ✅ DECIDIDO
+Imputar una multa a un cliente genera el débito. Resolverla tiene **exactamente dos salidas**: `cobrada` (crédito) o `bonificada` (contra-asiento con **motivo obligatorio**). No hay tercer estado ambiguo.
+
+### D-27 · Las garantías quedan fuera del ledger ✅ DECIDIDO
+El depósito de garantía **no** genera movimiento en la cuenta corriente. Es un depósito que se retiene y se devuelve, con su propio ciclo (`retenida` / `devuelta` / `ejecutada_parcial`) — no es deuda ni pago.
+
+Si algún día una garantía ejecutada tiene que aparecer como cargo real, el camino ya existe: es el patrón de 3 pasos de PLAN_MAESTRO §3.8, el mismo de multas y daños.
+
+### D-28 · Multas: sin descuento por pronto pago, con vencimiento y aviso ✅ DECIDIDO
+**El descuento por pronto pago existe en la realidad pero no se modela.** Mantener plazos y porcentajes que cambian por jurisdicción y por año es mucha estructura para un beneficio que quien paga la multa ya conoce.
+
+**Lo que sí:** se carga la multa con su **monto** y su **fecha de vencimiento** (campo nuevo — hoy `Multa` sólo tiene `fecha_infraccion`), y el motor de notificaciones avisa: "multa por vencer" (alta) y "multa vencida sin resolver" (crítica). La ventana de aviso es un parámetro de `configuracion`, default 7 días.
+
+### D-29 · Categoría de cada vehículo de la flota ✅ DECIDIDO
+Los 16 vehículos quedan categorizados. **Era el último bloqueante de la web.**
+
+- **Compacto (1):** Fiat Argo `AH762UL`
+- **Sedán (7):** Corsa Classic `PMH625` · 4× Cronos `AG591WA` `AH021RK` `AH067LW` `AH462EG` · Siena `LGW669` · Etios `AF865DD`
+- **Sedán superior (1):** VW Virtus `AG902AQ`
+- **Pick-up (7):** 3× Hilux · Amarok · 2× Tunland · Titano
+
+El **Corsa Classic va a Sedán**, corrigiendo la sugerencia original que lo ponía en Compacto. **SUV** y **Furgón** quedan cargadas sin vehículos.
+
+Se aplica con `backend/scripts/asignar_categorias.py` (idempotente).
+
+### D-30 · Seña escalonada + descuento por pago total ✅ DECIDIDO — amplía D-03
+El cliente elige cuánto adelanta, con un **mínimo del 30%**:
+
+- **30%** — el mínimo, lo estándar del rubro
+- **50%** — si quiere adelantar más
+- **100%** — el total
+
+**Si paga el 100%, se le puede ofrecer un descuento automático**, cuyo porcentaje **lo configuran los dueños** (parámetro en `configuracion`, no una constante). Poner el número en el código obligaría a un deploy para cambiar una promoción comercial.
+
+Queda abierto sólo **cuánto** es ese descuento (ver abiertas, D-30b).
+
+### D-31 · La web publica TODAS las categorías ✅ DECIDIDO
+> *"siempre tienen que aparecer TODAS. Estén o no estén disponibles."*
+
+Ninguna categoría se oculta por falta de cupo. La que no tiene disponibilidad para las fechas elegidas se muestra igual, con su foto y sus specs, y en vez del botón de reservar ofrece dejar los datos.
+
+Es coherente con **D-04**, que ya definió el estado `SIN_DISPONIBILIDAD` para esas solicitudes: **convierte en contacto una consulta que hoy se pierde**, y de paso mide la demanda insatisfecha por categoría — el dato que dice qué auto conviene comprar.
+
+`Categoria.visible_web` sigue existiendo, pero como **decisión editorial manual** (sacar una categoría de la web a propósito), no como consecuencia automática de la disponibilidad.
+
+### D-32 · Canal de aviso de una reserva web ✅ DECIDIDO
+**In-app (campana) + email inmediato por Resend.** Ambos ya existen: la campana desde la Fase 2, y Resend está integrado para el digest de las 08:00 — sólo hay que mandar este mail fuera del digest, porque una reserva web que espera hasta mañana a la mañana es una venta que se cae.
+
+**WhatsApp queda afuera**, consistente con **D-06**: requiere la API de Meta con número verificado, plantillas pre-aprobadas y costo por mensaje.
+
+Queda abierto **a qué casilla** se avisa (ver abiertas, D-32b).
+
+### D-33 · Contrato: se adopta el clausulado tal cual ✅ DECIDIDO
+El clausulado del contrato modelo se adopta **completo y en el mismo orden**, con las 7 correcciones documentadas en `docs/PLAN_CONTRATOS.md` §4 (las que serían falsas o inaplicables si se copiaran literal).
+
+**Jurisdicción: Tribunales Ordinarios de Bahía Blanca**, no Capital Federal.
+
+### D-34 · El contrato no bloquea el check-out, pero deja constancia ✅ DECIDIDO
+> *"No se bloquea, pero se advierte y se deja constancia de ello, siempre que figure, por ejemplo en el historial de reservas, reserva sin contrato y demás."*
+
+Entregar un auto sin contrato firmado **es posible** (el día que falle el PDF o se corte internet, el negocio no se para), pero:
+- el check-out **advierte** y pide confirmación explícita,
+- queda **constancia visible** en el listado de reservas/alquileres — un indicador "sin contrato", no un dato escondido en la auditoría,
+- y genera una **notificación** que persiste hasta que el contrato se firme.
+
+Mismo criterio que los bloqueos de vehículo (ítem 59) y que toda la regla del proyecto: *el sistema informa, la persona decide* — pero acá el sistema además **insiste**.
+
+---
+
 ## Decisiones que quedan abiertas
 
-Quedan **9**. Ordenadas por urgencia.
+Actualizado el **2026-07-28**. Ordenadas por urgencia.
 
 | # | Decisión | Bloquea | Urgencia |
 |---|---|---|---|
+| **D-11** | **¿La seña se pierde o no?** Contradicción abierta: "no se pierde si no aparece" vs. "se retiene al cancelar" | Los T&C, el contrato y el paso 3 de la web | 🔴 **Ya** |
+| **D-C1** | **Quién es el locador** del contrato: nombre, CUIT, II.BB, domicilio fiscal, contacto | Todo el módulo de Contratos | 🔴 **Ya** |
 | D-18 | **¿La devolución es a la hora que se carga, o siempre a la misma hora del retiro?** | El arreglo del cálculo de excedente — es un P0 | 🔴 Ya |
 | D-19 | **Umbral de día completo** por atraso: ¿bajar de 12 a 6 horas? | Cargo por excedente | 🔴 Ya |
-| D-07 | **Texto legal del contrato** | Fase 4 y el paso 3 de la web. Mayor lead time | 🔴 Ya |
-| D-20 | **Cargos fijos**: limpieza y precio del litro de combustible | Cargos de cierre en el check-in (Fase 1) | 🟠 Fase 1 |
+| **D-35** | **Tarifa semanal/mensual**: *¿cuánto cobrarían por 10 días?* Define si el monto cargado es por día o por período | Que carguen la primera tarifa semanal | 🟠 Antes de cargar precios |
+| **D-C3** | **Monto de la franquicia** — valor único para web, reserva y sistema. Los dueños lo cargan; falta entender cómo lo manejan hoy | Bloque de franquicia del contrato y de la web | 🟠 Fase 4 |
+| **D-36** | **Anticipación mínima** para reservar online + **horarios de entrega** | Validación del paso 1 de la web | 🟠 Fase 6 |
+| **D-37** | **¿Se pide garantía online?** Probablemente no, pero hay que definir cuál es la garantía en una reserva web | Paso 3 de la web | 🟠 Fase 6 |
+| **D-30b** | **Cuánto** es el descuento por pagar el 100% por adelantado | Un valor de configuración, no bloquea código | 🟡 Fase 6 |
+| **D-32b** | **A qué casilla** llega el aviso de reserva web (¿Franco y Martín, o una casilla de la empresa?) | Configuración del envío | 🟡 Fase 6 |
+| D-20 | **Cargos fijos**: limpieza y precio del litro de combustible | Cargos de cierre en el check-in | 🟠 Fase 1 |
 | D-21 | **Km incluidos por día** — ¿hay límite o es libre? | Cargo por km excedido y el contrato | 🟠 Fase 1 |
-| D-22 | **Límite de crédito** por cliente con cuenta corriente | Alerta y bloqueo de la Fase 1 | 🟠 Fase 1 |
-| D-23 | **Descuento máximo** sin autorización del dueño | Control de márgenes (Fase 1) | 🟠 Fase 1 |
-| D-11 | **Política de cancelación** | Qué pasa con la seña. Contrato y web | 🟡 Fase 4 |
-| D-17 | **Política de no-show** — cuántas horas y qué pasa con la seña | Estado `NO_SHOW` | 🟡 Fase 4 |
+| D-22 | **Límite de crédito** por cliente con cuenta corriente | Alerta y bloqueo | 🟠 Fase 1 |
+| D-23 | **Descuento máximo** sin autorización del dueño | Control de márgenes | 🟠 Fase 1 |
+| D-17 | **Política de no-show** — queda subsumida en D-11 | — | 🟡 Ver D-11 |
+
+**Cerradas en esta ronda:** D-07 (texto del contrato — resuelto con el modelo aportado, ver D-33), D-25 a D-34, y el punto 7 de `VALIDAR_CON_DUENOS.md` (categorías de la flota, D-29), que era el bloqueante principal de la web.
 
 ---
 

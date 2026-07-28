@@ -40,7 +40,16 @@ Mismo alquiler, el cliente sólo deja una seña de $30.000:
 
 **Qué pasa si prefieren volver al modelo viejo:** technically reversible — el automatismo de "todo checkout genera débito" se puede desactivar sin perder el resto del ledger (condición de pago, vencimientos, anulación con contra-asiento), que sirve igual.
 
-**Estado:** ✅ Confirmado e **implementado y probado** esta sesión (checkout, anticipo, cobros y excedente ya generan sus asientos automáticos). **Pendiente el ok de Franco/Martín** de todos modos, porque cambia lo que van a ver en la cuenta corriente de cada cliente desde el próximo alquiler que se cierre. Si prefieren el modelo viejo, revertirlo es acotado (ver "Cómo seguir" al final de este documento).
+**Estado:** ✅✅ **CONFIRMADO POR EL USUARIO el 2026-07-28** — *"El punto 1 está bien, pero debe dejarse documentada esta decisión."* Pasa a `docs/DECISIONES.md` como **D-25**. Implementado y probado desde el 2026-07-26.
+
+**Revisión del código pedida junto con la confirmación (2026-07-28) — el ledger está bien construido.** Se verificó `services/cuenta_corriente_service.py`:
+- `registrar_movimiento()` es el **punto único** de escritura. Ningún router toca `cc.saldo` a mano.
+- Calcula `saldo_posterior` con `domain/cuenta_corriente.py::aplicar_movimiento` (dominio puro, 11 tests) y encadena el saldo movimiento a movimiento — que es lo que permite detectar una desincronización.
+- Hace `flush()` y **nunca `commit()`**: compone dentro de la transacción del que lo llama, así un checkout que falla a mitad no deja medio asiento escrito.
+- El vencimiento sale de `calcular_vencimiento(fecha, condición)`, con la salida `sin_vencimiento_automatico` para el caso del débito de checkout anclado al check-in.
+- Todos los orígenes de asiento tienen su FK propia (`alquiler_id`, `reserva_id`, `pago_id`, `echeq_id`, `multa_id`, `recibo_id`, `comprobante_id`, `danio_id`), así que el historial de cualquier entidad sale gratis.
+
+**La única grieta encontrada no está acá sino en el punto 4** (recibos) y en la deuda ya anotada de `extender()` (PLAN_MAESTRO §2.11).
 
 ### ¿Es la práctica correcta para este rubro?
 
@@ -63,7 +72,7 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 **Qué se decidió (sin preguntar, por ser consistente con el punto 1):** sí, imputar una multa a un cliente (`estado='imputada'`) genera un débito automático, igual que el checkout. Resolverla tiene exactamente dos salidas — **cobrada** (genera el crédito que cancela el débito) o **bonificada** (se le perdona, contra-asiento, con motivo obligatorio) — nunca queda en un estado intermedio ambiguo.
 
-**Estado:** ✅ Implementado y probado (2026-07-26): backend (migración 021) más el frontend, que hasta esta sesión no tenía ningún botón para llamarlo — cargar una multa como "imputada" sí generaba el débito, pero no había forma de marcarla "cobrada" o "bonificada" desde la pantalla, sólo un desplegable de estado libre que además no distinguía las dos salidas. Ahora hay dos botones ("Cobrada" / "Bonificar") en la ficha del cliente y en la pantalla global de Multas. **Pendiente el ok de Franco/Martín** sobre si quieren que la multa efectivamente aparezca mezclada en la misma cuenta corriente que el alquiler, o si prefieren llevarla aparte.
+**Estado:** ✅✅ **CONFIRMADO POR EL USUARIO el 2026-07-28** — *"el 2 está bien"*. Pasa a `docs/DECISIONES.md` como **D-26**. Implementado y probado desde el 2026-07-26 (migración 021) más el frontend, que hasta esa sesión no tenía ningún botón para llamarlo — cargar una multa como "imputada" sí generaba el débito, pero no había forma de marcarla "cobrada" o "bonificada" desde la pantalla. Ahora hay dos botones ("Cobrada" / "Bonificar") en la ficha del cliente y en la pantalla global de Multas.
 
 ---
 
@@ -73,7 +82,7 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 **Por qué se avisa igual:** si en algún momento quieren que una garantía ejecutada (por daños, por ejemplo) sí aparezca como un cargo en la cuenta corriente del cliente, es una extensión simple de lo que ya existe — pero cambiaría la naturaleza de "garantía" de depósito neutro a cargo real. Vale la pena que lo sepan de antemano.
 
-**Estado:** 🟢 Decisión técnica de bajo impacto, no requiere validación urgente — se las avisa por transparencia.
+**Estado:** ✅✅ **CONFIRMADO POR EL USUARIO el 2026-07-28** — *"la 3 perfecta"*. Pasa a `docs/DECISIONES.md` como **D-27**. La garantía sigue siendo un depósito con ciclo propio, fuera del ledger. Si algún día una garantía ejecutada tiene que aparecer como cargo, ya existe el camino: es el patrón de 3 pasos de PLAN_MAESTRO §3.8, el mismo que usan multas y daños.
 
 ---
 
@@ -89,7 +98,58 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 - Si un cliente paga con dos medios distintos en el momento (parte efectivo, parte transferencia), hoy hacen falta **dos recibos**, no uno.
 - No queda registrado en el sistema "este pago específico canceló esa deuda específica" — sólo que el saldo bajó. Para la mayoría de los casos (el cliente debe un monto y paga ese monto) da exactamente el mismo resultado. Para casos de pagos parciales contra múltiples deudas simultáneas, el saldo general sigue siendo correcto, pero no hay trazabilidad de "a qué se aplicó cada peso".
 
-**Estado:** ✅ Implementado (versión simplificada) y probado 2026-07-26. **Pendiente el ok de Franco/Martín:** si en la operación real hace falta el recibo con medios mixtos o la imputación a deudas puntuales, es una extensión sobre lo ya construido (no hay que rehacer el módulo), pero conviene confirmar si realmente se usa así en el día a día antes de invertir el tiempo.
+**Estado:** 🔴 **BUG P0 CONFIRMADO — 2026-07-28.**
+
+El usuario pidió revisar esto con una sospecha concreta:
+
+> *"Siempre la idea es emitir un recibo, cuando pagan con tarjeta, efectivo o lo que sea. Entonces mi miedo es que no estén 100% sincronizados todo esto y se preste a la confusión."*
+
+**La sospecha era correcta, y el problema es más grande que la simplificación de la imputación.** Revisado el código (`services/recibo_service.py`, `routers/pagos.py`, `models/pago.py`, `models/recibo.py`):
+
+### Tres síntomas de la misma causa
+
+**`Pago` y `Recibo` son dos caminos paralelos y desconectados para el mismo hecho económico.** Los dos generan un crédito en la cuenta corriente, y no se conocen entre sí.
+
+**1. 🔴 Doble crédito — el saldo queda mal.**
+`routers/pagos.py:182` registra un crédito por el `Pago`. `services/recibo_service.py:58` registra **otro** crédito por el `Recibo`. **`Recibo` no tiene `pago_id`** — no hay ningún vínculo ni ninguna validación. Entonces:
+
+```
+El cliente debe $100.000 y paga $50.000 en efectivo.
+  Se registra el Pago      → CRÉDITO $50.000   (saldo: $50.000)
+  Se emite el Recibo       → CRÉDITO $50.000   (saldo: $0)  ← MAL
+  Plata que entró: $50.000.  Deuda que se borró: $100.000.
+```
+
+Y como la intención declarada es **emitir siempre un recibo**, esto no sería un caso raro: pasaría en **todas** las operaciones.
+
+**2. 🟠 Plata invisible en la Caja del día.**
+`GET /pagos/caja/dia` (`routers/pagos.py:135`) arma los ingresos consultando **sólo la tabla `pagos`**. Un cobro documentado únicamente con un recibo **no aparece en la caja**: no suma a `total_ingresos`, no entra en `por_medio_pago`, no figura en el detalle. El arqueo del día daría menos de lo que realmente entró.
+
+**3. 🔴 Hoy no hay forma de hacerlo bien.**
+No se puede evitar el problema operando con cuidado, porque las dos salidas están cerradas:
+- **No se puede emitir un recibo de un pago existente** — `Recibo` no tiene `pago_id`.
+- **No se puede crear un pago sin alquiler** — `Pago.alquiler_id` es `NOT NULL` (`models/pago.py:11`). Es el bug **2.6 del PLAN_MAESTRO, que sigue abierto**. Por eso el recibo se construyó como generador de crédito propio: era la única manera de cobrarle a un cliente algo que no fuera un alquiler puntual.
+
+O sea que el módulo de Recibos nació torcido **por culpa de un bug anterior sin arreglar**, no por la simplificación de la imputación.
+
+### El arreglo: un hecho económico, un asiento
+
+El principio ya está escrito en PLAN_MAESTRO §3.1 y acá se violó: **el saldo es la suma de los asientos, y cada asiento representa un hecho real**. Un cobro es **un** hecho. El `Pago` es el hecho; el `Recibo` es el papel que lo documenta. El papel no mueve plata.
+
+| Cambio | Por qué |
+|---|---|
+| `Pago.alquiler_id` → **nullable** + `Pago.cliente_id` **nuevo** | Cierra el bug 2.6. Habilita pago a cuenta, seña de reserva web, cancelación de deuda vieja y pago de multa |
+| `Recibo.pago_id` → **FK obligatoria** | El recibo documenta un pago concreto |
+| **Emitir un recibo deja de generar movimiento** | El crédito ya lo generó el `Pago` |
+| **"Emitir recibo" desde la CC crea `Pago` + `Recibo`** en una sola acción | El operador no tiene que acordarse de hacer dos cosas — y esa es justamente la confusión que se temía |
+| **Botón "Emitir recibo" en cada `Pago`** ya registrado | El caso "cobré y ahora quiero darle el papel" |
+| Caja del día: sin cambios | Sigue leyendo `pagos`, y ahora ve **todo** |
+
+**Migración de los datos existentes:** por cada recibo ya emitido hay que crear su `Pago` y **anular uno de los dos créditos** con contra-asiento (nunca borrarlo — regla de nunca eliminar). Conviene revisar cuántos recibos reales hay antes: si son pocos o ninguno, es trivial.
+
+**Lo que sigue pendiente de Franco/Martín** (lo original de este punto, que no cambia):
+- **`medios_pago` mixto** — ¿pagan con dos medios en una misma operación? Con el arreglo de arriba esto se vuelve más fácil: sería un recibo con N pagos.
+- **Imputación a deudas puntuales (FIFO)** — ¿hace falta saber "este pago canceló ese alquiler", o alcanza con que baje el saldo?
 
 ---
 
@@ -103,7 +163,27 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 **Por qué se avisa igual:** hoy en la base de datos sólo existen tarifas "diaria" (no hay ninguna semanal/mensual cargada todavía), así que no hay datos reales afectados. Pero es una decisión de negocio real — "el precio por día baja cuanto más larga la banda, sin prorratear" — que conviene que Franco/Martín confirmen que es como quieren cobrar, antes de que carguen la primera tarifa semanal real.
 
-**Estado:** ✅ Confirmado técnicamente (el cálculo era correcto) e implementada la aclaración de UI, 2026-07-26. **Pendiente el ok de Franco/Martín** sobre si el modelo "precio por día sin prorrateo" es como quieren que funcione la tarifa semanal/mensual, o si prefieren un modelo con prorrateo (ej. "1 semana completa a precio de semana + los días sueltos a precio diario").
+**Estado:** 🟡 **Respondido a medias el 2026-07-28** — *"los precios son por día, por semana, por mes, por fecha"*.
+
+**Lo que esa respuesta confirma:** las cuatro dimensiones de precio que el sistema tiene que soportar, y **las cuatro ya existen**:
+- **por día / por semana / por mes** → las bandas de `domain/tarifas.py` (según cuántos días dura el alquiler, cambia el precio),
+- **por fecha** → el motor de precios por calendario (migración 039), que es el que resuelve temporada alta, feriados y promociones.
+
+**Lo que NO responde, y es exactamente donde estaba el riesgo:** cuando se carga la tarifa **semanal**, el número que se escribe ¿es el precio **de un día** dentro de esa banda, o el precio **de la semana completa**? Las dos lecturas son razonables en castellano y dan resultados que difieren por 7.
+
+```
+Alquiler de 10 días, tarifa semanal cargada con el valor $150.000
+
+  Lectura A — es un precio POR DÍA (lo que el sistema hace hoy):
+      10 días × $150.000 = $1.500.000
+
+  Lectura B — es el precio DE LA SEMANA:
+      1 semana ($150.000) + 3 días sueltos = ~$214.000
+```
+
+**Sigue siendo lo implementado la Lectura A** (`monto` es siempre precio por día; la banda sólo decide *qué* precio por día aplica). La pantalla de Tarifas ya lo aclara desde el 2026-07-26 ("Precio por día para alquileres de X a Y días") y avisa si el precio por día de una banda larga no baja respecto de una corta — que es la señal de que cargaron el total del período por error.
+
+**Pregunta concreta para Franco y Martín, en una línea:** *"Para un alquiler de 10 días, ¿cuánto cobrarían?"* Con ese número se cierra el punto. **Hoy no hay ninguna tarifa semanal ni mensual cargada en la base**, así que no hay datos afectados y no bloquea nada — pero conviene resolverlo antes de que carguen la primera.
 
 ---
 
@@ -113,7 +193,20 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 **Qué se decidió:** no implementar la regla todavía, en vez de inventar un campo o un umbral sin confirmar cómo funciona en la práctica.
 
-**Estado:** ⬜ **Pendiente confirmación de Franco/Martín:** ¿las multas de tránsito que gestionan (Bahía Blanca / provincia de Buenos Aires) tienen descuento por pronto pago? Si sí, ¿con qué plazo y porcentaje? Con esa respuesta se agrega el campo a `Multa` y la regla al catálogo — es una extensión chica sobre lo ya construido.
+**Estado:** ✅ **RESUELTO POR EL USUARIO el 2026-07-28** — *"lo de multas sí existe, pero no lo tengamos en cuenta, únicamente cargar la multa, con el monto y en todo caso la fecha de vencimiento. Que haya notificación/aviso de esto mismo."*
+
+**Decisión: el descuento por pronto pago NO se modela.** Existe en la realidad, pero calcularlo obligaría a mantener plazos y porcentajes que cambian por jurisdicción y por año — mucha estructura para un beneficio que quien paga la multa ya conoce. Pasa a `docs/DECISIONES.md` como **D-28**.
+
+**Lo que sí se implementa** (chico, sobre lo ya construido):
+
+| Cambio | Detalle |
+|---|---|
+| `Multa.fecha_vencimiento` | `Date` nullable — hoy `Multa` **no tiene ninguna fecha de vencimiento**, sólo `fecha_infraccion`. Nullable porque muchas multas llegan sin fecha clara |
+| Regla de notificación **"multa por vencer"** | Se suma al catálogo (`domain/notificaciones_reglas.py`). Urgencia **alta** — una multa vencida cuesta más plata |
+| Regla **"multa vencida sin resolver"** | Urgencia **crítica** |
+| El vencimiento en la pantalla de Multas | Columna propia + resaltado de las vencidas |
+
+La ventana de aviso (¿7 días antes? ¿15?) queda como parámetro en `configuracion`, editable, con default 7 — el mismo criterio que el resto de los umbrales.
 
 ---
 
@@ -125,24 +218,49 @@ Sí, y por una razón concreta del negocio, no sólo contable: **la base de clie
 
 **Por qué no se decidió solo:** la segmentación compacto / sedán / sedán superior **fija el tier de precio de la web**. No es una clasificación técnica sino comercial — poner el Virtus en "sedán" o en "sedán superior" cambia lo que cobra el negocio.
 
-**Estado:** ⬜ **Pendiente de Franco/Martín** — en qué categoría va cada uno:
+**Estado:** ✅ **RESUELTO POR EL USUARIO el 2026-07-28** — *"Las categorías de auto están bien, únicamente el Corsa es Sedán."*
 
-| Patente | Vehículo | Sugerencia |
+**Era la decisión más urgente de todo el proyecto** (bloqueaba la web entera, punto 8 de `DECISIONES_RESERVAS_WEB.md`). **Ya no bloquea nada.**
+
+| Patente | Vehículo | Categoría final |
 |---|---|---|
-| `PMH625` | Chevrolet Corsa Classic | Compacto |
-| `AH762UL` | Fiat Argo Drive MT | Compacto |
-| `AG591WA` `AH021RK` `AH067LW` `AH462EG` | Fiat Cronos Drive 1.3 (×4) | Sedán |
-| `LGW669` | Fiat Siena Essence | Sedán |
-| `AF865DD` | Toyota Etios 1.5 XLS AT | Sedán |
-| `AG902AQ` | VW Virtus 1.6 | Sedán superior (es el más equipado) |
+| `AH762UL` | Fiat Argo Drive MT | **Compacto** |
+| `PMH625` | Chevrolet Corsa Classic | **Sedán** ← corregido: la sugerencia decía Compacto |
+| `AG591WA` `AH021RK` `AH067LW` `AH462EG` | Fiat Cronos Drive 1.3 (×4) | **Sedán** |
+| `LGW669` | Fiat Siena Essence | **Sedán** |
+| `AF865DD` | Toyota Etios 1.5 XLS AT | **Sedán** |
+| `AG902AQ` | VW Virtus 1.6 | **Sedán superior** |
 
-Las categorías **SUV** y **Furgón** existen pero hoy no las usa ningún vehículo — confirmar si la flota va a incorporarlas o si conviene desactivarlas.
+Queda una flota de **16 vehículos**: 1 compacto · 7 sedán · 1 sedán superior · 7 pick-up.
+
+**Cómo se aplica:** `backend/scripts/asignar_categorias.py`, idempotente:
+
+```
+docker compose exec backend python -m scripts.asignar_categorias
+```
+
+Es un script y no una migración a propósito — son datos de negocio, no estructura: una migración correría también en una base nueva o de test, donde estas patentes no existen.
+
+**Observación comercial que vale hacer** (no bloquea): con un solo compacto y un solo sedán superior, esas dos categorías se quedan sin cupo apenas se alquila la única unidad. En la web eso se ve como "no disponible" casi siempre. Como se decidió que **todas las categorías se publican estén o no disponibles** (punto 8 de `DECISIONES_RESERVAS_WEB.md`), conviene que esas dos fichas ofrezcan una alternativa clara ("sin disponibilidad para estas fechas — mirá Sedán") en vez de ser un cartel de "no".
+
+**SUV** y **Furgón** existen en el sistema y no las usa ningún vehículo. Quedan cargadas y sin uso: no molestan, y el día que incorporen una unidad ya están. En la web se ocultan solas si se publican sólo las categorías con al menos un vehículo activo.
 
 ---
 
-## Cómo seguir
+## Estado del documento al 2026-07-28
 
-Cuando Franco/Martín confirmen el punto 1 (el único realmente importante de esta lista):
-- Si dicen **que sí** → se pasa este punto a `docs/DECISIONES.md` como una decisión más, con su fecha real de confirmación.
-- Si prefieren **el modelo viejo** → se desactiva el automatismo de débito en checkout (queda el resto del ledger igual, sólo se vuelve al comportamiento de "la CC se mueve sólo si elegís cuenta corriente como forma de pago").
-- Si quieren **un término medio** (por ejemplo, que el débito automático sólo aplique a alquileres de empresas, o sólo si el cliente tiene cuenta corriente habilitada) — es una variante chica de lo ya construido, no hay que rehacer nada.
+De los 7 puntos originales, **5 quedaron cerrados**, 1 destapó un bug y 1 quedó a medias.
+
+| # | Tema | Estado |
+|---|---|---|
+| 1 | CC como libro de todo | ✅ Confirmado → **D-25**. Código revisado y sano |
+| 2 | Multas generan débito | ✅ Confirmado → **D-26** |
+| 3 | Garantías fuera del ledger | ✅ Confirmado → **D-27** |
+| 4 | Recibos simplificados | 🔴 **Bug P0**: `Pago` y `Recibo` acreditan dos veces. Arreglo diseñado |
+| 5 | Tarifa semanal/mensual | 🟡 Falta una sola respuesta: *¿cuánto cobrarían 10 días?* |
+| 6 | Descuento por pronto pago en multas | ✅ Resuelto → **D-28**: no se modela, sí `fecha_vencimiento` + aviso |
+| 7 | Categorías de los 9 autos | ✅ Resuelto — desbloquea la web |
+
+**Lo único que hay que preguntar todavía es el punto 5**, y es una pregunta de una línea.
+
+**Lo único que hay que construir con urgencia es el arreglo del punto 4**, porque hoy —usando el sistema como el usuario dice que quiere usarlo, emitiendo recibo en cada cobro— **todos los saldos quedarían mal**.

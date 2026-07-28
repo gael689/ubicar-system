@@ -425,21 +425,88 @@ POST   /contrato-plantillas                → nueva versión (nunca edita la an
 
 ---
 
-## 7. Decisiones que bloquean (para Franco y Martín)
+## 7. Decisiones — respondidas el 2026-07-28
 
-| # | Decisión | Bloquea | Recomendación |
-|---|---|---|---|
-| **D-C1** 🔴 | **¿Quién es el locador?** Nombre exacto (persona física o razón social), CUIT, ingresos brutos, domicilio fiscal, teléfonos y mail para el pie. | **Todo.** Sin esto no hay contrato, ni anverso ni reverso. | — |
-| **D-C2** 🔴 | ¿El clausulado se adopta tal cual (con las 7 correcciones de §4) o hay cláusulas que quieren sacar/agregar? | El texto de la plantilla v1 | Adoptarlo con las correcciones |
-| **D-C3** 🟠 | **Monto de la franquicia.** Hoy no existe en el sistema. ¿Es un valor único, por categoría, o por vehículo? | El bloque de franquicia del anverso | Por categoría — es la unidad de venta y ya tiene precio propio |
-| **D-C4** 🟠 | Jurisdicción: ¿Bahía Blanca o CABA? | Cláusula 13 | Bahía Blanca (§4.3) |
-| **D-C5** 🟡 | ¿Se crea el formulario de denuncia de accidente que la cláusula 2.f menciona? | Redacción de 2.f | Reformular ahora, crear el formulario después |
-| **D-C6** 🟡 | ¿Código de barras literal o QR a la ficha del alquiler? | Cabecera | QR |
-| **D-C7** 🟡 | ¿El check-out sin contrato se **bloquea** o se **advierte**? | Check-out | Advertir con motivo (§6) |
+Seis de las siete quedaron cerradas. **Sólo D-C1 sigue abierta**, y no frena la
+construcción.
 
-**D-C1 y D-C2 son las únicas que frenan el arranque.** Con esas dos respuestas
-se puede construir el módulo entero; las otras cinco tienen default razonable y
-se cambian después sin migrar nada.
+| # | Decisión | Respuesta |
+|---|---|---|
+| **D-C1** 🔴 | ¿Quién es el locador? | ⏳ **PENDIENTE** — *"dejalo como pendiente, poné algo genérico mientras"*. Ver abajo |
+| **D-C2** ✅ | ¿Se adopta el clausulado? | **Sí, tal cual**, con las 7 correcciones de §4. → **D-33** |
+| **D-C3** 🟡 | Monto de la franquicia | **Un valor único** que cargan los dueños, usado en web, reserva y sistema. Falta entender cómo lo manejan hoy. Ver abajo |
+| **D-C4** ✅ | Jurisdicción | **Bahía Blanca**. → D-33 |
+| **D-C5** ✅ | Formulario de accidente | A criterio: **se reformula ahora**, el formulario se crea después |
+| **D-C6** ✅ | Código de barras o QR | A criterio: **QR** |
+| **D-C7** ✅ | ¿Bloquea el check-out? | **No bloquea, advierte y deja constancia visible**. → **D-34** |
+
+### D-C1 — el locador, mientras tanto
+
+Hasta que estén los datos reales, la plantilla usa el placeholder
+`{{LOCADOR}}` con este valor por defecto:
+
+```
+LOCADOR   = "UBICAR RENT"
+RAZON_SOCIAL, CUIT, INGRESOS_BRUTOS, DOMICILIO_FISCAL = ""  (no se imprimen)
+CONTACTO  = Bahía Blanca, Argentina · +54 9 291 4180554 · ubicar.rent@gmail.com
+```
+
+**Los campos fiscales vacíos no se imprimen en vez de imprimirse con un
+relleno.** Un CUIT inventado o un "XX-XXXXXXXX-X" en un contrato es peor que un
+espacio en blanco: el blanco se nota y se completa, el relleno se firma.
+
+Y **el generador emite una advertencia visible** —en la pantalla y en el
+listado de contratos— mientras `empresa.cuit` esté vacío: *"Contrato generado
+sin datos fiscales del locador"*. Así el placeholder no se vuelve permanente
+por olvido, que es exactamente lo que pasa con estas cosas.
+
+Cuando lleguen los datos, se cargan en `configuracion` y **todos los contratos
+nuevos salen bien sin tocar código**. Los ya firmados conservan su `snapshot`,
+como corresponde.
+
+### D-C3 — la franquicia
+
+**Decisión: un valor único, configurable, que aplica a todo** — web, reserva y
+sistema. Va a `configuracion` con la clave `contrato.franquicia_default`.
+
+Esto **cambia** la recomendación original del plan (que proponía franquicia por
+categoría). El motivo para aceptar el cambio: es lo que los dueños entienden y
+van a mantener. Una franquicia por categoría que nadie actualiza es peor que
+una sola bien cargada.
+
+**La estructura queda preparada para diferenciar sin migrar:** la resolución
+del monto es una función —`franquicia_para(vehiculo, adicionales)`— que hoy
+devuelve siempre el valor de configuración. El día que quieran distinguir
+pick-ups de compactos, se agrega el campo por categoría y la función lo
+prefiere; nada más cambia.
+
+**Lo que falta preguntarles** (no bloquea, pero conviene saberlo antes de
+imprimirlo): la franquicia que cargan, ¿es la que se aplica **sin** cobertura
+contratada, o ya contempla alguna? Porque las coberturas del sistema
+(`Adicional.franquicia`) **ya tienen su propio monto**, y el contrato tiene que
+imprimir el que efectivamente corresponde a lo que el cliente contrató —si no,
+el papel dice un número y la realidad es otra.
+
+**Regla de resolución propuesta:** si el cliente contrató una cobertura, se
+imprime la franquicia **de esa cobertura**; si no contrató ninguna, la de
+configuración.
+
+### D-C7 — la constancia, en concreto
+
+*"No se bloquea, pero se advierte y se deja constancia de ello, siempre que
+figure, por ejemplo en el historial de reservas, reserva sin contrato y demás."*
+
+Cuatro lugares, para que la constancia no sea un dato enterrado en la auditoría:
+
+1. **En el check-out** — advertencia con confirmación explícita y motivo.
+2. **En el listado de reservas y alquileres** — un indicador **"Sin contrato"**
+   en la fila, con el mismo peso visual que cualquier otro estado que requiere
+   atención (sólido, no `bg-x/10` — la regla de colores del proyecto).
+3. **En la ficha del alquiler** — bloque visible con la fecha, quién autorizó
+   la entrega sin contrato y el motivo.
+4. **Como notificación que no se resuelve sola** — persiste hasta que el
+   contrato se firme. Es la única de las cuatro que **persigue** el problema en
+   vez de sólo mostrarlo.
 
 ---
 
