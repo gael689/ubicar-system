@@ -20,6 +20,49 @@
 
 ---
 
+## Estado al 2026-07-28 — cierre de la etapa de construcción
+
+**El sistema está terminado. Lo que queda son integraciones externas.**
+
+Migración en `050_firma_medio`. 238 tests de dominio en verde, build de
+producción del frontend sin errores de tipos, y **cero pantallas placeholder**
+en el menú.
+
+### Lo único que sigue abierto
+
+| Qué | Tipo | Dónde |
+|---|---|---|
+| **Clerk** — login, roles y auditoría real | API externa | `PLAN_DEPLOY.md` §3.3 |
+| **Mercado Pago** — cobro online | API externa | `PLAN_DEPLOY.md` §5.1 |
+| **Resend inmediato** — hoy sólo el digest de las 08:00 | API externa | `PLAN_DEPLOY.md` §5.2 |
+| **Bucket R2** — el código está, falta la cuenta | Configuración | `GUIA_DEPLOY.md` paso 1 |
+| **`extender()` sin asiento** | 🟠 Código, traba una decisión | §2.11 de este documento |
+| **Datos fiscales del locador** | Decisión de los dueños | D-C1 |
+
+`extender()` es **lo único de código que queda del sistema interno**, y no se
+puede tocar sin las tres decisiones de §2.11 porque toca plata.
+
+### Cerrado en la última tanda (2026-07-28)
+
+| Qué | Por qué importaba |
+|---|---|
+| **Doble reserva del mismo auto** | Read-then-write sin lock: dos personas confirmando la misma unidad veían las dos "libre" y grababan las dos. Reproducido y cerrado con `SELECT FOR UPDATE` en `_cargar_ventanas`, el único cuello de botella común a los 5 caminos de escritura. Queda `scripts/verificar_concurrencia.py` |
+| **Contrato desde la reserva** (migr. 049) | `contratos.alquiler_id` era NOT NULL y el alquiler sólo existe post check-out |
+| **`_tiene_contrato_firmado()`** | Miraba `alquiler.contrato_firmado` cuando el alquiler todavía no existe. Un contrato firmado antes seguía pidiendo el motivo de "entrega sin contrato" |
+| **Firma en papel** (migr. 050) | Funcionaba pero no estaba contemplada ni registrada |
+| **Firma escaneada al pie de la página** | `_anverso()` calculaba la posición de la línea y la descartaba; el PDF la dibujaba en una posición fija |
+| **Total del PDF de reserva** | Mostraba `precio_total`, que no incluye adicionales: el cliente recibía un total menor al que iba a pagar |
+| **Pantalla de Contratos** | `/contratos` era el último placeholder del sistema |
+| **Familia "falta completar"** | 5 reglas que detectan huecos de configuración, no hechos |
+| **Cola de prioridad** | Las notificaciones se ordenaban sólo por fecha |
+| **Caché en tres niveles** | Un único `staleTime` de 2 min con `refetchOnWindowFocus` apagado, para 3 personas concurrentes |
+| **Baja de vehículo con reservas vivas** | Se podía dar de baja un auto circulando con un cliente |
+| **`web.hold_minutos`** (migr. 048) | Se leía con un default pero nunca se sembró: no era editable |
+| **Filtros** | Cobros (medio, cliente, fecha, factura + desglose de caja), notificaciones (familia, urgencia), reservas (origen, categoría, estado de contrato) |
+| **`historial.alquileres`** | Devolvía `[]` desde F1 |
+
+---
+
 ## 0. Contexto del rubro — qué exige un rent-a-car y qué de eso todavía no está
 
 Antes de proponer cambios, vale fijar qué es lo que este negocio realmente necesita, porque varias de las piezas faltantes no son "features lindas": son las que evitan perder plata.

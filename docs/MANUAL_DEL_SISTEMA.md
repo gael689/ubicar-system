@@ -372,7 +372,14 @@ día.
 
 ## 8. Contratos
 
-**Dónde:** dentro de la ficha del alquiler.
+**Dónde:** `/contratos` (agrupados por lo que falta hacer) · y dentro de cada
+reserva.
+
+**El contrato cuelga de la reserva, no del alquiler** (migración 049). El
+alquiler sólo existe después del check-out, así que atarlo ahí obligaba a
+emitir el contrato con el cliente esperando en la puerta. Ahora se emite apenas
+se acuerda el alquiler y el vínculo con el alquiler se completa solo en el
+check-out.
 
 ### Cómo funciona
 
@@ -391,9 +398,38 @@ El contrato tiene **dos caras con dos naturalezas distintas**:
 2. **Corregir** lo que haga falta.
 3. **Generar** — se emite con número correlativo (`C-00000042`) y **se congela**:
    el anverso completo queda guardado tal como se emitió.
-4. **Firmar** — el cliente firma en pantalla (canvas). Se registra quién firmó
-   y su documento, que pueden no ser los del titular.
+4. **Firmar** — dos caminos explícitos, y se guarda cuál se usó
+   (`firma_medio`):
+   - **`pantalla`**: canvas con `PointerEvent`, sirve con dedo o mouse. La
+     imagen se sube al storage y se estampa **sobre la línea de firma** del PDF
+     (que flota según el largo del detalle de cargos).
+   - **`papel`**: se imprime, se firma a mano y acá se registra quién firmó. No
+     hay imagen, y la reimpresión lo aclara para que no se confunda con un
+     contrato sin firmar.
+
+   En los dos casos se registra quién firmó y su documento, que pueden no ser
+   los del titular.
 5. **Descargar** el PDF de dos páginas.
+
+### Emitir antes de la entrega
+
+Si todavía no hubo check-out, **el km y el combustible de salida se imprimen en
+blanco** para completar a mano. Es deliberado: es el dato que después hay que
+poder oponer, y precargarlo con un número inventado sería peor que dejarlo
+vacío.
+
+`AlquilerService._tiene_contrato_firmado()` consulta el **contrato** y no
+`alquiler.contrato_firmado`, porque en el momento del check-out el alquiler
+todavía no existe — se crea unas líneas más abajo. Con la versión anterior, un
+contrato firmado la semana previa seguía pidiendo el motivo por el que se
+entrega sin contrato.
+
+### Estado visible
+
+`Reserva.contrato_estado` devuelve `no_aplica | sin_emitir | emitido |
+firmado`, y se muestra como badge en el listado de reservas. `no_aplica` cubre
+las canceladas y las solicitudes web sin resolver: marcarlas como "sin
+contrato" llenaría la lista de avisos que nadie puede resolver.
 
 ### Detalles que importan
 
@@ -772,7 +808,7 @@ Un daño ya imputado no se puede dar de baja sin bonificarlo antes.
 ### Cómo funciona
 
 Un **scheduler corre todos los días a las 08:00 (hora de Argentina)** y evalúa
-**29 reglas** contra la base. Lo que encuentra se guarda en una tabla real, con
+**35 reglas** contra la base. Lo que encuentra se guarda en una tabla real, con
 deduplicación: la misma alerta no se repite todos los días para siempre.
 
 Las notificaciones se pueden **marcar como leídas, posponer o descartar**. Y se
@@ -781,7 +817,19 @@ check-in), la notificación se cierra sola.
 
 Además del panel, hay un **digest por email** a la mañana.
 
-### Las 29 reglas
+### Orden y filtros
+
+`list_activas()` ordena por **peso de urgencia y después por fecha**
+(`PESO_URGENCIA`, un `CASE` resuelto en la base). Antes iba sólo por
+`created_at desc`, y eso hundía una crítica de ayer debajo de una baja de hoy —
+justo en la campana, que muestra las primeras.
+
+Filtros por `urgencia`, `tipo` y `entidad_tipo`, todos multivalor separados por
+coma. El frontend filtra por **familia** (`lib/notificaciones.ts`) y la
+traduce a la lista de tipos: nadie busca `poliza_vencimiento`, busca
+"documentos de vehículos".
+
+### Las 35 reglas
 
 **Operación diaria** — entregas de hoy · devoluciones de hoy · check-out
 pendiente · check-in vencido · contrato sin firmar con entrega hoy · reserva
@@ -803,6 +851,17 @@ vencer** · **vencida**.
 **Reservas web** — solicitud sin atender. Además, cuando entra una reserva web
 se dispara **un aviso en el acto**, sin esperar al barrido de las 08:00: una
 reserva del sábado a la tarde no puede quedar sin respuesta hasta el lunes.
+
+**Falta completar** — la familia nueva, y la única que mira **huecos** en vez
+de hechos: fecha especial próxima sin tarifa cargada · categoría con flota pero
+sin precio · vehículo sin categoría · contrato sin emitir con el auto afuera ·
+datos fiscales de la empresa vacíos.
+
+El caso que la justifica: se carga "Navidad" en el calendario, nadie carga la
+tarifa, y **se vende al precio de un martes cualquiera**. No aparece en ningún
+reporte porque no hubo ningún error — se cobró exactamente lo que estaba
+configurado. Avisa con 30 días de anticipación y se auto-resuelve al cargar la
+regla de precio.
 
 El catálogo completo, con urgencias y umbrales, está en
 `docs/CATALOGO_NOTIFICACIONES.md`.
@@ -918,9 +977,11 @@ Ordenado por qué lo bloquea.
 
 | Falta | Depende de |
 |---|---|
-| **Cobro online** | Mercado Pago. El paso 4 cierra por WhatsApp mientras tanto |
+| **Cobro online** | Mercado Pago. El paso 4 muestra el resumen y coordina el pago a mano: **no se simula un cobro que no existe** |
 | **Devoluciones de dinero** | Mercado Pago. No existe el concepto de devolución |
 | **Login y usuarios reales** | Clerk. Hoy todo corre con un usuario fijo, así que los "cobrado por" y "autorizado por" no distinguen quién hizo cada cosa |
+| **Pantalla de auditoría** | Clerk. El rastro ya existe —14 modelos guardan quién hizo qué— pero hasta que el usuario sea real ese dato no dice nada |
+| **Guardado de archivos en producción** | Sólo falta crear el bucket: `S3Storage` está implementado y el `/health` lo verifica escribiendo y leyendo |
 | **Aviso inmediato por email** | Resend está integrado sólo para el digest de las 08:00 |
 | **Facturación electrónica AFIP** | Decisión: los comprobantes se cargan a mano (**D-05**) |
 | **WhatsApp automático** | API de Meta. Se mantienen los links `wa.me` (**D-06**) |
@@ -970,19 +1031,32 @@ También están vacíos: los **adicionales** (coberturas y extras) y los
 Lo de este manual no está escrito de memoria. Al 2026-07-28 se verificó contra
 el sistema corriendo:
 
-- **233 tests** de dominio en verde.
+- **238 tests** de dominio en verde y el build de producción del frontend
+  compilando sin errores de tipos.
 - **130 endpoints** relevados del esquema OpenAPI real.
-- **Migraciones 043-047 aplicadas** a la base, con roundtrip completo de
+- **Migraciones 043-050 aplicadas** a la base, con roundtrip completo de
   bajada y subida sin alterar los saldos de cuenta corriente.
-- **Ciclo del contrato probado de punta a punta**: preparar → generar
-  (`C-00000001`) → firmar → PDF de 2 páginas con las 13 cláusulas, el locador
-  resuelto y sin rastros del contrato original → anular → emitir uno nuevo.
-  Emitir dos contratos vigentes del mismo alquiler devuelve 409.
+- **Ciclo del contrato probado de punta a punta**: emitir **desde una reserva
+  sin check-out** → firmar → check-out, que engancha el alquiler y **ya no pide
+  el motivo de "entrega sin contrato"** → PDF de 2 páginas con las 13
+  cláusulas y las líneas en blanco de km y combustible. Emitir dos contratos
+  vigentes de la misma reserva devuelve 409.
+- **Firma verificada en las dos formas**: en pantalla, con el trazo cayendo
+  sobre la línea de firma (se corrigió un bug que lo mandaba al pie de la
+  página); y en papel, con la leyenda que lo distingue de un contrato sin
+  firmar. Probado además en **iPhone 13**: el canvas escala y el trazo con el
+  dedo cae donde corresponde.
+- **Doble reserva reproducida y cerrada**: sin el lock, dos sesiones
+  simultáneas ven el mismo auto libre y graban las dos. Con el lock, la
+  segunda espera y recibe un 409 limpio. Queda como
+  `scripts/verificar_concurrencia.py`.
 - **Flujo web de 4 pasos probado en navegador** contra datos reales: 6
   categorías con cupo, hold tomado, y la recotización con adicionales exacta.
+- **Rate limiting verificado en vivo**: 7 holds creados, el 8° chocó el cupo
+  (409) y del 9° en adelante devolvió 429.
 
-Los datos de prueba que se cargaron para verificar (una tarifa, cuatro
-adicionales, un recargo por edad y dos contratos) **se borraron después**.
+Los datos de prueba que se cargaron para verificar **se borraron después**, y
+el saldo de cuenta corriente volvió exacto a su valor original.
 
 ---
 
@@ -992,9 +1066,12 @@ adicionales, un recargo por edad y dos contratos) **se borraron después**.
 |---|---|
 | `docs/DECISIONES.md` | Todas las decisiones de negocio, con su número |
 | `docs/PLAN_MAESTRO.md` | El plan de trabajo y el estado de cada ítem |
-| `docs/CATALOGO_NOTIFICACIONES.md` | Las 29 reglas en detalle |
+| `docs/CATALOGO_NOTIFICACIONES.md` | Las 35 reglas en detalle |
 | `docs/PLAN_CONTRATOS.md` | El módulo de contratos, campo por campo |
 | `docs/PLAN_RESERVAS_WEB.md` | La arquitectura del flujo web |
 | `docs/PLAN_TEXTOS_LEGALES.md` | Los textos legales que faltan |
+| `docs/PLAN_DEPLOY.md` | Qué hay que resolver para publicar, y en qué orden |
+| `docs/GUIA_DEPLOY.md` | El paso a paso del deploy, con los comandos |
+| `docs/MANUAL_PARA_LOS_DUENOS.md` | El mismo alcance, en lenguaje de negocio |
 | `docs/VALIDAR_CON_DUENOS.md` | Lo que espera confirmación |
 | `docs/_archivo/` | Documentación anterior al 2026-07-25 |

@@ -9,7 +9,7 @@ del plan maestro completa). Fuente de verdad del código:
 
 - **Motor.** Todos los días a las **08:00, hora Argentina**, un job de
   APScheduler (arrancado desde el `lifespan` de FastAPI en `main.py`) evalúa
-  las 29 reglas de abajo contra la base de datos real.
+  las 35 reglas de abajo contra la base de datos real.
 - **Persistencia.** Cada alerta que dispara una regla se guarda en la tabla
   `notificaciones` — no se recalcula cada vez que alguien abre la campana.
 - **Deduplicación.** Cada notificación tiene una `clave_dedupe`
@@ -96,6 +96,46 @@ Urgencia, de mayor a menor: **crítica** > **alta** > **media** > **baja**.
 | `multa_imputada_sin_cobrar` | Multa imputada a un cliente hace más de 15 días, sin resolver (cobrada/bonificada) | Desde el día 16, 08:00 | Media |
 | `multa_por_vencer` | Multa con vencimiento cerca y todavía sin resolver | Ventana configurable, default 7 días | **Alta** |
 | `multa_vencida` | Multa que ya venció y sigue sin resolverse | Desde el día siguiente al vencimiento | **Crítica** |
+
+### Falta completar
+
+La única familia que mira **huecos** en vez de hechos: cosas que nadie cargó y
+que no molestan hasta que llega el día y ya es tarde. Todas se auto-resuelven
+en cuanto se carga el dato.
+
+| Tipo | Qué detecta | Cuándo dispara | Urgencia |
+|---|---|---|---|
+| `fecha_especial_sin_precio` | Fecha especial próxima sin tarifa propia ni regla que la cubra | 30 días antes | Media → **Alta** a 7 días → **Crítica** una vez empezada |
+| `categoria_sin_precio` | Categoría con vehículos activos que no se puede cotizar | 08:00 | **Alta** |
+| `vehiculo_sin_categoria` | Vehículo activo sin categoría: invisible para la web y el motor de precios | 08:00 | Media |
+| `contrato_sin_emitir` | Alquiler abierto (auto afuera) sin ningún contrato emitido | 08:00 | **Alta** → **Crítica** a los 2 días |
+| `datos_empresa_sin_cargar` | Falta `empresa.cuit` o `empresa.razon_social` | 08:00 | **Alta** |
+
+**El caso que la justifica.** Se carga "Navidad" en el calendario de fechas
+especiales y nadie carga la tarifa para esos días: **se vende al precio de un
+martes cualquiera**. La plata perdida no aparece en ningún reporte porque no
+hubo ningún error — se cobró exactamente lo que estaba configurado. Sin esta
+regla, nadie se entera hasta que pasó.
+
+**Por qué `categoria_sin_precio` sólo mira categorías con flota.** Una
+categoría vacía no se vende igual, así que avisar por ella sería ruido
+permanente — y una lista con ruido permanente se deja de mirar entera.
+
+**Por qué `contrato_sin_emitir` es distinta de `contrato_no_firmado`.** La otra
+mira las entregas del día. Esta mira alquileres abiertos: el auto puede haber
+salido la semana pasada y no existir ningún contrato, ni firmado ni emitido. Es
+el peor escenario si aparece un daño o una multa.
+
+## Orden de la cola
+
+`list_activas()` ordena por **urgencia y después por fecha**. Antes iba sólo
+por `created_at desc`, así que una crítica de ayer quedaba debajo de una baja
+de hoy — y la campana muestra las primeras. Lo importante se hundía justamente
+por seguir importando el tiempo suficiente como para no ser nuevo.
+
+El peso se resuelve en la base (`PESO_URGENCIA`, un `CASE`) y no en Python,
+porque el historial viene paginado: armado después de traer la página, la
+página 1 no tendría las críticas sino las últimas cargadas.
 
 ## Agregadas en esta revisión (no estaban en el catálogo original del plan)
 

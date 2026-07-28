@@ -1,6 +1,6 @@
 # Ubicar Rent — cómo funciona el sistema
 
-**Para Franco y Martín** · Julio de 2026
+**Para Franco y Martín** · Actualizado el 28 de julio de 2026
 
 Este documento cuenta **qué hace el sistema hoy**, **qué decisiones se tomaron
 y por qué**, y **qué falta**. Está escrito para leerse de corrido, sin
@@ -22,6 +22,7 @@ tecnicismos.
 10. [La página web](#10-la-página-web)
 11. [Decisiones que tomamos sin ustedes](#11-decisiones-que-tomamos-sin-ustedes-y-por-qué)
 12. [Lo que falta, y qué depende de ustedes](#12-lo-que-falta-y-qué-depende-de-ustedes)
+13. [Trabajar de a varios](#13-trabajar-de-a-varios)
 
 ---
 
@@ -35,20 +36,20 @@ La página web **ya tiene el sistema de reservas online**: el cliente entra,
 elige fechas, ve qué hay disponible con precio real, suma el seguro y los
 extras, carga sus datos y confirma.
 
-**Faltan tres cosas para vender online**, y ninguna es de programación:
+**La parte de programación está terminada.** Lo que queda son dos cosas de
+naturaleza distinta:
 
-| Falta | Quién lo hace |
-|---|---|
-| Cargar los precios por categoría | Ustedes |
-| Cargar las fotos de cada categoría | Ustedes |
-| Cargar los seguros y extras con su precio | Ustedes |
+**1. Datos que tienen que cargar ustedes.** Hasta que estén, la web muestra
+todas las categorías como "sin disponibilidad", porque no tiene precio con el
+cual venderlas. La lista completa y en orden está en el punto 12 — y el sistema
+se los va reclamando solo con los avisos de "📌 Falta completar".
 
-Hasta que eso esté, la web muestra todas las categorías como "sin
-disponibilidad", porque no tiene precio con el cual venderlas.
+**2. Servicios externos que hay que contratar y conectar**: el cobro con
+tarjeta (Mercado Pago), los usuarios con contraseña, el envío de mails y el
+guardado de archivos en la nube. Ninguno es difícil; hay que abrir las cuentas.
 
-Además falta **conectar el cobro con tarjeta** (Mercado Pago). Mientras tanto
-el cliente completa toda la reserva y el último paso cierra por WhatsApp, con
-todo lo que eligió ya escrito en el mensaje.
+Mientras tanto el cliente completa toda la reserva por la web y el último paso
+coordina el pago a mano. **No se simula un cobro que no existe.**
 
 ---
 
@@ -329,23 +330,59 @@ franquicia— y **se puede corregir** antes de emitirlo.
 
 **Dorso:** las 13 cláusulas legales, iguales para todos.
 
+### Cuándo se emite
+
+**Apenas se acuerda el alquiler**, sin esperar a la entrega. Antes había que
+esperar al check-out, o sea al momento con menos tiempo de todos: el cliente
+esperando en la puerta y el auto listo para salir.
+
+Emitirlo antes tiene tres ventajas concretas: hay tiempo de leerlo, de corregir
+un dato mal cargado, y de mandárselo al cliente para que lo lea tranquilo.
+
+Si se emite antes de la entrega, **el kilometraje y el combustible de salida
+salen como líneas en blanco** para completar a mano el día del retiro. Es a
+propósito: inventar un kilometraje de salida sería peor que dejarlo vacío,
+porque es justamente el dato que después hay que poder oponer.
+
 ### El flujo
 
 1. **El sistema arma el frente solo**, con los datos de la reserva ya cargados.
 2. **Se corrige lo que haga falta** — todo el frente es editable.
 3. **Se genera.** Recibe su número (`C-00000042`) y queda congelado.
 4. **Se firma.** Hay dos maneras y las dos valen:
-   - **En pantalla**, si atienden con una tablet o una notebook: aparece un
-     recuadro en blanco, el cliente firma ahí con el dedo (tablet) o con el
-     mouse, y esa firma queda estampada dentro del PDF.
-   - **En papel**, si prefieren seguir como siempre: se imprime el PDF, el
-     cliente firma con lapicera, y en el sistema se registra que ya está
-     firmado, con el nombre y el documento de quien firmó.
+   - **En pantalla**: aparece un recuadro en blanco y el cliente firma ahí con
+     el dedo o con el mouse. Esa firma queda estampada dentro del PDF, sobre la
+     línea de firma. **Funciona igual desde el celular** — está probado en
+     iPhone: el recuadro se adapta a la pantalla y el trazo con el dedo cae
+     donde tiene que caer.
+   - **En papel**, si prefieren seguir como siempre: se descarga el PDF, se
+     imprime, el cliente firma con lapicera, y en el sistema se aprieta
+     **"Firmó en papel" → "Marcar como firmado"**. Ahí se registra el nombre y
+     el documento de quien firmó.
 5. **Se descarga el PDF** de dos páginas para archivarlo o mandárselo.
 
 En los dos casos el sistema guarda **quién firmó y con qué documento**, que
 puede no ser el titular de la reserva — el caso típico es una empresa que
 reserva y manda a un empleado a retirar el auto.
+
+**El sistema distingue las dos formas.** Si se firmó en papel, la reimpresión
+lo dice con todas las letras: *"Firmado de puño y letra el 28/07/2026. El
+ejemplar firmado se archiva en papel"*. Sin eso, un contrato firmado con
+lapicera y uno marcado por error se verían idénticos.
+
+### Siempre se ve cuáles faltan
+
+En el listado de reservas cada una muestra su estado: **SIN CONTRATO**,
+**SIN FIRMAR**, o nada si ya está firmado. Y hay una pantalla de **Contratos**
+en el menú que los agrupa por lo que hay que hacer: los que falta emitir, los
+emitidos sin firmar, y los que ya están.
+
+Las reservas canceladas no muestran nada, porque no necesitan contrato. Una
+lista llena de avisos que nadie puede resolver se deja de mirar entera.
+
+Si un auto sale **sin contrato**, el sistema no lo impide —a veces hay que
+entregar igual— pero pide un motivo y deja la marca en rojo en el listado hasta
+que se resuelva.
 
 ### Tres detalles que importan
 
@@ -389,6 +426,15 @@ del cliente. No hace falta cargar el pago por separado.
 Numeración correlativa propia (`R-00000042`). El PDF incluye el logo, el monto
 **en letras**, el concepto, el medio de pago y la barra de *saldo anterior →
 este pago → saldo actual*, que es lo que el cliente quiere ver.
+
+**El recibo no se genera solo, y es a propósito**: emitirlo es una decisión de
+ustedes, no algo que el sistema haga por su cuenta. Pero no cuesta nada: en el
+listado de **Cobros**, los que todavía no tienen recibo muestran un botón
+**Emitir**. Un click y listo — el concepto lo arma el sistema con los datos del
+cobro (*"Alquiler #16 — Toyota Hilux DX (AF977FD)"*).
+
+Antes había que escribir ese concepto a mano cada vez, y eso era exactamente lo
+que hacía que el recibo terminara sin emitirse.
 
 Si un cobro ya está registrado, se le puede emitir el recibo después sin que el
 saldo se mueva.
@@ -462,7 +508,14 @@ genera los avisos. Aparecen en la campana del menú y llegan por mail.
 Se pueden marcar como leídos, posponer o descartar. Y **se cierran solos**
 cuando el problema se resuelve.
 
-**30 avisos**, agrupados en cinco familias:
+**Los urgentes van primero.** Antes se ordenaban sólo por fecha, así que un
+aviso crítico de ayer quedaba debajo de uno menor de hoy — y la campana muestra
+los primeros. Ahora manda la urgencia y después la fecha.
+
+Se pueden filtrar por familia y por urgencia desde la pantalla de
+**Notificaciones**.
+
+**35 avisos**, agrupados en seis familias:
 
 **La mañana** — entregas de hoy · devoluciones de hoy · autos que tenían que
 salir y no salieron · autos que tenían que volver y no volvieron · entregas de
@@ -484,6 +537,21 @@ vencidas.
 la web, el aviso llega **en el momento**, no en el resumen de la mañana: una
 reserva del sábado a la tarde no puede esperar hasta el lunes.
 
+**📌 Falta completar** — la familia nueva, y la que más plata puede ahorrar.
+Las otras cinco miran **hechos**: un echeq rebotó, un auto no volvió. Esta mira
+**huecos**: cosas que nadie cargó y que no molestan hasta que ya es tarde.
+
+| Aviso | Qué pasa si no se resuelve |
+|---|---|
+| **Fecha especial sin precio** | Se cargó "Navidad" en el calendario pero no su tarifa: **se vende al precio de un martes cualquiera**. No aparece en ningún reporte porque no hubo ningún error — se cobró exactamente lo que estaba configurado. Avisa con 30 días |
+| **Categoría con autos pero sin precio** | La web la muestra como *sin disponibilidad* aunque haya unidades libres. Desde afuera parece que no hay autos, no que falta un dato |
+| **Vehículo sin categoría** | No aparece en la web ni se puede cotizar: existe en la flota pero es invisible para vender |
+| **Contrato sin emitir** | El auto está afuera y no hay ningún contrato. Es el peor escenario si aparece un daño o una multa |
+| **Faltan los datos de la empresa** | Todo contrato sale marcado "DOCUMENTO PROVISORIO" |
+
+Todos se resuelven solos en cuanto se carga el dato. Nadie tiene que acordarse
+de descartarlos.
+
 ---
 
 ## 10. La página web
@@ -504,8 +572,9 @@ Tres cosas que hace bien:
   el sistema le guarda el cupo por 20 minutos, con un reloj a la vista. Sin
   eso, dos personas pueden comprar la última unidad.
 - **Las categorías sin disponibilidad se muestran igual**, con un botón para
-  consultar alternativas por WhatsApp. Esconderlas perdería el contacto de
-  alguien que quería alquilar.
+  dejar los datos. Esa solicitud entra en la bandeja del sistema y **dispara un
+  aviso en el momento**. Esconderlas perdería el contacto de alguien que quería
+  alquilar.
 - **El precio total está siempre a la vista** y es siempre el mismo número. Un
   total que aparece recién al final es lo que más hace abandonar una compra.
 
@@ -517,10 +586,13 @@ auto concreto) o se rechaza con motivo.
 
 ### Lo que falta
 
-**El cobro con tarjeta.** Mientras tanto, el último paso cierra por WhatsApp
-con todo lo que el cliente eligió ya escrito en el mensaje: vehículo, fechas,
-seguros, extras, total y sus datos. Comparado con el *"hola, quiero un auto"*
-de hoy, ya es otra cosa.
+**El cobro con tarjeta**, que depende de habilitar Mercado Pago. Hasta que
+esté, el último paso muestra el resumen completo y cierra coordinando el pago
+a mano — **no se simula un cobro que no existe**.
+
+Cuando entre Mercado Pago, los pasos 1 a 3 no se tocan: ya están terminados y
+la pantalla de confirmación (`/reservar/listo`) ya está hecha esperando los
+parámetros que devuelve el pago.
 
 ---
 
@@ -548,13 +620,25 @@ las revisen.
 
 ### Lo que necesitamos que ustedes carguen
 
-Sin esto la web no puede vender, aunque el sistema esté entero:
+Sin esto la web no puede vender, aunque el sistema esté entero. Va en este
+orden, porque cada cosa depende de la anterior:
 
-1. **Los precios por categoría.** Hoy sólo hay precios cargados para tres autos
-   puntuales, así que la web no encuentra con qué cotizar una categoría.
+1. **La razón social y el CUIT de Ubicar.** Mientras falten, cada contrato que
+   se emita sale marcado "DOCUMENTO PROVISORIO".
 2. **Las fotos y los datos de cada categoría** (cuántos pasajeros, cuántas
    valijas, si es automático). Las tarjetas de la web salen grises sin eso.
-3. **Los seguros y extras** con su precio y su franquicia.
+3. **Los precios por categoría.** Hoy sólo hay precios cargados para tres autos
+   puntuales, así que la web no encuentra con qué cotizar una categoría.
+4. **La categoría de cada auto.** Un auto sin categoría no aparece en la web ni
+   se puede cotizar.
+5. **Los seguros y extras** con su precio y su franquicia.
+6. **Las franjas de recargo por edad**, si quieren usarlas.
+7. **El precio de las fechas especiales** ya cargadas en el calendario.
+
+> **No hace falta acordarse de nada de esto.** El sistema lo reclama solo: los
+> avisos de la familia **"📌 Falta completar"** detectan cada hueco y
+> desaparecen en cuanto se carga el dato. Cuando esa familia quede vacía en la
+> campana, está todo listo.
 
 ### Lo que necesitamos que ustedes decidan
 
@@ -569,10 +653,45 @@ Sin esto la web no puede vender, aunque el sistema esté entero:
 
 ### Lo que depende de servicios externos
 
+**Es lo único que queda por hacer.** Todo el resto del sistema está terminado.
+
 - **Cobro con tarjeta online** — Mercado Pago.
 - **Usuarios con nombre y contraseña** — hoy el sistema no distingue quién hizo
   cada cosa. Es lo que hay que resolver antes de que el nombre de quien atendió
-  salga impreso en un contrato de verdad.
+  salga impreso en un contrato de verdad. También es lo que habilita el
+  **registro de auditoría**: el sistema ya guarda quién hizo cada movimiento,
+  pero hasta que haya usuarios reales todo queda registrado como un único
+  usuario y ese dato no sirve.
 - **Aviso por mail al instante** de una reserva web — hoy la reserva aparece
   en la bandeja del sistema en el momento, pero el mail llega recién en el
   resumen de las 8 de la mañana.
+- **Guardado de archivos en la nube** — el código está listo; falta crear la
+  cuenta. Sin eso, los documentos, las fotos de daños y las firmas se pierden
+  al actualizar el sistema.
+
+---
+
+## 13. Trabajar de a varios
+
+El sistema está pensado para que **tres personas lo usen al mismo tiempo** sobre
+los mismos datos, y eso trae problemas que no existen cuando lo usa uno solo.
+
+**Dos personas no pueden reservar el mismo auto.** Si dos confirman la misma
+unidad en el mismo instante, el sistema deja pasar una y a la otra le avisa que
+el auto ya está ocupado. Suena obvio, pero antes pasaban las dos: cada una
+miraba la disponibilidad, veía el auto libre, y grababa. El problema recién
+aparecía el día de la entrega. Se reprodujo el caso y se cerró.
+
+**Las pantallas se ponen al día solas.** Lo que cambia seguido —reservas,
+disponibilidad, caja, avisos— se actualiza cada 15 segundos y **al volver a la
+pestaña**, que es justo cuando alguien va a hacer algo con lo que tiene en
+pantalla. Lo que casi no cambia —categorías, precios, configuración— se guarda
+más tiempo para no hacer trabajar de más al servidor.
+
+**Los números correlativos no se repiten.** Recibos, contratos y comprobantes
+piden su número a la base de datos, no lo calculan sumando uno al último. Con
+dos personas emitiendo a la vez, calcularlo daría el mismo número dos veces.
+
+**Un auto que está afuera no se puede dar de baja por accidente.** Si tiene
+reservas sin cerrar, el sistema frena y muestra cuáles son. Se puede hacer
+igual, pero confirmando a sabiendas.
