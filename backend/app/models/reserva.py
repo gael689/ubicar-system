@@ -1,6 +1,6 @@
 from datetime import date, time, datetime
 from decimal import Decimal
-from sqlalchemy import String, DateTime, Enum, ForeignKey, Time, Date, Boolean, Numeric, Text, Index
+from sqlalchemy import String, DateTime, Enum, ForeignKey, Time, Date, Boolean, Numeric, Text, Index, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -125,6 +125,20 @@ class Reserva(Base):
     adicionales: Mapped[list["ReservaAdicional"]] = relationship(
         "ReservaAdicional", cascade="all, delete-orphan"
     )
+
+    # ── Recargo por edad del conductor (D-38, migración 044) ─────────────────
+    # Congelado igual que los adicionales: cambiar la tabla de recargos no
+    # puede reescribir lo que ya se pactó. Se guarda también la edad con la
+    # que se cotizó, sin la cual el importe no se puede explicar meses
+    # después, cuando el conductor ya cumplió años.
+    recargo_edad_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recargos_edad.id"), nullable=True
+    )
+    recargo_edad_nombre: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    recargo_edad_monto: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), server_default="0", nullable=False, default=0
+    )
+    recargo_edad_edad: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     @property
     def alquiler_id(self) -> int | None:

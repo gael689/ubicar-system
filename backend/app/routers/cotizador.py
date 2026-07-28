@@ -11,7 +11,7 @@ from app.models.presupuesto import Presupuesto
 from app.models.vehiculo import Vehiculo
 from app.models.tarifa import Tarifa
 from app.domain.enums import TipoTarifa
-from app.domain.tarifas import seleccionar_tarifa, calcular_precio_total, TarifaInfo
+from app.domain.tarifas import cotizar_por_bandas, TarifaInfo
 from app.schemas.presupuesto import PresupuestoCreate, PresupuestoResponse
 from app.utils.helpers import calcular_dias
 
@@ -52,14 +52,33 @@ def calcular_cotizacion(
     ]
 
     try:
-        tarifa = seleccionar_tarifa(dias, tarifas_info, categoria_efectiva)
-        tarifa_sugerida = tarifa.monto  # precio por día, banda ya resuelta (diaria/semanal/mensual)
-        total_sugerido = calcular_precio_total(dias, tarifa)
+        cot = cotizar_por_bandas(dias, tarifas_info, categoria_efectiva)
+        total_sugerido = cot.total
+        # Precio efectivo por día. Desde D-35 el `monto` de una tarifa semanal
+        # es el de la semana completa, así que mostrarlo tal cual como "tarifa
+        # sugerida" sería siete veces el número que el cliente espera ver.
+        tarifa_sugerida = (cot.total / Decimal(dias)).quantize(Decimal("0.01"))
+        detalle_bandas = [
+            {
+                "tipo": b.tipo.value,
+                "cantidad": b.cantidad,
+                "dias": b.dias,
+                "precio_bloque": b.precio_bloque,
+                "subtotal": b.subtotal,
+            }
+            for b in cot.bloques
+        ]
     except BusinessRuleError:
         tarifa_sugerida = None
         total_sugerido = None
+        detalle_bandas = []
 
-    return ok({"dias": dias, "tarifa_sugerida": tarifa_sugerida, "total_sugerido": total_sugerido})
+    return ok({
+        "dias": dias,
+        "tarifa_sugerida": tarifa_sugerida,
+        "total_sugerido": total_sugerido,
+        "detalle_bandas": detalle_bandas,
+    })
 
 
 @router.get("/presupuestos")

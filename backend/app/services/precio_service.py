@@ -28,9 +28,11 @@ from app.domain.precios import (
 from app.domain.tarifas import (
     TarifaInfo,
     calcular_duracion_dias,
-    seleccionar_tarifa,
+    cotizar_por_bandas,
 )
+from app.domain.recargo_edad import RecargoEdadInfo, calcular_edad
 from app.models.adicional import Adicional
+from app.models.recargo_edad import RecargoEdad
 from app.models.categoria import Categoria
 from app.models.fecha_especial import FechaEspecial
 from app.models.tarifa import Tarifa
@@ -148,7 +150,7 @@ class PrecioService:
 
     def _precio_banda(
         self, duracion_dias: int, categoria_id: int | None, vehiculo_id: int | None
-    ) -> tuple[Decimal | None, str]:
+    ) -> tuple[Decimal | list[Decimal] | None, str]:
         """
         Precio por día de la tarifa por banda (`domain/tarifas.py`), usado para
         los días que ninguna regla de calendario cubre.
@@ -156,7 +158,14 @@ class PrecioService:
         Acá es donde el sistema viejo pasa a ser un caso particular del motor
         nuevo, en vez de un camino paralelo: si no hay ninguna regla cargada,
         toda la cotización sale de acá y da exactamente lo mismo que antes.
-        Devuelve (precio_por_dia, nombre_para_el_desglose).
+
+        **Desde D-35 devuelve una lista con un precio por cada día**, porque el
+        precio de un día depende del bloque al que pertenece: en un alquiler de
+        10 días, los 7 primeros valen 1/7 de la semana y los 3 sueltos valen el
+        día completo. Devolver un único promedio haría que el desglose diario
+        no sumara el total que se cobra.
+
+        Devuelve (precios, nombre_para_el_desglose).
         """
         q = self.db.query(Tarifa).filter(Tarifa.activo.is_(True))
         if vehiculo_id is not None:
@@ -178,10 +187,47 @@ class PrecioService:
             for t in q.all()
         ]
         try:
-            tarifa = seleccionar_tarifa(duracion_dias, tarifas_info, categoria_id)
+            cot = cotizar_por_bandas(duracion_dias, tarifas_info, categoria_id)
         except BusinessRuleError:
             return None, "Sin tarifa configurada"
-        return Decimal(str(tarifa.monto)), f"Tarifa {tarifa.tipo.value}"
+
+        # "1 semana + 3 días" es lo que hay que poder leer en el desglose; con
+        # un solo bloque se sigue viendo "Tarifa diaria", como antes.
+        if len(cot.bloques) == 1:
+            nombre = f"Tarifa {cot.bloques[0].tipo.value}"
+        else:
+            nombre = "Tarifa " + " + ".join(
+                f"{b.cantidad}×{b.tipo.value}" for b in cot.bloques
+            )
+        return cot.precios_por_dia, nombre
+
+    def _cargar_recargos_edad(self, categoria_id: int | None) -> list[RecargoEdadInfo]:
+        """
+        Franjas de recargo por edad vigentes (D-38). Trae las generales más las
+        de la categoría cotizada — el dominio se encarga de elegir.
+        """
+        q = self.db.query(RecargoEdad).filter(RecargoEdad.activo.is_(True))
+        if categoria_id is not None:
+            q = q.filter(
+                (RecargoEdad.categoria_id == categoria_id)
+                | (RecargoEdad.categoria_id.is_(None))
+            )
+        else:
+            q = q.filter(RecargoEdad.categoria_id.is_(None))
+
+        return [
+            RecargoEdadInfo(
+                id=r.id,
+                nombre=r.nombre,
+                edad_desde=r.edad_desde,
+                edad_hasta=r.edad_hasta,
+                monto=Decimal(str(r.monto)) if r.monto is not None else None,
+                porcentaje=Decimal(str(r.porcentaje)) if r.porcentaje is not None else None,
+                unidad_cobro=r.unidad_cobro,
+                categoria_id=r.categoria_id,
+            )
+            for r in q.all()
+        ]
 
     # ─── Cotización ───────────────────────────────────────────────────────────
 
@@ -233,6 +279,7 @@ class PrecioService:
         vehiculo_id: int | None = None,
         canal: str = "mostrador",
         adicionales: list[tuple[int, int]] | None = None,
+        fecha_nacimiento: date | None = None,
     ) -> tuple[Cotizacion, int | None]:
         """
         Cotiza un alquiler. Devuelve (cotización, categoria_id efectiva).
@@ -267,6 +314,13 @@ class PrecioService:
             canal=canal,
             nombre_fallback=nombre_fallback,
             adicionales=self._cargar_adicionales(adicionales or []),
+            recargos_edad=self._cargar_recargos_edad(categoria_id),
+            # La edad se mide al retirar el auto, no hoy: quien cumple 25 antes
+            # de viajar ya no es un conductor joven (ver domain/recargo_edad.py).
+            edad_conductor=(
+                calcular_edad(fecha_nacimiento, fecha_inicio)
+                if fecha_nacimiento is not None else None
+            ),
         )
         return cotizacion, categoria_id
 
@@ -299,9 +353,12 @@ class PrecioService:
         filas = []
         for cat in categorias:
             reglas = self._cargar_reglas(desde, hasta, categoria_id=cat.id)
-            precio_banda, nombre_banda = self._precio_banda(
+            precios_banda, nombre_banda = self._precio_banda(
                 duracion_referencia, cat.id, None
             )
+            # La grilla muestra "cuánto sale UN día", así que con duración 1 el
+            # desglose por bloques tiene un solo elemento.
+            precio_banda = precios_banda[0] if precios_banda else None
             dias = []
             for offset in range(total_dias):
                 dia = desde + timedelta(days=offset)

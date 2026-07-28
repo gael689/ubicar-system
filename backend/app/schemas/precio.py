@@ -192,6 +192,9 @@ class CalcularPrecioRequest(BaseModel):
     vehiculo_id: int | None = None
     canal: Canal = "mostrador"
     adicionales: list[AdicionalSolicitadoRequest] = Field(default_factory=list)
+    # Necesaria para el recargo por franja etaria (D-38). No valida nada: sin
+    # ella simplemente no se aplica ningún recargo, y la cotización sale igual.
+    fecha_nacimiento: date | None = None
 
     @model_validator(mode="after")
     def _validar(self):
@@ -213,6 +216,15 @@ class DiaCotizadoResponse(BaseModel):
     etiqueta_promo: str | None = None
 
 
+class RecargoEdadCotizadoResponse(BaseModel):
+    """Recargo por edad aplicado (D-38). Va aparte de los adicionales porque
+    no es algo que el cliente eligió."""
+    id: int
+    nombre: str
+    edad: int
+    monto: Decimal
+
+
 class CotizacionResponse(BaseModel):
     dias: list[DiaCotizadoResponse]
     duracion_dias: int
@@ -223,6 +235,7 @@ class CotizacionResponse(BaseModel):
     subtotal_vehiculo: Decimal
     adicionales: list[AdicionalCotizadoResponse]
     total_adicionales: Decimal
+    recargo_edad: RecargoEdadCotizadoResponse | None = None
     total: Decimal
     precio_dia_promedio: Decimal
     total_referencia: Decimal | None

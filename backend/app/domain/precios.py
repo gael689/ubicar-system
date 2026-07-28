@@ -37,6 +37,9 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.core.exceptions import BusinessRuleError
+from app.domain.recargo_edad import (
+    RecargoAplicado, RecargoEdadInfo, calcular_recargo, seleccionar_recargo,
+)
 
 
 CENTAVO = Decimal("0.01")
@@ -164,6 +167,9 @@ class Cotizacion:
     total_adicionales: Decimal = Decimal("0")
     descuento_id: int | None = None
     descuento_nombre: str | None = None
+    # Recargo por edad del conductor (D-38). Va aparte de los adicionales
+    # porque no es algo que el cliente elija.
+    recargo_edad: RecargoAplicado | None = None
     # Total a precio de lista: lo que costaría sin ninguna promo. Sirve para
     # el "antes $X, ahora $Y" de la web. Igual al subtotal si no hubo promos.
     total_referencia: Decimal | None = None
@@ -354,20 +360,31 @@ def cotizar(
     fecha_inicio: date,
     fecha_fin: date,
     reglas: list[ReglaPrecio],
-    precio_fallback: Decimal | None = None,
+    precio_fallback: Decimal | list[Decimal] | None = None,
     descuentos: list[DescuentoDuracionInfo] | None = None,
     categoria_id: int | None = None,
     vehiculo_id: int | None = None,
     canal: str = "mostrador",
     nombre_fallback: str = "Tarifa por duración",
     adicionales: list[AdicionalSolicitado] | None = None,
+    recargos_edad: list[RecargoEdadInfo] | None = None,
+    edad_conductor: int | None = None,
 ) -> Cotizacion:
     """
     Cotiza un alquiler resolviendo el precio día por día.
 
-    `precio_fallback` es el precio por día de la tarifa por banda que ya
-    existía (`domain/tarifas.py`), usado para los días que ninguna regla de
-    calendario cubre. Puede ser None si no hay tarifa configurada: en ese
+    `precio_fallback` es el precio por día de la tarifa por banda
+    (`domain/tarifas.py`), usado para los días que ninguna regla de calendario
+    cubre. Acepta dos formas:
+
+    - **una lista** con un precio por cada día del alquiler — es lo que
+      devuelve `cotizar_por_bandas` desde D-35, donde el precio de un día
+      depende del bloque al que pertenece (los 7 primeros días valen 1/7 de la
+      semana, los sueltos valen el día completo);
+    - **un único Decimal**, que aplica a todos los días. Lo usa la vista de
+      calendario, que muestra "cuánto sale UN día" sin una duración concreta.
+
+    Puede ser None si no hay tarifa configurada: en ese
     caso, si además falta alguna regla, se levanta `BusinessRuleError` en vez
     de cotizar un día en $0 — cobrar de menos en silencio es peor que fallar.
 
@@ -415,12 +432,18 @@ def cotizar(
             if regla.es_promocional and regla.etiqueta_promo and regla.etiqueta_promo not in promociones:
                 promociones.append(regla.etiqueta_promo)
         else:
-            if precio_fallback is None:
+            # El fallback puede venir como un precio por día del alquiler
+            # (bloques, D-35) o como un único valor para todos.
+            if isinstance(precio_fallback, list):
+                del_dia = precio_fallback[offset] if offset < len(precio_fallback) else None
+            else:
+                del_dia = precio_fallback
+            if del_dia is None:
                 raise BusinessRuleError(
                     "sin_precio_para_el_dia",
                     f"No hay ninguna regla de precio ni tarifa configurada para el {dia.isoformat()}",
                 )
-            precio = Decimal(str(precio_fallback))
+            precio = Decimal(str(del_dia))
             dias.append(DiaCotizado(
                 fecha=dia, precio=precio, origen="banda", regla_nombre=nombre_fallback,
             ))
@@ -433,6 +456,19 @@ def cotizar(
     descuento_monto = _redondear(subtotal * porcentaje / Decimal("100"))
     subtotal_vehiculo = _redondear(subtotal - descuento_monto)
 
+    # Recargo por edad: después del descuento por duración y antes de los
+    # adicionales (ver domain/recargo_edad.py). Sin edad no se puede saber si
+    # corresponde, así que simplemente no se aplica ninguno.
+    recargo_aplicado = None
+    if edad_conductor is not None and recargos_edad:
+        recargo_aplicado = calcular_recargo(
+            seleccionar_recargo(edad_conductor, recargos_edad, categoria_id),
+            edad_conductor,
+            subtotal_vehiculo,
+            duracion_dias,
+        )
+    monto_recargo = recargo_aplicado.monto if recargo_aplicado else Decimal("0")
+
     # Los adicionales se suman DESPUÉS del descuento por duración (plan §7.2).
     solicitados = adicionales or []
     validar_seleccion_adicionales(solicitados)
@@ -440,7 +476,7 @@ def cotizar(
         solicitados, duracion_dias
     )
 
-    total = _redondear(subtotal_vehiculo + total_adicionales)
+    total = _redondear(subtotal_vehiculo + monto_recargo + total_adicionales)
 
     return Cotizacion(
         dias=dias,
@@ -456,4 +492,5 @@ def cotizar(
         descuento_nombre=descuento.nombre if descuento else None,
         total_referencia=_redondear(referencia),
         promociones=promociones,
+        recargo_edad=recargo_aplicado,
     )

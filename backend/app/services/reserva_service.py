@@ -12,7 +12,10 @@ from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
 from app.domain.enums import EstadoReserva, EstadoVehiculo
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
-from app.domain.tarifas import seleccionar_tarifa, calcular_duracion_dias, calcular_precio_total, TarifaInfo
+from app.domain.tarifas import cotizar_por_bandas, calcular_duracion_dias, TarifaInfo
+from app.domain.recargo_edad import (
+    RecargoAplicado, calcular_edad, calcular_recargo, seleccionar_recargo,
+)
 from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.categoria import Categoria
@@ -40,6 +43,7 @@ from app.repositories.reserva_repo import ReservaRepo
 from app.repositories.alquiler_repo import AlquilerRepo
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 from app.services.echeq_service import EcheqService
+from app.services.precio_service import PrecioService
 
 
 class ReservaService:
@@ -231,6 +235,46 @@ class ReservaService:
                     Decimal(str(ra.precio_unitario)), ra.unidad_cobro, ra.cantidad, duracion
                 )
 
+    def _calcular_recargo_edad(
+        self,
+        cliente_id: int,
+        conductor_id: int | None,
+        categoria_id: int | None,
+        fecha_inicio: date,
+        duracion_dias: int,
+        subtotal_vehiculo: Decimal,
+    ) -> RecargoAplicado | None:
+        """
+        Recargo por edad de quien va a manejar (D-38).
+
+        **La edad que cuenta es la del conductor efectivo**: si la reserva
+        designa un conductor adicional, es él quien maneja, y el riesgo (y por
+        lo tanto el recargo) es el suyo, no el del titular que paga.
+
+        Sin fecha de nacimiento cargada no se aplica ningún recargo. Es
+        deliberado: se prefiere no cobrar un recargo antes que inventarlo, y
+        el dato faltante se ve en la ficha del cliente.
+        """
+        nacimiento: date | None = None
+        if conductor_id is not None:
+            conductor = self.db.get(ConductorAdicional, conductor_id)
+            nacimiento = getattr(conductor, "fecha_nacimiento", None) if conductor else None
+        if nacimiento is None:
+            cliente = self.db.get(Cliente, cliente_id)
+            nacimiento = cliente.fecha_nacimiento if cliente else None
+        if nacimiento is None:
+            return None
+
+        recargos = PrecioService(self.db)._cargar_recargos_edad(categoria_id)
+        if not recargos:
+            return None
+
+        edad = calcular_edad(nacimiento, fecha_inicio)
+        return calcular_recargo(
+            seleccionar_recargo(edad, recargos, categoria_id),
+            edad, Decimal(str(subtotal_vehiculo)), duracion_dias,
+        )
+
     def _validar_conductor(self, conductor_id: int, cliente_id: int) -> None:
         """El conductor tiene que ser un conductor adicional activo del propio cliente."""
         conductor = (
@@ -378,9 +422,9 @@ class ReservaService:
         # categoría, que es exactamente lo que la web vende.
         tarifas_info, _ = self._cargar_tarifas_info(vehiculo_id, categoria_id)
         try:
-            tarifa = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
-            precio_lista = calcular_precio_total(duracion, tarifa)
-            tarifa_id = tarifa.id
+            cot = cotizar_por_bandas(duracion, tarifas_info, categoria_id)
+            precio_lista = cot.total
+            tarifa_id = cot.tarifa_principal.id
         except BusinessRuleError:
             pass
 
@@ -412,6 +456,15 @@ class ReservaService:
                     f"(${precio_lista}) — hace falta un motivo para la diferencia",
                 )
             descuento_autorizado_por = usuario_id
+
+        # 5.bis Recargo por edad del conductor (D-38). No rechaza a nadie:
+        # la edad modifica el precio. Se congela en la reserva junto con la
+        # edad usada, porque el importe no se puede explicar meses después
+        # cuando el conductor ya cumplió años.
+        recargo = self._calcular_recargo_edad(
+            cliente_id, conductor_id, categoria_id, fecha_inicio,
+            duracion, precio_total or precio_lista or Decimal("0"),
+        )
 
         # 6. Crear reserva (ya CONFIRMADA directamente)
         with self.db.begin_nested():
@@ -454,6 +507,10 @@ class ReservaService:
                 anticipo_monto=anticipo_monto,
                 anticipo_fecha=anticipo_fecha,
                 anticipo_medio_pago=anticipo_medio_pago,
+                recargo_edad_id=recargo.id if recargo else None,
+                recargo_edad_nombre=recargo.nombre if recargo else None,
+                recargo_edad_monto=recargo.monto if recargo else Decimal("0"),
+                recargo_edad_edad=recargo.edad if recargo else None,
                 estado=EstadoReserva.CONFIRMADA.value,
                 usuario_id=usuario_id,
             )
@@ -653,9 +710,9 @@ class ReservaService:
             duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
             tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
             try:
-                tarifa = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
-                precio = calcular_precio_total(duracion, tarifa)
-                tarifa_id = tarifa.id
+                cot = cotizar_por_bandas(duracion, tarifas_info, categoria_id)
+                precio = cot.total
+                tarifa_id = cot.tarifa_principal.id
             except BusinessRuleError:
                 # Si no hay tarifa configurada, igualmente se confirma pero sin precio
                 tarifa_id = None

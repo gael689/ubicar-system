@@ -62,6 +62,9 @@ class ConductorAdicional(Base):
     dni: Mapped[str | None] = mapped_column(String(20), nullable=True)
     licencia_numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
     licencia_vencimiento: Mapped[date] = mapped_column(Date(), nullable=False)
+    # El recargo por edad (D-38) mira la edad de quien maneja: si la reserva
+    # designa un conductor adicional, el riesgo es el suyo y no el del titular.
+    fecha_nacimiento: Mapped[date | None] = mapped_column(Date(), nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     cliente: Mapped["Cliente"] = relationship(back_populates="conductores_adicionales")

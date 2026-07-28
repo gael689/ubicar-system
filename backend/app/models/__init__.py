@@ -19,6 +19,7 @@ from app.models.fecha_especial import FechaEspecial
 from app.models.tarifa_calendario import TarifaCalendario, DescuentoDuracion
 from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
+from app.models.recargo_edad import RecargoEdad
 
 __all__ = [
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",

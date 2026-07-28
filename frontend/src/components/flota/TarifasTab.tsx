@@ -22,14 +22,16 @@ const TIPO_LABEL: Record<string, string> = {
   mensual: 'Mensual',
 };
 
-// El monto SIEMPRE es un precio por día — la banda sólo decide para qué
-// duración aplica. No es "precio total de la semana/mes": el sistema no
-// prorratea, multiplica días × monto tal cual (ver domain/tarifas.py).
+// D-35: el monto es el precio del BLOQUE COMPLETO, no el precio por día.
+// Un alquiler se descompone consumiendo los bloques más grandes primero:
+// 10 días = 1 semana + 3 días sueltos (ver domain/tarifas.py).
 const TIPO_HINT: Record<string, string> = {
-  diaria: 'Precio por día para alquileres de menos de 7 días',
-  semanal: 'Precio por día (no el total de la semana) para alquileres de 7 a 29 días',
-  mensual: 'Precio por día (no el total del mes) para alquileres de 30 días o más',
+  diaria: 'Precio de UN día. Se usa para los días sueltos que sobran de una semana o un mes.',
+  semanal: 'Precio de la SEMANA COMPLETA (7 días). Un alquiler de 10 días cobra una semana + 3 días.',
+  mensual: 'Precio del MES COMPLETO (30 días). Un alquiler de 40 días cobra un mes + una semana + 3 días.',
 };
+
+const DIAS_POR_BLOQUE: Record<string, number> = { diaria: 1, semanal: 7, mensual: 30 };
 
 interface Props {
   vehiculoId: number;
@@ -190,16 +192,24 @@ function TarifaFormInline({
     onSubmit({ tipo, monto: montoNum });
   };
 
-  // Alerta suave (no bloquea) si el precio por día de una banda larga no es
-  // menor al de una más corta — suele indicar que cargaron el total del
-  // período en vez del precio por día. "El sistema informa, la persona decide".
+  // Alertas suaves (no bloquean) contra los dos errores de carga posibles.
+  // "El sistema informa, la persona decide".
   const montoNum = Number(monto);
-  const referencia: Record<string, string> = { semanal: 'diaria', mensual: 'semanal' };
-  const tipoReferencia = referencia[tipo];
-  const tarifaReferencia = tipoReferencia ? activas.find(t => t.tipo === tipoReferencia) : undefined;
-  const advertencia = tarifaReferencia && montoNum > 0 && montoNum >= Number(tarifaReferencia.monto)
-    ? `El precio por día de "${TIPO_LABEL[tipo]}" (${formatCurrency(montoNum)}) no es menor al de "${TIPO_LABEL[tipoReferencia]}" (${formatCurrency(tarifaReferencia.monto)}). ¿Seguro que no cargaste el precio total del período en vez del precio por día?`
-    : null;
+  const dias = DIAS_POR_BLOQUE[tipo];
+  const tarifaDiaria = activas.find(t => t.tipo === 'diaria');
+  const precioDiario = tarifaDiaria ? Number(tarifaDiaria.monto) : 0;
+
+  let advertencia: string | null = null;
+  if (montoNum > 0 && precioDiario > 0 && dias > 1) {
+    if (montoNum <= precioDiario) {
+      // El error clásico al pasar del modelo viejo al nuevo.
+      advertencia = `${formatCurrency(montoNum)} por ${dias} días es menos que un solo día (${formatCurrency(precioDiario)}). ¿Cargaste el precio POR DÍA en vez del precio del bloque completo? Acá va el total de ${dias} días.`;
+    } else if (montoNum >= precioDiario * dias) {
+      advertencia = `${formatCurrency(montoNum)} por ${dias} días no es más barato que pagarlos sueltos (${formatCurrency(precioDiario * dias)}). La banda "${TIPO_LABEL[tipo]}" no le da ninguna ventaja al cliente: nadie va a alquilar más tiempo por eso.`;
+    }
+  }
+
+  const equivalente = montoNum > 0 && dias > 1 ? montoNum / dias : null;
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/40 p-4 bg-primary/5">
@@ -217,7 +227,9 @@ function TarifaFormInline({
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Precio por día ($)</label>
+          <label className="text-xs font-medium text-muted-foreground">
+            {tipo === 'diaria' ? 'Precio del día ($)' : `Precio de ${dias === 7 ? 'la semana' : 'el mes'} ($)`}
+          </label>
           <input
             type="number"
             min="1"
@@ -238,7 +250,12 @@ function TarifaFormInline({
           </Button>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">{TIPO_HINT[tipo]}</p>
+      <p className="text-xs text-muted-foreground">
+        {TIPO_HINT[tipo]}
+        {equivalente !== null && (
+          <span className="ml-1 text-foreground">Equivale a {formatCurrency(equivalente)} por día.</span>
+        )}
+      </p>
       {advertencia && (
         <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-md px-2 py-1.5">
           ⚠ {advertencia}

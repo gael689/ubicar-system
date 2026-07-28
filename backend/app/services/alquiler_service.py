@@ -18,7 +18,7 @@ from app.domain.cuenta_corriente import calcular_vencimiento
 from app.domain.enums import EstadoReserva, EstadoVehiculo, DecisionExcedente
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.tarifas import (
-    seleccionar_tarifa, calcular_duracion_dias, calcular_precio_total, TarifaInfo
+    seleccionar_tarifa, cotizar_por_bandas, calcular_duracion_dias, TarifaInfo
 )
 from app.domain.transiciones import estado_tras_checkout, estado_tras_checkin
 from app.domain.ventana import VentanaReserva
@@ -573,9 +573,9 @@ class AlquilerService:
 
         tarifa_no_encontrada = False
         try:
-            nueva_tarifa = seleccionar_tarifa(nueva_duracion, tarifas_info, categoria_id)
-            nuevo_precio = calcular_precio_total(nueva_duracion, nueva_tarifa)
-            nueva_tarifa_id = nueva_tarifa.id
+            cot = cotizar_por_bandas(nueva_duracion, tarifas_info, categoria_id)
+            nuevo_precio = cot.total
+            nueva_tarifa_id = cot.tarifa_principal.id
         except BusinessRuleError:
             # Sin tarifa configurada para la nueva duración: se conserva el precio
             # y la tarifa anteriores en vez de anularlos (no se pierde la deuda).
@@ -678,18 +678,32 @@ class AlquilerService:
         return cargo, horas_a_cobrar, False
 
     def _obtener_tarifa_diaria(self, reserva: Reserva) -> Decimal:
-        """Obtiene la tarifa diaria aplicada a la reserva."""
-        if reserva.tarifa_aplicada_id:
-            tarifa = self.db.query(Tarifa).filter(Tarifa.id == reserva.tarifa_aplicada_id).first()
-            if tarifa:
-                return Decimal(str(tarifa.monto))
+        """
+        Precio **por día** del alquiler, que es la base del cargo por hora de
+        excedente (`domain/control_24hs.py`).
 
-        # Fallback: buscar tarifa diaria activa
+        Desde D-35 no se puede leer `tarifa_aplicada.monto` directo: con el
+        modelo de bloques, el `monto` de una tarifa semanal es el precio de la
+        **semana**, así que usarlo acá cobraría el excedente a siete veces lo
+        que corresponde.
+
+        Se usa el precio efectivo por día —lo que el cliente realmente paga
+        por día en este alquiler— porque es lo que preserva el comportamiento
+        anterior y porque es el número que el cliente puede reconocer. Cobrar
+        el excedente a la tarifa diaria suelta (más cara que la de un alquiler
+        largo) sería defendible, pero es una decisión comercial que nadie tomó.
+        """
         duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+
+        # El precio pactado manda sobre cualquier recálculo: es el que el
+        # cliente aceptó, e incluye el descuento que se le haya hecho.
+        if reserva.precio_total and duracion > 0:
+            return Decimal(str(reserva.precio_total)) / Decimal(duracion)
+
         tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
         try:
-            tarifa_sel = seleccionar_tarifa(duracion, tarifas_info, categoria_id)
-            return tarifa_sel.monto
+            cot = cotizar_por_bandas(duracion, tarifas_info, categoria_id)
+            return cot.total / Decimal(duracion)
         except BusinessRuleError:
             raise BusinessRuleError(
                 "tarifa_no_encontrada",

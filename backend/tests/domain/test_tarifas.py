@@ -13,6 +13,7 @@ from app.domain.tarifas import (
     seleccionar_tipo_tarifa,
     seleccionar_tarifa,
     calcular_precio_total,
+    cotizar_por_bandas,
     TarifaInfo,
 )
 from app.domain.enums import TipoTarifa
@@ -151,23 +152,142 @@ class TestSeleccionarTarifa:
         assert t.monto == Decimal("20000")
 
 
-# ─── calcular_precio_total ────────────────────────────────────────────────────
+# ─── cotizar_por_bandas (D-35: prorrateo por bloques) ─────────────────────────
 
-class TestCalcularPrecioTotal:
-    def test_tres_dias_tarifa_diaria(self):
-        t = tarifa(1, TipoTarifa.DIARIA, 30000)
-        assert calcular_precio_total(3, t) == Decimal("90000")
+class TestSoloTarifaDiaria:
+    """Con sólo tarifa diaria cargada —que es el estado real de la base— el
+    precio tiene que dar exactamente lo mismo que antes de D-35. Es lo que
+    permitió cambiar el modelo sin migrar ni una reserva."""
 
-    def test_siete_dias_tarifa_semanal(self):
-        t = tarifa(1, TipoTarifa.SEMANAL, 25000)
-        assert calcular_precio_total(7, t) == Decimal("175000")
+    def test_tres_dias(self):
+        ts = [tarifa(1, TipoTarifa.DIARIA, 30000)]
+        assert calcular_precio_total(3, ts) == Decimal("90000.00")
 
-    def test_no_prorratea_semanal_diez_dias(self):
-        """PRE-01: monto es precio POR DÍA, sin prorrateo — 10 días de tarifa
-        semanal a $25.000/día son $250.000, no "una semana + 3 días sueltos"."""
-        t = tarifa(1, TipoTarifa.SEMANAL, 25000)
-        assert calcular_precio_total(10, t) == Decimal("250000")
+    def test_diez_dias_sin_semanal_son_diez_dias(self):
+        ts = [tarifa(1, TipoTarifa.DIARIA, 30000)]
+        assert calcular_precio_total(10, ts) == Decimal("300000.00")
 
-    def test_no_prorratea_mensual_cuarenta_dias(self):
-        t = tarifa(1, TipoTarifa.MENSUAL, 18000)
-        assert calcular_precio_total(40, t) == Decimal("720000")
+    def test_cuarenta_dias_sin_semanal_ni_mensual(self):
+        ts = [tarifa(1, TipoTarifa.DIARIA, 30000)]
+        assert calcular_precio_total(40, ts) == Decimal("1200000.00")
+
+
+class TestProrrateoPorBloques:
+    def test_diez_dias_es_una_semana_mas_tres_dias(self):
+        """El caso que define D-35: 10 días = 1 semana + 3 días sueltos."""
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 25000),
+            tarifa(2, TipoTarifa.SEMANAL, 150000),
+        ]
+        cot = cotizar_por_bandas(10, ts)
+        assert cot.total == Decimal("225000.00")  # 150.000 + 3 × 25.000
+        assert [(b.tipo, b.cantidad) for b in cot.bloques] == [
+            (TipoTarifa.SEMANAL, 1),
+            (TipoTarifa.DIARIA, 3),
+        ]
+
+    def test_cuarenta_dias_es_mes_mas_semana_mas_tres_dias(self):
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 25000),
+            tarifa(2, TipoTarifa.SEMANAL, 150000),
+            tarifa(3, TipoTarifa.MENSUAL, 500000),
+        ]
+        cot = cotizar_por_bandas(40, ts)
+        # 500.000 + 150.000 + 3 × 25.000
+        assert cot.total == Decimal("725000.00")
+        assert [(b.tipo, b.cantidad) for b in cot.bloques] == [
+            (TipoTarifa.MENSUAL, 1),
+            (TipoTarifa.SEMANAL, 1),
+            (TipoTarifa.DIARIA, 3),
+        ]
+
+    def test_catorce_dias_son_dos_semanas_exactas(self):
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 25000),
+            tarifa(2, TipoTarifa.SEMANAL, 150000),
+        ]
+        cot = cotizar_por_bandas(14, ts)
+        assert cot.total == Decimal("300000.00")
+        assert len(cot.bloques) == 1
+        assert cot.bloques[0].cantidad == 2
+
+    def test_seis_dias_no_se_optimiza_a_semana(self):
+        """No busca el precio más barato: 6 días son 6 días, aunque la semana
+        salga menos. Sugerirle al cliente que alquile más es una decisión
+        comercial (D-35b), no del cálculo."""
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 30000),
+            tarifa(2, TipoTarifa.SEMANAL, 150000),
+        ]
+        cot = cotizar_por_bandas(6, ts)
+        assert cot.total == Decimal("180000.00")  # 6 × 30.000, no 150.000
+
+    def test_sin_tarifa_diaria_los_dias_sueltos_fallan(self):
+        """Cobrar de menos en silencio es peor que fallar."""
+        ts = [tarifa(1, TipoTarifa.SEMANAL, 150000)]
+        with pytest.raises(BusinessRuleError):
+            cotizar_por_bandas(10, ts)
+
+    def test_sin_ninguna_tarifa_falla(self):
+        with pytest.raises(BusinessRuleError):
+            cotizar_por_bandas(3, [])
+
+    def test_duracion_cero_falla(self):
+        ts = [tarifa(1, TipoTarifa.DIARIA, 30000)]
+        with pytest.raises(BusinessRuleError):
+            cotizar_por_bandas(0, ts)
+
+    def test_tarifa_principal_es_la_del_bloque_mas_grande(self):
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 25000),
+            tarifa(2, TipoTarifa.SEMANAL, 150000),
+        ]
+        cot = cotizar_por_bandas(10, ts)
+        assert cot.tarifa_principal.id == 2
+
+    def test_respeta_la_prioridad_del_vehiculo(self):
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 30000),
+            tarifa(2, TipoTarifa.DIARIA, 20000, vehiculo_id=5),
+        ]
+        cot = cotizar_por_bandas(3, ts)
+        assert cot.total == Decimal("60000.00")
+
+
+class TestDesgloseDiario:
+    """El desglose por día es lo que consume el motor de calendario. Tiene que
+    tener un precio por día y sumar exactamente el total."""
+
+    def test_hay_un_precio_por_cada_dia(self):
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 25000),
+            tarifa(2, TipoTarifa.SEMANAL, 150000),
+        ]
+        cot = cotizar_por_bandas(10, ts)
+        assert len(cot.precios_por_dia) == 10
+
+    def test_la_suma_diaria_es_exactamente_el_total(self):
+        """$150.000 / 7 no es exacto: sin repartir el resto, el desglose daría
+        $149.999,99 y no coincidiría con lo que se cobra."""
+        ts = [tarifa(1, TipoTarifa.SEMANAL, 150000)]
+        cot = cotizar_por_bandas(7, ts)
+        assert sum(cot.precios_por_dia) == cot.total == Decimal("150000.00")
+
+    def test_los_dias_sueltos_valen_el_dia_completo(self):
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 25000),
+            tarifa(2, TipoTarifa.SEMANAL, 150000),
+        ]
+        cot = cotizar_por_bandas(10, ts)
+        assert cot.precios_por_dia[-3:] == [Decimal("25000.00")] * 3
+        # Los de la semana valen menos que un día suelto: es el descuento.
+        assert cot.precios_por_dia[0] < Decimal("25000.00")
+
+    def test_suma_exacta_tambien_con_bloques_mezclados(self):
+        ts = [
+            tarifa(1, TipoTarifa.DIARIA, 25000),
+            tarifa(2, TipoTarifa.SEMANAL, 150000),
+            tarifa(3, TipoTarifa.MENSUAL, 500000),
+        ]
+        cot = cotizar_por_bandas(40, ts)
+        assert sum(cot.precios_por_dia) == cot.total
