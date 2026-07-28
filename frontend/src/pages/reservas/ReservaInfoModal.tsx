@@ -260,6 +260,29 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
                     Anticipo: ${parseFloat(reserva.anticipo_monto).toLocaleString('es-AR')} ({reserva.anticipo_medio_pago})
                   </p>
                 )}
+                {/* Los adicionales se facturan aparte del precio del auto,
+                    por eso se listan y se muestra el total real a cobrar. */}
+                {reserva.adicionales && reserva.adicionales.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-border space-y-0.5">
+                    {reserva.adicionales.map(a => (
+                      <p key={a.id} className="text-xs text-muted-foreground flex justify-between gap-2">
+                        <span className="truncate">
+                          {a.nombre}{a.cantidad > 1 && ` ×${a.cantidad}`}
+                          {a.unidad_cobro === 'por_dia' && ' (por día)'}
+                        </span>
+                        <span className="tabular-nums shrink-0">
+                          ${parseFloat(a.subtotal).toLocaleString('es-AR')}
+                        </span>
+                      </p>
+                    ))}
+                    <p className="text-sm font-bold text-foreground flex justify-between gap-2 pt-1">
+                      <span>Total a facturar</span>
+                      <span className="tabular-nums">
+                        ${(parseFloat(reserva.precio_total) + parseFloat(reserva.total_adicionales ?? '0')).toLocaleString('es-AR')}
+                      </span>
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}

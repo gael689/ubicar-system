@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import { useVehiculos } from '@/hooks/useVehiculos';
 import { useClientes, useConductores } from '@/hooks/useClientes';
+import { useAdicionales } from '@/hooks/useAdicionales';
 import api from '@/lib/api';
-import type { Reserva, ReservaCreate, ReservaUpdate, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
+import type { Adicional, Reserva, ReservaCreate, ReservaUpdate, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
 
 interface Props {
   reserva?: Reserva;
@@ -118,6 +119,46 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const [precioTotal, setPrecioTotal]   = useState<number | ''>(initialPrecioTotal || '');
   const [precioPorDia, setPrecioPorDia] = useState<number | ''>(initialPrecioPorDia || '');
   const [conFactura, setConFactura] = useState(reserva?.con_factura ?? false);
+
+  // Adicionales contratados: { adicional_id → cantidad }. No entran en
+  // `precio_total` (ese es el precio del auto) — se suman al facturar.
+  const [adicionales, setAdicionales] = useState<Record<number, number>>(() =>
+    Object.fromEntries((reserva?.adicionales ?? []).map(a => [a.adicional_id, a.cantidad]))
+  );
+  const { data: catalogoAdicionales = [] } = useAdicionales();
+  // Después del check-out el alquiler ya se facturó en la cuenta corriente:
+  // el backend rechaza el cambio, así que acá no se ofrece.
+  const adicionalesBloqueados = Boolean(reserva?.alquiler_id);
+
+  function toggleAdicional(a: Adicional) {
+    setAdicionales(prev => {
+      const copia = { ...prev };
+      if (copia[a.id] !== undefined) {
+        delete copia[a.id];
+        return copia;
+      }
+      // Las coberturas son excluyentes: elegir una reemplaza a la anterior.
+      // El backend lo valida igual; acá se evita el error en vez de mostrarlo.
+      if (a.grupo === 'cobertura') {
+        for (const otra of catalogoAdicionales) {
+          if (otra.grupo === 'cobertura') delete copia[otra.id];
+        }
+      }
+      copia[a.id] = 1;
+      return copia;
+    });
+  }
+
+  // Espejo de la fórmula del backend (`ReservaService._subtotal_adicional`).
+  // Es sólo una vista previa: el importe que se cobra lo calcula el servidor.
+  const totalAdicionales = useMemo(() => {
+    return catalogoAdicionales.reduce((acc, a) => {
+      const cantidad = adicionales[a.id];
+      if (cantidad === undefined) return acc;
+      const multiplicador = a.unidad_cobro === 'por_dia' ? cantidad * duracionDias : cantidad;
+      return acc + Number(a.precio) * multiplicador;
+    }, 0);
+  }, [catalogoAdicionales, adicionales, duracionDias]);
   const [descuentoMotivo, setDescuentoMotivo] = useState(reserva?.descuento_motivo ?? '');
   const lastEditedRef = useRef<'dia' | 'total'>('dia');
 
@@ -303,6 +344,13 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           lugar_devolucion: lugarDevolucion,
           notas: notas || null,
           precio_total: precioTotal || null,
+          // Sólo se mandan si se pueden cambiar: después del check-out el
+          // backend los rechaza, y mandarlos igual rompería la edición.
+          ...(adicionalesBloqueados ? {} : {
+            adicionales: Object.entries(adicionales).map(([id, cantidad]) => ({
+              adicional_id: Number(id), cantidad,
+            })),
+          }),
           forma_pago_prevista: formaPagoPrevista || null,
           estado_pago: estadoPago,
           anticipo_monto: estadoPago === 'anticipo' ? parseFloat(anticipoMonto as string) : (estadoPago === 'pagado' ? parseFloat(String(precioTotal)) : null),
@@ -327,6 +375,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           hora_devolucion_acordada: lateCheckout && horaDevolucionAcordada ? horaDevolucionAcordada + ':00' : null,
           cargo_late_checkout: lateCheckout ? cargoLateCheckout : 0,
           precio_total: precioTotal || null,
+          adicionales: Object.entries(adicionales).map(([id, cantidad]) => ({
+            adicional_id: Number(id), cantidad,
+          })),
           garantia_tipo: garantiaTipo !== 'no_aplica' ? garantiaTipo : null,
           garantia_monto: garantiaTipo !== 'no_aplica' && garantiaMonto ? parseFloat(garantiaMonto as string) : null,
           garantia_tarjeta_numero: garantiaTipo === 'tarjeta' ? garantiaTarjetaNumero || null : null,
@@ -676,6 +727,79 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             </div>
             {duracionDias === 0 && (
               <p className="text-xs text-slate-500 italic">Configure las fechas para calcular la cotización.</p>
+            )}
+
+            {/* Adicionales — van APARTE del precio del vehículo: se suman al
+                facturar, igual que el cargo por late checkout. */}
+            {catalogoAdicionales.length > 0 && (
+              <div className="space-y-2 pt-3 border-t border-slate-200">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-slate-600">Adicionales</label>
+                  {totalAdicionales > 0 && (
+                    <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                      + ${totalAdicionales.toLocaleString('es-AR')}
+                    </span>
+                  )}
+                </div>
+
+                {adicionalesBloqueados ? (
+                  <p className="text-xs text-slate-500 italic">
+                    {Object.keys(adicionales).length > 0
+                      ? (reserva?.adicionales ?? []).map(a => `${a.nombre} ×${a.cantidad}`).join(' · ')
+                      : 'Sin adicionales.'}
+                    {' '}No se pueden modificar: el alquiler ya se facturó en la cuenta corriente.
+                  </p>
+                ) : (
+                  <>
+                    {(['cobertura', 'extra'] as const).map(grupo => {
+                      const delGrupo = catalogoAdicionales.filter(a => a.grupo === grupo);
+                      if (delGrupo.length === 0) return null;
+                      return (
+                        <div key={grupo} className="space-y-1">
+                          <p className="text-[11px] font-medium text-slate-500">
+                            {grupo === 'cobertura' ? 'Cobertura (elegí una)' : 'Extras'}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {delGrupo.map(a => {
+                              const elegido = adicionales[a.id] !== undefined;
+                              return (
+                                <button
+                                  key={a.id}
+                                  type="button"
+                                  onClick={() => toggleAdicional(a)}
+                                  title={a.descripcion ?? undefined}
+                                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                                    elegido
+                                      ? 'border-primary bg-primary text-white'
+                                      : 'border-slate-300 bg-white text-slate-600 hover:border-primary/50'
+                                  }`}
+                                >
+                                  {a.nombre}
+                                  {Number(a.precio) > 0 && (
+                                    <span className="ml-1 opacity-75">
+                                      ${Number(a.precio).toLocaleString('es-AR')}
+                                      {a.unidad_cobro === 'por_dia' ? '/día' : ''}
+                                    </span>
+                                  )}
+                                  {elegido && adicionales[a.id] > 1 && ` ×${adicionales[a.id]}`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {totalAdicionales > 0 && precioTotal !== '' && (
+                      <p className="text-xs text-slate-600">
+                        Total a facturar: <strong className="tabular-nums">
+                          ${(Number(precioTotal) + totalAdicionales).toLocaleString('es-AR')}
+                        </strong>
+                        {' '}(auto ${Number(precioTotal).toLocaleString('es-AR')} + adicionales ${totalAdicionales.toLocaleString('es-AR')})
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
             )}
             {!isEdit && hayDescuentoManual && (
               <div className="space-y-1.5">

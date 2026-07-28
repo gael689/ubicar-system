@@ -108,4 +108,15 @@ class ReservaAdicional(Base):
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    adicional: Mapped["Adicional"] = relationship("Adicional")
+    adicional: Mapped["Adicional"] = relationship("Adicional", lazy="joined")
+
+    # El nombre y el grupo se leen del catálogo, no se copian: si le corrigen
+    # una falta de ortografía al nombre, la reserva vieja también la corrige.
+    # Sólo el PRECIO se congela — es lo único que cambia lo que se cobra.
+    @property
+    def nombre(self) -> str | None:
+        return self.adicional.nombre if self.adicional else None
+
+    @property
+    def grupo(self) -> str | None:
+        return self.adicional.grupo if self.adicional else None

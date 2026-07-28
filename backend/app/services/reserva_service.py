@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
 from app.domain.enums import EstadoReserva, EstadoVehiculo
 from app.domain.solapamientos import detectar_solapamientos
+from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
 from app.domain.tarifas import seleccionar_tarifa, calcular_duracion_dias, calcular_precio_total, TarifaInfo
+from app.models.adicional import Adicional, ReservaAdicional
 from app.domain.transiciones import (
     estado_tras_confirmar_reserva,
     estado_tras_cancelar_reserva_confirmada,
@@ -98,6 +100,124 @@ class ReservaService:
 
     # ── Crear reserva ─────────────────────────────────────────────────────────
 
+    def sincronizar_adicionales(
+        self,
+        reserva: Reserva,
+        solicitados: list[tuple[int, int]] | None,
+    ) -> None:
+        """
+        Deja los adicionales de la reserva igual a `solicitados` — una lista
+        de `(adicional_id, cantidad)`. `None` significa "no tocar nada"
+        (un PATCH que no menciona adicionales no debe borrarlos); una lista
+        vacía sí los saca a todos.
+
+        **El precio se congela acá**, tomando el vigente del catálogo. Las
+        líneas que ya existían y siguen pedidas con la misma cantidad **no se
+        recrean**: conservan el precio con el que se pactaron, que es todo el
+        sentido de congelarlo. Si mañana sube la cobertura full, editar la
+        reserva para agregar un GPS no debe reencarecer el seguro.
+
+        **No se puede tocar después del check-out**: en ese momento el
+        alquiler ya se facturó como un débito en la cuenta corriente, y
+        cambiar los adicionales dejaría el ledger diciendo una cosa y la
+        reserva otra.
+        """
+        if solicitados is None:
+            return
+
+        if reserva.alquiler is not None:
+            raise BusinessRuleError(
+                "reserva_ya_facturada",
+                "No se pueden cambiar los adicionales después del check-out: "
+                "el alquiler ya se facturó en la cuenta corriente",
+            )
+
+        duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        pedidos = {aid: cant for aid, cant in solicitados}
+
+        if pedidos:
+            catalogo = {
+                a.id: a
+                for a in self.db.query(Adicional)
+                .filter(Adicional.id.in_(list(pedidos)), Adicional.activo.is_(True))
+                .all()
+            }
+            faltantes = set(pedidos) - set(catalogo)
+            if faltantes:
+                raise NotFoundError("Adicional", sorted(faltantes)[0])
+
+            # Las coberturas son excluyentes — se valida en el dominio para
+            # que valga igual desde el mostrador y desde la web.
+            validar_seleccion_adicionales([
+                AdicionalSolicitado(
+                    id=a.id, nombre=a.nombre,
+                    precio_unitario=Decimal(str(a.precio)),
+                    unidad_cobro=a.unidad_cobro, cantidad=pedidos[a.id], grupo=a.grupo,
+                )
+                for a in catalogo.values()
+            ])
+            for aid, cantidad in pedidos.items():
+                a = catalogo[aid]
+                if a.max_cantidad is not None and cantidad > a.max_cantidad:
+                    raise BusinessRuleError(
+                        "cantidad_excede_maximo",
+                        f"'{a.nombre}' admite hasta {a.max_cantidad} unidad(es) por reserva",
+                    )
+        else:
+            catalogo = {}
+
+        existentes = {ra.adicional_id: ra for ra in reserva.adicionales}
+
+        # Sacar lo que ya no está pedido. Es una línea de la reserva, no una
+        # entidad de dominio: si el cliente se arrepiente del GPS antes de
+        # retirar, la línea desaparece (misma lógica que las fotos de daños).
+        for adicional_id, ra in existentes.items():
+            if adicional_id not in pedidos:
+                reserva.adicionales.remove(ra)
+
+        for adicional_id, cantidad in pedidos.items():
+            actual = existentes.get(adicional_id)
+            if actual is not None and actual.cantidad == cantidad:
+                continue  # sin cambios: conserva su precio congelado
+            if actual is not None:
+                reserva.adicionales.remove(actual)
+            a = catalogo[adicional_id]
+            reserva.adicionales.append(
+                ReservaAdicional(
+                    adicional_id=a.id,
+                    cantidad=cantidad,
+                    precio_unitario=Decimal(str(a.precio)),
+                    unidad_cobro=a.unidad_cobro,
+                    subtotal=self._subtotal_adicional(
+                        Decimal(str(a.precio)), a.unidad_cobro, cantidad, duracion
+                    ),
+                )
+            )
+
+    @staticmethod
+    def _subtotal_adicional(
+        precio_unitario: Decimal, unidad_cobro: str, cantidad: int, duracion_dias: int
+    ) -> Decimal:
+        multiplicador = Decimal(cantidad)
+        if unidad_cobro == "por_dia":
+            multiplicador *= Decimal(duracion_dias)
+        return precio_unitario * multiplicador
+
+    def recalcular_adicionales_por_duracion(self, reserva: Reserva) -> None:
+        """
+        Reajusta los adicionales `por_dia` cuando cambia la duración.
+
+        Si el alquiler se extiende de 5 a 8 días, el seguro cubre esos 3 días
+        más y hay que cobrarlos. **El precio unitario congelado no se toca**:
+        lo que cambia es la cantidad de días, no lo que se pactó por día.
+        """
+        duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        for ra in reserva.adicionales:
+            if ra.unidad_cobro == "por_dia":
+                ra.subtotal = self._subtotal_adicional(
+                    Decimal(str(ra.precio_unitario)), ra.unidad_cobro, ra.cantidad, duracion
+                )
+
     def _validar_conductor(self, conductor_id: int, cliente_id: int) -> None:
         """El conductor tiene que ser un conductor adicional activo del propio cliente."""
         conductor = (
@@ -151,6 +271,7 @@ class ReservaService:
         echeq_banco: str | None = None,
         echeq_numero_cheque: str | None = None,
         echeq_fecha_cobro: date | None = None,
+        adicionales: list[tuple[int, int]] | None = None,
         usuario_id: int = 0,
     ) -> tuple[Reserva, list[dict]]:
         """
@@ -321,6 +442,11 @@ class ReservaService:
                         generar_credito=hubo_cobro_ahora,
                     )
 
+            # Adicionales contratados (coberturas y extras). Van fuera de
+            # precio_total: se suman recién al facturar, igual que
+            # cargo_late_checkout. Ver Reserva.total_adicionales.
+            self.sincronizar_adicionales(reserva, adicionales)
+
             # Actualizar estado del vehículo a reservado si corresponde
             nuevo_estado = estado_tras_confirmar_reserva(
                 EstadoVehiculo(vehiculo.estado)
@@ -353,6 +479,7 @@ class ReservaService:
         anticipo_monto: Decimal | None = None,
         anticipo_fecha: date | None = None,
         anticipo_medio_pago: str | None = None,
+        adicionales: list[tuple[int, int]] | None = None,
     ) -> tuple[Reserva, list[dict]]:
         """Actualiza una reserva en estado pendiente, confirmada, activa o vencida (D8).
 
@@ -438,6 +565,13 @@ class ReservaService:
             if anticipo_medio_pago is not None:
                 kwargs["anticipo_medio_pago"] = anticipo_medio_pago
             self.reserva_repo.update(reserva, **kwargs)
+
+            # Los adicionales se sincronizan después de aplicar las fechas
+            # nuevas: si la reserva se alargó, los que se cobran por día
+            # tienen que rendir la duración nueva, no la vieja.
+            self.sincronizar_adicionales(reserva, adicionales)
+            if (fecha_inicio is not None or fecha_fin is not None) and reserva.adicionales:
+                self.recalcular_adicionales_por_duracion(reserva)
 
         self.db.refresh(reserva)
         return reserva, warnings

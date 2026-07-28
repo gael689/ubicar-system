@@ -1147,15 +1147,48 @@ al motor. Es seguro hacerlo (sin reglas cargadas da el mismo número), pero
 cambia cómo se cotiza toda reserva real, así que conviene hacerlo junto con
 el ítem 58 (reserva por categoría) y no suelto. Lo mismo el cotizador.
 
-**Con los adicionales pasa lo mismo y por el mismo motivo:** el catálogo y el
-cálculo están completos y probados, pero `ReservaCreate` todavía no acepta
-una lista de adicionales, así que hoy se pueden cargar y cotizar pero no
-contratar en una reserva del mostrador. Persistir `reserva_adicionales`
-implica tocar `ReservaService.create()` y el `precio_total` de la reserva —
-exactamente el mismo camino crítico que el acople del motor. **Los tres
-cambios (motor + adicionales + reserva por categoría) son un solo trabajo
-coherente**, y hacerlos por separado significa tocar tres veces la función
-más delicada del sistema.
+**Los adicionales sí quedaron acoplados a la reserva** (2026-07-27, misma
+tanda). Resultó menos riesgoso de lo estimado: es un cambio **aditivo** —
+con la lista vacía, que es el caso de todas las reservas existentes, no
+cambia absolutamente nada. Detalle:
+
+- `ReservaCreate` y `ReservaUpdate` aceptan `adicionales`. En el PATCH,
+  **omitirlo = no tocar nada** y **`[]` = sacarlos todos**: si no se
+  distinguieran, cualquier edición parcial (cambiar una nota) borraría los
+  adicionales en silencio.
+- **Van fuera de `precio_total`, igual que `cargo_late_checkout`.** Meterlos
+  adentro habría roto la auditoría de descuentos: `precio_lista` vs
+  `precio_total` mide el descuento **sobre el vehículo**, y un seguro caro
+  se habría leído como un recargo no autorizado. Se suman al facturar, en
+  `Reserva.total_adicionales`.
+- Se sumaron a los **4 lugares** que calculan el monto a cobrar:
+  `AlquilerService.checkout()` (el débito en cuenta corriente),
+  `routers/pagos.py` ×2 (saldo pendiente) y `notificaciones_reglas.py`
+  (regla de deuda vencida). Verificado contra la base: un alquiler de
+  $300.000 con seguro de $60.000 genera un débito de $360.000.
+- **Al extender el alquiler, los adicionales `por_dia` se recalculan** con la
+  duración nueva — si el auto se queda 3 días más, el seguro los cubre. El
+  precio unitario congelado no se toca: cambia la cantidad de días, no lo
+  pactado por día.
+- **Después del check-out no se pueden modificar** (`reserva_ya_facturada`):
+  el débito ya está en el ledger y cambiarlos dejaría la reserva diciendo
+  una cosa y la cuenta corriente otra.
+- UI: bloque de adicionales en `ReservaModal` (coberturas como opción única,
+  extras múltiples) con el total a facturar en vivo, y el detalle en
+  `ReservaInfoModal`. Tras el check-out se muestran como texto, sin editar.
+
+**Lo que sigue faltando es sólo el ítem 58** (reserva por categoría), que sí
+es el cambio estructural pesado, más el acople del cálculo de precio de la
+reserva al motor.
+
+**🟠 Hueco preexistente encontrado (no introducido por este cambio):**
+`AlquilerService.extender()` actualiza `precio_total` **pero no genera
+ningún asiento en la cuenta corriente** por la diferencia. Si un alquiler se
+extiende después del check-out, el débito original queda corto y el ledger
+subfactura. `routers/pagos.py` sí calcula el saldo pendiente contra el
+precio nuevo, así que el saldo se ve bien en pantalla pero **no coincide con
+la suma de los movimientos** — que es exactamente lo que el ledger inmutable
+de la Fase 1 vino a evitar. Vale arreglarlo antes de la web.
 
 ### 🚀 Fase 6 — Reservas web (4 semanas)
 60. Endpoint de disponibilidad real por cupo

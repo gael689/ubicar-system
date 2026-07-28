@@ -103,9 +103,29 @@ class Reserva(Base):
     tarifa_aplicada: Mapped["Tarifa"] = relationship("Tarifa", foreign_keys=[tarifa_aplicada_id])
     alquiler: Mapped["Alquiler"] = relationship("Alquiler", back_populates="reserva", uselist=False)
 
+    # Coberturas y extras contratados (Fase 5, ítem 56). Cada línea congela su
+    # precio: ver ReservaAdicional en models/adicional.py.
+    adicionales: Mapped[list["ReservaAdicional"]] = relationship(
+        "ReservaAdicional", cascade="all, delete-orphan"
+    )
+
     @property
     def alquiler_id(self) -> int | None:
         return self.alquiler.id if self.alquiler else None
+
+    @property
+    def total_adicionales(self) -> Decimal:
+        """
+        Suma de los adicionales contratados.
+
+        **Vive fuera de `precio_total` a propósito**, igual que
+        `cargo_late_checkout`: `precio_total` vs `precio_lista` es la
+        auditoría del descuento sobre el alquiler del vehículo, y meter el
+        seguro ahí adentro haría que un seguro caro se leyera como un recargo
+        no autorizado. Los conceptos se suman recién al facturar
+        (`AlquilerService.checkout`), que es el patrón que el sistema ya usa.
+        """
+        return sum((a.subtotal for a in self.adicionales), Decimal("0"))
 
     @property
     def alquiler_estado(self) -> str | None:

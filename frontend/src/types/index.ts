@@ -633,6 +633,9 @@ export interface Reserva {
   // Precio y tarifa
   tarifa_aplicada_id: number | null;
   precio_total: string | null;
+  /** Coberturas y extras contratados. NO están dentro de `precio_total`. */
+  adicionales?: ReservaAdicional[];
+  total_adicionales?: string;
   precio_lista?: string | null;
   descuento_motivo?: string | null;
   descuento_autorizado_por?: number | null;
@@ -671,6 +674,7 @@ export interface Reserva {
 export interface ReservaCreate {
   vehiculo_id: number;
   cliente_id: number;
+  adicionales?: AdicionalSolicitado[];
   conductor_id?: number | null;
   fecha_inicio: string;
   hora_inicio: string;
@@ -707,6 +711,8 @@ export interface ReservaCreate {
 
 export interface ReservaUpdate {
   vehiculo_id?: number;
+  /** Omitir = no tocar los adicionales; lista vacía = sacarlos todos. */
+  adicionales?: AdicionalSolicitado[];
   conductor_id?: number | null;
   fecha_inicio?: string;
   hora_inicio?: string;
@@ -1325,5 +1331,17 @@ export interface AdicionalCotizado {
   precio_unitario: string;
   unidad_cobro: UnidadCobro;
   cantidad: number;
+  subtotal: string;
+}
+
+/** Una línea de adicional contratada en una reserva, con su precio congelado. */
+export interface ReservaAdicional {
+  id: number;
+  adicional_id: number;
+  nombre: string | null;
+  grupo: GrupoAdicional | null;
+  cantidad: number;
+  precio_unitario: string;
+  unidad_cobro: UnidadCobro;
   subtotal: string;
 }

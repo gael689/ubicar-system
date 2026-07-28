@@ -114,6 +114,7 @@ def create_reserva(
             late_checkout=payload.late_checkout,
             cargo_late_checkout=payload.cargo_late_checkout,
             precio_total=payload.precio_total,
+            adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
             garantia_tipo=payload.garantia_tipo,
             garantia_monto=payload.garantia_monto,
             garantia_tarjeta_numero=payload.garantia_tarjeta_numero,
@@ -260,10 +261,18 @@ def update_reserva(
 ):
     svc = ReservaService(db)
     try:
+        datos = payload.model_dump(exclude_none=True)
+        # `exclude_none` ya descartó `adicionales: None` ("no tocar"). Una
+        # lista vacía sí llega, y significa "sacarlos todos".
+        pedidos = datos.pop("adicionales", None)
         reserva, warnings = svc.update(
             id=reserva_id,
             usuario_id=current_user.id,
-            **payload.model_dump(exclude_none=True),
+            adicionales=(
+                [(a["adicional_id"], a["cantidad"]) for a in pedidos]
+                if pedidos is not None else None
+            ),
+            **datos,
         )
         db.commit()
     except ConflictError as e:

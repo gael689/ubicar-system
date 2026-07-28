@@ -363,7 +363,12 @@ def saldo_pendiente_al_finalizar(db: Session, hoy: date) -> list[dict]:
     items = []
     for a in alquileres:
         r = a.reserva
-        monto_total = float(r.precio_total or 0) + float(r.cargo_late_checkout or 0) + float(a.cargo_excedente or 0)
+        monto_total = (
+            float(r.precio_total or 0)
+            + float(r.cargo_late_checkout or 0)
+            + float(a.cargo_excedente or 0)
+            + float(r.total_adicionales)
+        )
         monto_abonado = sum(float(p.monto) for p in a.pagos)
         saldo_pendiente = monto_total - monto_abonado
         if saldo_pendiente > 0 and r.fecha_fin < hoy:

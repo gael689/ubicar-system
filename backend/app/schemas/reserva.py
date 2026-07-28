@@ -5,10 +5,25 @@ from datetime import date, time, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.adicional import AdicionalSolicitadoRequest, GrupoAdicional, UnidadCobro
 
 
 EstadoReservaLiteral = Literal["pendiente", "confirmada", "activa", "vencida", "finalizada", "cancelada"]
+
+
+class ReservaAdicionalResponse(BaseModel):
+    """Una línea de adicional contratada, con el precio que se pactó."""
+    id: int
+    adicional_id: int
+    nombre: str | None = None
+    grupo: GrupoAdicional | None = None
+    cantidad: int
+    precio_unitario: Decimal
+    unidad_cobro: UnidadCobro
+    subtotal: Decimal
+    model_config = {"from_attributes": True}
 
 
 # ── Schemas de vehículo/cliente embebidos en respuesta ───────────────────────
@@ -56,6 +71,9 @@ class ReservaCreate(BaseModel):
     late_checkout: bool = False
     cargo_late_checkout: Decimal = Decimal("0")
     precio_total: Decimal | None = None
+    # Coberturas y extras contratados. No entran en `precio_total`: se suman
+    # al facturar, igual que `cargo_late_checkout` (ver Reserva.total_adicionales).
+    adicionales: list[AdicionalSolicitadoRequest] = Field(default_factory=list)
     # Garantía
     garantia_tipo: str | None = None
     garantia_monto: Decimal | None = None
@@ -97,6 +115,8 @@ class ReservaUpdate(BaseModel):
     lugar_devolucion: str | None = None
     notas: str | None = None
     precio_total: Decimal | None = None
+    # `None` = no tocar los adicionales; `[]` = sacarlos todos.
+    adicionales: list[AdicionalSolicitadoRequest] | None = None
     # Pago
     forma_pago_prevista: str | None = None
     estado_pago: str | None = None
@@ -155,6 +175,8 @@ class ReservaResponse(BaseModel):
     # Precio y tarifa
     tarifa_aplicada_id: int | None
     precio_total: Decimal | None
+    adicionales: list[ReservaAdicionalResponse] = Field(default_factory=list)
+    total_adicionales: Decimal = Decimal("0")
     precio_lista: Decimal | None = None
     descuento_motivo: str | None = None
     descuento_autorizado_por: int | None = None

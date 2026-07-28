@@ -198,6 +198,10 @@ class AlquilerService:
                 (reserva.precio_total or Decimal("0"))
                 + (reserva.cargo_late_checkout or Decimal("0"))
                 + (cargo_checkout_tardio or Decimal("0"))
+                # Coberturas y extras contratados: viven fuera de precio_total
+                # (ver Reserva.total_adicionales) y se facturan acá, junto con
+                # el resto de los conceptos.
+                + reserva.total_adicionales
             )
             if monto_facturado > 0:
                 # Condición de pago: decisión de la reserva (D-?), no el
@@ -584,6 +588,13 @@ class AlquilerService:
                 precio_total=nuevo_precio,
                 estado=nuevo_estado,
             )
+            # Si el auto se queda 3 días más, el seguro cubre esos 3 días más.
+            # Sólo se mueve la cantidad de días: el precio unitario pactado no
+            # se toca (ver ReservaService.recalcular_adicionales_por_duracion).
+            if reserva.adicionales:
+                # Import local: a nivel de módulo sería un ciclo.
+                from app.services.reserva_service import ReservaService
+                ReservaService(self.db).recalcular_adicionales_por_duracion(reserva)
 
         logger.info(
             "alquiler_extendido",
