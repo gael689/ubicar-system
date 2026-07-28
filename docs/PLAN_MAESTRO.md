@@ -9,6 +9,10 @@
 - **`docs/ANALISIS_CICLO_RESERVA.md`** — análisis fino del ciclo operativo: check-out, check-in tardío, excedentes, precios, clientes empresa/particular y vencimientos. Contiene los bugs P0 confirmados con archivo y línea.
 - **`docs/CASOS_DE_USO.md`** — registro trackeable de los ~195 casos de uso con ID, estado y prioridad. Es la lista de trabajo.
 - **`docs/PLAN_FRONTEND_UX.md`** — rediseño de la interfaz: formularios por pasos, componente `<Wizard>`, check-in como liquidación, navegación y consistencia visual.
+- **`docs/PLAN_CONTRATOS.md`** — el módulo de Contratos (Fase 4, ítems 50-51): anverso campo por campo, clausulado versionado, firma y decisiones abiertas.
+- **`docs/PLAN_RESERVAS_WEB.md`** + **`docs/DECISIONES_RESERVAS_WEB.md`** — la Fase 6 y las 10 preguntas que la traban.
+
+> **Documentación vieja:** todo lo anterior al 2026-07-25 (`PROGRESO.md`, `ESTADO.md`, `ROADMAP.md`, `PLANNING_BACKEND/FRONTEND.md`, `FLUJOS_*.md`, `docs/modules/`, etc.) se movió a **`docs/_archivo/`** el 2026-07-28. Se conserva como registro histórico pero **no describe el sistema actual** — este plan y sus hermanos son la fuente de verdad.
 
 ---
 
@@ -1042,8 +1046,8 @@ Adelantada respecto del plan original: hoy todo se graba con un usuario ficticio
 49. Audit log de operaciones sensibles + override de bloqueos con motivo registrado
 
 ### 📄 Fase 4 — Contratos y parte de daños (2 semanas)
-50. ⏸️ **Definir el texto legal del contrato** ← **bloqueado, depende de Franco/Martín.** Tiene el lead time más largo: pedirlo ya
-51. ⏸️ Generación de PDF (reutiliza el pipeline de la Fase 1) + firma en canvas + hard block en checkout — bloqueado por el 50. `routers/contratos.py` sigue siendo un stub de 19 líneas
+50. 🟡 **Definir el texto legal del contrato** — **desbloqueado el 2026-07-28.** El usuario aportó un contrato real de la competencia (SIXT / Compañía General de Vehículos S.A.) con la instrucción de replicarlo cambiando toda referencia a Ubicar Rent. **Plan completo en `docs/PLAN_CONTRATOS.md`**, con el mapeo campo por campo del anverso, las 13 cláusulas del reverso, los 7 pasajes que no se pueden copiar literal, y 7 decisiones (2 bloqueantes: quién es el locador y si el clausulado se adopta tal cual)
+51. 🟡 Generación de PDF (reutiliza el pipeline de la Fase 1) + firma en canvas + advertencia con motivo en el checkout — plan listo, esperando D-C1/D-C2. `routers/contratos.py` sigue siendo un stub de 19 líneas
 52. ✅ **Parte de daños con fotos en check-out/check-in, con daños preexistentes precargados** — hecho 2026-07-27 (migración `035_danios_vehiculo`). Ver detalle abajo
 53. ✅ **Valorización de daños** — hecho 2026-07-27, junto con el 52
 
