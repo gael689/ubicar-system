@@ -292,6 +292,15 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
         c.setFillColor(_TINTA)
         c.drawString(izq, firma_y - 7 * mm,
                      f"{contrato.firmado_por_nombre}  ·  DNI {contrato.firmado_por_dni or '—'}")
+        # Firmado en papel: no hay trazo que estampar, y sin decirlo la
+        # reimpresión se ve igual que un contrato sin firmar. El original es
+        # el papel archivado, no este PDF.
+        if getattr(contrato, "firma_medio", None) == "papel":
+            fecha = contrato.firmado_at.strftime("%d/%m/%Y") if contrato.firmado_at else "—"
+            c.setFont("Helvetica-Oblique", 6.5)
+            c.setFillColor(_GRIS)
+            c.drawString(izq, firma_y - 10.5 * mm,
+                         f"Firmado de puño y letra el {fecha}. El ejemplar firmado se archiva en papel.")
 
     c.setFont("Helvetica", 7.5)
     c.setFillColor(_TINTA)

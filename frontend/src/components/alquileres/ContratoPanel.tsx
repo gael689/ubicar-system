@@ -114,6 +114,10 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
           <p className="text-xs text-muted-foreground">
             Firmó {contrato.firmado_por_nombre} · DNI {contrato.firmado_por_dni}
             {contrato.firmado_at && ` · ${formatDate(contrato.firmado_at)}`}
+            {/* Con qué medio importa: si dice "en papel" y no hay imagen, el
+                original firmado está en un cajón y no es un error. */}
+            {contrato.firma_medio === 'papel' && ' · en papel'}
+            {contrato.firma_medio === 'pantalla' && ' · en pantalla'}
           </p>
         )}
         {contrato.anulado && contrato.motivo_anulacion && (
@@ -219,12 +223,22 @@ function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
 
 // ─── Canvas de firma ─────────────────────────────────────────────────────────
 
+type Medio = 'pantalla' | 'papel';
+
+/**
+ * Las dos formas reales de firmar, explícitas.
+ *
+ * En papel ya funcionaba —bastaba con confirmar sin dibujar nada— pero nada lo
+ * decía, así que en la práctica no existía. Y sin registrar el medio, un
+ * contrato firmado con lapicera y uno marcado por error se veían idénticos.
+ */
 function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dibujando = useRef(false);
   const [tieneTrazo, setTieneTrazo] = useState(false);
   const [nombre, setNombre] = useState('');
   const [dni, setDni] = useState('');
+  const [medio, setMedio] = useState<Medio>('pantalla');
   const firmar = useFirmarContrato();
 
   useEffect(() => {
@@ -259,7 +273,13 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
         id: contratoId,
         nombre: nombre.trim(),
         dni: dni.trim(),
-        firma_base64: tieneTrazo ? canvasRef.current?.toDataURL('image/png') : null,
+        firma_medio: medio,
+        // En papel nunca se manda trazo aunque haya quedado dibujado antes de
+        // cambiar de opción: el original es el papel.
+        firma_base64:
+          medio === 'pantalla' && tieneTrazo
+            ? canvasRef.current?.toDataURL('image/png')
+            : null,
       },
       { onSuccess: onClose },
     );
@@ -275,6 +295,28 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
           </p>
         </div>
 
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ['pantalla', 'Firma en pantalla', 'Con el dedo o el mouse'],
+            ['papel', 'Firmó en papel', 'Se imprimió y firmó a mano'],
+          ] as const).map(([valor, titulo, ayuda]) => (
+            <button
+              key={valor}
+              type="button"
+              onClick={() => setMedio(valor)}
+              aria-pressed={medio === valor}
+              className={`rounded-lg border p-2.5 text-left transition-colors ${
+                medio === valor
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/40'
+              }`}
+            >
+              <p className="text-sm font-medium text-foreground">{titulo}</p>
+              <p className="text-xs text-muted-foreground">{ayuda}</p>
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">Nombre de quien firma *</label>
@@ -286,6 +328,14 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
           </div>
         </div>
 
+        {medio === 'papel' ? (
+          <p className="rounded-lg bg-muted px-3 py-2.5 text-xs text-muted-foreground">
+            El <strong className="text-foreground">papel firmado es el original</strong> y hay
+            que archivarlo. Acá sólo queda la constancia de quién firmó y cuándo: el PDF que
+            se reimprima desde el sistema va a decir que se firmó en papel, sin la imagen de
+            la firma.
+          </p>
+        ) : (
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Firma</label>
           <canvas
@@ -316,6 +366,7 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
             Borrar y volver a firmar
           </button>
         </div>
+        )}
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
@@ -324,7 +375,9 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
             disabled={!nombre.trim() || !dni.trim() || firmar.isPending}
             onClick={confirmar}
           >
-            {firmar.isPending ? 'Guardando…' : 'Confirmar firma'}
+            {firmar.isPending
+              ? 'Guardando…'
+              : medio === 'papel' ? 'Marcar como firmado' : 'Confirmar firma'}
           </Button>
         </div>
       </div>

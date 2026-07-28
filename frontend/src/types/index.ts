@@ -1457,6 +1457,8 @@ export interface Contrato {
   firmado_at: string | null;
   firmado_por_nombre: string | null;
   firmado_por_dni: string | null;
+  /** Cómo se firmó: en pantalla (hay imagen) o en papel (el original es físico). */
+  firma_medio?: 'pantalla' | 'papel' | null;
   atendido_por: number | null;
   anulado: boolean;
   motivo_anulacion: string | null;

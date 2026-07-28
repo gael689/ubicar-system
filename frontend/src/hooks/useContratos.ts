@@ -59,7 +59,10 @@ export function useCrearContrato() {
 export function useFirmarContrato() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; nombre: string; dni: string; firma_base64?: string | null }) =>
+    mutationFn: ({ id, ...body }: {
+      id: number; nombre: string; dni: string;
+      firma_medio?: 'pantalla' | 'papel'; firma_base64?: string | null;
+    }) =>
       api.post<{ data: Contrato }>(`/contratos/${id}/firmar`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });

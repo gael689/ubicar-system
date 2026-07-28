@@ -13,6 +13,8 @@ class ContratoCreate(BaseModel):
 class FirmarContratoRequest(BaseModel):
     nombre: str
     dni: str
+    # "pantalla" | "papel". Si no viene, se deduce de si mandaron trazo.
+    firma_medio: str | None = None
     # Data URL del canvas (`data:image/png;base64,...`). Opcional: se puede
     # registrar la firma en papel sin imagen.
     firma_base64: str | None = None
@@ -68,6 +70,7 @@ class ContratoResponse(BaseModel):
     firmado_at: datetime | None = None
     firmado_por_nombre: str | None = None
     firmado_por_dni: str | None = None
+    firma_medio: str | None = None
     atendido_por: int | None = None
     anulado: bool
     motivo_anulacion: str | None = None

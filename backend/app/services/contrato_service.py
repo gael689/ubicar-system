@@ -385,7 +385,22 @@ class ContratoService:
     def firmar(
         self, contrato_id: int, firma_bytes: bytes | None,
         nombre: str, dni: str, usuario_id: int | None,
+        medio: str | None = None,
     ) -> Contrato:
+        """
+        Deja el contrato firmado.
+
+        `medio` distingue las dos formas reales de firmar:
+
+        - **pantalla**: el cliente traza la firma con el dedo o el mouse y
+          queda estampada en el PDF.
+        - **papel**: se imprime, el cliente firma con lapicera y acá se
+          registra quién firmó. No hay imagen, y eso es correcto — el original
+          firmado es el papel.
+
+        Si no viene, se deduce del trazo. Se guarda igual para que un contrato
+        firmado en papel no se confunda con uno marcado por error.
+        """
         contrato = self.get(contrato_id)
         if contrato.anulado:
             raise BusinessRuleError("contrato_anulado", "El contrato está anulado")
@@ -401,6 +416,7 @@ class ContratoService:
         contrato.firmado_at = datetime.utcnow()
         contrato.firmado_por_nombre = nombre
         contrato.firmado_por_dni = dni
+        contrato.firma_medio = medio or ("pantalla" if firma_bytes else "papel")
 
         # El alquiler es quien responde "¿este auto salió con contrato?" en el
         # listado, así que el estado tiene que vivir también ahí. Si todavía no

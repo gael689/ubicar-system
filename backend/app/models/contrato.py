@@ -80,6 +80,11 @@ class Contrato(Base):
     firmado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     firmado_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     firma_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # "pantalla" (trazo con el dedo o el mouse) | "papel" (se imprimió y se
+    # firmó con lapicera). Sin esto, un contrato firmado en papel y uno
+    # marcado por error se ven exactamente igual: los dos dicen "firmado" y
+    # ninguno tiene imagen.
+    firma_medio: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Quién firmó: puede no ser el titular de la reserva.
     firmado_por_nombre: Mapped[str | None] = mapped_column(String(255), nullable=True)
     firmado_por_dni: Mapped[str | None] = mapped_column(String(20), nullable=True)

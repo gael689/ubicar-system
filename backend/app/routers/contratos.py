@@ -134,7 +134,8 @@ def firmar_contrato(
     svc = ContratoService(db)
     try:
         contrato = svc.firmar(
-            contrato_id, firma_bytes, payload.nombre, payload.dni, current_user.id
+            contrato_id, firma_bytes, payload.nombre, payload.dni, current_user.id,
+            medio=payload.firma_medio,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
