@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { whatsappLink, whatsappLinkCABA, WHATSAPP_GENERAL } from "@/lib/constants";
+import { whatsappLinkCABA, WHATSAPP_GENERAL } from "@/lib/constants";
 import { MapPin, ChevronDown, Calendar as CalendarIcon, Clock } from "lucide-react";
 import { trackLeadEvent } from "@/lib/meta-pixel";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,6 +24,7 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
 });
 
 const Hero = () => {
+  const router = useRouter();
   const [lugarEntrega, setLugarEntrega] = useState("");
   const [devolverOtroLugar, setDevolverOtroLugar] = useState(false);
   const [lugarDevolucion, setLugarDevolucion] = useState("");
@@ -32,34 +34,42 @@ const Hero = () => {
   const [fechaDevolucion, setFechaDevolucion] = useState<Date>();
   const [horaDevolucion, setHoraDevolucion] = useState("08:30");
 
+  /**
+   * El buscador de la portada es el paso 1 de la reserva.
+   *
+   * **No valida nada acá.** Si falta un dato, el paso 1 se lo pide con el
+   * mismo calendario: frenar con un `alert()` a alguien que recién llegó es
+   * la peor manera de recibirlo. El Hero sólo transporta lo ya elegido.
+   *
+   * Capital Federal sigue yendo por WhatsApp: D-39 dejó el flujo online sólo
+   * para Bahía Blanca hasta resolver si la flota de CABA es la misma.
+   */
   const handleCotizar = () => {
-    if (!lugarEntrega) {
-      alert("Por favor, seleccione un lugar de entrega.");
-      return;
-    }
-    if (devolverOtroLugar && !lugarDevolucion) {
-      alert("Por favor, seleccione un lugar de devolución.");
-      return;
-    }
-
-    const formattedFechaEntrega = fechaEntrega ? format(fechaEntrega, "dd/MM/yyyy") : "";
-    const formattedFechaDev = fechaDevolucion ? format(fechaDevolucion, "dd/MM/yyyy") : "";
-
-    const message = `Hola! Quiero cotizar un alquiler.
-*Lugar de retiro:* ${lugarEntrega}
-${devolverOtroLugar ? `*Lugar de devolución:* ${lugarDevolucion}\n` : ""}*Fecha de retiro:* ${formattedFechaEntrega || "No especificada"}
-*Horario de retiro:* ${horaEntrega || "No especificado"}
-*Fecha de devolución:* ${formattedFechaDev || "No especificada"}
-*Horario de devolución:* ${horaDevolucion || "No especificado"}
-`;
-
-    const link =
-      lugarEntrega === "Capital Federal, Juan Francisco Segui 3607"
-        ? whatsappLinkCABA(message)
-        : whatsappLink(message);
-
     trackLeadEvent();
-    window.open(link, "_blank");
+
+    if (lugarEntrega === "Capital Federal, Juan Francisco Segui 3607") {
+      const fDesde = fechaEntrega ? format(fechaEntrega, "dd/MM/yyyy") : "No especificada";
+      const fHasta = fechaDevolucion ? format(fechaDevolucion, "dd/MM/yyyy") : "No especificada";
+      window.open(
+        whatsappLinkCABA(
+          `Hola! Quiero cotizar un alquiler en Capital Federal.\n` +
+          `*Retiro:* ${fDesde} ${horaEntrega}\n` +
+          `*Devolución:* ${fHasta} ${horaDevolucion}`,
+        ),
+        "_blank",
+      );
+      return;
+    }
+
+    const params = new URLSearchParams();
+    if (lugarEntrega) params.set("lugar", lugarEntrega);
+    if (devolverOtroLugar && lugarDevolucion) params.set("devolucion", lugarDevolucion);
+    if (fechaEntrega) params.set("desde", format(fechaEntrega, "yyyy-MM-dd"));
+    if (fechaDevolucion) params.set("hasta", format(fechaDevolucion, "yyyy-MM-dd"));
+    params.set("hora_desde", horaEntrega);
+    params.set("hora_hasta", horaDevolucion);
+
+    router.push(`/reservar?${params.toString()}`);
   };
 
   return (
@@ -243,7 +253,7 @@ ${devolverOtroLugar ? `*Lugar de devolución:* ${lugarDevolucion}\n` : ""}*Fecha
                 onClick={handleCotizar}
                 className="w-full h-full rounded-md md:rounded-l-none md:rounded-r-md bg-[#1B3F6B] hover:bg-[#1B3F6B]/90 text-white font-bold text-sm tracking-wider uppercase"
               >
-                Cotizar
+                Ver disponibilidad
               </Button>
             </div>
 

@@ -96,10 +96,14 @@ def upgrade() -> None:
     op.add_column('contratos', sa.Column('creado_por', sa.Integer(),
                                          sa.ForeignKey('usuarios.id'), nullable=True))
 
-    # La restriccion unica de alquiler_id se relaja: un contrato anulado y uno
-    # nuevo para el mismo alquiler tienen que poder convivir (se anula el papel
-    # mal impreso y se emite otro).
-    op.drop_constraint('contratos_alquiler_id_key', 'contratos', type_='unique')
+    # La unicidad de alquiler_id se relaja: un contrato anulado y uno nuevo
+    # para el mismo alquiler tienen que poder convivir (se anula el papel mal
+    # impreso y se emite otro).
+    #
+    # Venia como INDICE unico (`unique=True, index=True` en el modelo), no como
+    # constraint con nombre — por eso se dropea el indice y se recrea sin
+    # unicidad, en vez de un DROP CONSTRAINT que no existe.
+    op.drop_index('ix_contratos_alquiler_id', table_name='contratos')
     op.create_index('ix_contratos_alquiler_id', 'contratos', ['alquiler_id'])
 
     op.execute("CREATE SEQUENCE IF NOT EXISTS contratos_numero_seq START 1")
@@ -137,7 +141,7 @@ def downgrade() -> None:
     op.execute("ALTER TABLE contratos ALTER COLUMN numero DROP DEFAULT")
     op.execute("DROP SEQUENCE IF EXISTS contratos_numero_seq")
     op.drop_index('ix_contratos_alquiler_id', table_name='contratos')
-    op.create_unique_constraint('contratos_alquiler_id_key', 'contratos', ['alquiler_id'])
+    op.create_index('ix_contratos_alquiler_id', 'contratos', ['alquiler_id'], unique=True)
 
     for col in ('creado_por', 'activo', 'motivo_anulacion', 'anulado', 'atendido_por',
                 'firmado_por_dni', 'firmado_por_nombre', 'firma_key', 'firmado_at',

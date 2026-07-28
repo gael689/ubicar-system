@@ -1,0 +1,247 @@
+"use client";
+
+import { useId, useState } from "react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { MapPin, ChevronDown, Info } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
+
+export const HORAS = Array.from({ length: 48 }, (_, i) => {
+  const h = String(Math.floor(i / 2)).padStart(2, "0");
+  return `${h}:${i % 2 === 0 ? "00" : "30"}`;
+});
+
+export interface RangoBusqueda {
+  lugarRetiro: string;
+  lugarDevolucion: string;
+  fechaInicio: string;
+  horaInicio: string;
+  fechaFin: string;
+  horaFin: string;
+}
+
+interface Props {
+  valor: RangoBusqueda;
+  lugares: string[];
+  anticipacionHoras: number;
+  onBuscar: (rango: RangoBusqueda) => void;
+  compacto?: boolean;
+}
+
+const iso = (d: Date) => format(d, "yyyy-MM-dd");
+const desdeIso = (s: string) => (s ? new Date(`${s}T00:00:00`) : undefined);
+
+/**
+ * El buscador de fechas y lugares.
+ *
+ * Es el mismo bloque que el Hero de la portada, para que el cliente sienta que
+ * el formulario "viajó" con él y no que empezó de cero. En `compacto` se
+ * colapsa a una línea con un botón "cambiar": una vez elegidas las fechas, lo
+ * que importa es la grilla de autos, no el formulario.
+ */
+export function BuscadorRango({
+  valor, lugares, anticipacionHoras, onBuscar, compacto = false,
+}: Props) {
+  const idRetiro = useId();
+  const idDevolucion = useId();
+  const [abierto, setAbierto] = useState(!compacto);
+  const [form, setForm] = useState<RangoBusqueda>(valor);
+  const [devolverEnOtro, setDevolverEnOtro] = useState(
+    valor.lugarDevolucion !== "" && valor.lugarDevolucion !== valor.lugarRetiro,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const set = <K extends keyof RangoBusqueda>(k: K, v: RangoBusqueda[K]) =>
+    setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = () => {
+    if (!form.lugarRetiro) return setError("Elegí dónde retirás el vehículo.");
+    if (!form.fechaInicio || !form.fechaFin) return setError("Elegí las fechas de retiro y devolución.");
+    if (form.fechaFin <= form.fechaInicio)
+      return setError("La devolución tiene que ser posterior al retiro.");
+
+    setError(null);
+    onBuscar({
+      ...form,
+      lugarDevolucion: devolverEnOtro ? form.lugarDevolucion : form.lugarRetiro,
+    });
+    if (compacto) setAbierto(false);
+  };
+
+  if (compacto && !abierto) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-white px-4 py-3 shadow-sm">
+        <div className="min-w-0 text-sm">
+          <p className="truncate font-semibold text-[#1B3F6B]">{valor.lugarRetiro}</p>
+          <p className="text-muted-foreground">
+            {valor.fechaInicio && format(desdeIso(valor.fechaInicio)!, "d MMM", { locale: es })}{" "}
+            {valor.horaInicio} → {valor.fechaFin && format(desdeIso(valor.fechaFin)!, "d MMM", { locale: es })}{" "}
+            {valor.horaFin}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setAbierto(true)}>
+          Cambiar
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-4 shadow-sm md:p-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+        {/* Lugar de retiro */}
+        <div className="lg:col-span-2">
+          <label htmlFor={idRetiro} className="mb-1 block text-xs font-medium text-muted-foreground">
+            Lugar de retiro
+          </label>
+          <div className="relative">
+            <select
+              id={idRetiro}
+              value={form.lugarRetiro}
+              onChange={(e) => set("lugarRetiro", e.target.value)}
+              className="w-full appearance-none truncate rounded-md border border-border bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-[#1B3F6B] outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">Seleccioná una ubicación</option>
+              {lugares.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+            <MapPin className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          </div>
+        </div>
+
+        <CampoFechaHora
+          className="lg:col-span-2"
+          etiqueta="Retiro"
+          fecha={form.fechaInicio}
+          hora={form.horaInicio}
+          onFecha={(v) => set("fechaInicio", v)}
+          onHora={(v) => set("horaInicio", v)}
+          desde={new Date()}
+        />
+        <CampoFechaHora
+          className="lg:col-span-2"
+          etiqueta="Devolución"
+          fecha={form.fechaFin}
+          hora={form.horaFin}
+          onFecha={(v) => set("fechaFin", v)}
+          onHora={(v) => set("horaFin", v)}
+          desde={desdeIso(form.fechaInicio) ?? new Date()}
+        />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-muted-foreground">
+          <Checkbox
+            checked={devolverEnOtro}
+            onCheckedChange={(c) => setDevolverEnOtro(c === true)}
+          />
+          Devolver en otro lugar
+        </label>
+
+        {devolverEnOtro && (
+          <div className="min-w-[220px] flex-1">
+            <select
+              id={idDevolucion}
+              aria-label="Lugar de devolución"
+              value={form.lugarDevolucion}
+              onChange={(e) => set("lugarDevolucion", e.target.value)}
+              className="w-full appearance-none rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold text-[#1B3F6B] outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">Lugar de devolución</option>
+              {lugares.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <Button onClick={submit} className="ml-auto w-full sm:w-auto">
+          Ver vehículos disponibles
+        </Button>
+      </div>
+
+      {/* Lo pidió explícitamente el negocio: los puntos de retiro y devolución
+          se coordinan, no están garantizados por el solo hecho de elegirlos. */}
+      <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>
+          Los lugares y horarios de retiro y devolución están sujetos a
+          disponibilidad. Te confirmamos el punto exacto al reservar. Las
+          reservas online se toman con {anticipacionHoras} horas de anticipación.
+        </span>
+      </p>
+
+      {error && (
+        <p className="mt-3 rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CampoFechaHora({
+  etiqueta, fecha, hora, onFecha, onHora, desde, className,
+}: {
+  etiqueta: string;
+  fecha: string;
+  hora: string;
+  onFecha: (v: string) => void;
+  onHora: (v: string) => void;
+  desde: Date;
+  className?: string;
+}) {
+  const seleccionada = desdeIso(fecha);
+  return (
+    <div className={className}>
+      <label className="mb-1 block text-xs font-medium text-muted-foreground">
+        {etiqueta}
+      </label>
+      <div className="flex items-stretch gap-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "flex-1 rounded-md border border-border bg-white px-3 py-2.5 text-left text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30",
+                seleccionada ? "text-[#1B3F6B]" : "text-muted-foreground",
+              )}
+            >
+              {seleccionada
+                ? format(seleccionada, "d MMM yyyy", { locale: es })
+                : "Elegí la fecha"}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={seleccionada}
+              onSelect={(d) => d && onFecha(iso(d))}
+              disabled={{ before: desde }}
+              locale={es}
+              initialFocus
+            />
+          </PopoverContent>
+        </Popover>
+
+        <div className="relative w-[86px] shrink-0">
+          <select
+            value={hora}
+            onChange={(e) => onHora(e.target.value)}
+            className="h-full w-full appearance-none rounded-md border border-border bg-white pl-2.5 pr-6 text-sm font-semibold text-[#1B3F6B] outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            {HORAS.map((h) => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        </div>
+      </div>
+    </div>
+  );
+}

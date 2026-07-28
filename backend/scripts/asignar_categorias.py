@@ -64,17 +64,20 @@ def main() -> None:
 
         db.commit()
 
-        print(f"\n  Asignados: {asignados} · Ya estaban: {ya_estaban}")
+        # Sin simbolos unicode: la consola de Windows usa cp1252 y un "check"
+        # rompe el script DESPUES del commit — parece que fallo cuando en
+        # realidad ya guardo todo.
+        print(f"\n  Asignados: {asignados} | Ya estaban: {ya_estaban}")
         if no_encontrados:
-            print(f"  ⚠ Patentes no encontradas: {', '.join(no_encontrados)}")
+            print(f"  [!] Patentes no encontradas: {', '.join(no_encontrados)}")
 
         sin_categoria = db.query(Vehiculo).filter(
             Vehiculo.categoria_id.is_(None), Vehiculo.activo.is_(True)
         ).all()
         if sin_categoria:
-            print(f"\n  ⚠ Siguen sin categoría: {', '.join(v.patente for v in sin_categoria)}")
+            print(f"\n  [!] Siguen sin categoria: {', '.join(v.patente for v in sin_categoria)}")
         else:
-            print("\n  ✓ Toda la flota activa tiene categoría.")
+            print("\n  OK: toda la flota activa tiene categoria.")
     finally:
         db.close()
 

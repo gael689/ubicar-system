@@ -20,6 +20,7 @@ Revises: 043_pago_recibo_un_solo_asiento
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = '044_recargo_edad'
@@ -50,9 +51,9 @@ def upgrade() -> None:
 
         # Un recargo por conductor joven se cobra todos los dias que tiene el
         # auto; uno administrativo, una sola vez.
-        sa.Column('unidad_cobro', sa.Enum('por_dia', 'unico', name='unidad_cobro_adicional',
-                                          create_type=False), nullable=False,
-                  server_default='por_dia'),
+        sa.Column('unidad_cobro',
+                  postgresql.ENUM(name='unidad_cobro_adicional', create_type=False),
+                  nullable=False, server_default='por_dia'),
 
         # Alcance: NULL = todas las categorias. Una pick-up para alguien de 19
         # no es el mismo riesgo que un compacto.
