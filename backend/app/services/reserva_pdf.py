@@ -64,10 +64,11 @@ _EMPRESA_CONTACTO = (
     "Bahía Blanca, Argentina  ·  +54 9 291 4180554  ·  +54 9 11 5264791  ·  ubicar.rent@gmail.com"
 )
 
+# Corto a propósito: la letra chica larga no se lee. Dice las dos cosas que
+# importan —que no es el contrato y a dónde escribir— y nada más.
 _LEYENDA = (
-    "Este documento confirma los datos de la reserva acordados con el cliente. "
-    "No reemplaza al contrato de alquiler, que se firma al momento de retirar el vehículo. "
-    "Ante cualquier modificación, comunicarse con nosotros por los medios indicados al pie."
+    "Este documento confirma lo acordado, pero no reemplaza al contrato de alquiler, "
+    "que se firma al retirar el vehículo. Para cualquier cambio, escribinos a los datos del pie."
 )
 
 
@@ -109,7 +110,47 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     c.setFont("Helvetica", 11)
     c.drawRightString(width - margin, height - 23 * mm, f"N° {reserva.id:05d}")
 
-    y = height - banda_h - 12 * mm
+    y = height - banda_h - 10 * mm
+
+    # ── Agradecimiento ───────────────────────────────────────────────────
+    #
+    # Va arriba de todo y no al pie: es lo primero que se lee al abrir el
+    # archivo, y es la única línea del documento que le habla a la persona en
+    # vez de informarle un dato.
+    #
+    # Cambia según de dónde vino la reserva. Quien reservó por la web no habló
+    # con nadie: para esa persona este PDF **es** el primer contacto con la
+    # empresa, así que dice explícitamente que hay alguien del otro lado.
+    # Con una empresa se saluda a la empresa, no al primer nombre de quien
+    # firma: tutear a una razón social suena mal en un documento comercial.
+    if cliente and getattr(cliente, "tipo", None) == "empresa":
+        saludo = "¡Gracias por elegirnos!"
+    else:
+        partes = (getattr(cliente, "nombre_completo", "") or "").split()
+        saludo = f"¡Gracias, {partes[0]}!" if partes else "¡Gracias por elegirnos!"
+    desde_web = getattr(reserva, "origen", "sistema") == "web"
+
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(_BRAND_OSCURO)
+    c.drawString(margin, y, saludo)
+    y -= 5.5 * mm
+
+    agradecimiento = (
+        "Tu reserva quedó registrada y en breve nos comunicamos para coordinar la "
+        "entrega. Guardá este comprobante: tiene todo lo que acordamos."
+        if desde_web else
+        "Tu reserva quedó confirmada. Abajo está el detalle de lo que acordamos, "
+        "para que lo tengas a mano."
+    )
+    c.setFont("Helvetica", 9.5)
+    c.setFillColor(_MUTED)
+    texto = c.beginText(margin, y)
+    texto.setLeading(12)
+    for linea in _wrap(agradecimiento, 105):
+        texto.textLine(linea)
+        y -= 12
+    c.drawText(texto)
+    y -= 4 * mm
 
     # ── Bloque: datos del cliente ────────────────────────────────────────
     y = _seccion(c, "DATOS DEL CLIENTE", margin, y, width)
@@ -160,10 +201,47 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     c.setFont("Helvetica-Oblique", 9)
     c.setFillColor(_MUTED)
     c.drawString(margin, y, f"Duración estimada: {dias} día{'s' if dias != 1 else ''}.")
-    y -= 9 * mm
+    y -= 7 * mm
+
+    # ── Bloque: adicionales contratados ──────────────────────────────────
+    #
+    # Faltaban del documento, y eso hacía que el cliente recibiera un papel que
+    # no mencionaba las coberturas que había contratado — justo lo que va a
+    # querer releer si pasa algo.
+    adicionales = list(getattr(reserva, "adicionales", []) or [])
+    if adicionales:
+        y = _seccion(c, "ADICIONALES CONTRATADOS", margin, y, width)
+        for ra in adicionales:
+            nombre = ra.adicional.nombre if ra.adicional else "Adicional"
+            if ra.cantidad > 1:
+                nombre = f"{nombre}  ×{ra.cantidad}"
+            c.setFont("Helvetica", 9.5)
+            c.setFillColor(_TINTA)
+            c.drawString(margin, y, nombre)
+            c.setFont("Helvetica", 8.5)
+            c.setFillColor(_MUTED)
+            c.drawString(
+                margin + 90 * mm, y,
+                "por día" if ra.unidad_cobro == "por_dia" else "único",
+            )
+            c.setFont("Helvetica-Bold", 9.5)
+            c.setFillColor(_TINTA)
+            c.drawRightString(width - margin, y, _money(ra.subtotal))
+            y -= 6 * mm
+        y -= 3 * mm
 
     # ── Bloque: condiciones económicas (destacado) ───────────────────────
     y = _seccion(c, "CONDICIONES ECONÓMICAS", margin, y, width)
+
+    # `precio_total` es sólo el alquiler del vehículo: los adicionales y el
+    # late checkout viven aparte a propósito (ver `Reserva.total_adicionales`).
+    # El documento que recibe el cliente tiene que decir **lo que va a pagar**,
+    # así que acá se suman. Mostrar `precio_total` pelado le informaba de menos
+    # a quien había contratado una cobertura.
+    subtotal_alquiler = Decimal(str(reserva.precio_total or 0))
+    total_adic = Decimal(str(reserva.total_adicionales or 0))
+    cargo_late = Decimal(str(reserva.cargo_late_checkout or 0))
+    total_general = subtotal_alquiler + total_adic + cargo_late
 
     caja_h = 18 * mm
     c.setFillColor(_FONDO_SUAVE)
@@ -174,7 +252,7 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     c.drawString(margin + 6 * mm, y - 7 * mm, "TOTAL DE LA RESERVA")
     c.setFillColor(_BRAND_OSCURO)
     c.setFont("Helvetica-Bold", 20)
-    c.drawString(margin + 6 * mm, y - 15 * mm, _money(reserva.precio_total))
+    c.drawString(margin + 6 * mm, y - 15 * mm, _money(total_general))
 
     estado = _ESTADO_PAGO_LABEL.get(reserva.estado_pago, reserva.estado_pago or "—")
     c.setFillColor(_MUTED)
@@ -185,13 +263,22 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     c.drawRightString(width - margin - 6 * mm, y - 14 * mm, estado)
     y -= caja_h + 6 * mm
 
-    filas_pago = [
+    filas_pago = []
+    # El desglose sólo aparece si hay algo que desglosar: con una reserva
+    # simple, repetir el mismo número dos veces es ruido.
+    if total_adic or cargo_late:
+        filas_pago.append(("Alquiler del vehículo", _money(subtotal_alquiler)))
+        if total_adic:
+            filas_pago.append(("Adicionales", _money(total_adic)))
+        if cargo_late:
+            filas_pago.append(("Devolución fuera de horario", _money(cargo_late)))
+    filas_pago += [
         ("Forma de pago", _FORMA_PAGO_LABEL.get(reserva.forma_pago_prevista, reserva.forma_pago_prevista or "A convenir")),
         ("Condición de pago", _CONDICION_PAGO_LABEL.get(reserva.condicion_pago, reserva.condicion_pago or "Contado")),
     ]
     if reserva.anticipo_monto:
         filas_pago.append(("Anticipo abonado", _money(reserva.anticipo_monto)))
-        saldo = Decimal(str(reserva.precio_total or 0)) - Decimal(str(reserva.anticipo_monto))
+        saldo = total_general - Decimal(str(reserva.anticipo_monto))
         filas_pago.append(("Saldo pendiente", _money(saldo)))
     if reserva.garantia_tipo and reserva.garantia_tipo != "no_aplica":
         filas_pago.append(("Garantía", f"{reserva.garantia_tipo.capitalize()} · {_money(reserva.garantia_monto)}"))
@@ -210,21 +297,51 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
         c.drawText(texto)
         y -= 6 * mm
 
-    # ── Leyenda + pie ────────────────────────────────────────────────────
-    # La leyenda va anclada arriba del pie, no flotando donde haya terminado
-    # el contenido. Sólo se pasa a una segunda hoja si el contenido realmente
-    # llegó hasta ahí — con los datos habituales, la reserva entra en una.
+    # ── Bloque de pie: qué llevar + leyenda ──────────────────────────────
+    #
+    # Los dos van juntos y anclados arriba del pie, no flotando donde haya
+    # terminado el contenido. Es información práctica y letra chica: agrupada
+    # al final se lee como tal, y mezclada entre las secciones de datos
+    # competía con ellas por atención.
+    #
+    # Lo de "qué llevar" es la pregunta que el cliente hace por teléfono el día
+    # antes. En el papel ahorra esa llamada y evita el caso caro: que llegue
+    # sin licencia y la entrega se caiga con el auto ya reservado.
+    items_retiro = [
+        "Licencia de conducir vigente (la original, no una foto).",
+        "DNI del titular y de cada conductor autorizado.",
+        "La tarjeta de crédito a nombre del titular, para la garantía.",
+    ]
     lineas_leyenda = _wrap(_LEYENDA, 118)
-    alto_leyenda = len(lineas_leyenda) * 11 + 4
-    tope_leyenda = 24 * mm + alto_leyenda
 
-    if y < tope_leyenda:
+    alto_retiro = 5 * mm + len(items_retiro) * 4.6 * mm
+    alto_leyenda = len(lineas_leyenda) * 11 + 4
+    alto_bloque = alto_retiro + alto_leyenda + 3 * mm
+    tope = 24 * mm + alto_bloque
+
+    if y < tope:
         _pie(c, width, margin)
         c.showPage()
 
+    yy = tope - 4 * mm
+
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(_BRAND_OSCURO)
+    c.drawString(margin, yy, "PARA EL DÍA DEL RETIRO")
+    yy -= 5 * mm
+
+    for item in items_retiro:
+        c.setFillColor(_BRAND)
+        c.circle(margin + 1.5 * mm, yy + 1.1 * mm, 0.8 * mm, stroke=0, fill=1)
+        c.setFont("Helvetica", 8.5)
+        c.setFillColor(_TINTA)
+        c.drawString(margin + 5 * mm, yy, item)
+        yy -= 4.6 * mm
+
+    yy -= 2 * mm
     c.setFont("Helvetica-Oblique", 8.5)
     c.setFillColor(_MUTED)
-    texto = c.beginText(margin, 24 * mm + alto_leyenda - 11)
+    texto = c.beginText(margin, yy)
     texto.setLeading(11)
     for linea in lineas_leyenda:
         texto.textLine(linea)
@@ -257,7 +374,7 @@ def _seccion(c: canvas.Canvas, titulo: str, margin: float, y: float, width: floa
     c.setStrokeColor(_BRAND)
     c.setLineWidth(1)
     c.line(margin, y, width - margin, y)
-    return y - 6 * mm
+    return y - 5 * mm
 
 
 def _tabla_dos_columnas(
@@ -276,8 +393,8 @@ def _tabla_dos_columnas(
         c.setFont("Helvetica-Bold", 10)
         c.setFillColor(_TINTA)
         c.drawString(margin + ancho_label, y, str(valor))
-        y -= 6 * mm
-    return y - 3 * mm
+        y -= 5.5 * mm
+    return y - 2 * mm
 
 
 def _wrap(text: str, width: int) -> list[str]:
