@@ -30,17 +30,20 @@ dockerfilePath = "Dockerfile"
 # Las migraciones corren antes de levantar el servidor. Si fallan, el deploy
 # falla y queda la version anterior sirviendo — que es lo que se quiere: mejor
 # no desplegar que desplegar contra un esquema a medias.
-# Tres decisiones, todas por el mismo motivo: que si algo falla se vea.
+# **`sh -c` es obligatorio y no es un adorno.** Railway ejecuta el startCommand
+# directamente, sin pasarlo por un shell: `$PORT` no se expande, `&&` no
+# encadena y `;` no separa. Se comprobo imprimiendo la variable, que salio
+# literal como `${PORT:-8080}`.
 #
-# 1. `${PORT:-8080}` y no `$PORT`. Sin la variable, `--port` queda sin
-#    argumento, uvicorn muere al instante y el contenedor entra en bucle de
-#    reinicios sin un solo mensaje, porque nunca llega a arrancar.
-# 2. `;` y no `&&` entre alembic y uvicorn. La base se migra por fuera del
-#    deploy, asi que un fallo de alembic no tiene por que impedir que el
-#    servidor levante — y con `&&` ese fallo dejaba el contenedor mudo.
-# 3. Los `echo`. Sin ellos no hay forma de saber en que punto se corto: el log
-#    terminaba despues de alembic y no aparecia nada mas.
-startCommand = "echo '>>> arrancando, PORT='${PORT:-8080} && (alembic upgrade head || echo '>>> alembic fallo, sigo igual') ; echo '>>> levantando uvicorn' ; uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --log-level info"
+# El sintoma de no tener esto: uvicorn recibe `--port ${PORT:-8080}` como
+# texto, no puede convertirlo a numero, muere al instante, el contenedor
+# reinicia en bucle y el dominio devuelve "Application not found" — con el
+# build en verde y sin una sola linea de error en el log.
+#
+# `;` y no `&&` entre alembic y uvicorn: la base se migra por fuera del deploy,
+# asi que un fallo de alembic no tiene por que impedir que el servidor levante.
+# `exec` para que uvicorn reemplace al shell y reciba las senales de Railway.
+startCommand = "sh -c 'alembic upgrade head; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}'"
 
 healthcheckPath = "/health"
 # 30 segundos no alcanzaban. El arranque hace, en este orden: conectar a
