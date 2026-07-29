@@ -643,6 +643,24 @@ las revisen.
 
 ## 12. Lo que falta, y qué depende de ustedes
 
+> ### 📄 Los cuatro datos fiscales que faltan
+>
+> Verificado en el sistema en producción. **Cada contrato que se emite sale con
+> la leyenda "DOCUMENTO PROVISORIO"** hasta que estén los cuatro:
+>
+> | Falta | |
+> |---|---|
+> | **Razón social** | El nombre exacto como figura en AFIP |
+> | **CUIT** | |
+> | **Ingresos Brutos** | Número de inscripción |
+> | **Domicilio fiscal** | |
+>
+> Ya están cargados el nombre del locador, la localidad, la jurisdicción, los
+> teléfonos y el mail. Faltan sólo esos cuatro.
+>
+> Y detrás hay una decisión: **¿el contrato va a nombre de Ubicar Rent como
+> empresa, o de una persona física?** De eso depende qué se escribe ahí.
+
 ### Lo que necesitamos que ustedes carguen
 
 Sin esto la web no puede vender, aunque el sistema esté entero. Va en este
@@ -697,30 +715,40 @@ orden, porque cada cosa depende de la anterior:
 > Hay que cerrarlo antes de publicar los términos y condiciones, porque es la
 > cláusula que más se lee y la que más reclamos genera.
 
-### Lo que depende de servicios externos
+### El sistema ya está en línea
 
-**Es lo único que queda por hacer.** Todo el resto del sistema está terminado
-y probado. En todos los casos el programa ya está escrito: falta crear la
-cuenta y pegar la clave.
+**Desde el 29 de julio el sistema funciona en internet**, no sólo en la
+computadora del desarrollador:
 
-- **Cobro con tarjeta online** — Mercado Pago. Construido y probado de punta a
-  punta; falta la cuenta.
-- **Avisos por mail** — ✅ **funcionando**. La cuenta de Resend está creada y
-  el sistema ya manda correo de verdad.
+- **El sistema de gestión** entra desde cualquier navegador, con usuario y
+  contraseña reales
+- **La base de datos** está en un servidor, con respaldo
+- **Los avisos por mail** salen de verdad
+
+Eso significa que Franco, Martín y Ramiro pueden usarlo desde donde estén, cada
+uno con su cuenta, y **cada acción queda registrada con el nombre de quien la
+hizo**.
+
+### Lo que todavía depende de servicios externos
+
+Todo el resto del sistema está terminado y probado. En cada caso el programa ya
+está escrito: falta crear la cuenta o cargar un dato.
+
+- **Cobro con tarjeta online** — Mercado Pago. Construido y probado; falta
+  sacar las credenciales de la cuenta de la empresa.
+- **Avisos por mail** — ✅ **funcionando**.
   > ⚠️ **Falta un paso de ustedes**: hoy los mails salen desde una dirección
-  > de prueba que **sólo puede escribirle a la casilla de Ubicar**. Para que
-  > el mail de confirmación le llegue a un cliente hay que registrar el
-  > dominio propio (algo tipo `reservas@ubicar-rent.com`). Es un trámite de
-  > configuración del dominio, no del sistema.
-- **Usuarios con nombre y contraseña** — hoy el sistema no distingue quién hizo
-  cada cosa. Es lo que hay que resolver antes de que el nombre de quien atendió
-  salga impreso en un contrato de verdad. También es lo que habilita el
-  **registro de auditoría**: el sistema ya guarda quién hizo cada movimiento,
-  pero hasta que haya usuarios reales todo queda registrado como un único
-  usuario y ese dato no sirve.
-- **Guardado de archivos en la nube** — el código está listo; falta crear la
-  cuenta. Sin eso, los documentos, las fotos de daños y las firmas se pierden
-  al actualizar el sistema.
+  > de prueba que **sólo puede escribirle a la casilla de Ubicar**. Para que la
+  > confirmación le llegue a un cliente hay que registrar el dominio propio.
+  > **No es crear casillas de correo ni pagar nada**: son tres registros en la
+  > configuración del dominio. Si un cliente responde, esa respuesta se
+  > redirige al Gmail que ya usan.
+- **Guardado de archivos** — falta contratar el espacio. Sin eso, los
+  documentos escaneados, las fotos de daños y las firmas **se pierden cada vez
+  que se actualiza el sistema**. Es lo más urgente de esta lista después de
+  Mercado Pago.
+- **La web pública** — funciona completa, pero todavía se muestra desde una
+  computadora. Publicarla es un paso de configuración.
 
 ---
 

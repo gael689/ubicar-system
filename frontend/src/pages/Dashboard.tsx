@@ -96,21 +96,18 @@ export function Dashboard() {
         <OcupacionPage />
       </section>
 
-      {/* Flujo del día — módulo permanente y compacto, sin resize a mano */}
-      <section className="shrink-0 bg-background border-t border-border px-6 py-3 h-[220px] flex flex-col">
-        <h2 className="text-sm font-bold text-foreground mb-2 shrink-0">Flujo del día</h2>
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <FlujoTimeline stats={stats} isLoading={isLoading} navigate={navigate} />
-        </div>
-        <div className="shrink-0 pt-2 flex justify-center">
-          <button
-            onClick={() => setFlujoDialogOpen(true)}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold transition-colors"
-          >
-            <Maximize2 className="w-3.5 h-3.5" /> Ver flujo del día
-          </button>
-        </div>
-      </section>
+      {/* El flujo del día vive **sólo** en el modal.
+          Antes ocupaba una franja fija de 220px abajo del calendario, y la
+          mayor parte del tiempo mostraba "aún no hay movimientos": le comía un
+          cuarto de pantalla al calendario, que es lo que de verdad se mira
+          todo el día, para no decir nada. El botón flota encima y no le quita
+          ni un píxel. */}
+      <button
+        onClick={() => setFlujoDialogOpen(true)}
+        className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-white shadow-lg transition-colors hover:bg-primary/90"
+      >
+        <Maximize2 className="h-3.5 w-3.5" /> Ver flujo del día
+      </button>
 
       {/* Modal: vista completa, con selector de fecha */}
       <Dialog open={flujoDialogOpen} onOpenChange={setFlujoDialogOpen}>
