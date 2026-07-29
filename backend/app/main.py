@@ -121,8 +121,12 @@ app = FastAPI(
     title="Ubicar Rent API",
     description="Sistema de gestión de alquiler de vehículos",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # En producción se cierra la documentación: no es una vulnerabilidad, pero
+    # le entrega a cualquiera el mapa completo de los ~185 endpoints internos
+    # con sus esquemas. No hay razón para publicarlo.
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
     lifespan=lifespan,
 )
 
@@ -130,14 +134,22 @@ app = FastAPI(
 # 5173 = frontend/ (Vite, sistema interno). 3200 = web/ (Next, landing y
 # flujo de reserva) — tiene puerto propio para no competir por el 3000, que
 # queda libre para lo que se levante a mano.
-origins = [
-    settings.frontend_url,
-    "http://localhost:3000",
-    "http://localhost:3200",
-    "http://localhost:5173",
-]
-if settings.landing_url:
-    origins.append(settings.landing_url)
+origins = [settings.frontend_url]
+
+# `WEB_URL` y `LANDING_URL` son la misma web pública. Existen las dos porque
+# `WEB_URL` alimenta las URLs de retorno de Mercado Pago y `LANDING_URL` nació
+# como el origen de CORS — y cargar sólo una rompía algo en silencio: sin
+# `WEB_URL` la preferencia de pago falla, sin `LANDING_URL` el navegador
+# bloquea la web entera. Se aceptan las dos y se usa la que esté.
+for url in (settings.web_url, settings.landing_url):
+    if url and url not in origins:
+        origins.append(url)
+
+# Los localhost sólo fuera de producción: en producción son orígenes válidos
+# que no le sirven a nadie más que a un atacante con algo corriendo en la
+# máquina de la víctima.
+if not settings.is_production:
+    origins += ["http://localhost:3000", "http://localhost:3200", "http://localhost:5173"]
 
 app.add_middleware(
     CORSMiddleware,
