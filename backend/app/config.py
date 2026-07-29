@@ -19,9 +19,14 @@ class Settings(BaseSettings):
     # Lista de auth_sub de admins iniciales, separados por coma
     clerk_admin_subs: str = ""
 
-    # Bypass de auth para desarrollo: get_current_user devuelve un admin upserteado
-    # en DB sin validar token. Cuando Clerk esté integrado, poner en false.
-    dev_bypass_auth: bool = True
+    # Bypass de auth para desarrollo: get_current_user devuelve un admin
+    # upserteado en DB sin validar token.
+    #
+    # **El default es `False` a propósito.** Con `True`, un deploy que se
+    # olvide de una variable deja todo el back-office abierto a internet sin
+    # pedir token. Que el default inseguro requiera una acción explícita es la
+    # diferencia entre olvidarse y equivocarse.
+    dev_bypass_auth: bool = False
     dev_admin_email: str = "dev@ubicarrent.com"
     dev_admin_nombre: str = "Dev Admin"
     dev_admin_auth_sub: str = "dev-bypass-admin"
@@ -77,8 +82,24 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     @property
+    def entorno(self) -> str:
+        """
+        El entorno normalizado.
+
+        Se compara siempre contra esto y nunca contra `environment` crudo: un
+        `Production` con mayúscula hacía que las dos guardas que dependen del
+        string —el bypass de auth y el rechazo de la pasarela falsa— no
+        dispararan. Dos fallas graves por una mayúscula.
+        """
+        return (self.environment or "").strip().lower()
+
+    @property
     def is_development(self) -> bool:
-        return self.environment == "development"
+        return self.entorno == "development"
+
+    @property
+    def is_production(self) -> bool:
+        return self.entorno in ("production", "prod")
 
 
 settings = Settings()

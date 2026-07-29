@@ -431,8 +431,18 @@ def crear_reserva_publica(payload: ReservaWebRequest, db: Session = Depends(get_
 
 
 def _url_webhook() -> str:
+    """
+    La URL que Mercado Pago va a llamar.
+
+    **Lleva el prefijo `/api/v1`**: este router se monta con `prefix="/public"`
+    dentro de `API_PREFIX`, así que la ruta real es
+    `/api/v1/public/webhooks/mercadopago`. Sin el prefijo, MP recibe 404 en
+    cada notificación y —como el webhook es la fuente de verdad del cobro—
+    **ninguna reserva se confirma nunca**: el cliente paga, el hold vence y el
+    auto se libera. Falla en silencio, porque el webhook siempre responde 200.
+    """
     base = (settings.backend_public_url or "").rstrip("/")
-    return f"{base}/public/webhooks/mercadopago" if base else ""
+    return f"{base}/api/v1/public/webhooks/mercadopago" if base else ""
 
 
 @router.post("/webhooks/mercadopago")

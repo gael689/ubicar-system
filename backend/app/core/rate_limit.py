@@ -78,10 +78,22 @@ def ip_del_cliente(request: Request) -> str:
     Railway y Vercel ponen la IP original en `X-Forwarded-For`; sin mirarla,
     **todas las peticiones parecerían venir del proxy** y el límite se aplicaría
     al tráfico entero como si fuera un solo visitante.
+
+    **Se toma la ÚLTIMA entrada, no la primera.** `X-Forwarded-For` es una lista
+    que cada proxy va agregando por la derecha, y las de la izquierda las
+    escribe el cliente: nada le impide mandar `X-Forwarded-For: 1.2.3.4`
+    inventado en cada request. Confiando en la primera, cada pedido parece venir
+    de una IP nueva y **el límite no dispara nunca** — que es exactamente cómo
+    alguien tomaría el cupo de la flota entera en segundos.
+
+    La última entrada la escribe el proxy de Railway, que es el único que
+    tenemos delante y el único en el que podemos confiar.
     """
     reenviada = request.headers.get("x-forwarded-for")
     if reenviada:
-        return reenviada.split(",")[0].strip()
+        entradas = [p.strip() for p in reenviada.split(",") if p.strip()]
+        if entradas:
+            return entradas[-1]
     return request.client.host if request.client else "desconocida"
 
 

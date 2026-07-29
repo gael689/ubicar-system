@@ -92,14 +92,20 @@ def _decodificar(token: str) -> dict:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {e}")
 
 
-def _upsert_desde_clerk(db: Session, claims: dict) -> Usuario:
+def _usuario_desde_clerk(db: Session, claims: dict) -> Usuario:
     """
-    Trae el usuario local que corresponde al `sub` de Clerk, creándolo si es la
-    primera vez que entra.
+    Trae el usuario local que corresponde al `sub` de Clerk.
 
-    **El rol no lo decide Clerk.** Sale de `CLERK_ADMIN_SUBS` sólo en el alta;
-    después manda lo que diga la tabla `usuarios`, para que cambiar un permiso
-    sea una operación del sistema y no una edición de variables de entorno.
+    **Tener sesión en Clerk NO alcanza para entrar al sistema.** Una instancia
+    de Clerk acepta registro público por defecto, y su portal hospedado queda
+    accesible aunque el frontend sólo muestre el formulario de ingreso. Si acá
+    se creara el usuario automáticamente, cualquiera que se registre con un
+    mail cualquiera obtendría un token válido y con él la ficha completa de
+    todos los clientes: DNI, licencias, documentos escaneados y cuentas
+    corrientes. **El alta la hace el sistema, no el proveedor de identidad.**
+
+    Sólo se auto-provisionan los `sub` listados en `CLERK_ADMIN_SUBS`, que es
+    el arranque en frío: sin eso no habría forma de crear el primer admin.
     """
     sub = claims.get("sub")
     if not sub:
@@ -113,25 +119,28 @@ def _upsert_desde_clerk(db: Session, claims: dict) -> Usuario:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Usuario dado de baja")
         return usuario
 
+    admins = {s.strip() for s in (settings.clerk_admin_subs or "").split(",") if s.strip()}
+    if sub not in admins:
+        logger.warning("[Clerk] identidad sin usuario en el sistema: sub=%s", sub)
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Tu cuenta todavía no tiene acceso al sistema. Pedile a un "
+            "administrador que te dé de alta.",
+        )
+
     email = claims.get("email") or f"{sub}@sin-email.clerk"
     nombre = (
         claims.get("name")
         or " ".join(filter(None, [claims.get("first_name"), claims.get("last_name")])).strip()
         or email.split("@")[0]
     )
-    admins = {s.strip() for s in (settings.clerk_admin_subs or "").split(",") if s.strip()}
-
     usuario = Usuario(
-        email=email,
-        nombre=nombre,
-        rol="admin" if sub in admins else "operador",
-        auth_sub=sub,
-        activo=True,
+        email=email, nombre=nombre, rol="admin", auth_sub=sub, activo=True,
     )
     db.add(usuario)
     db.commit()
     db.refresh(usuario)
-    logger.info("[Clerk] usuario nuevo: %s (%s) rol=%s", nombre, email, usuario.rol)
+    logger.info("[Clerk] admin inicial dado de alta: %s (%s)", nombre, email)
     return usuario
 
 
@@ -180,7 +189,7 @@ def get_current_user(
     """
     if settings.dev_bypass_auth:
         # El bypass en producción convertiría a cualquiera en admin sin token.
-        if settings.environment == "production":
+        if settings.is_production:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="DEV_BYPASS_AUTH está activo en producción",
@@ -194,7 +203,7 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return _upsert_desde_clerk(db, _decodificar(credentials.credentials))
+    return _usuario_desde_clerk(db, _decodificar(credentials.credentials))
 
 
 def require_admin(current_user: Usuario = Depends(get_current_user)) -> Usuario:

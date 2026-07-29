@@ -53,8 +53,45 @@ def _correr_motor_notificaciones() -> None:
         db.close()
 
 
+def _verificar_configuracion_segura() -> None:
+    """
+    Cortafuegos de arranque.
+
+    Una guarda por request se saltea por omisión —basta con que un endpoint
+    nuevo no la use—; una que impide que el proceso levante, no. Si algo de
+    esto está mal en producción, es preferible que el deploy falle ruidoso a
+    que quede sirviendo con el back-office abierto o cobrando de mentira.
+    """
+    if not settings.is_production:
+        return
+
+    problemas = []
+    if settings.dev_bypass_auth:
+        problemas.append(
+            "DEV_BYPASS_AUTH está activo: la API entera quedaría sin autenticación"
+        )
+    if settings.pagos_provider == "fake":
+        problemas.append(
+            "PAGOS_PROVIDER=fake: se confirmarían reservas sin cobrar"
+        )
+    if not settings.clerk_jwks_url:
+        problemas.append(
+            "CLERK_JWKS_URL vacía: todos los endpoints autenticados darían 500"
+        )
+    if settings.storage_provider == "local":
+        problemas.append(
+            "STORAGE_PROVIDER=local: los archivos se pierden en cada redeploy"
+        )
+    if problemas:
+        raise RuntimeError(
+            "Configuración insegura para producción:\n  - " + "\n  - ".join(problemas)
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _verificar_configuracion_segura()
+
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
 

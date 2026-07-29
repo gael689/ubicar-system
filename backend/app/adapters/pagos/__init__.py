@@ -44,7 +44,10 @@ def cobro_habilitado() -> bool:
 def _es_produccion() -> bool:
     from app.config import settings
 
-    return settings.environment == "production"
+    # `is_production` normaliza mayúsculas y espacios: con la comparación
+    # cruda, un `Production` dejaba pasar la pasarela falsa a producción — y
+    # una pasarela simulada confirma reservas sin cobrar un peso.
+    return settings.is_production
 
 
 def get_pasarela() -> IPasarelaPago:
