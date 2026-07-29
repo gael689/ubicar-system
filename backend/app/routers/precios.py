@@ -222,6 +222,11 @@ def list_reglas(
     solo_promociones: bool = Query(False),
     vigentes_al: date | None = Query(None, description="Sólo las que cubren esta fecha"),
     incluir_inactivas: bool = Query(False),
+    canal: str | None = Query(
+        None,
+        description="'web' o 'mostrador'. Incluye también las de canal 'ambos', "
+                    "que son las que rigen en los dos.",
+    ),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
@@ -234,6 +239,11 @@ def list_reglas(
         q = q.filter(TarifaCalendario.vehiculo_id == vehiculo_id)
     if solo_promociones:
         q = q.filter(TarifaCalendario.es_promocional.is_(True))
+    if canal in ("web", "mostrador"):
+        # `ambos` entra a propósito: una regla de canal 'ambos' **sí** rige en
+        # este canal. Excluirla haría que la pantalla de precios web mostrara
+        # una lista de reglas que no explica los precios de su propia grilla.
+        q = q.filter(TarifaCalendario.canal.in_([canal, "ambos"]))
 
     reglas = q.order_by(
         TarifaCalendario.prioridad.desc(), TarifaCalendario.id.desc()

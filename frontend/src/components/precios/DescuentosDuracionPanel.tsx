@@ -59,6 +59,12 @@ export function DescuentosDuracionPanel() {
         <div className="flex items-center gap-2">
           <Percent className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold text-foreground">Descuentos por duración</h3>
+          {/* Aparece en las dos pantallas de precios, y no tiene canal: el
+              aviso no es decoración, evita que alguien crea que está tocando
+              sólo la web porque entró por ahí. */}
+          <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            los dos canales
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setVerInactivos(v => !v)}>
@@ -73,6 +79,8 @@ export function DescuentosDuracionPanel() {
       <p className="text-xs text-muted-foreground">
         Se aplica sobre el total de los días ya calculados. Si dos descuentos se solapan, gana el
         de mayor porcentaje — el cliente nunca sale perdiendo por un solapamiento mal cargado.
+        <strong> Estos descuentos valen igual en web y en mostrador</strong>: son la misma lista
+        en las dos pantallas.
       </p>
 
       {showForm && (

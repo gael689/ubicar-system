@@ -113,6 +113,91 @@ def get_adicionales_publicos(db: Session = Depends(get_db)):
     ])
 
 
+class AdicionalElegido(BaseModel):
+    adicional_id: int
+    cantidad: int = 1
+
+
+class CotizarPublicoRequest(BaseModel):
+    """
+    Lo mismo que `CalcularPrecioRequest` **menos el canal y el vehículo**.
+
+    El canal no se acepta como dato: lo fija el servidor en `web`. Si viniera
+    del navegador, cualquiera podría pedir la lista de precios del mostrador
+    —que es la que se negocia— desde la consola.
+
+    El vehículo tampoco: la web vende por categoría, y dejar cotizar una unidad
+    puntual expondría la patente y el precio de cada auto de la flota.
+    """
+    fecha_inicio: date
+    fecha_fin: date
+    categoria_id: int
+    adicionales: list[AdicionalElegido] = []
+    fecha_nacimiento: date | None = None
+
+
+@router.post("/cotizar", dependencies=[Depends(limite_consultas)])
+def cotizar_publico(payload: CotizarPublicoRequest, db: Session = Depends(get_db)):
+    """
+    El precio que ve el cliente en los pasos 2, 3 y 4 del flujo web.
+
+    **Existe porque `/precios/calcular` pide login**, y la web no tiene ni
+    tiene que tener un usuario: sin esto, el flujo mostraba el precio en el
+    paso 1 (que sale de `/public/disponibilidad`) y desde el paso 2 en
+    adelante daba 401 — el cliente elegía un seguro y el total no aparecía.
+
+    Es el mismo `PrecioService` que usa el mostrador, no una segunda cuenta:
+    duplicar la fórmula es cómo se llega a que la web cobre distinto que el
+    sistema por el mismo alquiler.
+
+    **El total de acá es informativo.** Lo que se cobra se recalcula en
+    `POST /public/reservas`, del lado del servidor — ver §6 del plan: nunca se
+    confía en el monto que manda el navegador.
+    """
+    from app.core.exceptions import BusinessRuleError as _BRE
+    from app.services.precio_service import PrecioService
+
+    if payload.fecha_fin <= payload.fecha_inicio:
+        raise HTTPException(422, "La fecha de fin debe ser posterior a la de inicio")
+
+    try:
+        cotizacion, categoria_id = PrecioService(db).calcular(
+            fecha_inicio=payload.fecha_inicio,
+            fecha_fin=payload.fecha_fin,
+            categoria_id=payload.categoria_id,
+            vehiculo_id=None,
+            canal="web",
+            adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
+            fecha_nacimiento=payload.fecha_nacimiento,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except _BRE as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return ok({
+        "dias": [d.__dict__ for d in cotizacion.dias],
+        "duracion_dias": cotizacion.duracion_dias,
+        "subtotal": cotizacion.subtotal,
+        "descuento_porcentaje": cotizacion.descuento_porcentaje,
+        "descuento_monto": cotizacion.descuento_monto,
+        "descuento_nombre": cotizacion.descuento_nombre,
+        "subtotal_vehiculo": cotizacion.subtotal_vehiculo,
+        "adicionales": [a.__dict__ for a in cotizacion.adicionales],
+        "total_adicionales": cotizacion.total_adicionales,
+        "recargo_edad": (
+            cotizacion.recargo_edad.__dict__ if cotizacion.recargo_edad else None
+        ),
+        "total": cotizacion.total,
+        "precio_dia_promedio": cotizacion.precio_dia_promedio,
+        "total_referencia": cotizacion.total_referencia,
+        "tiene_promocion": cotizacion.tiene_promocion,
+        "promociones": cotizacion.promociones,
+        "categoria_id": categoria_id,
+        "vehiculo_id": None,
+    })
+
+
 @router.get("/config")
 def get_config_publica(db: Session = Depends(get_db)):
     """
@@ -342,11 +427,6 @@ def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Dep
         {"reserva_id": reserva.id, "categoria": categoria.nombre},
         "Recibimos tu solicitud. Te contactamos para ofrecerte una alternativa.",
     )
-
-
-class AdicionalElegido(BaseModel):
-    adicional_id: int
-    cantidad: int = 1
 
 
 class ReservaWebRequest(BaseModel):

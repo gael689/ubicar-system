@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CreditCard, MessageCircle, ShieldCheck, Clock, Loader2 } from "lucide-react";
+import {
+  CreditCard, MessageCircle, ShieldCheck, Clock, Loader2, Car, User, MapPin,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, ApiError, pesos, fechaCorta } from "@/lib/api";
 import { whatsappLink } from "@/lib/constants";
@@ -138,6 +140,68 @@ export function Paso4Pago({
             Elegí cuánto querés adelantar. El resto se abona al retirar el vehículo.
           </p>
         </div>
+      </div>
+
+      {/* Vista previa de lo que se está por confirmar.
+          El resumen de la derecha es una columna de escritorio y no incluye
+          los datos del cliente: en el teléfono, el último paso antes de pagar
+          mostraba sólo números y ningún dato para revisar. Un DNI mal tipeado
+          se descubría cuando llegaba el contrato. */}
+      <div className="rounded-lg border border-border bg-white p-5">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Revisá que esté todo bien
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Dato icono={<Car className="h-4 w-4" />} titulo="Vehículo">
+            {categoriaNombre}
+            <span className="block text-muted-foreground">
+              {cotizacion.duracion_dias} {cotizacion.duracion_dias === 1 ? "día" : "días"}
+            </span>
+          </Dato>
+
+          <Dato icono={<User className="h-4 w-4" />} titulo="A nombre de">
+            {cliente.nombre} {cliente.apellido}
+            <span className="block text-muted-foreground">DNI {cliente.dni}</span>
+            <span className="block break-all text-muted-foreground">{cliente.email}</span>
+            <span className="block text-muted-foreground">{cliente.telefono}</span>
+          </Dato>
+
+          <Dato icono={<MapPin className="h-4 w-4" />} titulo="Retirás">
+            {fechaCorta(rango.fechaInicio)} · {rango.horaInicio}
+            <span className="block text-muted-foreground">{rango.lugarRetiro}</span>
+          </Dato>
+
+          <Dato icono={<MapPin className="h-4 w-4" />} titulo="Devolvés">
+            {fechaCorta(rango.fechaFin)} · {rango.horaFin}
+            <span className="block text-muted-foreground">{rango.lugarDevolucion}</span>
+          </Dato>
+        </div>
+
+        {(cotizacion.adicionales.length > 0 || cotizacion.recargo_edad) && (
+          <div className="mt-4 border-t border-border pt-3">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">Sumaste</p>
+            <ul className="space-y-1 text-sm">
+              {cotizacion.adicionales.map((a) => (
+                <li key={a.id} className="flex justify-between gap-4">
+                  <span className="text-foreground">
+                    {a.nombre}
+                    {a.cantidad > 1 && ` ×${a.cantidad}`}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">{pesos(a.subtotal)}</span>
+                </li>
+              ))}
+              {cotizacion.recargo_edad && (
+                <li className="flex justify-between gap-4">
+                  <span className="text-foreground">{cotizacion.recargo_edad.nombre}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {pesos(cotizacion.recargo_edad.monto)}
+                  </span>
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Cuánto adelanta (D-30) */}
@@ -284,6 +348,20 @@ export function Paso4Pago({
           Seguro de responsabilidad civil incluido
         </li>
       </ul>
+    </div>
+  );
+}
+
+function Dato({
+  icono, titulo, children,
+}: { icono: React.ReactNode; titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2.5">
+      <span className="mt-0.5 shrink-0 text-primary">{icono}</span>
+      <div className="min-w-0 text-sm">
+        <p className="text-xs font-medium text-muted-foreground">{titulo}</p>
+        <p className="font-medium text-foreground">{children}</p>
+      </div>
     </div>
   );
 }

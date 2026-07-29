@@ -343,7 +343,10 @@ export const NAV_GROUPS: NavGroup[] = [
     { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
   ] },
   { label: 'Precios', icon: 'CalendarRange', items: [
-    { path: '/precios', label: 'Calendario de precios', icon: 'CalendarRange' },
+    // Dos entradas, no una con interruptor: cargar un precio pensando en la
+    // web y cambiarle el precio al mostrador es el error que esto evita.
+    { path: '/precios/mostrador', label: 'Precios de mostrador', icon: 'Store' },
+    { path: '/precios/web', label: 'Precios de la web', icon: 'Globe' },
     { path: '/adicionales', label: 'Adicionales', icon: 'Package' },
     { path: '/recargos-edad', label: 'Recargos por edad', icon: 'CalendarClock' },
   ] },

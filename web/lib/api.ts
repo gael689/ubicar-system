@@ -144,15 +144,21 @@ export const api = {
    *
    * `fecha_nacimiento` no valida nada: sin ella simplemente no se aplica
    * ningún recargo por franja etaria (D-38), y el total sale igual.
+   *
+   * **Va contra `/public/cotizar`, no contra `/precios/calcular`.** El segundo
+   * pide login: en desarrollo pasaba igual por el bypass de autenticación, y
+   * en producción devolvía 401 en los pasos 2, 3 y 4 — el cliente elegía un
+   * seguro y el total desaparecía. El canal no se manda: lo fija el servidor
+   * en `web`, así la lista de precios del mostrador no queda a un fetch de
+   * distancia desde la consola del navegador.
    */
   calcularPrecio: (body: {
     fecha_inicio: string;
     fecha_fin: string;
     categoria_id: number;
-    canal: "web";
     adicionales: { adicional_id: number; cantidad: number }[];
     fecha_nacimiento?: string | null;
-  }) => request<Cotizacion>("/precios/calcular", { method: "POST", body: JSON.stringify(body) }),
+  }) => request<Cotizacion>("/public/cotizar", { method: "POST", body: JSON.stringify(body) }),
 
   /**
    * Abre el checkout de Mercado Pago (ítem 62).

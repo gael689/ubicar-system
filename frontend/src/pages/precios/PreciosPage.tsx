@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, CalendarRange, Calculator } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, CalendarRange, Calculator, Globe, Store } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,19 +23,45 @@ function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Todo lo que cambia entre las dos pantallas, en un solo lugar. */
+const POR_CANAL = {
+  mostrador: {
+    titulo: 'Precios de mostrador',
+    descripcion:
+      'Lo que se cobra cuando el cliente reserva por teléfono, por WhatsApp o en el local. ' +
+      'La regla de mayor prioridad que cubre el día es la que se cobra.',
+    otro: { label: 'Ver precios de la web', path: '/precios/web' },
+  },
+  web: {
+    titulo: 'Precios de la web',
+    descripcion:
+      'Lo que ve y paga un cliente que reserva solo desde ubicar-rent.com.ar. ' +
+      'La regla de mayor prioridad que cubre el día es la que se cobra.',
+    otro: { label: 'Ver precios de mostrador', path: '/precios/mostrador' },
+  },
+} as const;
+
 /**
  * Calendario de precios (Fase 5, ítem 57 — plan §7.2).
  *
  * Es la pantalla donde Franco y Martín cargan los precios ellos mismos:
  * "planificar precios base, y precios por fecha… que tengan la posibilidad
  * de poner precios promocionales para incentivar más al marketing".
+ *
+ * **Hay una pantalla por canal, no una con un interruptor.** Antes el canal
+ * era un botoncito arriba de la grilla que sólo cambiaba lo que se veía: la
+ * lista de reglas de abajo mostraba las de los dos canales mezcladas y el
+ * alta traía "web y mostrador" por defecto. Con eso, cargar un precio pensando
+ * en la web le cambiaba el precio al mostrador sin que nadie lo pidiera. Ahora
+ * el canal lo define en qué pantalla estás parado, y no hay forma de
+ * confundirse.
  */
-export function PreciosPage() {
+export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
   const hoy = new Date();
   const [anio, setAnio] = useState(hoy.getFullYear());
   const [mes, setMes] = useState(hoy.getMonth());
-  const [canal, setCanal] = useState<Canal>('mostrador');
 
+  const cfg = POR_CANAL[canal];
   const desde = ymd(new Date(anio, mes, 1));
   const hasta = ymd(new Date(anio, mes + 1, 0));
   const { data: calendario, isLoading } = useCalendarioPrecios({ desde, hasta, canal });
@@ -48,8 +75,16 @@ export function PreciosPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="Calendario de precios"
-        description="Precio base, precios por fecha y promociones. La regla de mayor prioridad que cubre el día es la que se cobra."
+        title={cfg.titulo}
+        description={cfg.descripcion}
+        actions={
+          <Link to={cfg.otro.path}>
+            <Button variant="outline" size="sm">
+              {canal === 'web' ? <Store className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
+              {cfg.otro.label}
+            </Button>
+          </Link>
+        }
       />
 
       <Card className="p-5 space-y-4">
@@ -61,22 +96,6 @@ export function PreciosPage() {
             </h3>
           </div>
           <div className="flex items-center gap-2">
-            {/* El canal no es decoración: una promo "sólo web" cambia lo que
-                se ve acá, y hay que poder verificarlo antes de publicarla. */}
-            <div className="flex rounded-lg border border-border p-0.5">
-              {(['mostrador', 'web'] as Canal[]).map(c => (
-                <button
-                  key={c}
-                  onClick={() => setCanal(c)}
-                  className={cn(
-                    'rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-                    canal === c ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
             <Button variant="outline" size="sm" onClick={() => moverMes(-1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -104,8 +123,8 @@ export function PreciosPage() {
         </div>
       </Card>
 
-      <ProbadorDePrecio />
-      <ReglasPrecioPanel />
+      <ProbadorDePrecio canal={canal} />
+      <ReglasPrecioPanel canal={canal} />
       <DescuentosDuracionPanel />
     </div>
   );
@@ -128,13 +147,12 @@ function Leyenda({ clase, texto }: { clase: string; texto: string }) {
  * va a pagar el cliente es adivinar. Acá se ve el desglose día por día y de
  * qué regla salió cada precio.
  */
-function ProbadorDePrecio() {
+function ProbadorDePrecio({ canal }: { canal: Canal }) {
   const { data: categorias = [] } = useCategorias();
   const { data: adicionalesDisponibles = [] } = useAdicionales();
   const [categoriaId, setCategoriaId] = useState<string>('');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
-  const [canal, setCanal] = useState<Canal>('mostrador');
   const [elegidos, setElegidos] = useState<number[]>([]);
 
   function toggleAdicional(a: Adicional) {
@@ -171,11 +189,12 @@ function ProbadorDePrecio() {
         <h3 className="text-sm font-semibold text-foreground">Probar un precio</h3>
       </div>
       <p className="text-xs text-muted-foreground">
-        Cotiza contra el mismo motor que usan las reservas y la web. Sirve para verificar cómo
-        quedaron las reglas antes de que las use un cliente.
+        Cotiza contra el mismo motor que usan las reservas y la web, en el canal{' '}
+        <strong>{canal}</strong>. Sirve para verificar cómo quedaron las reglas antes
+        de que las use un cliente.
       </p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Categoría</label>
           <select value={categoriaId} onChange={e => setCategoriaId(e.target.value)} className="input-base">
@@ -191,13 +210,6 @@ function ProbadorDePrecio() {
           <label className="text-xs font-medium text-muted-foreground">Devuelve</label>
           <input type="date" value={fechaFin} min={fechaInicio || undefined}
             onChange={e => setFechaFin(e.target.value)} className="input-base" />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Canal</label>
-          <select value={canal} onChange={e => setCanal(e.target.value as Canal)} className="input-base">
-            <option value="mostrador">Mostrador</option>
-            <option value="web">Web</option>
-          </select>
         </div>
       </div>
 

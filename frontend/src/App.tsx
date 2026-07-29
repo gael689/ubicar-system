@@ -67,7 +67,12 @@ export default function App() {
         <Route path="/notificaciones" element={<AppLayout title="Notificaciones"><NotificacionesPage /></AppLayout>} />
         <Route path="/configuracion" element={<AppLayout title="Configuración"><ConfiguracionPage /></AppLayout>} />
         <Route path="/fechas-especiales" element={<AppLayout title="Fechas especiales"><FechasEspecialesPage /></AppLayout>} />
-        <Route path="/precios" element={<AppLayout title="Calendario de precios"><PreciosPage /></AppLayout>} />
+        {/* Una pantalla por canal. El canal no es un filtro de la vista: define
+            qué precios se están tocando, y confundirlos cambia lo que factura
+            el otro lado sin que nadie lo haya pedido. */}
+        <Route path="/precios" element={<Navigate to="/precios/mostrador" replace />} />
+        <Route path="/precios/mostrador" element={<AppLayout title="Precios de mostrador"><PreciosPage canal="mostrador" /></AppLayout>} />
+        <Route path="/precios/web" element={<AppLayout title="Precios de la web"><PreciosPage canal="web" /></AppLayout>} />
         <Route path="/adicionales" element={<AppLayout title="Adicionales"><AdicionalesPage /></AppLayout>} />
         <Route path="/reservas-web" element={<AppLayout title="Reservas web"><ReservasWebPage /></AppLayout>} />
         <Route path="/recargos-edad" element={<AppLayout title="Recargos por edad"><RecargosEdadPage /></AppLayout>} />

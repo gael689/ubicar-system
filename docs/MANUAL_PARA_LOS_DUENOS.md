@@ -204,6 +204,29 @@ una reserva.
 Hay un botón de **"Flujo del día"** que muestra las entregas y devoluciones de
 hoy — que es la pregunta de la mañana.
 
+### Cargar un cliente
+
+Lo primero que pregunta es **si es una empresa o un particular**, y de ahí en
+más el formulario cambia: no es la misma ficha con campos de más.
+
+| | Empresa | Particular |
+|---|---|---|
+| Razón social | Sí | — |
+| Condición IVA | Sí | Sí (Consumidor Final por defecto) |
+| Fecha de nacimiento | — | Sí (define el recargo por edad) |
+| **Condición de pago** (contado / cta. cte.) | **Sí** | **—** |
+| Domicilio, localidad, provincia, CP | Sí | Sí |
+
+**La cuenta corriente es cosa de empresa.** A un particular ya no se le
+pregunta la condición de pago: alquila y paga, y si alguna vez hace falta un
+plazo, se decide **en esa reserva puntual**, que es donde corresponde.
+
+**Toda la licencia está en un solo lugar.** País, "desde" y vencimiento van
+juntos, en la sección Conductor. Antes el vencimiento estaba arriba y los otros
+dos abajo entre los datos fiscales, y se leían como dos licencias distintas.
+Y si el cliente **no** es el conductor, esos campos directamente no aparecen:
+se piden los del conductor designado y nada más.
+
 ### Cargar una reserva
 
 Se elige cliente, auto (o categoría), fechas, horarios y lugares. El sistema:
@@ -283,6 +306,17 @@ Los **daños nuevos** se cargan acá, con fotos.
 
 ## 5. Cómo se arman los precios
 
+> **Hay dos pantallas de precios, no una: "Precios de mostrador" y "Precios de
+> la web".** Están separadas a propósito. Son negocios distintos —la web
+> compite con precio publicado, el mostrador se negocia— y tenerlos en la misma
+> pantalla hacía que cargar un precio pensando en uno le cambiara el precio al
+> otro sin que nadie lo pidiera.
+>
+> Cada pantalla muestra **sólo** las reglas de su canal, y lo que cargues ahí
+> nace atado a ese canal. Si querés que un precio valga en los dos, existe la
+> opción **"Los dos canales"**: esas reglas aparecen en las dos pantallas con
+> una etiqueta que lo aclara, para que se vea que editarlas toca las dos.
+
 Hay dos formas de cargar precios, y la segunda le gana a la primera.
 
 ### 5.1 Precio por duración
@@ -326,15 +360,33 @@ Un porcentaje a partir de N días. **Los seguros y extras quedan afuera del
 descuento** a propósito: ese descuento es sobre el alquiler del auto, y
 aplicarlo también al seguro sería regalar cobertura.
 
-### 5.4 La pantalla de precios
+### 5.4 Las dos pantallas de precios
+
+En el menú **Precios** hay dos entradas:
+
+| | Qué es |
+|---|---|
+| **Precios de mostrador** | Lo que se cobra cuando el cliente reserva por teléfono, por WhatsApp o en el local |
+| **Precios de la web** | Lo que ve y paga un cliente que reserva solo desde la página |
+
+Las dos son iguales por dentro y no se pisan. Arriba de cada una hay un botón
+para saltar a la otra.
+
+Cada pantalla tiene:
 
 Una **grilla de categorías por días del mes** con el precio de cada celda ya
-resuelto. Las celdas sin precio cargado se ven en rojo, así se detecta de un
-vistazo dónde falta cargar.
+resuelto **para ese canal**. Las celdas sin precio cargado se ven en rojo, así
+se detecta de un vistazo dónde falta cargar.
 
-Y un **probador**: se ponen fechas y categoría, y muestra exactamente cuánto
-paga el cliente y de dónde sale cada peso. Sin eso, entender un precio con tres
-reglas superpuestas es adivinar.
+La **lista de reglas de ese canal** — no las del otro.
+
+Un **probador**: se ponen fechas y categoría, y muestra exactamente cuánto
+paga el cliente por ese canal y de dónde sale cada peso. Sin eso, entender un
+precio con tres reglas superpuestas es adivinar.
+
+Y los **descuentos por duración**, que son la excepción: **no tienen canal y
+valen igual en los dos**. Aparecen en las dos pantallas con una etiqueta que lo
+dice, porque son la misma lista.
 
 ### 5.5 Cómo se carga un precio, paso a paso
 
@@ -351,7 +403,7 @@ Se hace en **Nueva regla**, abajo de la grilla:
 | **Precio por día** | Lo que sale **un día** con esta regla |
 | **Desde / Hasta** | El rango de fechas. Los dos extremos entran |
 | **Categoría** o **vehículo** | Una de las dos, no las dos. Vacío = todas |
-| **Canal** | **Mostrador**, **web**, o **ambos** |
+| **¿Dónde aplica?** | *Sólo este canal* (lo normal) o *Los dos canales* |
 | **Capa** | Tres botones. Ver abajo |
 | **Es promoción** | Marca la etiqueta y el precio tachado que ve el cliente en la web |
 
@@ -377,10 +429,9 @@ aprendérselo.
   puede **heredar** en vez de repetir las fechas: se cambia la fecha en un solo
   lugar y el precio la sigue.
 
-**Web y mostrador.** El selector de arriba de la grilla no cambia precios:
-**muestra** cuánto vería un cliente por cada canal. Si quieren que la web tenga
-otro precio que el mostrador, se cargan **dos reglas iguales con canal
-distinto**. Si cargan una sola con canal "ambos", los dos ven lo mismo.
+**Web y mostrador.** Si quieren que la web tenga otro precio que el mostrador,
+cargan la regla en cada pantalla con el precio de cada una. Si el precio es el
+mismo, alcanza con cargarla una vez eligiendo **"Los dos canales"**.
 
 **Lo que hay hoy.** La grilla muestra $85.000 parejo todo el mes porque **no
 hay ninguna regla cargada todavía** — ese número sale de la tarifa por duración

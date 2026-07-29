@@ -16,6 +16,7 @@ import { Paso2Adicionales } from "./Paso2Adicionales";
 import { Paso3Datos } from "./Paso3Datos";
 import { Paso4Pago } from "./Paso4Pago";
 import { ResumenReserva } from "./ResumenReserva";
+import { PieReserva } from "./PieReserva";
 import type { RangoBusqueda } from "./BuscadorRango";
 
 const CLIENTE_VACIO: DatosCliente = {
@@ -88,7 +89,6 @@ export function FlujoReserva() {
         fecha_inicio: rango.fechaInicio,
         fecha_fin: rango.fechaFin,
         categoria_id: categoria.categoria_id,
-        canal: "web",
         adicionales: Object.entries(adicionales).map(([id, cantidad]) => ({
           adicional_id: Number(id),
           cantidad,
@@ -284,6 +284,11 @@ export function FlujoReserva() {
           </div>
         </div>
       </main>
+
+      {/* Va fuera de `main` y antes de la barra fija: la barra de mobile es
+          `fixed`, así que el `pb-28` del contenedor es lo que evita que le
+          tape el pie. */}
+      <PieReserva />
 
       {/* Barra inferior en mobile: el total nunca se pierde de vista */}
       {categoria && (

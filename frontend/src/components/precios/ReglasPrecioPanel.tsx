@@ -30,28 +30,41 @@ const CAPAS = [
   { valor: 20, label: 'Promoción', ayuda: 'Le gana a todo y se comunica como descuento en la web.' },
 ];
 
-const FORM_VACIO = {
-  nombre: '',
-  categoria_id: '' as string,
-  precio_dia: '',
-  usar_fecha_especial: false,
-  fecha_especial_id: '' as string,
-  fecha_desde: '',
-  fecha_hasta: '',
-  dias_semana: [] as number[],
-  prioridad: 0,
-  canal: 'ambos' as CanalTarifa,
-  es_promocional: false,
-  precio_referencia: '',
-  etiqueta_promo: '',
-  min_dias: '',
-  max_dias: '',
-  notas: '',
-};
+function formVacio(canal: CanalTarifa) {
+  return {
+    nombre: '',
+    categoria_id: '' as string,
+    precio_dia: '',
+    usar_fecha_especial: false,
+    fecha_especial_id: '' as string,
+    fecha_desde: '',
+    fecha_hasta: '',
+    dias_semana: [] as number[],
+    prioridad: 0,
+    // El canal lo fija la pantalla en la que se está, no un desplegable que
+    // hay que acordarse de tocar. Cargar en "Precios web" una regla que sin
+    // querer también cambia el mostrador es el error que esto evita.
+    canal,
+    es_promocional: false,
+    precio_referencia: '',
+    etiqueta_promo: '',
+    min_dias: '',
+    max_dias: '',
+    notas: '',
+  };
+}
 
-export function ReglasPrecioPanel() {
+interface Props {
+  /** El canal de esta pantalla. La lista, el alta y la edición trabajan sobre él. */
+  canal: 'web' | 'mostrador';
+}
+
+export function ReglasPrecioPanel({ canal }: Props) {
   const [verInactivas, setVerInactivas] = useState(false);
-  const { data: reglas = [], isLoading } = useReglasPrecio({ incluir_inactivas: verInactivas });
+  const { data: reglas = [], isLoading } = useReglasPrecio({
+    incluir_inactivas: verInactivas,
+    canal,
+  });
   const { data: categorias = [] } = useCategorias();
   const { data: fechasEspeciales = [] } = useFechasEspeciales();
 
@@ -62,10 +75,12 @@ export function ReglasPrecioPanel() {
 
   const [showForm, setShowForm] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
-  const [form, setForm] = useState(FORM_VACIO);
+  const [form, setForm] = useState(() => formVacio(canal));
+
+  const otroCanal = canal === 'web' ? 'mostrador' : 'web';
 
   function abrirNueva() {
-    setForm(FORM_VACIO);
+    setForm(formVacio(canal));
     setEditandoId(null);
     setShowForm(true);
   }
@@ -132,7 +147,7 @@ export function ReglasPrecioPanel() {
       }
       setShowForm(false);
       setEditandoId(null);
-      setForm(FORM_VACIO);
+      setForm(formVacio(canal));
     } catch (err) {
       toast.error(extractError(err));
     }
@@ -152,7 +167,9 @@ export function ReglasPrecioPanel() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Tag className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Reglas de precio</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            Reglas de precio {canal === 'web' ? 'de la web' : 'del mostrador'}
+          </h3>
           {reglas.length > 0 && (
             <span className="inline-flex items-center rounded-full bg-primary/10 text-primary border border-primary/30 px-2 py-0.5 text-xs font-semibold">
               {reglas.length}
@@ -173,6 +190,13 @@ export function ReglasPrecioPanel() {
         La regla de <strong>mayor prioridad</strong> que cubre el día es la que manda. Apilar una
         promoción no borra el precio de abajo: cuando la promo se da de baja, el precio anterior
         vuelve a aplicar solo.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Acá sólo se ve y se carga lo de <strong>{canal}</strong>. Las reglas marcadas
+        <span className="mx-1 rounded border border-border px-1.5 py-0.5 text-[10px]">
+          los dos canales
+        </span>
+        aparecen también en {otroCanal}: si las editás, cambia el precio de los dos.
       </p>
 
       {showForm && (
@@ -343,16 +367,17 @@ export function ReglasPrecioPanel() {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Dos opciones, no tres: en esta pantalla "el otro canal solo" no
+                es una elección válida — para eso se va a la otra pantalla. */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Canal</label>
+              <label className="text-xs font-medium text-muted-foreground">¿Dónde aplica?</label>
               <select
-                value={form.canal}
+                value={form.canal === 'ambos' ? 'ambos' : canal}
                 onChange={e => setForm(f => ({ ...f, canal: e.target.value as CanalTarifa }))}
                 className="input-base"
               >
-                <option value="ambos">Web y mostrador</option>
-                <option value="web">Sólo web</option>
-                <option value="mostrador">Sólo mostrador</option>
+                <option value={canal}>Sólo {canal}</option>
+                <option value="ambos">Los dos canales</option>
               </select>
             </div>
             <div className="space-y-1">
@@ -450,8 +475,9 @@ export function ReglasPrecioPanel() {
         </div>
       ) : reglas.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center">
-          Todavía no hay reglas de precio. Mientras tanto el sistema cotiza con las tarifas
-          por duración de siempre.
+          Todavía no hay reglas de precio para {canal}. Mientras tanto el sistema
+          cotiza con las tarifas por duración de siempre — es el motivo de que
+          la grilla de arriba muestre el mismo número todos los días.
         </p>
       ) : (
         <div className="space-y-1.5">
@@ -480,9 +506,12 @@ export function ReglasPrecioPanel() {
                       {r.etiqueta_promo}
                     </span>
                   )}
-                  {r.canal !== 'ambos' && (
+                  {/* La marca importante es la contraria a la de antes: acá
+                      todas las reglas son de este canal, y lo que hay que
+                      señalar es cuál además toca el otro. */}
+                  {r.canal === 'ambos' && (
                     <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      sólo {r.canal}
+                      los dos canales
                     </span>
                   )}
                   {!r.activo && (

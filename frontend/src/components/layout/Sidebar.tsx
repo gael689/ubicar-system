@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2,
   ChevronDown, X, AlertTriangle, Settings, Bell, CalendarDays, CalendarRange, Package, Globe, CalendarClock,
-  ShieldCheck,
+  ShieldCheck, Store,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
@@ -16,7 +16,7 @@ import { NotificacionesPanel } from '@/components/layout/NotificacionesPanel';
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2, AlertTriangle, Settings, Bell,
-  CalendarDays, CalendarRange, Package, Globe, CalendarClock, ShieldCheck,
+  CalendarDays, CalendarRange, Package, Globe, CalendarClock, ShieldCheck, Store,
 };
 
 // ─── Mobile bottom nav ────────────────────────────────────────────────────────

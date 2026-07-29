@@ -138,7 +138,12 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
       dni_cuit: data.dni_cuit || '',
       telefono: data.telefono || '',
       email: data.email || undefined,
+      // Los tres datos de licencia son del cliente. Con conductor designado no
+      // maneja él, así que se guardan vacíos los tres — antes sólo se limpiaba
+      // el vencimiento y quedaban un país y un "desde" sin licencia detrás.
       licencia_vencimiento: data.tipo_conductor === 'es_conductor' ? (data.licencia_vencimiento || '') : '',
+      licencia_pais: data.tipo_conductor === 'es_conductor' ? (data.licencia_pais || null) : null,
+      licencia_desde: data.tipo_conductor === 'es_conductor' ? (data.licencia_desde || null) : null,
       tipo: data.tipo,
       es_frecuente: data.es_frecuente,
       notas: data.notas || undefined,
@@ -149,8 +154,6 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
       provincia: data.provincia || null,
       codigo_postal: data.codigo_postal || null,
       fecha_nacimiento: data.fecha_nacimiento || null,
-      licencia_pais: data.licencia_pais || null,
-      licencia_desde: data.licencia_desde || null,
       condicion_pago_default: data.condicion_pago_default || null,
     };
 
@@ -262,11 +265,24 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
               </label>
             </div>
 
+            {/* Toda la licencia vive acá. Antes el vencimiento estaba en esta
+                sección y el país y el "desde" abajo, en Datos fiscales: se
+                leía como si fueran dos licencias distintas. Peor todavía con
+                conductor designado, donde el vencimiento de arriba
+                desaparecía pero los otros dos campos seguían pidiendo datos
+                de la licencia de alguien que no maneja. */}
             {tipoConductor === 'es_conductor' && (
-              <Field label="Vencimiento licencia" error={errors.licencia_vencimiento?.message}>
-                <input {...register('licencia_vencimiento')} type="date"
-                  className="input-base max-w-xs" />
-              </Field>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Field label="País de licencia">
+                  <input {...register('licencia_pais')} placeholder="Argentina" className="input-base" />
+                </Field>
+                <Field label="Licencia desde">
+                  <input {...register('licencia_desde')} type="date" className="input-base" />
+                </Field>
+                <Field label="Vencimiento" error={errors.licencia_vencimiento?.message}>
+                  <input {...register('licencia_vencimiento')} type="date" className="input-base" />
+                </Field>
+              </div>
             )}
 
             {tipoConductor === 'conductor_designado' && (
@@ -286,7 +302,7 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
           {/* Datos fiscales */}
           <div className="border-t border-border pt-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Datos fiscales
+              {tipoCliente === 'empresa' ? 'Datos fiscales' : 'Datos personales y domicilio'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {tipoCliente === 'empresa' ? (
@@ -317,12 +333,6 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
                       <option value="exento">Exento</option>
                     </select>
                   </Field>
-                  <Field label="País de licencia">
-                    <input {...register('licencia_pais')} placeholder="Argentina" className="input-base" />
-                  </Field>
-                  <Field label="Licencia desde">
-                    <input {...register('licencia_desde')} type="date" className="input-base" />
-                  </Field>
                 </>
               )}
               <Field label="Domicilio">
@@ -337,16 +347,24 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
               <Field label="Código postal">
                 <input {...register('codigo_postal')} placeholder="8000" className="input-base" />
               </Field>
-              <Field label="Condición de pago">
-                <select {...register('condicion_pago_default')} className="input-base">
-                  <option value="">Sin especificar</option>
-                  <option value="contado">Contado</option>
-                  <option value="cta_cte_15">Cta. Cte. 15 días</option>
-                  <option value="cta_cte_30">Cta. Cte. 30 días</option>
-                  <option value="cta_cte_60">Cta. Cte. 60 días</option>
-                  <option value="cta_cte_90">Cta. Cte. 90 días</option>
-                </select>
-              </Field>
+              {/* Sólo empresa: la cuenta corriente es una condición comercial
+                  que se pacta con una empresa, no con alguien que alquila un
+                  fin de semana. En particular no se pregunta y queda contado.
+                  El campo sigue registrado —no desmontado del formulario— así
+                  que si un particular ya tenía una condición cargada, editarlo
+                  no se la borra en silencio. */}
+              {tipoCliente === 'empresa' && (
+                <Field label="Condición de pago">
+                  <select {...register('condicion_pago_default')} className="input-base">
+                    <option value="">Sin especificar</option>
+                    <option value="contado">Contado</option>
+                    <option value="cta_cte_15">Cta. Cte. 15 días</option>
+                    <option value="cta_cte_30">Cta. Cte. 30 días</option>
+                    <option value="cta_cte_60">Cta. Cte. 60 días</option>
+                    <option value="cta_cte_90">Cta. Cte. 90 días</option>
+                  </select>
+                </Field>
+              )}
             </div>
           </div>
 

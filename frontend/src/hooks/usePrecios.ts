@@ -79,6 +79,8 @@ export function useReglasPrecio(params?: {
   solo_promociones?: boolean;
   vigentes_al?: string;
   incluir_inactivas?: boolean;
+  /** 'web' | 'mostrador'. Trae también las de canal 'ambos', que rigen en los dos. */
+  canal?: string;
 }) {
   return useQuery({
     ...CACHE.CATALOGO,
@@ -90,6 +92,7 @@ export function useReglasPrecio(params?: {
       if (params?.solo_promociones) qs.set('solo_promociones', 'true');
       if (params?.vigentes_al) qs.set('vigentes_al', params.vigentes_al);
       if (params?.incluir_inactivas) qs.set('incluir_inactivas', 'true');
+      if (params?.canal) qs.set('canal', params.canal);
       const res = await api.get<{ data: TarifaCalendario[] }>(`/precios/reglas?${qs}`);
       return res.data.data;
     },
