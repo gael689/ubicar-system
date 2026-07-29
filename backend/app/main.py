@@ -78,13 +78,22 @@ def _verificar_configuracion_segura() -> None:
         problemas.append(
             "CLERK_JWKS_URL vacía: todos los endpoints autenticados darían 500"
         )
-    if settings.storage_provider == "local":
-        problemas.append(
-            "STORAGE_PROVIDER=local: los archivos se pierden en cada redeploy"
-        )
     if problemas:
         raise RuntimeError(
             "Configuración insegura para producción:\n  - " + "\n  - ".join(problemas)
+        )
+
+    # El storage sí arranca, pero a los gritos. A diferencia de los tres de
+    # arriba —que dejan el sistema abierto o cobrando de mentira— acá el daño
+    # es que los archivos subidos desaparecen en el próximo despliegue: grave,
+    # pero visible y recuperable. Bloquear el arranque por esto impediría
+    # levantar el sistema mientras se tramita el bucket, que es justo cuando
+    # hace falta tenerlo andando.
+    if settings.storage_provider == "local":
+        logger.warning(
+            "⚠️  STORAGE_PROVIDER=local en producción: los documentos, las fotos "
+            "de daños y las firmas SE VAN A PERDER en cada despliegue. Configurar "
+            "un bucket (r2/s3) o un volumen persistente."
         )
 
 
