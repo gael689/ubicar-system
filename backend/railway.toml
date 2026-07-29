@@ -30,7 +30,11 @@ dockerfilePath = "Dockerfile"
 # Las migraciones corren antes de levantar el servidor. Si fallan, el deploy
 # falla y queda la version anterior sirviendo — que es lo que se quiere: mejor
 # no desplegar que desplegar contra un esquema a medias.
-startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+# `${PORT:-8080}` y no `$PORT`: si la variable no esta definida, `--port` queda
+# sin argumento, uvicorn falla al instante y el contenedor muere en un bucle de
+# reinicios — sin un solo mensaje que lo explique, porque nunca llega a
+# arrancar. 8080 es el puerto al que apunta el dominio de Railway.
+startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"
 
 healthcheckPath = "/health"
 # 30 segundos no alcanzaban. El arranque hace, en este orden: conectar a
