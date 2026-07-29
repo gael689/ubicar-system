@@ -39,6 +39,26 @@ from app.services.precio_service import PrecioService
 ESTADOS_QUE_OCUPAN = ("pendiente", "confirmada", "activa", "vencida")
 
 
+def _url_publica(key: str | None) -> str | None:
+    """
+    La URL desde la que el navegador puede leer un archivo.
+
+    Vive acá y no en el router porque es la misma cuenta que hace falta en
+    cualquier respuesta que exponga un archivo: quien consume la API no tiene
+    por qué saber si los archivos están en disco o en un bucket.
+    """
+    if not key:
+        return None
+    from app.core.deps import get_storage
+
+    try:
+        return get_storage().public_url(key)
+    except Exception:
+        # Un storage mal configurado no puede tumbar la consulta de
+        # disponibilidad, que es lo que la web necesita para vender.
+        return None
+
+
 class DisponibilidadService:
     def __init__(self, db: Session):
         self.db = db
@@ -208,6 +228,13 @@ class DisponibilidadService:
                 "descripcion": cat.descripcion,
                 "ejemplo_modelos": cat.ejemplo_modelos,
                 "foto_key": cat.foto_key,
+                # La URL ya resuelta, igual que hace `VehiculoService.to_response`.
+                # Antes se devolvía sólo la clave y la web armaba a mano
+                # `<backend>/static/<clave>` — que funciona con storage local y
+                # **se rompe entero el día que los archivos vivan en un bucket**,
+                # porque entonces el dominio es otro. Resolverla acá deja a la web
+                # sin tener que saber dónde están guardados los archivos.
+                "foto_url": _url_publica(cat.foto_key),
                 "pasajeros": cat.pasajeros,
                 "valijas": cat.valijas,
                 "transmision": cat.transmision,

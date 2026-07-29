@@ -25,6 +25,10 @@ scripts/
 *.db
 *.sqlite3
 storage_local/
+# ...menos las fotos de catalogo, que la web publica necesita para mostrar
+# los vehiculos. Sin esto la grilla del paso 1 sale sin imagenes.
+!storage_local/categorias/
+!storage_local/categorias/**
 
 # Control de versiones y editores
 .git/
