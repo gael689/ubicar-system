@@ -24,19 +24,44 @@
 
 **El sistema está terminado. Lo que queda son integraciones externas.**
 
-Migración en `050_firma_medio`. 238 tests de dominio en verde, build de
+Migración en `053_auditoria`. 273 tests de dominio en verde, build de
 producción del frontend sin errores de tipos, y **cero pantallas placeholder**
 en el menú.
+
+**Desplegado y en línea desde el 2026-07-29**: backend en Railway, sistema
+interno en Vercel con login real de Clerk. La web pública corre local.
 
 ### Lo único que sigue abierto
 
 | Qué | Tipo | Dónde |
 |---|---|---|
-| **Clerk** — login, roles y auditoría real | API externa | `PLAN_DEPLOY.md` §3.3 |
 | **Bucket R2** — el código está, falta la cuenta | Configuración | `GUIA_DEPLOY.md` paso 1 |
 | **`extender()` sin asiento** | 🟠 Código, traba una decisión | §2.11 de este documento |
+| **Auditoría de echeqs y garantías** | 🟡 Código | §6.6 de este documento |
+| **Los precios reales** — hay 0 reglas cargadas | Datos de los dueños | `PENDIENTES_REUNION.md` §3 |
 | **Datos fiscales del locador** | Decisión de los dueños | D-C1 |
 | **Política de la seña** | 🔴 Decisión, traba los textos legales | `DECISIONES_RESERVAS_WEB.md` §1 |
+
+> **Clerk ya no está abierto**: login real andando en producción, sin
+> auto-alta (un `sub` desconocido recibe 403, no una cuenta). Falta sólo crear
+> los usuarios de Franco, Martín y Ramiro con sus mails.
+
+### Cerrado el 2026-07-29 (segunda tanda)
+
+| Qué | Estado |
+|---|---|
+| **Audit log** (§6.6) | ✅ Migración 053. Tabla de sólo agregar + pantalla en `/auditoria` |
+| **Precios web y mostrador separados** (D-40) | ✅ Dos rutas, dos listas de reglas, un solo motor |
+| **`POST /public/cotizar`** | ✅ La web cotizaba contra un endpoint con login y daba 401 en los pasos 2-4 |
+| **`precio_lista` vs `precio_total`** | ✅ Tres bugs de plata con la misma raíz — ver `CIERRE_2026-07-29.md` §3 |
+
+**El más grave de los tres:** `precio_lista` salía de `cotizar_por_bandas` y
+`precio_total` del motor de calendario. Divergían apenas hubiera una regla
+cargada (820.000 contra 440.000 en el caso reproducido) y **toda** creación de
+reserva se rechazaba con `descuento_sin_motivo`. De paso quedó al descubierto
+que el **recargo por edad nunca se cobraba** —se guardaba en su campo y el
+checkout sólo factura `precio_total`— y que la web **cobraba los adicionales
+dos veces**.
 
 ### Cerrado el 2026-07-29
 
@@ -59,10 +84,11 @@ dos en el camino del cobro y los dos invisibles en el camino feliz:
    impedía el segundo request sobre el mismo hold. Cerrado con `FOR UPDATE`
    sobre el hold y reutilización de la preferencia en curso.
 
-`extender()` es **lo único de código que queda del sistema interno**, y no se
-puede tocar sin las tres decisiones de §2.11 porque toca plata.
+`extender()` no se puede tocar sin las tres decisiones de §2.11 porque toca
+plata. Junto con la auditoría de echeqs y garantías, es lo que queda de código
+en el sistema interno.
 
-> **Migración actual: `052_email_aviso_reserva_web`.** 273 tests de dominio en
+> **Migración actual: `053_auditoria`.** 273 tests de dominio en
 > verde.
 
 ### Cerrado en la última tanda (2026-07-28)

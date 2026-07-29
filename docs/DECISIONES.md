@@ -516,12 +516,22 @@ Actualizado el **2026-07-28**. Ordenadas por urgencia.
 | D-22 | **Límite de crédito** por cliente con cuenta corriente | Alerta y bloqueo | 🟠 Fase 1 |
 | D-23 | **Descuento máximo** sin autorización del dueño | Control de márgenes | 🟠 Fase 1 |
 
+## Cerradas el 2026-07-29 (decididas por el usuario, no por los dueños)
+
+| # | Decisión | Detalle |
+|---|---|---|
+| **D-40** | **El calendario de precios se parte en dos pantallas**, web y mostrador | El canal deja de ser un filtro de la vista y pasa a definir qué precios se están tocando. Los descuentos por duración quedan explícitamente compartidos. Ver `CIERRE_2026-07-29.md` §1 |
+| **D-41** | **"Contado" también pregunta el momento**: al entregar, al devolver, u otra fecha | Antes contado asumía la entrega sin decirlo. Con ancla check-in, el saldo nace sin vencimiento y el check-in lo completa |
+| **D-42** | **La condición de pago es sólo de empresa** | Un particular alquila y paga; si hace falta un plazo se decide en esa reserva puntual |
+
 **Cerradas en esta ronda (2026-07-28):** D-07 (texto del contrato, ver D-33), **D-11** (ratificada: la seña la retiene el negocio, cancele o no aparezca — y con eso **D-17** queda subsumida), D-25 a D-34, **D-35** (prorrateo por bloques), **D-38** (recargo por edad en vez de mínimo), **D-39** (sólo Bahía Blanca), y el punto 7 de `VALIDAR_CON_DUENOS.md` (categorías de la flota, D-29) que era el bloqueante principal de la web.
 
 ---
 
 ## Documentos afectados por estas decisiones
 
+- `docs/CIERRE_2026-07-29.md` — lo hecho y lo encontrado el día previo a la reunión
+- `docs/PENDIENTES_REUNION.md` — qué traerse de la reunión
 - `docs/PLAN_MAESTRO.md` — arquitectura y fases
 - `docs/ANALISIS_CICLO_RESERVA.md` — ciclo operativo y bugs
 - `docs/CASOS_DE_USO.md` — registro trackeable

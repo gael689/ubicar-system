@@ -45,8 +45,13 @@ cual venderlas. La lista completa y en orden está en el punto 12 — y el siste
 se los va reclamando solo con los avisos de "📌 Falta completar".
 
 **2. Servicios externos que hay que contratar y conectar**: el cobro con
-tarjeta (Mercado Pago), los usuarios con contraseña, el envío de mails y el
-guardado de archivos en la nube. Ninguno es difícil; hay que abrir las cuentas.
+tarjeta (Mercado Pago) y el guardado de archivos en la nube. Los usuarios con
+contraseña y el envío de mails **ya están funcionando**. Ninguno es difícil;
+hay que abrir las cuentas.
+
+> **Desde el 29 de julio el sistema está en línea**, con login real. Ya no es
+> una demostración en una computadora: se entra desde cualquier navegador.
+> La página web es lo único que todavía se muestra desde la computadora.
 
 Mientras tanto el cliente completa toda la reserva por la web y el último paso
 coordina el pago a mano. **No se simula un cobro que no existe.**
@@ -792,15 +797,21 @@ orden, porque cada cosa depende de la anterior:
 
 1. **La razón social y el CUIT de Ubicar.** Mientras falten, cada contrato que
    se emita sale marcado "DOCUMENTO PROVISORIO".
-2. **Las fotos y los datos de cada categoría** (cuántos pasajeros, cuántas
+2. **Los precios reales.** Verificado el 29/07: hay **cero reglas de precio
+   cargadas**, y por eso la grilla muestra el mismo número todos los días. Se
+   carga una regla "Precio base" por categoría, del 1/1 al 31/12, en cada una
+   de las dos pantallas de precios (o una sola marcada "los dos canales").
+3. **El precio de las fechas especiales.** Hay **22 períodos cargados y ninguno
+   tiene precio propio**: hoy Navidad se cobra igual que un martes de marzo.
+4. **Autos para SUV y Furgón.** Esas dos categorías **no tienen ningún auto
+   asignado**, así que no aparecen con disponibilidad ni en el sistema ni en la
+   web. Tampoco tienen foto.
+5. **Las fotos y los datos de cada categoría** (cuántos pasajeros, cuántas
    valijas, si es automático). Las tarjetas de la web salen grises sin eso.
-3. **Los precios por categoría.** Hoy sólo hay precios cargados para tres autos
-   puntuales, así que la web no encuentra con qué cotizar una categoría.
-4. **La categoría de cada auto.** Un auto sin categoría no aparece en la web ni
-   se puede cotizar.
-5. **Los seguros y extras** con su precio y su franquicia.
-6. **Las franjas de recargo por edad**, si quieren usarlas.
-7. **El precio de las fechas especiales** ya cargadas en el calendario.
+6. **Los seguros y extras** con su precio y su franquicia. Hay 4 cargados, hay
+   que confirmar que los precios sean los reales.
+7. **Las franjas de recargo por edad**, si quieren usarlas. Hay 1 cargada.
+8. **Los descuentos por alquilar más días**, si los quieren. Hoy hay ninguno.
 
 > **No hace falta acordarse de nada de esto.** El sistema lo reclama solo: los
 > avisos de la familia **"📌 Falta completar"** detectan cada hueco y
@@ -851,7 +862,11 @@ computadora del desarrollador:
 
 Eso significa que Franco, Martín y Ramiro pueden usarlo desde donde estén, cada
 uno con su cuenta, y **cada acción queda registrada con el nombre de quien la
-hizo**.
+hizo** (ver *Auditoría*, en la sección 13).
+
+> **Falta un paso chico:** hoy sólo existe la cuenta de Gael. Las de Franco,
+> Martín y Ramiro se crean en dos minutos con sus mails — y hasta que existan,
+> el registro de auditoría no puede distinguir quién hizo qué.
 
 ### Lo que todavía depende de servicios externos
 
