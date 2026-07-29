@@ -153,6 +153,13 @@ if not settings.is_production:
         if url not in origins:
             origins.append(url)
 
+# Orígenes extra, explícitos. Sirven para correr la web en la máquina de uno
+# apuntando al backend ya desplegado, sin tener que reabrir los localhost para
+# todo el mundo.
+for url in (o.strip() for o in settings.cors_extra_origins.split(",")):
+    if url and url not in origins:
+        origins.append(url)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

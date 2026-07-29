@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     # que en local esto va con un túnel (ngrok) y no con localhost.
     backend_public_url: str = ""
 
+    # Orígenes extra permitidos por CORS, separados por coma.
+    #
+    # Existe para un caso concreto y temporal: mostrar la web corriendo en la
+    # máquina de uno contra el backend ya desplegado. Sin esto habría que
+    # elegir entre dejar los `localhost` habilitados en producción para
+    # siempre —que es lo que se acaba de sacar— o no poder hacer una demo.
+    # Es una lista explícita: se agrega lo que hace falta y se saca después.
+    cors_extra_origins: str = ""
+
     # App
     frontend_url: str = "http://localhost:5173"
     # De dónde vuelve el cliente después de pagar: es la web pública (Next.js),
