@@ -33,7 +33,12 @@ dockerfilePath = "Dockerfile"
 startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+# 30 segundos no alcanzaban. El arranque hace, en este orden: conectar a
+# Postgres, revisar las 52 migraciones, importar la app entera y recién ahí
+# escuchar. En un contenedor frío eso pasa del minuto, y el healthcheck
+# cortaba antes — el deploy fallaba con "service unavailable" aunque todo
+# estuviera bien.
+healthcheckTimeout = 300
 
 # Un reinicio en loop por una variable mal cargada no tiene que quedar
 # reintentando para siempre.
