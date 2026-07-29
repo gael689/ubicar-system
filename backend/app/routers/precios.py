@@ -30,9 +30,73 @@ from app.schemas.precio import (
     TarifaCalendarioResponse,
     TarifaCalendarioUpdate,
 )
+from app.services import auditoria_service
 from app.services.precio_service import PrecioService
 
 router = APIRouter(prefix="/precios", tags=["Precios"])
+
+
+# ─── Auditoría de las reglas ──────────────────────────────────────────────────
+#
+# El precio es la decisión más cara del sistema: una regla mal cargada no
+# rompe nada, simplemente factura de menos —o de más— hasta que alguien lo
+# note semanas después. `creado_por` dice quién la creó; lo que faltaba era
+# quién le tocó el precio, quién la dio de baja y qué decía antes.
+
+def _estado_regla(r: TarifaCalendario) -> dict:
+    return {
+        "nombre": r.nombre,
+        "precio_dia": r.precio_dia,
+        "fecha_desde": r.fecha_desde,
+        "fecha_hasta": r.fecha_hasta,
+        "fecha_especial_id": r.fecha_especial_id,
+        "prioridad": r.prioridad,
+        "categoria_id": r.categoria_id,
+        "vehiculo_id": r.vehiculo_id,
+        "canal": r.canal,
+        "es_promocional": r.es_promocional,
+        "activo": r.activo,
+    }
+
+
+def _estado_descuento(d: DescuentoDuracion) -> dict:
+    return {
+        "nombre": d.nombre,
+        "porcentaje": d.porcentaje,
+        "dias_desde": d.dias_desde,
+        "dias_hasta": d.dias_hasta,
+        "categoria_id": d.categoria_id,
+        "activo": d.activo,
+    }
+
+
+VERBO = {
+    "crear": "Creó", "editar": "Editó",
+    "dar_de_baja": "Dio de baja", "reactivar": "Reactivó",
+}
+
+
+def _auditar(
+    db: Session, usuario: Usuario, accion: str, obj,
+    antes: dict | None = None, despues: dict | None = None,
+) -> None:
+    es_regla = isinstance(obj, TarifaCalendario)
+    auditoria_service.registrar(
+        db,
+        usuario_id=usuario.id,
+        accion=accion,
+        entidad_tipo="regla_precio" if es_regla else "descuento_duracion",
+        entidad_id=obj.id,
+        descripcion=(
+            f"{VERBO[accion]} "
+            f"{'la regla de precio' if es_regla else 'el descuento por duración'} "
+            f"«{obj.nombre}»"
+            + (f" (${obj.precio_dia}/día)" if es_regla else f" ({obj.porcentaje}%)")
+        ),
+        datos_antes=antes,
+        datos_despues=despues,
+        monto=obj.precio_dia if es_regla else None,
+    )
 
 
 # ─── Cotización ───────────────────────────────────────────────────────────────
@@ -196,6 +260,8 @@ def create_regla(
     regla = TarifaCalendario(**payload.model_dump(), creado_por=current_user.id)
     _validar_referencias(db, regla)
     db.add(regla)
+    db.flush()
+    _auditar(db, current_user, "crear", regla, despues=_estado_regla(regla))
     db.commit()
     db.refresh(regla)
     return ok(_serializar_regla(db, regla), "Regla de precio creada")
@@ -206,9 +272,10 @@ def update_regla(
     regla_id: int,
     payload: TarifaCalendarioUpdate,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     regla = _get_regla(db, regla_id)
+    antes = _estado_regla(regla)
     for campo, valor in payload.model_dump(exclude_unset=True).items():
         setattr(regla, campo, valor)
 
@@ -239,6 +306,9 @@ def update_regla(
         )
     _validar_referencias(db, regla)
 
+    cambio_antes, cambio_despues = auditoria_service.diferencias(antes, _estado_regla(regla))
+    if cambio_antes:
+        _auditar(db, current_user, "editar", regla, antes=cambio_antes, despues=cambio_despues)
     db.commit()
     db.refresh(regla)
     return ok(_serializar_regla(db, regla), "Regla de precio actualizada")
@@ -248,7 +318,7 @@ def update_regla(
 def deactivate_regla(
     regla_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     """
     Baja lógica. NUNCA borra el registro.
@@ -260,6 +330,7 @@ def deactivate_regla(
     """
     regla = _get_regla(db, regla_id)
     regla.activo = False
+    _auditar(db, current_user, "dar_de_baja", regla)
     db.commit()
     db.refresh(regla)
     return ok(_serializar_regla(db, regla), "Regla de precio dada de baja")
@@ -269,10 +340,11 @@ def deactivate_regla(
 def reactivate_regla(
     regla_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     regla = _get_regla(db, regla_id)
     regla.activo = True
+    _auditar(db, current_user, "reactivar", regla)
     db.commit()
     db.refresh(regla)
     return ok(_serializar_regla(db, regla), "Regla de precio reactivada")
@@ -318,6 +390,8 @@ def create_descuento(
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     d = DescuentoDuracion(**payload.model_dump(), creado_por=current_user.id)
     db.add(d)
+    db.flush()
+    _auditar(db, current_user, "crear", d, despues=_estado_descuento(d))
     db.commit()
     db.refresh(d)
     return ok(_serializar_descuento(db, d), "Descuento creado")
@@ -328,9 +402,10 @@ def update_descuento(
     descuento_id: int,
     payload: DescuentoDuracionUpdate,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     d = _get_descuento(db, descuento_id)
+    antes = _estado_descuento(d)
     for campo, valor in payload.model_dump(exclude_unset=True).items():
         setattr(d, campo, valor)
     if d.dias_hasta is not None and d.dias_hasta < d.dias_desde:
@@ -339,6 +414,9 @@ def update_descuento(
         )
     if d.categoria_id and db.get(Categoria, d.categoria_id) is None:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
+    cambio_antes, cambio_despues = auditoria_service.diferencias(antes, _estado_descuento(d))
+    if cambio_antes:
+        _auditar(db, current_user, "editar", d, antes=cambio_antes, despues=cambio_despues)
     db.commit()
     db.refresh(d)
     return ok(_serializar_descuento(db, d), "Descuento actualizado")
@@ -348,11 +426,12 @@ def update_descuento(
 def deactivate_descuento(
     descuento_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     """Baja lógica. NUNCA borra el registro."""
     d = _get_descuento(db, descuento_id)
     d.activo = False
+    _auditar(db, current_user, "dar_de_baja", d)
     db.commit()
     db.refresh(d)
     return ok(_serializar_descuento(db, d), "Descuento dado de baja")
@@ -362,10 +441,11 @@ def deactivate_descuento(
 def reactivate_descuento(
     descuento_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     d = _get_descuento(db, descuento_id)
     d.activo = True
+    _auditar(db, current_user, "reactivar", d)
     db.commit()
     db.refresh(d)
     return ok(_serializar_descuento(db, d), "Descuento reactivado")

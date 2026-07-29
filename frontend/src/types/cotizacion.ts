@@ -4,7 +4,14 @@ export type ModoCotizacion = 'categoria' | 'unidad';
 
 export const UNIDADES_CAMIONETA = ['Ram Dakota 4x4', 'Fiat Titano Freedom 4x4', 'Toyota Hilux DX 4x4'] as const;
 export const UNIDADES_VEHICULO = ['Volkswagen Virtus', 'Fiat Argo', 'Fiat Cronos'] as const;
-export type UnidadNombre = typeof UNIDADES_CAMIONETA[number] | typeof UNIDADES_VEHICULO[number];
+// Utilitarios: cotizan como furgón, no como pick-up. Son otro precio y otro
+// uso (carga, no pasajeros), así que meterlos en el grupo de camionetas
+// habría hecho que salieran con la categoría equivocada en el PDF.
+export const UNIDADES_UTILITARIO = ['Utilitario Partner'] as const;
+export type UnidadNombre =
+  | typeof UNIDADES_CAMIONETA[number]
+  | typeof UNIDADES_VEHICULO[number]
+  | typeof UNIDADES_UTILITARIO[number];
 
 export interface ItemCotizacion {
   id: string;

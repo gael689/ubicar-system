@@ -18,7 +18,7 @@ from app.routers import (
     cotizador, reportes, public, tarifas, ocupacion, tarjetas, multas,
     servicios, notificaciones, cuentas_corrientes, recibos, categorias,
     comprobantes, configuracion, busqueda, danios, fechas_especiales,
-    precios, adicionales, bloqueos, recargos_edad, reservas_web,
+    precios, adicionales, bloqueos, recargos_edad, reservas_web, auditoria,
 )
 
 logger = logging.getLogger(__name__)
@@ -168,6 +168,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ─── Middleware: la IP de quien pide, disponible para la auditoría ────────────
+# Va por ContextVar y no como parámetro porque enhebrar el `Request` hasta el
+# fondo de veinte services, sólo para tener un dato de diagnóstico, habría
+# ensuciado todas las firmas del dominio.
+@app.middleware("http")
+async def _contexto_auditoria(request: Request, call_next):
+    from app.core.rate_limit import ip_del_cliente
+    from app.services import auditoria_service
+
+    auditoria_service.fijar_ip(ip_del_cliente(request))
+    return await call_next(request)
+
 # ─── Middleware: traducir excepciones de dominio a HTTP ───────────────────────
 @app.exception_handler(NotFoundError)
 async def not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:
@@ -223,6 +236,7 @@ app.include_router(reservas_web.router, prefix=API_PREFIX)
 app.include_router(bloqueos.router, prefix=API_PREFIX)
 app.include_router(configuracion.router, prefix=API_PREFIX)
 app.include_router(busqueda.router, prefix=API_PREFIX)
+app.include_router(auditoria.router, prefix=API_PREFIX)
 
 
 # ─── Archivos estáticos ───────────────────────────────────────────────────────

@@ -914,11 +914,23 @@ Necesario:
 - Firma: empezar con firma en pantalla (canvas) + foto del DNI, guardadas en el contrato. Firma digital con validez legal (tipo Docusign) es fase posterior.
 - Hard block: sin contrato firmado no hay checkout.
 
-### 6.6 Audit log 🟠
+### 6.6 Audit log ✅
 
 El roadmap lo menciona en F6 y no existe. Con dos dueños operando y plata de por medio:
 
 **Nueva tabla `auditoria`:** `usuario_id`, `accion`, `entidad_tipo`, `entidad_id`, `datos_antes` (JSON), `datos_despues` (JSON), `ip`, `timestamp`. Aplicar al menos a: pagos, movimientos de CC, echeqs, precios, cancelaciones, bonificaciones de excedente, resolución de garantías.
+
+**✅ Hecho (2026-07-29), migración 053.** Tabla `auditoria` con lo de arriba más `usuario_nombre` (copiado, no sólo la FK: el registro tiene que seguir diciendo quién era aunque después le cambien el nombre o lo den de baja) y `monto` suelto, fuera del JSON, para poder filtrar y ordenar por plata.
+
+**Es de sólo agregar**: no lleva `activo` ni entra en la regla de baja lógica, y el router no expone POST/PATCH/DELETE. Un libro que se puede corregir por API no audita nada.
+
+`auditoria_service.registrar()` nunca hace `commit()` —compone dentro de la transacción de quien llama, así que si la operación se revierte el registro también— y **nunca propaga excepciones**: un bug escribiendo el libro no puede voltear un cobro.
+
+Cableado en: `CuentaCorrienteService.registrar_movimiento` / `anular_movimiento` / `editar_vencimiento` (los tres puntos por donde pasa todo el ledger, así que ningún asiento se escapa), `ReservaService.cancelar` y el descuento autorizado de `create`, `AlquilerService.checkin` (bonificación de excedente), `routers/pagos.py::delete_pago` (el único hard delete que quedó) y el ABM completo de reglas de precio y descuentos por duración.
+
+Pantalla en `/auditoria`, dentro de Configuración, con filtro por persona/acción/entidad/fecha/texto y el detalle antes-después por fila. El listado general pide rol admin; el historial de un registro puntual (`GET /auditoria/{tipo}/{id}`) lo ve cualquiera con acceso.
+
+**Lo que falta**: echeqs y resolución de garantías todavía no registran. Y hasta que existan las cuentas de Franco/Martín/Ramiro en Clerk, todo queda a nombre del mismo usuario.
 
 ### 6.7 Otros campos faltantes por entidad
 
@@ -1095,7 +1107,7 @@ Aunque todavía no esté definida: catálogo de flota por categoría con fotos, 
 | `comprobantes` | Finanzas | 🔴 |
 | `recibos` | Finanzas | ✅ Hecho 2026-07-26 (migración 022, versión simplificada) |
 | `recibo_imputaciones` | Finanzas | 🔴 No construida — depende de si se valida la imputación FIFO (ver 3.6) |
-| `auditoria` | Transversal | 🟠 |
+| `auditoria` | Transversal | ✅ Hecho 2026-07-29 (migración 053) |
 | `categorias` | Web | 🔴 |
 | `sucursales` | Web | 🔴 |
 | `cargos_one_way` | Web | 🟡 |

@@ -15,12 +15,16 @@ import {
 import { CotizacionPreview3 } from '@/components/cotizador/CotizacionPreview3';
 import { exportCotizacionPDF } from '@/lib/pdfExport';
 import type { CotizacionData, CategoriaVehiculo, ModalidadItem, ModoCotizacion, ItemCotizacion, UnidadNombre } from '@/types/cotizacion';
-import { UNIDADES_CAMIONETA, UNIDADES_VEHICULO } from '@/types/cotizacion';
+import { UNIDADES_CAMIONETA, UNIDADES_VEHICULO, UNIDADES_UTILITARIO } from '@/types/cotizacion';
 import { fmtPesos } from '@/components/cotizador/cotizacionUtils';
 
-const UNIDADES_TODAS: UnidadNombre[] = [...UNIDADES_CAMIONETA, ...UNIDADES_VEHICULO];
+const UNIDADES_TODAS: UnidadNombre[] = [
+  ...UNIDADES_CAMIONETA, ...UNIDADES_VEHICULO, ...UNIDADES_UTILITARIO,
+];
 function categoriaDeUnidad(unidad: UnidadNombre): CategoriaVehiculo {
-  return (UNIDADES_CAMIONETA as readonly string[]).includes(unidad) ? 'camioneta' : 'sedan';
+  if ((UNIDADES_CAMIONETA as readonly string[]).includes(unidad)) return 'camioneta';
+  if ((UNIDADES_UTILITARIO as readonly string[]).includes(unidad)) return 'furgon';
+  return 'sedan';
 }
 
 // ─── Estado de formulario por ítem ────────────────────────────────────────────
@@ -305,6 +309,9 @@ export function CotizadorPage() {
                               <SelectItem key={u} value={u}>{u}</SelectItem>
                             ))}
                             {UNIDADES_VEHICULO.map(u => (
+                              <SelectItem key={u} value={u}>{u}</SelectItem>
+                            ))}
+                            {UNIDADES_UTILITARIO.map(u => (
                               <SelectItem key={u} value={u}>{u}</SelectItem>
                             ))}
                           </SelectContent>

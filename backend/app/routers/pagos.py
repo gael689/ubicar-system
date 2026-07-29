@@ -16,6 +16,7 @@ from app.schemas.pago import PagoCreate, PagoResponse, PagoDetalladoResponse, Pa
 from app.schemas.gasto import GastoResponse
 from app.schemas.recibo import ReciboDePagoRequest, ReciboResponse
 from app.services.recibo_service import ReciboService
+from app.services import auditoria_service
 from app.models.recibo import Recibo
 
 router = APIRouter(prefix="/pagos", tags=["Pagos"])
@@ -432,6 +433,29 @@ def delete_pago(
         # llegue a la base antes del DELETE del pago, o la FK todavía
         # referenciada rechaza el borrado.
         db.flush()
+
+    # El único borrado real que quedó en el sistema, y por eso el que más
+    # falta hace auditar: después del `delete` no queda ninguna fila que
+    # pueda contar qué había ni quién la sacó.
+    auditoria_service.registrar(
+        db,
+        usuario_id=current_user.id,
+        accion="eliminar",
+        entidad_tipo="pago",
+        entidad_id=pago.id,
+        descripcion=(
+            f"Eliminó el cobro #{pago.id} de ${pago.monto} "
+            f"({pago.medio_pago}, {pago.fecha})"
+        ),
+        datos_antes={
+            "monto": pago.monto,
+            "medio_pago": pago.medio_pago,
+            "fecha": pago.fecha,
+            "cliente_id": pago.cliente_id,
+            "alquiler_id": pago.alquiler_id,
+        },
+        monto=pago.monto,
+    )
 
     db.delete(pago)
     db.commit()

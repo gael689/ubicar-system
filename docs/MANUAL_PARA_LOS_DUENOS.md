@@ -22,7 +22,7 @@ tecnicismos.
 10. [La página web](#10-la-página-web)
 11. [Decisiones que tomamos sin ustedes](#11-decisiones-que-tomamos-sin-ustedes-y-por-qué)
 12. [Lo que falta, y qué depende de ustedes](#12-lo-que-falta-y-qué-depende-de-ustedes)
-13. [Trabajar de a varios](#13-trabajar-de-a-varios)
+13. [Trabajar de a varios](#13-trabajar-de-a-varios) — incluye **Auditoría: quién hizo qué**
 
 ---
 
@@ -221,6 +221,27 @@ Se elige cliente, auto (o categoría), fechas, horarios y lugares. El sistema:
 Al crear la reserva **se genera un PDF de confirmación** para mandarle al
 cliente, que además queda archivado en su ficha.
 
+**La condición de pago pregunta dos cosas, no una.** Primero el plazo —contado,
+15, 30, 60 o 90 días— y después **desde cuándo se cuenta**:
+
+| Opción | Cuándo vence |
+|---|---|
+| **Al entregar el auto** (check-out) | El día que el auto sale |
+| **Al devolverlo** (check-in) | El día que el auto vuelve |
+| **Otra fecha** | La que se ponga |
+
+La segunda pregunta también aparece cuando eligen **contado**, y no es un
+detalle: entre que el auto sale y vuelve pueden pasar semanas, y "en el
+momento" no dice cuál de los dos momentos es. Antes el sistema asumía la
+entrega sin decirlo.
+
+> Si eligen "al devolverlo", **el saldo queda sin fecha de vencimiento hasta
+> que el auto vuelva** — recién en el check-in se sabe qué día es. El sistema
+> la completa solo.
+
+Esto define **cuándo vence**, no cuándo entró la plata: el cobro se registra
+aparte, cuando efectivamente se cobra.
+
 ### Entregar el auto (check-out)
 
 Se registra kilometraje, combustible, limpieza y el estado general.
@@ -314,6 +335,58 @@ vistazo dónde falta cargar.
 Y un **probador**: se ponen fechas y categoría, y muestra exactamente cuánto
 paga el cliente y de dónde sale cada peso. Sin eso, entender un precio con tres
 reglas superpuestas es adivinar.
+
+### 5.5 Cómo se carga un precio, paso a paso
+
+La grilla **no se edita tocando las celdas**. Se carga una **regla**, y la
+grilla muestra el resultado. Es la diferencia entre una planilla y un sistema:
+una regla se explica, se da de baja y vuelve atrás sola; 365 celdas cargadas a
+mano, no.
+
+Se hace en **Nueva regla**, abajo de la grilla:
+
+| Campo | Qué poner |
+|---|---|
+| **Nombre** | Para qué es. "Temporada alta enero", "Promo 3x2 de mayo" |
+| **Precio por día** | Lo que sale **un día** con esta regla |
+| **Desde / Hasta** | El rango de fechas. Los dos extremos entran |
+| **Categoría** o **vehículo** | Una de las dos, no las dos. Vacío = todas |
+| **Canal** | **Mostrador**, **web**, o **ambos** |
+| **Capa** | Tres botones. Ver abajo |
+| **Es promoción** | Marca la etiqueta y el precio tachado que ve el cliente en la web |
+
+**Lo primero que elige el formulario son tres botones**, y con eso alcanza:
+
+| Botón | Para qué | Prioridad |
+|---|---|---|
+| **Precio base** | El precio de todo el año. El piso | 0 |
+| **Fecha especial** | Navidad, fin de semana largo, temporada alta | 10 |
+| **Promoción** | Le gana a todo y se comunica como descuento en la web | 20 |
+
+**La de prioridad más alta que cubre el día es la que se cobra.** El número se
+puede tocar a mano si hace falta, pero con los tres botones no hace falta
+aprendérselo.
+
+**Los dos usos que preguntaste, resueltos:**
+
+- **Precios para todo el año.** Una regla del 1 de enero al 31 de diciembre,
+  prioridad 0, una por categoría. Con eso la grilla deja de estar en rojo y
+  todos los días tienen precio.
+- **Fechas especiales.** Una regla por cada período, prioridad 10, con su
+  rango. Si el período ya está cargado en **Fechas especiales**, la regla lo
+  puede **heredar** en vez de repetir las fechas: se cambia la fecha en un solo
+  lugar y el precio la sigue.
+
+**Web y mostrador.** El selector de arriba de la grilla no cambia precios:
+**muestra** cuánto vería un cliente por cada canal. Si quieren que la web tenga
+otro precio que el mostrador, se cargan **dos reglas iguales con canal
+distinto**. Si cargan una sola con canal "ambos", los dos ven lo mismo.
+
+**Lo que hay hoy.** La grilla muestra $85.000 parejo todo el mes porque **no
+hay ninguna regla cargada todavía** — ese número sale de la tarifa por duración
+de demostración, que es el piso al que cae el sistema cuando ninguna regla
+cubre el día. Apenas carguen la primera regla, esos días pasan a mostrar el
+precio de la regla.
 
 ---
 
@@ -776,3 +849,30 @@ dos personas emitiendo a la vez, calcularlo daría el mismo número dos veces.
 **Un auto que está afuera no se puede dar de baja por accidente.** Si tiene
 reservas sin cerrar, el sistema frena y muestra cuáles son. Se puede hacer
 igual, pero confirmando a sabiendas.
+
+### Quién hizo qué — la pantalla de Auditoría
+
+En **Configuración → Auditoría** queda registrado, con nombre y hora, todo lo
+que alguien hace y **no deja rastro en ninguna otra pantalla**:
+
+| Se registra | Por qué esa y no otras |
+|---|---|
+| **Anular un movimiento** de cuenta corriente | El movimiento sigue ahí, pero nadie sabría quién lo dio de baja |
+| **Eliminar un cobro** | Es el único borrado real que quedó en el sistema: después no queda fila que consultar |
+| **Cancelar una reserva** | Con el motivo y la seña que se retuvo |
+| **Perdonar un excedente** | Es regalar plata de la empresa, y lo decide una persona en el mostrador |
+| **Cargar una reserva por debajo del precio de lista** | Con el motivo y la diferencia exacta |
+| **Tocar un precio** — crear, editar o dar de baja una regla o un descuento | Un precio mal cargado no rompe nada: factura mal en silencio |
+| **Correr un vencimiento** de cuenta corriente | Con el motivo |
+| **Cada débito y cada crédito** del ledger | Es el libro completo de la plata |
+
+Se puede filtrar por persona, por tipo de acción, por fecha o buscando texto,
+y cada línea se abre para ver **qué decía antes y qué quedó después**.
+
+**No se puede editar ni borrar desde ahí.** Un libro que se corrige no sirve
+para auditar. Si algo está mal, se corrige compensando —regla 2.5— y quedan
+las dos cosas registradas.
+
+> Hasta ahora todos entraban con el mismo usuario de prueba, así que este
+> registro no distinguía a nadie. Con las cuentas de Franco, Martín y Ramiro
+> creadas, cada línea dice quién fue.

@@ -42,6 +42,7 @@ from app.models.cliente import Cliente, ConductorAdicional
 from app.models.tarifa import Tarifa
 from app.repositories.reserva_repo import ReservaRepo
 from app.repositories.alquiler_repo import AlquilerRepo
+from app.services import auditoria_service
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 from app.services.echeq_service import EcheqService
 from app.services.precio_service import PrecioService
@@ -452,11 +453,19 @@ class ReservaService:
                     "Con una condición de pago a plazo hay que indicar a partir de cuándo se cuentan los días "
                     "(check-out, check-in, u otra fecha).",
                 )
-            if condicion_pago_ancla == "fecha_especifica" and not condicion_pago_fecha_ancla:
-                raise BusinessRuleError(
-                    "fecha_ancla_requerida",
-                    "Falta la fecha a partir de la cual se cuenta el plazo de pago.",
-                )
+        elif condicion_pago_ancla is None:
+            # Contado también tiene un momento: "en el momento" no dice si es
+            # al entregar el auto o al recibirlo, y entre las dos cosas puede
+            # haber semanas. La pantalla lo pregunta; para quien llama por API
+            # —la web, sin nadie del otro lado— vale la entrega, que es lo que
+            # el sistema venía haciendo sin decirlo.
+            condicion_pago_ancla = "checkout"
+
+        if condicion_pago_ancla == "fecha_especifica" and not condicion_pago_fecha_ancla:
+            raise BusinessRuleError(
+                "fecha_ancla_requerida",
+                "Falta la fecha a partir de la cual se cuenta el plazo de pago.",
+            )
 
         descuento_autorizado_por = None
         if precio_lista is not None and precio_total is not None and precio_total != precio_lista:
@@ -500,7 +509,7 @@ class ReservaService:
                 descuento_autorizado_por=descuento_autorizado_por,
                 con_factura=con_factura,
                 condicion_pago=condicion_pago,
-                condicion_pago_ancla=condicion_pago_ancla if condicion_pago != "contado" else None,
+                condicion_pago_ancla=condicion_pago_ancla,
                 condicion_pago_fecha_ancla=condicion_pago_fecha_ancla if condicion_pago_ancla == "fecha_especifica" else None,
                 tipo_factura=tipo_factura if con_factura else None,
                 factura_a_nombre_de=factura_a_nombre_de if con_factura else None,
@@ -567,6 +576,26 @@ class ReservaService:
                 )
                 if nuevo_estado.value != vehiculo.estado:
                     vehiculo.estado = nuevo_estado.value
+
+            # Sólo se audita la reserva que salió a un precio distinto al de
+            # lista. Auditar todas las altas llenaría el libro con lo que ya
+            # está en la tabla de reservas; el descuento autorizado, en
+            # cambio, es una decisión de plata que alguien tomó a mano.
+            if descuento_autorizado_por is not None:
+                auditoria_service.registrar(
+                    self.db,
+                    usuario_id=usuario_id,
+                    accion="autorizar_descuento",
+                    entidad_tipo="reserva",
+                    entidad_id=reserva.id,
+                    descripcion=(
+                        f"Reserva #{reserva.id} cargada a ${precio_total} "
+                        f"con precio de lista ${precio_lista}. Motivo: {descuento_motivo}"
+                    ),
+                    datos_antes={"precio_lista": precio_lista},
+                    datos_despues={"precio_total": precio_total, "motivo": descuento_motivo},
+                    monto=(Decimal(str(precio_lista)) - Decimal(str(precio_total))),
+                )
 
         self.db.refresh(reserva)
         return reserva, warnings
@@ -809,6 +838,26 @@ class ReservaService:
                 )
                 if nuevo_estado.value != vehiculo.estado:
                     vehiculo.estado = nuevo_estado.value
+
+            auditoria_service.registrar(
+                self.db,
+                usuario_id=usuario_id,
+                accion="cancelar",
+                entidad_tipo="reserva",
+                entidad_id=reserva.id,
+                descripcion=(
+                    f"Canceló la reserva #{reserva.id} "
+                    f"({reserva.vehiculo.patente if reserva.vehiculo else 'sin vehículo'}, "
+                    f"{reserva.fecha_inicio} a {reserva.fecha_fin}). Motivo: {motivo}"
+                ),
+                datos_antes={"estado": EstadoReserva.CONFIRMADA.value if era_confirmada else EstadoReserva.PENDIENTE.value},
+                datos_despues={
+                    "estado": EstadoReserva.CANCELADA.value,
+                    "motivo": motivo,
+                    "sena_retenida": reserva.anticipo_monto,
+                },
+                monto=reserva.anticipo_monto,
+            )
 
         self.db.refresh(reserva)
         return reserva

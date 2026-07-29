@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.cuenta_corriente import aplicar_movimiento, calcular_vencimiento
 from app.models.cuenta_corriente import CuentaCorriente, MovimientoCuentaCorriente
+from app.services import auditoria_service
 
 
 class CuentaCorrienteService:
@@ -88,6 +89,27 @@ class CuentaCorrienteService:
         self.db.add(mov)
         cc.saldo = nuevo_saldo
         self.db.flush()
+
+        # Todo asiento del ledger queda auditado desde acá y no desde cada uno
+        # de los diez lugares que generan movimientos: es el único paso por el
+        # que pasan todos, así que es el único donde no se puede olvidar.
+        auditoria_service.registrar(
+            self.db,
+            usuario_id=creado_por,
+            accion="debitar" if tipo == "debito" else "acreditar",
+            entidad_tipo="cuenta_corriente",
+            entidad_id=cliente_id,
+            descripcion=f"{'Débito' if tipo == 'debito' else 'Crédito'} en cuenta corriente: {concepto}",
+            datos_despues={
+                "movimiento_id": mov.id,
+                "monto": monto,
+                "fecha": fecha,
+                "condicion": condicion_efectiva,
+                "fecha_vencimiento": vencimiento,
+                "saldo_posterior": nuevo_saldo,
+            },
+            monto=monto,
+        )
         return mov
 
     def anular_movimiento(
@@ -132,6 +154,33 @@ class CuentaCorrienteService:
         original.pago_id = None
         cc.saldo = nuevo_saldo
         self.db.flush()
+
+        # Anular es la acción que `creado_por` no puede registrar: no nace una
+        # fila nueva de la entidad original, se marca la que ya estaba. Sin
+        # esto, "¿quién dio de baja el débito de $400.000?" no tiene respuesta.
+        auditoria_service.registrar(
+            self.db,
+            usuario_id=creado_por,
+            accion="anular",
+            entidad_tipo="cuenta_corriente",
+            entidad_id=cc.cliente_id,
+            descripcion=(
+                f"Anuló el movimiento #{original.id} ({original.concepto}) "
+                f"por ${original.monto}. Motivo: {motivo}"
+            ),
+            datos_antes={
+                "movimiento_id": original.id,
+                "tipo": original.tipo,
+                "monto": original.monto,
+                "concepto": original.concepto,
+            },
+            datos_despues={
+                "contra_asiento_id": contra.id,
+                "motivo": motivo,
+                "saldo_posterior": nuevo_saldo,
+            },
+            monto=original.monto,
+        )
         return contra
 
     def editar_vencimiento(
@@ -162,6 +211,8 @@ class CuentaCorrienteService:
         if mov.anulado:
             raise ValueError("El movimiento está anulado")
 
+        antes = {"fecha_vencimiento": mov.fecha_vencimiento, "condicion": mov.condicion}
+
         if condicion is not None:
             mov.condicion = condicion
         mov.fecha_vencimiento = fecha_vencimiento
@@ -169,6 +220,22 @@ class CuentaCorrienteService:
         mov.vencimiento_editado_por = usuario_id
         mov.vencimiento_editado_en = datetime.utcnow()
         self.db.flush()
+
+        cc = self.db.get(CuentaCorriente, mov.cuenta_corriente_id)
+        auditoria_service.registrar(
+            self.db,
+            usuario_id=usuario_id,
+            accion="editar",
+            entidad_tipo="cuenta_corriente",
+            entidad_id=cc.cliente_id if cc else None,
+            descripcion=(
+                f"Corrió el vencimiento del movimiento #{mov.id} "
+                f"({mov.concepto}) a {fecha_vencimiento or 'sin fecha'}. Motivo: {motivo}"
+            ),
+            datos_antes=antes,
+            datos_despues={"fecha_vencimiento": fecha_vencimiento, "condicion": mov.condicion},
+            monto=mov.monto,
+        )
         return mov
 
     def anular_por_pago(self, pago_id: int, motivo: str, creado_por: int | None) -> MovimientoCuentaCorriente | None:

@@ -28,10 +28,11 @@ from app.models.configuracion import Configuracion
 from app.models.notificacion import Notificacion
 from app.models.recibo import Recibo
 from app.models.pago_web import PagoWeb
+from app.models.auditoria import Auditoria
 
 __all__ = [
     "Categoria", "Comprobante", "Configuracion", "Notificacion", "Recibo",
-    "Hold", "PagoWeb",
+    "Hold", "PagoWeb", "Auditoria",
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",
     "Tarifa", "Reserva", "Alquiler", "Contrato", "Pago",
     "CuentaCorriente", "MovimientoCuentaCorriente",

@@ -13,7 +13,8 @@
 |---|---|
 | **Backend** | `ubicar-system-production.up.railway.app` — responde OK |
 | **Sistema interno** | `ubicar-system.vercel.app` — con login real de Clerk |
-| **Base de datos** | Producción, 38 tablas, migración `052` |
+| **Base de datos** | Producción, 39 tablas, migración `053` |
+| **Auditoría** | Quién hizo qué, en Configuración → Auditoría |
 | **Flota** | 15 vehículos cargados y categorizados |
 | **Precios** | Tarifa diaria, semanal y mensual |
 | **Adicionales** | 2 coberturas + 2 extras |
@@ -126,7 +127,10 @@ El sistema está listo, pero necesita estos datos para poder cotizar. **Hoy hay
 cargados datos de demostración**, que sirven para mostrar el sistema pero **no
 son los precios reales**.
 
-1. **Precios reales por categoría** — hoy hay una tarifa de demostración
+1. **Precios reales por categoría** — hoy hay una tarifa de demostración y
+   **ninguna regla de calendario cargada**: por eso la grilla de precios muestra
+   el mismo número todos los días del mes. Se carga una regla "Precio base" por
+   categoría, de enero a diciembre, y encima las fechas especiales
 2. **Fotos reales de cada categoría** — hoy hay 4 de demostración, y **SUV y
    Furgón no tienen ninguna**
 3. **SUV y Furgón no tienen autos asignados** — no aparecen con disponibilidad

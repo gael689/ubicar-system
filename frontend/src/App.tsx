@@ -20,6 +20,7 @@ import { PreciosPage } from '@/pages/precios/PreciosPage';
 import { AdicionalesPage } from '@/pages/adicionales/AdicionalesPage';
 import { ReservasWebPage } from '@/pages/reservas/ReservasWebPage';
 import { RecargosEdadPage } from '@/pages/precios/RecargosEdadPage';
+import { AuditoriaPage } from '@/pages/auditoria/AuditoriaPage';
 
 export default function App() {
   return (
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="/adicionales" element={<AppLayout title="Adicionales"><AdicionalesPage /></AppLayout>} />
         <Route path="/reservas-web" element={<AppLayout title="Reservas web"><ReservasWebPage /></AppLayout>} />
         <Route path="/recargos-edad" element={<AppLayout title="Recargos por edad"><RecargosEdadPage /></AppLayout>} />
+        <Route path="/auditoria" element={<AppLayout title="Auditoría"><AuditoriaPage /></AppLayout>} />
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>
     </BrowserRouter>

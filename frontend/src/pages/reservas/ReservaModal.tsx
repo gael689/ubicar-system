@@ -306,8 +306,12 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       setLocalError('Ingrese el monto de garantía.');
       return;
     }
-    if (!isEdit && condicionPago !== 'contado' && !condicionPagoAncla) {
-      setLocalError('Indique a partir de cuándo se cuentan los días de la condición de pago (check-out, check-in, u otra fecha).');
+    if (!isEdit && !condicionPagoAncla) {
+      setLocalError(
+        condicionPago === 'contado'
+          ? 'Indique en qué momento se cobra: al entregar el auto, al devolverlo, u otra fecha.'
+          : 'Indique a partir de cuándo se cuentan los días de la condición de pago (check-out, check-in, u otra fecha).'
+      );
       return;
     }
     if (!isEdit && condicionPagoAncla === 'fecha_especifica' && !condicionPagoFechaAncla) {
@@ -391,7 +395,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           con_factura: conFactura,
           descuento_motivo: hayDescuentoManual ? descuentoMotivo.trim() : null,
           condicion_pago: condicionPago,
-          condicion_pago_ancla: condicionPago !== 'contado' ? (condicionPagoAncla || null) : null,
+          // El ancla se manda siempre, también en contado: "en el momento" no
+          // dice cuál momento, y entre la entrega y la devolución puede haber
+          // semanas. Ver el selector más abajo.
+          condicion_pago_ancla: condicionPagoAncla || null,
           condicion_pago_fecha_ancla: condicionPagoAncla === 'fecha_especifica' ? condicionPagoFechaAncla || null : null,
           tipo_factura: conFactura ? (tipoFactura || null) : null,
           factura_a_nombre_de: conFactura ? (facturaANombreDe.trim() || null) : null,
@@ -828,7 +835,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   ].map(o => (
                     <button
                       key={o.value} type="button"
-                      onClick={() => { setCondicionPago(o.value); if (o.value === 'contado') { setCondicionPagoAncla(''); setCondicionPagoFechaAncla(''); } }}
+                      onClick={() => { setCondicionPago(o.value); }}
                       className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
                         condicionPago === o.value ? 'bg-primary/15 border-primary/35 text-primary' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
                       }`}
@@ -837,13 +844,21 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                     </button>
                   ))}
                 </div>
-                {condicionPago !== 'contado' && (
-                  <div className="space-y-1.5 pt-1">
-                    <label className="text-xs font-medium text-slate-600">¿A partir de cuándo se cuentan los días? *</label>
+                {/* El ancla se pregunta SIEMPRE, también en contado. "En el
+                    momento" no dice cuál momento: entre que el auto sale y
+                    vuelve pueden pasar semanas, y la fecha de vencimiento del
+                    asiento en cuenta corriente sale de acá. Antes contado
+                    asumía la entrega sin decirlo. */}
+                <div className="space-y-1.5 pt-1">
+                  <label className="text-xs font-medium text-slate-600">
+                    {condicionPago === 'contado'
+                      ? '¿En qué momento se cobra? *'
+                      : '¿A partir de cuándo se cuentan los días? *'}
+                  </label>
                     <div className="flex gap-2 flex-wrap items-center">
                       {[
-                        { value: 'checkout', label: 'Check-out' },
-                        { value: 'checkin', label: 'Check-in' },
+                        { value: 'checkout', label: condicionPago === 'contado' ? 'Al entregar el auto' : 'Check-out (entrega)' },
+                        { value: 'checkin', label: condicionPago === 'contado' ? 'Al devolverlo' : 'Check-in (devolución)' },
                         { value: 'fecha_especifica', label: 'Otra fecha' },
                       ].map(o => (
                         <button
@@ -865,8 +880,13 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                         />
                       )}
                     </div>
-                  </div>
-                )}
+                  {condicionPago === 'contado' && condicionPagoAncla === 'checkin' && (
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      El saldo queda sin fecha de vencimiento hasta que el auto
+                      vuelva: recién en el check-in se sabe qué día es.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
             <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">

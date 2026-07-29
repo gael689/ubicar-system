@@ -352,6 +352,7 @@ export const NAV_GROUPS: NavGroup[] = [
   ] },
   { label: 'Configuración', icon: 'Settings', items: [
     { path: '/configuracion', label: 'Configuración', icon: 'Settings' },
+    { path: '/auditoria', label: 'Auditoría', icon: 'ShieldCheck' },
   ] },
 ];
 

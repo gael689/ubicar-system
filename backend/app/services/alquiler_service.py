@@ -31,6 +31,7 @@ from app.models.tarifa import Tarifa
 from app.repositories.alquiler_repo import AlquilerRepo
 from app.repositories.reserva_repo import ReservaRepo
 from app.schemas.alquiler import PagoInmediato
+from app.services import auditoria_service
 from app.services.configuracion_service import ConfiguracionService
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 from app.services.echeq_service import EcheqService
@@ -441,10 +442,42 @@ class AlquilerService:
             )
             self.reserva_repo.update(reserva, estado=EstadoReserva.FINALIZADA.value)
 
+            # Perdonar un excedente es regalar plata de la empresa, y es la
+            # decisión más discrecional que toma alguien en el mostrador: el
+            # sistema calcula el cargo y la persona decide no cobrarlo. Sin
+            # esto, "¿por qué esta devolución con 6 horas de atraso salió $0?"
+            # no tiene a quién preguntarle.
+            if excedente_bonificado and resultado.cargo_sugerido > 0:
+                auditoria_service.registrar(
+                    self.db,
+                    usuario_id=usuario_id,
+                    accion="bonificar",
+                    entidad_tipo="alquiler",
+                    entidad_id=alquiler.id,
+                    descripcion=(
+                        f"Bonificó el excedente del alquiler #{alquiler.id} "
+                        f"({resultado.horas_excedidas} h de atraso, "
+                        f"${resultado.cargo_sugerido} sugeridos). "
+                        f"Motivo: {motivo_bonificacion or 'sin motivo'}"
+                    ),
+                    datos_antes={
+                        "cargo_calculado": resultado.cargo_sugerido,
+                        "horas_excedidas": resultado.horas_excedidas,
+                    },
+                    datos_despues={
+                        "cargo_cobrado": cargo_excedente,
+                        "motivo": motivo_bonificacion,
+                    },
+                    monto=resultado.cargo_sugerido,
+                )
+
             # Si la condición de pago cuenta los días desde el check-in, recién
             # ahora se puede calcular — el débito del checkout quedó sin
             # `fecha_vencimiento` a propósito (ver checkout()).
-            if reserva.condicion_pago_ancla == "checkin" and reserva.condicion_pago != "contado":
+            # Vale también para contado: "se cobra al devolver el auto" es una
+            # condición de pago legítima, y su vencimiento es el día del
+            # check-in. Excluirlo dejaba ese débito sin fecha para siempre.
+            if reserva.condicion_pago_ancla == "checkin":
                 debito_pendiente = (
                     self.db.query(MovimientoCuentaCorriente)
                     .filter(
