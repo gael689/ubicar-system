@@ -149,7 +149,9 @@ for url in (settings.web_url, settings.landing_url):
 # que no le sirven a nadie más que a un atacante con algo corriendo en la
 # máquina de la víctima.
 if not settings.is_production:
-    origins += ["http://localhost:3000", "http://localhost:3200", "http://localhost:5173"]
+    for url in ("http://localhost:3000", "http://localhost:3200", "http://localhost:5173"):
+        if url not in origins:
+            origins.append(url)
 
 app.add_middleware(
     CORSMiddleware,
