@@ -51,13 +51,21 @@ class DisponibilidadService:
         )
         return [VehiculoDisponible(id=v.id, categoria_id=v.categoria_id) for v in vehiculos]
 
-    def _cargar_ocupaciones(self, desde: date, hasta: date) -> list[OcupacionCategoria]:
+    def _cargar_ocupaciones(
+        self, desde: date, hasta: date, excluir_hold_token: str | None = None
+    ) -> list[OcupacionCategoria]:
         """
         Todo lo que ocupa una unidad en el rango, normalizado.
 
         Se traen los tres orígenes en consultas acotadas por fecha en vez de
         recorrer la flota entera: el costo es el de las reservas del período,
         no el del histórico.
+
+        `excluir_hold_token` saca un hold del cálculo. Lo usa el webhook de
+        Mercado Pago al re-verificar el cupo: en ese momento el hold del propio
+        cliente **sigue vigente** (se consume después), así que contarlo lo
+        haría competir contra sí mismo. Sin esto, toda venta web de la última
+        unidad cae a revisión manual — justo el caso que más importa.
         """
         ocupaciones: list[OcupacionCategoria] = []
 
@@ -101,16 +109,15 @@ class DisponibilidadService:
         # Holds vigentes (ítem 61). **El filtro por `expira_en` es lo que hace
         # que un hold abandonado deje de ocupar sin que corra ningún job**: la
         # expiración se evalúa acá, en el mismo instante de la consulta.
-        holds = (
-            self.db.query(Hold)
-            .filter(
-                Hold.estado == "vigente",
-                Hold.expira_en > datetime.utcnow(),
-                Hold.fecha_inicio <= hasta,
-                Hold.fecha_fin >= desde,
-            )
-            .all()
+        q_holds = self.db.query(Hold).filter(
+            Hold.estado == "vigente",
+            Hold.expira_en > datetime.utcnow(),
+            Hold.fecha_inicio <= hasta,
+            Hold.fecha_fin >= desde,
         )
+        if excluir_hold_token:
+            q_holds = q_holds.filter(Hold.token != excluir_hold_token)
+        holds = q_holds.all()
         for h in holds:
             ocupaciones.append(OcupacionCategoria(
                 inicio=datetime.combine(h.fecha_inicio, h.hora_inicio),
@@ -129,6 +136,7 @@ class DisponibilidadService:
         hora_fin: time,
         solo_web: bool = True,
         categoria_ids: list[int] | None = None,
+        excluir_hold_token: str | None = None,
     ) -> list[dict]:
         """
         Cupo y precio por categoría para el rango pedido.
@@ -150,7 +158,7 @@ class DisponibilidadService:
         categorias = q.order_by(Categoria.orden, Categoria.nombre).all()
 
         flota = self._cargar_flota()
-        ocupaciones = self._cargar_ocupaciones(fecha_inicio, fecha_fin)
+        ocupaciones = self._cargar_ocupaciones(fecha_inicio, fecha_fin, excluir_hold_token)
         cupos = {
             c.categoria_id: c
             for c in calcular_cupos(

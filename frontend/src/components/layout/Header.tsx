@@ -1,5 +1,5 @@
 import { Menu, Search } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserButton, useUser } from '@clerk/react';
 
 interface HeaderProps {
   title: string;
@@ -7,22 +7,15 @@ interface HeaderProps {
   onSearchClick: () => void;
 }
 
-// Auth real (Clerk) se integra en una fase posterior. Mientras tanto, mostramos
-// los datos del admin de dev hardcodeados — coinciden con el seed del backend.
-const DEV_USER = {
-  email: 'dev@ubicarrent.com',
-  nombre: 'Dev Admin',
-};
-
 const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
 
 export function Header({ title, onMenuClick, onSearchClick }: HeaderProps) {
-  const initials = DEV_USER.nombre
-    .split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
+  // Reemplaza al usuario de desarrollo hardcodeado: ahora es quien
+  // efectivamente inició sesión, que es el mismo nombre que el backend
+  // registra en "cobrado por" y "autorizado por".
+  const { user } = useUser();
+  const identidad =
+    user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? '';
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 gap-4">
@@ -56,12 +49,10 @@ export function Header({ title, onMenuClick, onSearchClick }: HeaderProps) {
         >
           <Search className="h-5 w-5" />
         </button>
-        <span className="hidden sm:block text-sm text-muted-foreground">{DEV_USER.email}</span>
-        <Avatar className="h-8 w-8">
-          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-            {initials}
-          </AvatarFallback>
-        </Avatar>
+        <span className="hidden sm:block text-sm text-muted-foreground">{identidad}</span>
+        {/* El destino tras cerrar sesión lo define `afterSignOutUrl` del
+            ClerkProvider (main.tsx): acá ya no es una prop válida. */}
+        <UserButton appearance={{ elements: { avatarBox: 'h-8 w-8' } }} />
       </div>
     </header>
   );

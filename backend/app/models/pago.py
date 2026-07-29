@@ -23,7 +23,13 @@ class Pago(Base):
     alquiler_id: Mapped[int | None] = mapped_column(ForeignKey("alquileres.id"), nullable=True, index=True)
     monto: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     medio_pago: Mapped[str] = mapped_column(
-        Enum("efectivo", "transferencia", "tarjeta", "cheque", "echeq", "cuenta_corriente", name="medio_pago"),
+        # `mercado_pago` (migración 051) es lo que entra por la web. No se
+        # reusa "tarjeta" porque la caja del día mezclaría lo cobrado en el
+        # mostrador con lo cobrado online, y se concilian contra extractos
+        # distintos.
+        Enum("efectivo", "transferencia", "tarjeta", "cheque", "echeq",
+             "cuenta_corriente", "mercado_pago", name="medio_pago",
+             create_type=False),
         nullable=False,
     )
     con_factura: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

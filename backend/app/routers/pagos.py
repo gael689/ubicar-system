@@ -62,7 +62,11 @@ def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
     return d
 
 
-MEDIOS_PAGO = ["efectivo", "transferencia", "tarjeta", "cheque", "echeq", "cuenta_corriente"]
+# `mercado_pago` entra acá para que el desglose de la caja del día lo muestre
+# como una línea propia: lo cobrado online se concilia contra el extracto de
+# Mercado Pago, no contra el arqueo del mostrador.
+MEDIOS_PAGO = ["efectivo", "transferencia", "tarjeta", "cheque", "echeq",
+               "cuenta_corriente", "mercado_pago"]
 
 
 def _filtrar_pagos(

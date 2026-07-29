@@ -977,12 +977,12 @@ Ordenado por qué lo bloquea.
 
 | Falta | Depende de |
 |---|---|
-| **Cobro online** | Mercado Pago. El paso 4 muestra el resumen y coordina el pago a mano: **no se simula un cobro que no existe** |
-| **Devoluciones de dinero** | Mercado Pago. No existe el concepto de devolución |
+| **Cobro online** | ✅ **Construido** (migración 051). Sólo falta `MERCADOPAGO_ACCESS_TOKEN`. Con `PAGOS_PROVIDER=fake` el flujo entero se recorre en desarrollo; `cobro_habilitado()` decide si la web muestra el botón de pagar o el cierre por WhatsApp |
+| **Devoluciones de dinero** | `MercadoPagoPasarela.reembolsar()` está escrito pero **no lo llama nadie a propósito**: la decisión #5 sigue abierta y una devolución automática ante una discrepancia que puede ser un error propio es peor que una llamada |
 | **Login y usuarios reales** | Clerk. Hoy todo corre con un usuario fijo, así que los "cobrado por" y "autorizado por" no distinguen quién hizo cada cosa |
 | **Pantalla de auditoría** | Clerk. El rastro ya existe —14 modelos guardan quién hizo qué— pero hasta que el usuario sea real ese dato no dice nada |
 | **Guardado de archivos en producción** | Sólo falta crear el bucket: `S3Storage` está implementado y el `/health` lo verifica escribiendo y leyendo |
-| **Aviso inmediato por email** | Resend está integrado sólo para el digest de las 08:00 |
+| **Mail a un cliente real** | ✅ Resend conectado y enviando. Pero el remitente `onboarding@resend.dev` **sólo entrega a la casilla dueña de la cuenta**: hasta verificar un dominio propio, la confirmación al cliente no sale. Verificado contra la API |
 | **Facturación electrónica AFIP** | Decisión: los comprobantes se cargan a mano (**D-05**) |
 | **WhatsApp automático** | API de Meta. Se mantienen los links `wa.me` (**D-06**) |
 

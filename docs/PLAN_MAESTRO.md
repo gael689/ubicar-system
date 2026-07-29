@@ -33,14 +33,37 @@ en el menú.
 | Qué | Tipo | Dónde |
 |---|---|---|
 | **Clerk** — login, roles y auditoría real | API externa | `PLAN_DEPLOY.md` §3.3 |
-| **Mercado Pago** — cobro online | API externa | `PLAN_DEPLOY.md` §5.1 |
-| **Resend inmediato** — hoy sólo el digest de las 08:00 | API externa | `PLAN_DEPLOY.md` §5.2 |
 | **Bucket R2** — el código está, falta la cuenta | Configuración | `GUIA_DEPLOY.md` paso 1 |
 | **`extender()` sin asiento** | 🟠 Código, traba una decisión | §2.11 de este documento |
 | **Datos fiscales del locador** | Decisión de los dueños | D-C1 |
+| **Política de la seña** | 🔴 Decisión, traba los textos legales | `DECISIONES_RESERVAS_WEB.md` §1 |
+
+### Cerrado el 2026-07-29
+
+| Qué | Estado |
+|---|---|
+| **Mercado Pago** — cobro online completo | ✅ **Construido y probado.** Migración 051. Falta sólo el access token. Adaptador con doble en memoria (`adapters/pagos/`), dominio puro en `domain/pagos_web.py`, 35 tests nuevos |
+| **Resend** | ✅ **Funcionando con cuenta real.** ⚠️ Remitente de prueba: sólo entrega a la casilla dueña de la cuenta hasta verificar dominio propio |
+| **Aviso instantáneo de reserva web por mail** | ✅ Migración 052. Dos mails (equipo + cliente), casilla editable desde Configuración |
+
+**Dos bugs propios encontrados y cerrados en la auditoría del mismo día**, los
+dos en el camino del cobro y los dos invisibles en el camino feliz:
+
+1. **El cliente competía consigo mismo por el cupo.** Al re-verificar la
+   disponibilidad en el webhook, se contaba el hold del propio comprador —que
+   sigue vigente en ese instante— como ocupación en contra suya. Efecto: **toda
+   venta web de la última unidad caía a revisión manual** en vez de
+   confirmarse. Se demostró con `disponibles=0` vs `disponibles=1` sobre la
+   misma reserva. Cerrado con `excluir_hold_token` en `DisponibilidadService`.
+2. **Doble clic en "Pagar" creaba dos reservas y dos preferencias.** Nada
+   impedía el segundo request sobre el mismo hold. Cerrado con `FOR UPDATE`
+   sobre el hold y reutilización de la preferencia en curso.
 
 `extender()` es **lo único de código que queda del sistema interno**, y no se
 puede tocar sin las tres decisiones de §2.11 porque toca plata.
+
+> **Migración actual: `052_email_aviso_reserva_web`.** 273 tests de dominio en
+> verde.
 
 ### Cerrado en la última tanda (2026-07-28)
 

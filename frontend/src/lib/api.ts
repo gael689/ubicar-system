@@ -19,20 +19,36 @@ export function resolveAssetUrl(path: string | null | undefined): string | null 
   return `${API_BASE_URL}${path}`;
 }
 
-export function setAuthToken(token: string | null) {
-  if (token) {
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  } else {
-    delete api.defaults.headers.common['Authorization'];
-  }
+/**
+ * Cómo se consigue el token de Clerk en cada request.
+ *
+ * **No se guarda el token, se guarda la función que lo trae.** Los tokens de
+ * sesión de Clerk duran ~60 segundos: pegarlo una vez en el header por
+ * defecto haría que la app dejara de funcionar al minuto de abierta. El SDK
+ * ya cachea y renueva por dentro, así que pedirlo en cada request no es caro.
+ */
+let obtenerToken: (() => Promise<string | null>) | null = null;
+
+export function registrarProveedorDeToken(fn: (() => Promise<string | null>) | null) {
+  obtenerToken = fn;
 }
+
+api.interceptors.request.use(async (config) => {
+  if (obtenerToken) {
+    const token = await obtenerToken();
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 api.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 401) {
-        // Auth0 maneja el redirect al login
+        // No se fuerza logout ni redirect: `<Show when="signed-out">` en
+        // App.tsx ya muestra la pantalla de ingreso cuando la sesión cae.
+        // Redirigir desde acá además pelearía con el router.
       } else if (error.response && error.response.status >= 500) {
         toast.error('Error del servidor. Intentá de nuevo.');
       } else if (!error.response) {

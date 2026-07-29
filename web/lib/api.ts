@@ -11,6 +11,7 @@
 import type {
   Adicional,
   CategoriaDisponible,
+  CheckoutIniciado,
   ConfigPublica,
   Cotizacion,
   Hold,
@@ -152,6 +153,35 @@ export const api = {
     adicionales: { adicional_id: number; cantidad: number }[];
     fecha_nacimiento?: string | null;
   }) => request<Cotizacion>("/precios/calcular", { method: "POST", body: JSON.stringify(body) }),
+
+  /**
+   * Abre el checkout de Mercado Pago (ítem 62).
+   *
+   * **No manda el precio.** El total se recalcula en el servidor: es un
+   * endpoint público y el monto a cobrar es justamente lo que alguien querría
+   * manipular desde el navegador.
+   *
+   * La reserva queda en `pendiente_pago` y **se confirma en el webhook**, no
+   * al volver del checkout: el cliente puede cerrar la pestaña y el pago
+   * igual entra.
+   */
+  crearReserva: (body: {
+    hold_token: string;
+    nombre: string;
+    email: string;
+    telefono: string;
+    dni: string;
+    lugar_entrega: string;
+    lugar_devolucion?: string;
+    porcentaje_anticipo: number;
+    adicionales: { adicional_id: number; cantidad: number }[];
+    fecha_nacimiento?: string | null;
+    notas?: string;
+  }) =>
+    request<CheckoutIniciado>("/public/reservas", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
 
 // ─── Formato ─────────────────────────────────────────────────────────────────

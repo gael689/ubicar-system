@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { PuertaDeEntrada } from '@/components/auth/PuertaDeEntrada';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/pages/Dashboard';
 import { FlotaList } from '@/pages/flota/FlotaList';
@@ -22,6 +23,7 @@ import { RecargosEdadPage } from '@/pages/precios/RecargosEdadPage';
 
 export default function App() {
   return (
+    <PuertaDeEntrada>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Navigate to="/ocupacion" replace />} />
@@ -71,5 +73,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>
     </BrowserRouter>
+    </PuertaDeEntrada>
   );
 }

@@ -1,14 +1,17 @@
 """
 Dependencias inyectables de FastAPI.
 
-En ENVIRONMENT=development la autenticación está bypasseada:
-get_current_user devuelve un usuario admin mock sin validar ningún token.
-Esto permite desarrollar y testear todos los endpoints sin Clerk/Auth0.
+Con `DEV_BYPASS_AUTH=true` la autenticación está bypasseada: `get_current_user`
+devuelve un admin upserteado en DB sin validar ningún token, que es lo que
+permite desarrollar y correr los tests sin depender de Clerk.
 
-Cuando se integre Clerk, solo hay que cambiar este archivo.
+Con `false` se valida el JWT de Clerk de verdad: firma contra el JWKS de la
+instancia, expiración, y upsert del usuario local a partir del `sub`.
 """
 import logging
-from typing import Generator
+import time
+from typing import Any, Generator
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -22,6 +25,114 @@ logger = logging.getLogger(__name__)
 
 # Esquema de seguridad — opcional en dev para no romper el swagger
 _security = HTTPBearer(auto_error=False)
+
+# ─── JWKS de Clerk ───────────────────────────────────────────────────────────
+# Las claves públicas se cachean: son estables y bajarlas en cada request
+# agregaría una llamada de red a **todos** los endpoints del sistema. El TTL
+# existe porque Clerk las rota, y una clave rotada tiene que poder entrar sin
+# reiniciar el proceso.
+_JWKS_TTL_SEGUNDOS = 3600
+_jwks_cache: dict[str, Any] = {"claves": None, "vence_en": 0.0}
+
+
+def _jwks(forzar: bool = False) -> dict:
+    if not settings.clerk_jwks_url:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="CLERK_JWKS_URL no está configurada",
+        )
+    ahora = time.time()
+    if not forzar and _jwks_cache["claves"] and _jwks_cache["vence_en"] > ahora:
+        return _jwks_cache["claves"]
+
+    import urllib.request
+    import json
+
+    with urllib.request.urlopen(settings.clerk_jwks_url, timeout=10) as r:
+        claves = json.load(r)
+    _jwks_cache["claves"] = claves
+    _jwks_cache["vence_en"] = ahora + _JWKS_TTL_SEGUNDOS
+    return claves
+
+
+def _decodificar(token: str) -> dict:
+    """
+    Valida firma y expiración del JWT de Clerk.
+
+    Si el `kid` no aparece en el JWKS cacheado se refresca **una vez** antes de
+    rechazar: es exactamente lo que pasa el día que Clerk rota las claves, y
+    sin ese reintento el sistema entero se cae hasta que alguien lo reinicie.
+    """
+    from jose import jwt
+    from jose.exceptions import JWTError
+
+    try:
+        kid = jwt.get_unverified_header(token).get("kid")
+    except JWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token malformado")
+
+    def buscar(claves: dict) -> dict | None:
+        return next((k for k in claves.get("keys", []) if k.get("kid") == kid), None)
+
+    clave = buscar(_jwks())
+    if clave is None:
+        clave = buscar(_jwks(forzar=True))
+    if clave is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token con clave desconocida")
+
+    try:
+        # `audience` no se verifica: los tokens de sesión de Clerk no traen
+        # `aud` por defecto. La garantía viene de la firma contra el JWKS de
+        # **nuestra** instancia, que es lo que nadie más puede falsificar.
+        return jwt.decode(
+            token, clave, algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
+    except JWTError as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {e}")
+
+
+def _upsert_desde_clerk(db: Session, claims: dict) -> Usuario:
+    """
+    Trae el usuario local que corresponde al `sub` de Clerk, creándolo si es la
+    primera vez que entra.
+
+    **El rol no lo decide Clerk.** Sale de `CLERK_ADMIN_SUBS` sólo en el alta;
+    después manda lo que diga la tabla `usuarios`, para que cambiar un permiso
+    sea una operación del sistema y no una edición de variables de entorno.
+    """
+    sub = claims.get("sub")
+    if not sub:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token sin `sub`")
+
+    usuario = db.query(Usuario).filter(Usuario.auth_sub == sub).first()
+    if usuario is not None:
+        if not usuario.activo:
+            # Dar de baja a alguien tiene que cortarle el acceso aunque su
+            # sesión de Clerk siga viva.
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Usuario dado de baja")
+        return usuario
+
+    email = claims.get("email") or f"{sub}@sin-email.clerk"
+    nombre = (
+        claims.get("name")
+        or " ".join(filter(None, [claims.get("first_name"), claims.get("last_name")])).strip()
+        or email.split("@")[0]
+    )
+    admins = {s.strip() for s in (settings.clerk_admin_subs or "").split(",") if s.strip()}
+
+    usuario = Usuario(
+        email=email,
+        nombre=nombre,
+        rol="admin" if sub in admins else "operador",
+        auth_sub=sub,
+        activo=True,
+    )
+    db.add(usuario)
+    db.commit()
+    db.refresh(usuario)
+    logger.info("[Clerk] usuario nuevo: %s (%s) rol=%s", nombre, email, usuario.rol)
+    return usuario
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -64,10 +175,16 @@ def get_current_user(
     """
     Retorna el usuario autenticado.
 
-    - Si dev_bypass_auth=true: hace upsert del admin de bypass y lo devuelve.
-    - Si no: validará JWT de Clerk (a implementar en Fase Clerk).
+    - Con `dev_bypass_auth=true`: upsert del admin de bypass, sin validar nada.
+    - Con `false`: valida el JWT de Clerk contra el JWKS de la instancia.
     """
     if settings.dev_bypass_auth:
+        # El bypass en producción convertiría a cualquiera en admin sin token.
+        if settings.environment == "production":
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="DEV_BYPASS_AUTH está activo en producción",
+            )
         return _upsert_dev_admin(db)
 
     if credentials is None:
@@ -77,10 +194,7 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Autenticación con Clerk pendiente de implementar",
-    )
+    return _upsert_desde_clerk(db, _decodificar(credentials.credentials))
 
 
 def require_admin(current_user: Usuario = Depends(get_current_user)) -> Usuario:

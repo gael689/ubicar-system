@@ -3,7 +3,13 @@ from pydantic import BaseModel
 from typing import Literal
 
 
-MedioPago = Literal["efectivo", "transferencia", "tarjeta", "cheque", "echeq", "cuenta_corriente"]
+# `mercado_pago` (migración 051) lo genera el webhook del cobro online, pero
+# también se puede cargar a mano: pasa cuando se le manda un link de pago a un
+# cliente por fuera del flujo web.
+MedioPago = Literal[
+    "efectivo", "transferencia", "tarjeta", "cheque", "echeq",
+    "cuenta_corriente", "mercado_pago",
+]
 
 
 class PagoCreate(BaseModel):

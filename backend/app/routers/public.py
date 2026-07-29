@@ -6,12 +6,14 @@ internet. Antes de publicar hace falta rate limiting por IP (ver
 `docs/PLAN_RESERVAS_WEB.md` §9): sin eso, un script puede tomar todo el cupo
 de la flota en segundos.
 """
+import logging
 from datetime import date, datetime, time
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.exceptions import BusinessRuleError, NotFoundError
 from app.core.rate_limit import limite_consultas, limite_holds, limite_solicitudes
 from app.core.responses import ok
@@ -28,6 +30,8 @@ class HoldCreateRequest(BaseModel):
     hora_inicio: time = time(10, 0)
     fecha_fin: date
     hora_fin: time = time(10, 0)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public", tags=["Público"])
 
@@ -110,12 +114,27 @@ def get_adicionales_publicos(db: Session = Depends(get_db)):
 
 
 @router.get("/config")
-def get_config_publica():
+def get_config_publica(db: Session = Depends(get_db)):
     """
     Parámetros que la web necesita para validar del lado del cliente y no
     hacerle perder un viaje al servidor.
     """
+    from app.adapters.pagos import cobro_habilitado
+    from app.domain.pagos_web import (
+        CLAVE_DESCUENTO_PAGO_TOTAL, DESCUENTO_PAGO_TOTAL_DEFAULT, PORCENTAJES_ANTICIPO,
+    )
+    from app.services.configuracion_service import ConfiguracionService
+
     return ok({
+        # Con esto la web decide si muestra el botón de pagar o el cartel de
+        # "coordinamos por WhatsApp", en vez de ofrecer un pago que va a fallar.
+        "cobro_online": cobro_habilitado(),
+        "porcentajes_anticipo": list(PORCENTAJES_ANTICIPO),
+        "descuento_pago_total_pct": float(
+            ConfiguracionService(db).get_decimal(
+                CLAVE_DESCUENTO_PAGO_TOTAL, DESCUENTO_PAGO_TOTAL_DEFAULT
+            )
+        ),
         "anticipacion_minima_horas": ANTICIPACION_MINIMA_HORAS,
         "duracion_maxima_dias": DURACION_MAXIMA_DIAS,
         "lugares_retiro": [
@@ -325,27 +344,145 @@ def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Dep
     )
 
 
-@router.post("/reservas")
-async def crear_reserva_publica(db: Session = Depends(get_db)):
+class AdicionalElegido(BaseModel):
+    adicional_id: int
+    cantidad: int = 1
+
+
+class ReservaWebRequest(BaseModel):
+    """
+    Paso 4 del flujo web. **No lleva precio**: el total se recalcula en el
+    servidor. Es un endpoint público, y el monto a cobrar es justamente lo que
+    alguien querría manipular.
+    """
+    hold_token: str
+    nombre: str
+    email: str
+    telefono: str
+    dni: str
+    lugar_entrega: str
+    lugar_devolucion: str | None = None
+    # D-30: el cliente elige cuánto adelanta, con piso del 30%.
+    porcentaje_anticipo: int = 30
+    adicionales: list[AdicionalElegido] = []
+    fecha_nacimiento: date | None = None
+    notas: str | None = None
+
+
+@router.post("/reservas", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(limite_solicitudes)])
+def crear_reserva_publica(payload: ReservaWebRequest, db: Session = Depends(get_db)):
     """
     Alta de reserva **con pago** desde la web (ítem 62).
 
-    **Todavía no implementado**: depende de Mercado Pago y de las decisiones
-    #4 y #5 de `docs/DECISIONES_RESERVAS_WEB.md` (qué pasa si el pago se
-    aprueba sin cupo, y cómo se devuelve la plata).
+    Crea la reserva en `pendiente_pago` y devuelve la URL de Checkout Pro. La
+    reserva **no queda confirmada acá**: se confirma en el webhook, que es la
+    fuente de verdad. El cliente puede cerrar la pestaña sin volver al sitio y
+    el pago igual entra.
 
-    Cuando se implemente **tiene que llamar a
-    `NotificacionService.avisar_reserva_web(reserva)`** después de crearla: el
-    equipo necesita enterarse en el momento, no en el barrido de las 08:00.
-
-    Para la solicitud **sin** pago —una categoría agotada— ya existe
-    `POST /public/solicitudes`, que sí funciona.
-
-    Devuelve **501 y no un 200 "Próximamente"**: un stub que responde OK le
-    hace creer al front que la reserva se creó.
+    El cupo lo sostiene el hold mientras tanto, no la reserva: `pendiente_pago`
+    no ocupa calendario a propósito, para que un checkout abandonado no bloquee
+    un auto hasta que alguien lo note.
     """
-    raise HTTPException(
-        status_code=501,
-        detail="El pago online todavía no está habilitado. "
-               "Escribinos por WhatsApp y cerramos la reserva.",
-    )
+    from app.adapters.pagos import cobro_habilitado
+    from app.adapters.pagos.interface import PasarelaNoConfigurada
+    from app.services.pago_web_service import PagoWebService
+
+    if not cobro_habilitado():
+        # 503 y no 501: no es que no exista la función, es que está apagada
+        # por falta de credenciales. El mensaje es el que ve el cliente.
+        raise HTTPException(
+            status_code=503,
+            detail="El pago online no está disponible en este momento. "
+                   "Escribinos por WhatsApp y cerramos la reserva.",
+        )
+
+    try:
+        resultado = PagoWebService(db).iniciar_checkout(
+            hold_token=payload.hold_token,
+            nombre=payload.nombre,
+            email=payload.email,
+            telefono=payload.telefono,
+            dni=payload.dni,
+            lugar_entrega=payload.lugar_entrega,
+            lugar_devolucion=payload.lugar_devolucion,
+            porcentaje_anticipo=payload.porcentaje_anticipo,
+            adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
+            fecha_nacimiento=payload.fecha_nacimiento,
+            notas=payload.notas,
+            url_base_web=settings.web_url,
+            url_webhook=_url_webhook(),
+        )
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except NotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except BusinessRuleError as e:
+        db.rollback()
+        # 409: el request es válido, lo que falta es el cupo o venció el hold.
+        raise HTTPException(status_code=409, detail=str(e))
+    except PasarelaNoConfigurada as e:
+        db.rollback()
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return ok(resultado, "Te llevamos a Mercado Pago para completar el pago")
+
+
+def _url_webhook() -> str:
+    base = (settings.backend_public_url or "").rstrip("/")
+    return f"{base}/public/webhooks/mercadopago" if base else ""
+
+
+@router.post("/webhooks/mercadopago")
+async def webhook_mercadopago(request: Request, db: Session = Depends(get_db)):
+    """
+    Notificación de Mercado Pago. **Es la fuente de verdad del cobro.**
+
+    **Siempre responde 200**, incluso ante un error nuestro. Un webhook que
+    devuelve 500 hace que Mercado Pago reintente en bucle durante horas; lo que
+    no se pudo resolver queda marcado como `revision` y salta una alerta, que
+    es una forma mucho mejor de enterarse.
+
+    No hace falta autenticar el request: el cuerpo sólo trae un id, y el pago
+    se vuelve a leer contra la API con nuestras credenciales. Alguien que
+    invente un `payment_id` no consigue nada.
+    """
+    from app.services.pago_web_service import PagoWebService
+
+    try:
+        cuerpo = await request.json()
+    except Exception:
+        cuerpo = {}
+
+    payment_id = _extraer_payment_id(cuerpo, dict(request.query_params))
+    if not payment_id:
+        # Mercado Pago manda también notificaciones de otros temas (merchant
+        # orders, por ejemplo). No son un error: simplemente no nos interesan.
+        return ok({"resultado": "ignorado"}, "Notificación sin pago asociado")
+
+    try:
+        resultado = PagoWebService(db).procesar_webhook(payment_id)
+    except Exception:
+        db.rollback()
+        logger.exception("[MercadoPago] falló el webhook para payment_id=%s", payment_id)
+        return ok({"resultado": "error_registrado"}, "Recibido")
+
+    return ok(resultado, "Recibido")
+
+
+def _extraer_payment_id(cuerpo: dict, query: dict) -> str | None:
+    """
+    Mercado Pago manda el id en tres formatos distintos según el tipo de
+    notificación y la antigüedad de la integración. Se aceptan los tres.
+    """
+    if cuerpo.get("type") == "payment":
+        dato = cuerpo.get("data") or {}
+        if dato.get("id"):
+            return str(dato["id"])
+    if cuerpo.get("topic") == "payment" and cuerpo.get("resource"):
+        return str(cuerpo["resource"]).rsplit("/", 1)[-1]
+    if query.get("type") == "payment" and query.get("data.id"):
+        return str(query["data.id"])
+    return None

@@ -240,6 +240,16 @@ export function FlujoReserva() {
                 categoriaNombre={categoria.nombre}
                 cotizacion={cotizacion}
                 cliente={cliente}
+                holdToken={hold?.token ?? null}
+                adicionales={Object.entries(adicionales).map(([id, cantidad]) => ({
+                  adicional_id: Number(id),
+                  cantidad,
+                }))}
+                // Si `/public/config` no respondió, se asume que no hay cobro
+                // online: ofrecer un pago que va a fallar es peor que mandar
+                // a WhatsApp de más.
+                cobroOnline={config?.cobro_online ?? false}
+                descuentoPagoTotalPct={config?.descuento_pago_total_pct ?? 0}
               />
             )}
 

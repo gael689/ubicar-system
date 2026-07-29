@@ -69,3 +69,7 @@ next-env.d.ts
 web/.next/
 web/node_modules/
 web/out/
+
+# Skills instaladas por `npx skills add` — son dependencias de herramientas,
+# no codigo del proyecto. Se reinstalan con un comando.
+.agents/

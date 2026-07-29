@@ -212,6 +212,7 @@ export const METODO_PAGO_LABEL: Record<string, string> = {
   cheque: 'Cheque',
   echeq: 'Echeq',
   cuenta_corriente: 'Cuenta Corriente',
+  mercado_pago: 'Mercado Pago',
 };
 
 // ─── Constantes de negocio ───────────────────────────────────────────────────

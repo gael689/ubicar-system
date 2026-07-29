@@ -584,15 +584,40 @@ En el sistema hay una pantalla donde entran las reservas que llegan por la web,
 ordenadas por dónde hay plata del cliente en juego. Se acepta (asignándole un
 auto concreto) o se rechaza con motivo.
 
-### Lo que falta
+### El cobro con tarjeta
 
-**El cobro con tarjeta**, que depende de habilitar Mercado Pago. Hasta que
-esté, el último paso muestra el resumen completo y cierra coordinando el pago
-a mano — **no se simula un cobro que no existe**.
+**Ya está construido.** El cliente elige cuánto adelanta, va a Mercado Pago,
+paga, y la reserva queda confirmada sola. Falta sólo pegar las credenciales de
+la cuenta de Mercado Pago: hasta que estén, el último paso sigue mostrando el
+resumen y cerrando el pago a mano — **no se simula un cobro que no existe**.
+La web se da cuenta sola de cuál de los dos casos mostrar.
 
-Cuando entre Mercado Pago, los pasos 1 a 3 no se tocan: ya están terminados y
-la pantalla de confirmación (`/reservar/listo`) ya está hecha esperando los
-parámetros que devuelve el pago.
+Cuatro cosas que hace, y que son las que evitan perder plata:
+
+- **Manda la reserva por confirmada recién cuando Mercado Pago confirma el
+  pago**, no cuando el cliente vuelve a la página. Si cierra la pestaña
+  apenas paga, la reserva se confirma igual.
+- **No cobra dos veces.** Mercado Pago avisa el mismo pago varias veces —es
+  normal, no es una falla—, y sin esta protección un pago generaría dos
+  movimientos en la cuenta corriente. Está probado.
+- **Vuelve a chequear que quede auto justo antes de confirmar.** Entre que el
+  cliente empieza a pagar y el pago se acredita pueden pasar 40 minutos.
+- **Nunca le cree al navegador cuánto se pagó.** El importe se compara contra
+  lo que se le pidió a Mercado Pago; si no coincide, la reserva no se confirma
+  y salta un aviso.
+
+**Si alguien paga y para ese momento ya no queda auto**, el sistema *no*
+devuelve la plata solo ni rechaza el pago: deja la reserva marcada para
+resolver y manda un aviso rojo, en la campana y por mail. Casi siempre hay un
+auto de otra categoría y el cliente prefiere eso a que le devuelvan la plata —
+esa conversación la tiene que tener una persona, no un programa.
+
+### Los avisos por mail
+
+Cuando entra una reserva pagada salen **dos mails en el momento**: uno al
+equipo con los datos para atenderla, y uno al cliente confirmándole lo que
+pagó y lo que le queda por pagar. A qué casilla llega el aviso del equipo se
+configura desde la pantalla de Configuración, sin tocar el sistema.
 
 ---
 
@@ -648,23 +673,51 @@ orden, porque cada cosa depende de la anterior:
 | **¿Cuánto es la franquicia?** | Va en el contrato y en la web |
 | **¿En qué horarios se entrega y se devuelve?** | La web tiene que ofrecer sólo horarios reales |
 | **¿Se alquila también en Capital Federal por la web?** Y si sí, ¿la flota es la misma? | Hoy la web vende sólo Bahía Blanca |
-| **¿Qué descuento por pagar el 100% adelantado?** | Es un número que se carga y se cambia cuando quieran |
-| **¿A qué mail llegan los avisos de reservas web?** | Hoy no hay casilla definida |
+| **¿Qué descuento por pagar el 100% adelantado?** | Ya está la casilla para cargarlo, en Configuración. Hoy está en 0: sin descuento |
+| **¿A qué mail llegan los avisos de reservas web?** | Ya está la casilla en Configuración. Vacía, llegan al mismo lugar que el resumen de las 08:00 |
+| **¿La seña se pierde si el cliente no aparece?** | Es la única contradicción abierta. Ver el recuadro |
+
+> ### ⚠️ La seña: hay que decidir esto antes de publicar la web
+>
+> Nos dijeron dos cosas que juntas no cierran. Por un lado, que **al cancelar
+> se retiene la seña**. Por el otro, que **la seña no se pierde si el cliente
+> no aparece**.
+>
+> Combinadas, la política queda así: **al que avisa que no viene se le retiene
+> la seña; al que no avisa nada, se le devuelve.** Eso premia exactamente el
+> peor comportamiento. Y cuesta plata de forma concreta: **el auto que se
+> libera con 48 horas de aviso se vuelve a vender; el que se libera porque
+> nadie apareció, no.**
+>
+> **Lo que recomendamos:** la seña **no se pierde si avisa con 48 horas de
+> anticipación**, y **se retiene si avisa tarde o no avisa**. Alinea lo que
+> le conviene al cliente con lo que el negocio necesita, que es enterarse a
+> tiempo.
+>
+> Hay que cerrarlo antes de publicar los términos y condiciones, porque es la
+> cláusula que más se lee y la que más reclamos genera.
 
 ### Lo que depende de servicios externos
 
-**Es lo único que queda por hacer.** Todo el resto del sistema está terminado.
+**Es lo único que queda por hacer.** Todo el resto del sistema está terminado
+y probado. En todos los casos el programa ya está escrito: falta crear la
+cuenta y pegar la clave.
 
-- **Cobro con tarjeta online** — Mercado Pago.
+- **Cobro con tarjeta online** — Mercado Pago. Construido y probado de punta a
+  punta; falta la cuenta.
+- **Avisos por mail** — ✅ **funcionando**. La cuenta de Resend está creada y
+  el sistema ya manda correo de verdad.
+  > ⚠️ **Falta un paso de ustedes**: hoy los mails salen desde una dirección
+  > de prueba que **sólo puede escribirle a la casilla de Ubicar**. Para que
+  > el mail de confirmación le llegue a un cliente hay que registrar el
+  > dominio propio (algo tipo `reservas@ubicar-rent.com`). Es un trámite de
+  > configuración del dominio, no del sistema.
 - **Usuarios con nombre y contraseña** — hoy el sistema no distingue quién hizo
   cada cosa. Es lo que hay que resolver antes de que el nombre de quien atendió
   salga impreso en un contrato de verdad. También es lo que habilita el
   **registro de auditoría**: el sistema ya guarda quién hizo cada movimiento,
   pero hasta que haya usuarios reales todo queda registrado como un único
   usuario y ese dato no sirve.
-- **Aviso por mail al instante** de una reserva web — hoy la reserva aparece
-  en la bandeja del sistema en el momento, pero el mail llega recién en el
-  resumen de las 8 de la mañana.
 - **Guardado de archivos en la nube** — el código está listo; falta crear la
   cuenta. Sin eso, los documentos, las fotos de daños y las firmas se pierden
   al actualizar el sistema.

@@ -91,7 +91,7 @@ const Hero = () => {
     <section className="relative flex min-h-screen items-center overflow-hidden pb-16 pt-32 lg:pb-20 lg:pt-36">
       {/* Foto de fondo */}
       <Image
-        src="https://images.pexels.com/photos/34775710/pexels-photo-34775710.jpeg?auto=compress&cs=tinysrgb&w=1920"
+        src="/img/hero.png"
         alt=""
         fill
         priority

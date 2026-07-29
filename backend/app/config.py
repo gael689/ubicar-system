@@ -54,8 +54,25 @@ class Settings(BaseSettings):
     # única forma de configurar a quién le llega.
     notificaciones_digest_destinatarios: str = ""
 
+    # Pagos online (Mercado Pago — migración 051)
+    # "fake" usa una pasarela en memoria para poder recorrer el flujo completo
+    # en desarrollo; en `environment=production` la factory se niega a
+    # devolverla, porque una pasarela simulada confirmaría reservas sin cobrar.
+    pagos_provider: str = "fake"
+    mercadopago_access_token: str = ""
+    mercadopago_public_key: str = ""
+    # Con credenciales de prueba, Checkout Pro se abre en `sandbox_init_point`.
+    mercadopago_sandbox: bool = True
+    # URL pública del backend. La necesita el `notification_url` de la
+    # preferencia: Mercado Pago tiene que poder alcanzarnos desde afuera, así
+    # que en local esto va con un túnel (ngrok) y no con localhost.
+    backend_public_url: str = ""
+
     # App
     frontend_url: str = "http://localhost:5173"
+    # De dónde vuelve el cliente después de pagar: es la web pública (Next.js),
+    # no el sistema interno.
+    web_url: str = "http://localhost:3200"
     landing_url: str = ""
     environment: str = "development"
 

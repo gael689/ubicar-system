@@ -12,6 +12,30 @@ export interface ConfigPublica {
   duracion_maxima_dias: number;
   lugares_retiro: string[];
   hold_minutos: number;
+  /**
+   * ¿Hay credenciales de Mercado Pago cargadas?
+   *
+   * Con esto el paso 4 muestra el botón de pagar o el cierre por WhatsApp, en
+   * vez de ofrecer un pago que va a fallar. Lo decide el backend, no una
+   * variable de entorno del front: la que manda es la que tiene las
+   * credenciales.
+   */
+  cobro_online: boolean;
+  porcentajes_anticipo: number[];
+  /** D-30: descuento por pagar el 100% por adelantado. 0 = sin descuento. */
+  descuento_pago_total_pct: number;
+}
+
+/** Lo que devuelve `POST /public/reservas`: a dónde mandar al cliente. */
+export interface CheckoutIniciado {
+  reserva_id: number;
+  pago_web_id: number;
+  init_point: string;
+  preference_id: string;
+  monto_a_cobrar: number;
+  total: number;
+  descuento: number;
+  saldo: number;
 }
 
 export interface PrecioCategoria {
