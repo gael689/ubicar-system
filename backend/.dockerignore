@@ -1,0 +1,37 @@
+# El Dockerfile hace `COPY . .`, asi que sin esto la imagen se lleva tests,
+# cache, la base de datos local y —el dia que alguien se equivoque— el `.env`
+# con las credenciales de produccion adentro de la imagen.
+
+# Secretos: lo mas importante de esta lista
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Tests y utilidades: no se ejecutan en produccion
+tests/
+scripts/
+
+# Bases y archivos locales
+*.db
+*.sqlite3
+storage_local/
+
+# Control de versiones y editores
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Documentacion
+*.md
+!README.md
