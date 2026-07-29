@@ -11,6 +11,9 @@ export interface ConductorAdicional {
   dni?: string;
   licencia_numero?: string;
   licencia_vencimiento: string;
+  // De acá sale el recargo por edad (D-38) cuando la reserva designa un
+  // conductor: el riesgo es de quien maneja, no del titular que paga.
+  fecha_nacimiento?: string | null;
   activo: boolean;
 }
 

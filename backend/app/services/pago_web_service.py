@@ -130,6 +130,22 @@ class PagoWebService:
             total, porcentaje_anticipo, self._descuento_pago_total()
         )
 
+        # Lo que se guarda en `Reserva.precio_total` es **sólo el vehículo**:
+        # los adicionales viven aparte (ver `Reserva.total_adicionales`) y se
+        # suman recién al facturar, en `AlquilerService.checkout()`. Guardar
+        # acá el total con los adicionales adentro los cobraba dos veces.
+        precio_vehiculo = total - Decimal(str(cotizacion.total_adicionales))
+        # El descuento por pagar el 100% (D-30) es un descuento real sobre el
+        # alquiler: se imputa a la línea del vehículo y se deja el motivo, o
+        # `create()` lo rechaza —con razón— como una diferencia sin explicar.
+        descuento_d30 = total - Decimal(str(anticipo.total_final))
+        precio_reserva = precio_vehiculo - descuento_d30
+        motivo_d30 = (
+            f"Descuento por pago total del {porcentaje_anticipo}% (D-30)"
+            if descuento_d30 > 0
+            else None
+        )
+
         cliente = self._cliente_para(nombre, email, telefono, dni, fecha_nacimiento)
         usuario_sistema = self._usuario_sistema()
 
@@ -154,14 +170,17 @@ class PagoWebService:
                 lugar_entrega=lugar_entrega,
                 lugar_devolucion=lugar_devolucion or lugar_entrega,
                 notas=notas,
-                precio_total=anticipo.total_final,
+                precio_total=precio_reserva,
+                descuento_motivo=motivo_d30,
                 forma_pago_prevista="mercado_pago",
                 adicionales=adicionales or [],
                 usuario_id=usuario_sistema.id,
+                canal="web",
             )
         else:
             # Reserva reusada: el importe pudo cambiar con el porcentaje.
-            reserva.precio_total = anticipo.total_final
+            reserva.precio_total = precio_reserva
+            reserva.descuento_motivo = motivo_d30
 
         # `create()` la deja en 'pendiente'. La web necesita el estado propio:
         # `pendiente_pago` no ocupa calendario, así que un checkout abandonado
@@ -465,6 +484,12 @@ class PagoWebService:
             # mostrador suele estar más verificado que el de un formulario web.
             if not existente.email:
                 existente.email = email
+            # La fecha de nacimiento no es cosmética: de ella sale el recargo
+            # por edad (D-38). Si el cliente ya existía sin ella, la cotización
+            # que vio en la web la usaría y el precio de lista de la reserva
+            # no, y esa diferencia se rechaza como un descuento sin motivo.
+            if existente.fecha_nacimiento is None and fecha_nacimiento is not None:
+                existente.fecha_nacimiento = fecha_nacimiento
             self.db.flush()
             return existente
 

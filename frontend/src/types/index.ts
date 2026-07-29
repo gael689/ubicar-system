@@ -466,6 +466,9 @@ export interface ConductorAdicional {
   dni?: string;
   licencia_numero?: string;
   licencia_vencimiento: string;
+  // El recargo por edad (D-38) mira la edad de quien maneja: si la reserva
+  // designa un conductor, el riesgo es el suyo y no el del titular.
+  fecha_nacimiento?: string | null;
   activo: boolean;
 }
 
@@ -1291,6 +1294,9 @@ export interface CalcularPrecioRequest {
   vehiculo_id?: number | null;
   canal?: Canal;
   adicionales?: AdicionalSolicitado[];
+  // Sin ella no se aplica ningún recargo por franja etaria (D-38) y el total
+  // sale igual — no valida nada, pero el precio cambia si está.
+  fecha_nacimiento?: string | null;
 }
 
 export interface DiaCalendarioPrecio {

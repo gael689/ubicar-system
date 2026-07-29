@@ -5,6 +5,7 @@ import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import { useVehiculos } from '@/hooks/useVehiculos';
 import { useClientes, useConductores } from '@/hooks/useClientes';
 import { useAdicionales } from '@/hooks/useAdicionales';
+import { useCalcularPrecio } from '@/hooks/usePrecios';
 import api from '@/lib/api';
 import type { Adicional, Reserva, ReservaCreate, ReservaUpdate, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
 
@@ -270,10 +271,35 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     ? (duracionDias < 7 ? 'diaria' : duracionDias < 30 ? 'semanal' : 'mensual')
     : null;
   const tarifasDisponibles = (tarifasData ?? []).filter(t => t.activo);
-  // La específica del vehículo gana sobre la de categoría (D-08), igual que en el backend.
-  const tarifaRecomendada = tarifasDisponibles.find(t => t.tipo === tipoRecomendado && t.vehiculo_id != null)
-    ?? tarifasDisponibles.find(t => t.tipo === tipoRecomendado);
-  const precioListaEstimado = tarifaRecomendada ? parseFloat(tarifaRecomendada.monto) * duracionDias : null;
+  // La misma regla que aplica el backend (`_nacimiento_del_conductor`): manda
+  // la del conductor designado si la tiene, y si no la del titular. Estimarlo
+  // con otra fecha daría otro recargo y otra vez el falso "indique el motivo".
+  const conductorElegido = conductoresCliente?.find(c => String(c.id) === conductorId);
+  const clienteElegido = clientesData?.data?.find(c => String(c.id) === clienteId);
+  const nacimientoDelConductor =
+    conductorElegido?.fecha_nacimiento ?? clienteElegido?.fecha_nacimiento ?? null;
+
+  // El precio de lista lo calcula **el mismo motor que usa el backend** al
+  // grabar. Antes se estimaba acá como `tarifa.monto × días`, que estaba mal
+  // por tres lados: `monto` es el precio del bloque completo (D-35), no el del
+  // día, así que una tarifa semanal se multiplicaba por 11; no miraba las
+  // reglas del calendario ni las promos; y no incluía el recargo por edad.
+  // Resultado: el aviso de "indique el motivo" aparecía cuando no
+  // correspondía, y —peor— **no aparecía cuando sí**, y el backend rechazaba
+  // la reserva con un 422 sin campo donde escribir el motivo.
+  const { data: cotizacionLista } = useCalcularPrecio(
+    !isEdit && vehiculoId && fechaInicio && fechaFin && fechaFin > fechaInicio
+      ? {
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin,
+          vehiculo_id: Number(vehiculoId),
+          canal: 'mostrador',
+          adicionales: [],
+          fecha_nacimiento: nacimientoDelConductor,
+        }
+      : null
+  );
+  const precioListaEstimado = cotizacionLista ? Number(cotizacionLista.total) : null;
   const hayDescuentoManual = precioListaEstimado !== null && precioTotal !== '' && Math.round(precioTotal) !== Math.round(precioListaEstimado);
   const requiereDatosEcheq = formaPagoPrevista === 'echeq' || (estadoPago !== 'pendiente' && anticipoMedioPago === 'echeq');
 

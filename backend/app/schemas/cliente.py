@@ -20,6 +20,10 @@ class ConductorAdicionalBase(BaseModel):
     dni: Optional[str] = None
     licencia_numero: Optional[str] = None
     licencia_vencimiento: date
+    # El recargo por edad (D-38) mira la edad de quien maneja. El campo existe
+    # en el modelo desde la migración 044, pero no salía en la respuesta: la
+    # pantalla de reservas no podía estimar el mismo precio que el backend.
+    fecha_nacimiento: Optional[date] = None
 
 
 class ConductorAdicionalCreate(ConductorAdicionalBase):
