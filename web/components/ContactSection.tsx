@@ -276,7 +276,7 @@ export default function ContactSection() {
                 {/* Franco */}
                 <a
                   href={PHONE_FRANCO}
-                  onClick={() => trackLeadEvent()}
+                  onClick={() => trackLeadEvent("telefono:franco")}
                   className="ct-contact-btn ct-btn-call ct-item ct-d2"
                 >
                   <span className="ct-btn-icon ct-btn-icon-call">
@@ -297,7 +297,7 @@ export default function ContactSection() {
                   href={WHATSAPP_GENERAL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => trackLeadEvent()}
+                  onClick={() => trackLeadEvent("contacto:whatsapp-bahia")}
                   className="ct-contact-btn ct-btn-wa ct-item ct-d4"
                 >
                   <span className="ct-btn-icon ct-btn-icon-wa">
@@ -319,7 +319,7 @@ export default function ContactSection() {
                   href={WHATSAPP_CABA}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => trackLeadEvent()}
+                  onClick={() => trackLeadEvent("contacto:whatsapp-caba")}
                   className="ct-contact-btn ct-btn-wa ct-item ct-d4"
                 >
                   <span className="ct-btn-icon ct-btn-icon-wa">

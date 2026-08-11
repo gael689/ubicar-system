@@ -1,52 +1,30 @@
 /**
- * Tracking del evento de Lead.
+ * Tracking del click de contacto.
  *
- * Dos canales, como antes:
- *   1. Pixel del navegador (`fbq`), que se inicializa en `app/layout.tsx`.
- *   2. Conversions API — ahora vía `/api/track`, que corre en el servidor.
+ * **Este archivo quedó como una fachada.** La lógica de medición se unificó en
+ * `lib/analitica.ts`, que manda cada acción a Google Analytics **y** a Meta con
+ * el mismo evento y respeta el consentimiento por categoría. Antes vivía acá y
+ * sólo hablaba con Meta: la consecuencia era que GA4 no se enteraba de ninguna
+ * conversión, y los dos informes nunca cerraban entre sí.
  *
- * El cambio importante respecto de la versión Vite: el access token de Meta
- * ya no viaja en el bundle. Acá sólo se mandan las cookies del pixel y la URL;
- * la IP y el user-agent los toma el servidor de los headers.
+ * Se mantiene el nombre `trackLeadEvent` porque lo importan seis componentes de
+ * la portada. Renombrarlo no agregaba nada y tocaba archivos que no hacía falta
+ * tocar. Para código nuevo, usar `contactoIniciado` de `lib/analitica.ts`.
  */
 
-import { aceptaPublicidad } from "@/lib/consentimiento";
+import { contactoIniciado } from "@/lib/analitica";
 
-declare global {
-  interface Window {
-    fbq?: (...args: unknown[]) => void;
-  }
-}
-
-function leerCookie(nombre: string): string | null {
-  const match = document.cookie.match(new RegExp("(^| )" + nombre + "=([^;]+)"));
-  return match ? match[2] : null;
-}
-
-export async function trackLeadEvent(): Promise<void> {
+/**
+ * Click en un CTA de contacto (WhatsApp, mail, teléfono).
+ *
+ * @param origen Qué botón se tocó, para poder distinguirlos en el informe.
+ *   Sin él todos los clicks se cuentan juntos y no se sabe cuál funciona.
+ *
+ * Sigue devolviendo una promesa por compatibilidad con los llamadores que
+ * hacían `await`, pero **no hay nada que esperar**: el envío es best-effort y
+ * resuelve enseguida, así el `<a>` navega a WhatsApp sin demora.
+ */
+export async function trackLeadEvent(origen = "whatsapp"): Promise<void> {
   if (typeof window === "undefined") return;
-
-  // Sin consentimiento de publicidad no se manda nada — ni el pixel del
-  // navegador ni la Conversions API del servidor. El pixel ni siquiera está
-  // cargado (ver components/Analitica.tsx), pero la llamada al servidor sí
-  // saldría igual: es una petición nuestra, no de Meta.
-  if (!aceptaPublicidad()) return;
-
-  window.fbq?.("track", "Lead");
-
-  try {
-    await fetch("/api/track", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        eventName: "Lead",
-        eventSourceUrl: window.location.href,
-        fbc: leerCookie("_fbc"),
-        fbp: leerCookie("_fbp"),
-      }),
-      keepalive: true,
-    });
-  } catch {
-    // El tracking nunca debe romper el flujo del usuario.
-  }
+  contactoIniciado(origen);
 }

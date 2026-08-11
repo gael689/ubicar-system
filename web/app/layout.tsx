@@ -14,8 +14,14 @@ const dmSans = DM_Sans({
 });
 
 const SITE = "https://ubicar-rent.com.ar";
-const META_PIXEL_ID = "26876823408666329";
-const GA_ID = "G-25783YNP7G";
+
+// Los IDs salen del entorno, con los actuales como valor por defecto para que
+// nada se rompa si la variable falta. Estaban escritos duro acá: no es un
+// secreto —van en el HTML igual— pero sí impedía apuntar a una propiedad de
+// prueba sin editar el código, que es justamente lo que hace falta para probar
+// el embudo sin ensuciar los números reales.
+const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID ?? "26876823408666329";
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID ?? "G-25783YNP7G";
 
 const TITULO = "Alquiler de Autos en Bahía Blanca | Ubicar Rent";
 const DESCRIPCION =

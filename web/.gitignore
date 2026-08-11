@@ -32,6 +32,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...menos la plantilla, que existe justamente para versionarse: es donde se
+# documenta qué variables hacen falta para levantar la web. La regla `.env*` la
+# venía tapando, así que los cambios en `.env.example` nunca llegaban al repo y
+# quien clonaba no se enteraba de las variables nuevas. No lleva secretos: los
+# valores reales van en `.env.local`, que sigue ignorado.
+!.env.example
 
 # vercel
 .vercel

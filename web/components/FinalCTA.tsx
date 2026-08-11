@@ -114,7 +114,7 @@ export default function FinalCTA() {
               href={WHATSAPP_GENERAL}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => trackLeadEvent()}
+              onClick={() => trackLeadEvent("cta-final:whatsapp")}
               className="fc-btn"
             >
               Contactar ahora

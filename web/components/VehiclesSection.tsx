@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { trackLeadEvent } from "@/lib/meta-pixel";
+import { intencionDeReserva } from "@/lib/analitica";
 
 const compactoImg = "/img/compacto.png";
 const sedanImg = "/img/sedan-intermedio.png";
@@ -221,10 +221,19 @@ export default function VehiclesSection() {
                   <p className="vh-item-desc">{v.description}</p>
                   {/* Manda al flujo de reserva, no a WhatsApp: si toda la
                       pagina dice "reserva online" y despues cada auto abre un
-                      chat, el mensaje se cae solo. */}
+                      chat, el mensaje se cae solo.
+
+                      Y justamente por eso NO se mide como lead: es una
+                      navegacion interna. Marcarla como `Lead` hacia que cada
+                      curioso contara como contacto. */}
+                  {/* Va al buscador de la portada, **no a `/reservar`**. Desde
+                      D-44 la edad del responsable es obligatoria para cotizar,
+                      y `/reservar` sin ese dato rebota a la home: el botón era
+                      un callejón sin salida que devolvía al visitante al
+                      principio sin explicarle por qué. */}
                   <Link
-                    href="/reservar"
-                    onClick={() => trackLeadEvent()}
+                    href="/#reservar"
+                    onClick={() => intencionDeReserva(`vehiculos:${v.title}`)}
                     className="vh-pill"
                   >
                     Ver disponibilidad y precio

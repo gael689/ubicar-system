@@ -1,8 +1,14 @@
 # Plan de Analytics y Reportes — Ubicar Rent
 
-**Fecha:** 2026-07-25
+**Fecha:** 2026-07-25 · **Parte B agregada:** 2026-08-11
 **Objetivo:** poder medir todo lo medible del negocio — por mes, semana y año, y por cliente, vehículo, categoría, empresa, sucursal y operador.
 **Relacionados:** `docs/DECISIONES.md` · `docs/PLAN_MAESTRO.md` · `docs/PLAN_FRONTEND_UX.md`
+
+> **Dos cosas distintas, no confundirlas.**
+> - **Parte A (secciones 1 a 6)** — los reportes del **sistema interno**, en `/reportes`. Miden el negocio: plata, flota, clientes. Salen de la base de datos.
+> - **Parte B (sección 7)** — la **analítica del sitio público**, en Google Analytics y Meta. Mide el sitio: cuánta gente entra, por dónde se cae, qué campaña trajo la reserva. Sale de las cookies del visitante.
+>
+> Se responden preguntas distintas y los números **no van a coincidir nunca**: el sistema sabe de reservas confirmadas, Google Analytics sabe de navegadores.
 
 > ⚠️ **El Inicio no se toca.** El calendario estilo Excel sigue siendo la pantalla de entrada, completa y sin scroll (decisión D-24). Todo lo que está en este documento vive en `/reportes`, un módulo aparte. El panel "Flujo del día" que hoy está en el Inicio se muda acá.
 
@@ -186,3 +192,148 @@ El principio: **toda tarjeta o barra tiene que ser clickeable y llevar al detall
 | 9 | Tabla `resumen_diario` + reporte mensual por email | Fase 4 |
 
 **Dependencias a tener en cuenta:** buena parte de estas métricas sólo son calculables después de la Fase 1 (ledger de cuenta corriente, cargos de cierre desglosados, con/sin factura) y de la Fase 4 (estados `NO_SHOW` y `VENCIDA`, parte de daños). Construir la pestaña Operación antes de tener esos datos daría gráficos vacíos.
+
+---
+---
+
+# Parte B — Analítica del sitio público (`web/`)
+
+**Fecha:** 2026-08-11
+**Pregunta que responde:** *"el uso de cookies, ¿en dónde las vemos? ¿cómo medimos estas métricas y demás?"*
+
+## 7.1 Dónde se ven las métricas
+
+Hay **dos tableros**, y hay que entrar con las cuentas correspondientes. No hay
+nada de esto dentro del sistema: son servicios de afuera.
+
+| Dónde | Qué se ve | Con qué ID | Estado |
+|---|---|---|---|
+| [Google Analytics](https://analytics.google.com) → propiedad de Ubicar Rent | Visitas, de dónde vienen, qué páginas miran, el embudo de reserva y la tasa de conversión | `G-25783YNP7G` | **Activo**, verificado el 11/08 |
+| [Meta Events Manager](https://business.facebook.com/events_manager2) | Qué anuncio de Instagram/Facebook trajo cada reserva | Píxel `26876823408666329` | **Activo**, verificado el 11/08 |
+
+Los dos IDs ahora se leen de variables de entorno (`NEXT_PUBLIC_GA_ID` y
+`NEXT_PUBLIC_META_PIXEL_ID`), con los de arriba como valor por defecto. Antes
+estaban escritos duro en `web/app/layout.tsx`.
+
+> **Nota sobre verificar el píxel a mano.** Si se prueba con un navegador
+> automatizado, el píxel de Meta **no dispara nada**: tiene `botblocking`
+> activado y descarta el user-agent `HeadlessChrome` sin avisar. No es que esté
+> roto. Con un user-agent normal manda todo. Esto costó un rato entenderlo.
+
+## 7.2 Qué se mide
+
+Todo pasa por `web/lib/analitica.ts`, que es **el único lugar** donde se declaran
+eventos. Cada acción va a GA4 (nombre de e-commerce, para que arme el informe de
+embudo solo) y a Meta (evento estándar, el único tipo que un anuncio puede tomar
+como objetivo de optimización).
+
+| Momento del negocio | GA4 | Meta | Estado |
+|---|---|---|---|
+| Buscó disponibilidad | `view_item_list` | `Search` | ⏳ falta enganchar |
+| Buscó y no había cupo | `sin_disponibilidad` | — | ⏳ falta enganchar |
+| Eligió una categoría | `select_item` | `ViewContent` | ⏳ falta enganchar |
+| Se le tomó el cupo (arrancó la reserva) | `begin_checkout` | `InitiateCheckout` | ⏳ falta enganchar |
+| Completó sus datos | `add_shipping_info` | `AddPaymentInfo` | ⏳ falta enganchar |
+| **Reserva concretada** | `purchase` | `Purchase` | ⏳ falta enganchar |
+| Dejó datos sin cupo (D-04) | `generate_lead` | `Lead` | ⏳ falta enganchar |
+| Click en WhatsApp / teléfono | `generate_lead` | `Lead` | ✅ **andando** |
+| Click a `/reservar` desde la portada | `select_promotion` | — | ✅ **andando** |
+
+Las funciones **ya están escritas y probadas**; lo que falta es la línea que las
+llama desde el flujo de reserva. Ver 7.5.
+
+### Lo que estaba mal contado
+
+Dos botones que **no son contactos** mandaban `Lead` a Meta:
+
+- El buscador del Hero (`Hero.tsx:116`): cada persona que apretaba "Buscar"
+  contaba como lead.
+- Cada tarjeta de la grilla de vehículos (`VehiclesSection.tsx`): "Ver
+  disponibilidad y precio" es una navegación interna, no un contacto.
+
+No es sólo un número inflado: Meta **optimiza hacia el evento que le declarás
+como conversión**. Diciéndole que un click en "Buscar" es un lead, le enseñás a
+buscar gente que hace clicks, no gente que alquila. El de la grilla ya está
+corregido; el del Hero está en 7.5 porque el archivo lo estaba tocando otro.
+
+## 7.3 Consentimiento — cómo está resuelto
+
+La Ley 25.326 y la política de privacidad publicada en `/privacidad` prometen que
+eligiendo "sólo necesarias" Google y Meta **no reciben ningún dato**. Eso hoy es
+cierto y está verificado con navegador real:
+
+- **Sin decidir nada no se descarga ni un script de terceros.** No es que se
+  carguen y no disparen: `web/components/Analitica.tsx` directamente no los
+  monta. Si el script está, ya puso su cookie.
+- **Las dos categorías se eligen por separado.** El botón "Elegir" del aviso abre
+  las casillas de *Analíticas* y *Publicidad*. Antes el modelo de datos las
+  distinguía pero el aviso era todo o nada.
+- **Rechazar pesa lo mismo que aceptar**: mismos botones, mismo tamaño. Un
+  "Rechazar" en gris chiquito es un patrón oscuro.
+- **Revocar borra las cookies ya puestas**, desde `/privacidad`. Antes revocar
+  sólo evitaba la carga futura: el `_ga` y el `_fbp` seguían en el navegador dos
+  años más.
+
+Detalle que costó encontrar: borrar las cookies no alcanzaba, porque `gtag`
+sigue vivo en memoria y **reescribía su `_ga_<ID>` en el instante siguiente**.
+Se resolvió avisándole primero con el Consent Mode de Google
+(`gtag('consent','update', ... denied)`) y el `fbq('consent','revoke')` de Meta,
+y borrando después. El orden importa y está comentado en el código.
+
+## 7.4 Verificación del 11/08 (navegador real, `web/` en :3200)
+
+| Paso | Resultado |
+|---|---|
+| Visitante nuevo, sin decidir | 0 pedidos a terceros · 0 cookies |
+| "Sólo necesarias" | 0 pedidos a terceros · 0 cookies |
+| Sólo analíticas (publicidad destildada) | Carga Google · **no** carga Meta |
+| "Aceptar todas" | GA4 `page_view` + Meta `PageView`; cookies `_ga`, `_ga_25783YNP7G`, `_fbp` |
+| Click en WhatsApp | GA4 `generate_lead` + Meta `Lead` con `eid` de deduplicación |
+| Click en la grilla de vehículos | GA4 `select_promotion`, **sin** `Lead` |
+| Revocar desde `/privacidad` | **0 cookies** quedan · el aviso vuelve a aparecer |
+
+`npx tsc --noEmit` en `web/` pasa limpio.
+
+## 7.5 Lo que falta — enganchar el embudo
+
+Las funciones están listas en `web/lib/analitica.ts`. Falta agregar la llamada en
+`web/components/reservar/FlujoReserva.tsx` y en `Hero.tsx`, que el 11/08 los
+estaba editando otra tarea en paralelo. Son estas líneas:
+
+```ts
+// FlujoReserva.tsx — arriba, con los demás imports
+import * as analitica from "@/lib/analitica";
+```
+
+| Dónde | Línea a agregar |
+|---|---|
+| `Hero.tsx` · `handleBuscar`, **reemplazando** `trackLeadEvent()` (línea ~116) | `analitica.intencionDeReserva("hero:buscador")` |
+| `FlujoReserva.tsx` · al resolver la búsqueda de disponibilidad | `analitica.verDisponibilidad({ fechaInicio, fechaFin, lugarRetiro, dias, resultados: categorias.length })` |
+| `FlujoReserva.tsx` · `elegirCategoria`, al entrar | `analitica.elegirCategoria({ categoriaId: c.categoria_id, nombre: c.nombre, precio: c.precio?.total })` |
+| `FlujoReserva.tsx` · `elegirCategoria`, después de `setHold(...)` | `analitica.iniciarReserva({ categoriaId: c.categoria_id, nombre: c.nombre, precio: c.precio?.total })` |
+| `FlujoReserva.tsx` · `siguiente()`, dentro del `if (paso === 3)` ya validado | `analitica.completarDatos(cotizacion?.total)` |
+| `Paso4Pago.tsx` · al volver `api.crearReserva(...)` con éxito | `analitica.reservaConfirmada({ reservaId, categoriaId, categoriaNombre, valor: montoAnticipo, total: cotizacion.total, dias })` |
+| `DialogoSinCupo.tsx` · al volver `api.crearSolicitud(...)` con éxito | `analitica.solicitudSinCupo({ categoriaId, nombre })` |
+
+**`purchase` es el que más importa.** Sin él no hay tasa de conversión en GA4 ni
+optimización por reservas en Meta.
+
+Ojo con dónde se pone: la reserva **se confirma en el webhook de Mercado Pago**,
+no al volver del checkout. Disparar `purchase` al iniciar el pago contaría como
+vendida gente que abandonó en Mercado Pago. La opción correcta es dispararlo en
+`/reservar/listo`, que es donde se vuelve con el pago hecho.
+
+## 7.6 Pendiente de Gael
+
+1. **Rotar el token de la Conversions API.** `META_CONVERSIONS_TOKEN` está vacío,
+   así que hoy **la mitad server-side del tracking está apagada**: los eventos
+   llegan sólo por el píxel del navegador, y se pierde lo que bloquean los
+   bloqueadores de anuncios y Safari. El token viejo viajaba dentro del bundle de
+   JavaScript en la versión Vite, o sea que fue público: hay que **generar uno
+   nuevo** en Meta Business y cargarlo en Vercel, no reutilizar el anterior.
+2. **Marcar las conversiones en los dos tableros.** En GA4, `purchase` y
+   `generate_lead` como *eventos clave*. En Meta, `Purchase` como evento de
+   optimización de las campañas. Si no se marcan, se registran pero no se
+   optimiza nada con ellos.
+3. **Decidir quién mira esto y cada cuánto.** Un tablero que nadie abre no sirve;
+   GA4 manda un resumen por mail si se lo configura.

@@ -8,7 +8,7 @@ import { WHATSAPP_GENERAL } from "@/lib/constants";
 import {
   MapPin, ChevronDown, CalendarDays, Check, ShieldCheck, MessageCircle, UserRound,
 } from "lucide-react";
-import { trackLeadEvent } from "@/lib/meta-pixel";
+import { intencionDeReserva, contactoIniciado } from "@/lib/analitica";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -113,7 +113,7 @@ const Hero = () => {
       return;
     }
 
-    trackLeadEvent();
+    intencionDeReserva("hero:buscador");
 
     const params = new URLSearchParams();
     if (lugarEntrega) params.set("lugar", lugarEntrega);
@@ -127,7 +127,10 @@ const Hero = () => {
   };
 
   return (
-    <section className="relative flex min-h-screen items-center overflow-hidden pb-16 pt-32 lg:pb-20 lg:pt-36">
+    // El `id` es el destino de "Ver disponibilidad y precio" de la grilla de
+    // vehículos: desde D-44 el buscador es el único lugar donde se pide la
+    // edad, así que todo camino a cotizar tiene que pasar por acá.
+    <section id="reservar" className="relative flex min-h-screen items-center overflow-hidden pb-16 pt-32 lg:pb-20 lg:pt-36">
       {/* Foto de fondo. El encuadre se corre a la derecha (65%) para que el
           auto y las luces no queden cortados en pantallas angostas. */}
       <Image
@@ -362,7 +365,7 @@ const Hero = () => {
                   href={WHATSAPP_GENERAL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => trackLeadEvent()}
+                  onClick={() => contactoIniciado("hero:whatsapp")}
                   className="flex items-center justify-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
                 >
                   <MessageCircle className="h-4 w-4" />

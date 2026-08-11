@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { solicitudSinCupo } from "@/lib/analitica";
 import { fechaCorta } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { CategoriaDisponible } from "@/lib/types";
@@ -56,6 +57,10 @@ export function DialogoSinCupo({ categoria, rango, onCerrar }: Props) {
         telefono: telefono.trim(),
       });
       setListo(true);
+      // Una solicitud sin cupo es un contacto real: la persona dejo sus
+      // datos. Se mide aparte de la reserva porque el negocio la
+      // recupera de otra forma -- llamando cuando se libera un auto.
+      solicitudSinCupo({ categoriaId: categoria.categoria_id, nombre: categoria.nombre });
     } catch (e) {
       setError((e as Error).message);
     } finally {

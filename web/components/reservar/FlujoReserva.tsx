@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, pesos } from "@/lib/api";
+import * as analitica from "@/lib/analitica";
 import type {
   CategoriaDisponible, ConfigPublica, Cotizacion, DatosCliente,
 } from "@/lib/types";
@@ -153,6 +154,9 @@ export function FlujoReserva() {
   const elegirCategoria = async (c: CategoriaDisponible) => {
     setError(null);
     setAvanzando(true);
+    analitica.elegirCategoria({
+      categoriaId: c.categoria_id, nombre: c.nombre, precio: c.precio?.total,
+    });
     try {
       // Tomar el cupo ANTES de seguir: entre elegir y pagar pasan minutos, y
       // sin el hold dos personas compran la última unidad.
@@ -167,6 +171,11 @@ export function FlujoReserva() {
       setHold({ token: h.token, segundos: h.segundos_restantes });
       setCategoria(c);
       setPaso(2);
+      // Recien aca: el hold es lo que convierte "mire un auto" en "empezo una
+      // reserva". Antes del hold no hay nada tomado.
+      analitica.iniciarReserva({
+        categoriaId: c.categoria_id, nombre: c.nombre, precio: c.precio?.total,
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -199,6 +208,7 @@ export function FlujoReserva() {
   const siguiente = () => {
     setError(null);
     if (paso === 3 && !validarDatos()) return;
+    if (paso === 3) analitica.completarDatos(cotizacion?.total);
     if (paso === 3) void recotizar(); // la edad puede haber cambiado el precio
     setPaso((p) => Math.min(PASOS.length, p + 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
