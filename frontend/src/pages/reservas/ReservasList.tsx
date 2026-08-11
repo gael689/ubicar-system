@@ -334,25 +334,19 @@ export function ReservasList() {
                         lo más grave y por eso pisa a los demás. Los tres
                         desaparecen solos: nadie tiene que acordarse de
                         sacarlos. */}
-                    {r.entregado_sin_contrato ? (
-                      <span
-                        title="El vehículo se entregó sin contrato firmado"
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-danger text-white text-xs font-bold uppercase"
-                      >
-                        Sin contrato
-                      </span>
-                    ) : (
-                      /* El cartel dejó de ser sólo un cartel: emite el
-                         contrato o copia el link de firma sin salir del
-                         listado. Señalar un problema sin ofrecer la solución
-                         es lo peor que puede hacer una pantalla que se mira
-                         con el cliente enfrente. */
-                      <AccionesContrato
-                        reservaId={r.id}
-                        estado={r.contrato_estado}
-                        onCambio={() => { loadReservas().catch(() => {}); }}
-                      />
-                    )}
+                    {/* El cartel dejo de ser solo un cartel: emite, regenera
+                        o copia el link sin salir del listado. El aviso rojo de
+                        D-34 se conserva -- el auto salio sin papel firmado y eso
+                        tiene que verse de lejos -- pero ahora trae debajo las
+                        acciones para resolverlo, en vez de mandarte a otra
+                        pantalla justo cuando mas apurado estas. */}
+                    <AccionesContrato
+                      reservaId={r.id}
+                      estado={r.contrato_estado}
+                      entregadoSinContrato={r.entregado_sin_contrato}
+                      onCambio={() => { loadReservas().catch(() => {}); }}
+                      onAbrir={() => setEditReserva(r)}
+                    />
                     {r.bloqueada_por_solape && !compacta && (
                       <div className="text-xs text-amber-600 mt-1 font-medium">⚠️ Solape pendiente</div>
                     )}
