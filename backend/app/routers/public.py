@@ -179,31 +179,109 @@ def cotizar_publico(payload: CotizarPublicoRequest, db: Session = Depends(get_db
     **El total de acá es informativo.** Lo que se cobra se recalcula en
     `POST /public/reservas`, del lado del servidor — ver §6 del plan: nunca se
     confía en el monto que manda el navegador.
+
+    **Devuelve los dos escenarios de precio, no uno.** El paso 4 tiene que
+    mostrar los tres montos —30%, 50% y 100%— y cada uno sale de un precio
+    distinto: con seña parcial se paga el de lista, y con el 100% corre el
+    descuento por duración (D-49). Antes se devolvía sólo el escenario pedido y
+    el navegador estimaba los otros dos multiplicando: el 100% aparecía sin
+    descuento y el cliente **no veía cuánta plata se ahorraba pagando todo**,
+    que es justamente lo que lo hace cambiar de opción. Sólo bajaba al tocarlo,
+    cuando ya había decidido.
+
+    Se resuelve acá y no en el navegador por la misma razón de siempre: hay un
+    solo motor de precios. `anticipos` sale de `calcular_anticipo`, la misma
+    función pura que después decide cuánto se le cobra de verdad al cliente en
+    `PagoWebService`, así que los tres botones muestran el monto exacto que va
+    a la pasarela y no una estimación parecida.
     """
     from app.core.exceptions import BusinessRuleError as _BRE
+    from app.domain.pagos_web import (
+        CLAVE_DESCUENTO_PAGO_TOTAL, DESCUENTO_PAGO_TOTAL_DEFAULT,
+        PORCENTAJES_ANTICIPO, calcular_anticipo,
+    )
+    from app.services.configuracion_service import ConfiguracionService
     from app.services.precio_service import PrecioService
 
     if payload.fecha_fin <= payload.fecha_inicio:
         raise HTTPException(422, "La fecha de fin debe ser posterior a la de inicio")
 
-    try:
-        cotizacion, categoria_id = PrecioService(db).calcular(
+    svc = PrecioService(db)
+    elegidos = [(a.adicional_id, a.cantidad) for a in payload.adicionales]
+
+    def _cotizar(anticipo: int | None):
+        return svc.calcular(
             fecha_inicio=payload.fecha_inicio,
             fecha_fin=payload.fecha_fin,
             categoria_id=payload.categoria_id,
             vehiculo_id=None,
             canal="web",
-            adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
+            adicionales=elegidos,
             fecha_nacimiento=payload.fecha_nacimiento,
             edad_conductor=payload.edad,
-            porcentaje_anticipo=payload.porcentaje_anticipo,
+            porcentaje_anticipo=anticipo,
         )
+
+    try:
+        c100, categoria_id = _cotizar(100)
+        # Sin descuento por duración las dos cotizaciones son idénticas —el
+        # anticipo no toca nada más del precio—, así que se ahorra la segunda
+        # pasada por el motor en vez de calcular dos veces lo mismo.
+        lista = c100 if not c100.descuento_monto else _cotizar(None)[0]
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except _BRE as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # La cotización "principal" —el desglose que el resumen muestra línea por
+    # línea— es la del escenario que el cliente eligió. `aplica_descuento_por_
+    # duracion` sólo distingue el 100% del resto, así que son estas dos.
+    cotizacion = c100 if payload.porcentaje_anticipo == 100 else lista
+
+    # D-30: un descuento adicional por pagar todo hoy, que los dueños mueven
+    # desde `configuracion` sin deploy. Va arriba del de duración.
+    pct_pago_total = ConfiguracionService(db).get_decimal(
+        CLAVE_DESCUENTO_PAGO_TOTAL, DESCUENTO_PAGO_TOTAL_DEFAULT
+    )
+    anticipos = []
+    for pct in PORCENTAJES_ANTICIPO:
+        base = c100.total if pct == 100 else lista.total
+        try:
+            a = calcular_anticipo(base, pct, pct_pago_total)
+        except ValueError:
+            # Total en cero: no hay nada que cobrar y no hay opción que ofrecer.
+            continue
+        anticipos.append({
+            "porcentaje": pct,
+            # Lo que termina saliendo el alquiler eligiendo esta opción.
+            "total": a.total_final,
+            "monto_a_cobrar": a.monto_a_cobrar,
+            "saldo": a.saldo,
+            "descuento_pago_total": a.descuento,
+            # Cuánta plata se ahorra respecto de señar parcial. **En pesos, no
+            # en porcentaje**: es el número que hace cambiar de opción.
+            "ahorro": lista.total - a.total_final,
+        })
+
     return ok({
+        # Lo que sale el alquiler señando parcial: el precio de lista, sin el
+        # descuento por duración. Es la base de los montos del 30% y el 50% y
+        # el número que se muestra tachado cuando el cliente elige el total.
+        "total_lista": lista.total,
+        # El mismo alquiler pagando el 100% por adelantado, con la misma forma
+        # que `precio.pago_total` de `/public/disponibilidad`. `None` cuando no
+        # hay descuento por duración para esta duración.
+        "pago_total": (
+            {
+                "total": c100.total,
+                "descuento_monto": c100.descuento_monto,
+                "descuento_porcentaje": c100.descuento_porcentaje,
+                "descuento_nombre": c100.descuento_nombre,
+            }
+            if c100.descuento_monto and c100.total < lista.total
+            else None
+        ),
+        "anticipos": anticipos,
         "dias": [d.__dict__ for d in cotizacion.dias],
         "duracion_dias": cotizacion.duracion_dias,
         "subtotal": cotizacion.subtotal,

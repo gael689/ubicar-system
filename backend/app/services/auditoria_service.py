@@ -73,6 +73,38 @@ def _limpiar(datos: dict | None) -> dict | None:
     return {k: _serializable(v) for k, v in datos.items()}
 
 
+def _nombre_legible(usuario) -> str | None:
+    """
+    El nombre que se guarda en la auditoría.
+
+    **La auditoría es para leerla, no para cruzar IDs.** Cuando el token de
+    Clerk viene sin el claim de email, el usuario quedaba con el `sub` como
+    nombre y el registro salía impreso como
+    *"user_3HBPnBzP6K0WDB3Q05CxEQzWtIF autorizó descuento"*, que no le dice
+    nada a nadie — y la auditoría existe justamente para contestar *quién*.
+
+    Se corrigió el origen (`core/deps.py`), pero los usuarios ya dados de alta
+    con ese nombre siguen en la base. Este filtro es la última línea antes de
+    congelar el nombre en el registro, que después no se toca.
+
+    Si no hay nada presentable cae al email, y si tampoco, a `None`: la
+    pantalla ya sabe mostrar "Sistema" cuando no hay nombre. **Un identificador
+    técnico es peor que un campo vacío** — el vacío se nota y se corrige.
+    """
+    if usuario is None:
+        return None
+
+    def _presentable(valor: str | None) -> str | None:
+        v = (valor or "").strip()
+        if not v or v.startswith("user_") or v.endswith("@sin-email.clerk"):
+            return None
+        return v
+
+    return _presentable(getattr(usuario, "nombre", None)) or _presentable(
+        getattr(usuario, "email", None)
+    )
+
+
 def registrar(
     db: Session,
     *,
@@ -95,7 +127,7 @@ def registrar(
         nombre = None
         if usuario_id is not None:
             usuario = db.get(Usuario, usuario_id)
-            nombre = usuario.nombre if usuario else None
+            nombre = _nombre_legible(usuario)
 
         registro = Auditoria(
             usuario_id=usuario_id,

@@ -55,6 +55,38 @@ from app.services.reserva_service import ReservaService
 logger = logging.getLogger(__name__)
 
 
+def _motivo_descuento(cotizacion, porcentaje_anticipo: int, descuento_d30: Decimal) -> str | None:
+    """
+    Por qué esta reserva vale menos que el precio de lista.
+
+    **`ReservaService.create` exige un motivo para cualquier diferencia** y
+    hace bien: un precio distinto al de lista sin explicación es un descuento
+    que nadie autorizó. Pero acá se dejaba constancia sólo del descuento por
+    pagar el 100% (D-30, la palanca de `configuracion`) y **no del descuento
+    por duración** (D-43/D-49), que en la web también se gana pagando todo por
+    adelantado y que viene adentro de `cotizacion.total`.
+
+    El resultado era que **toda reserva web al 100% con más de 3 días moría en
+    un 409** —`descuento_sin_motivo`, antes de llegar a Mercado Pago— o sea
+    justo la opción que la web empuja porque es la que más conviene a las dos
+    partes. Con seña parcial no pasaba: ahí no hay ningún descuento, el precio
+    es el de lista y no hay nada que explicar.
+
+    Los dos descuentos se apilan, así que el motivo los nombra a los dos.
+    """
+    motivos: list[str] = []
+    duracion = Decimal(str(getattr(cotizacion, "descuento_monto", 0) or 0))
+    if duracion > 0:
+        nombre = getattr(cotizacion, "descuento_nombre", None) or "Descuento por duración"
+        porcentaje = getattr(cotizacion, "descuento_porcentaje", 0)
+        motivos.append(
+            f"{nombre} ({porcentaje}%) por abonar el total por adelantado (D-49)"
+        )
+    if descuento_d30 > 0:
+        motivos.append(f"Descuento por pago total del {porcentaje_anticipo}% (D-30)")
+    return " + ".join(motivos) or None
+
+
 class PagoWebService:
     def __init__(self, db: Session, pasarela: IPasarelaPago | None = None) -> None:
         self.db = db
@@ -148,11 +180,7 @@ class PagoWebService:
         # `create()` lo rechaza —con razón— como una diferencia sin explicar.
         descuento_d30 = total - Decimal(str(anticipo.total_final))
         precio_reserva = precio_vehiculo - descuento_d30
-        motivo_d30 = (
-            f"Descuento por pago total del {porcentaje_anticipo}% (D-30)"
-            if descuento_d30 > 0
-            else None
-        )
+        motivo_d30 = _motivo_descuento(cotizacion, porcentaje_anticipo, descuento_d30)
 
         cliente = self._cliente_para(
             nombre, email, telefono, dni, fecha_nacimiento,
@@ -529,10 +557,7 @@ class PagoWebService:
 
         precio_vehiculo = total - Decimal(str(cotizacion.total_adicionales))
         descuento_d30 = total - Decimal(str(anticipo.total_final))
-        motivo_d30 = (
-            f"Descuento por pago total del {porcentaje_anticipo}% (D-30)"
-            if descuento_d30 > 0 else None
-        )
+        motivo_d30 = _motivo_descuento(cotizacion, porcentaje_anticipo, descuento_d30)
 
         cliente = self._cliente_para(
             nombre, email, telefono, dni, fecha_nacimiento,
@@ -564,8 +589,15 @@ class PagoWebService:
         return {
             "reserva_id": reserva.id,
             "numero": getattr(reserva, "numero_formateado", None) or str(reserva.id),
-            "monto_a_transferir": float(anticipo.monto),
+            # `monto_a_cobrar`, no `monto`: el dataclass `Anticipo` no tiene un
+            # campo `monto` y esto levantaba AttributeError **después** de
+            # crear la reserva, así que el endpoint devolvía 500, la sesión se
+            # revertía y el camino de transferencia no funcionaba nunca.
+            "monto_a_transferir": float(anticipo.monto_a_cobrar),
             "total": float(anticipo.total_final),
+            # Lo que queda para el mostrador. Sin esto la pantalla de "ya
+            # transferí" no puede decir cuánto falta al retirar el auto.
+            "saldo": float(anticipo.saldo),
             "porcentaje_anticipo": porcentaje_anticipo,
         }
 

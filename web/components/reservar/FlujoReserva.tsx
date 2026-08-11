@@ -132,6 +132,11 @@ export function FlujoReserva() {
         // Sólo desde el paso 4: antes el cliente no eligió cuánto adelanta, y
         // mandar el 30% por defecto mostraría el precio de lista como si ya
         // hubiera descartado el descuento.
+        //
+        // Esto elige **cuál escenario viene desglosado**, no cuánta
+        // información llega: la respuesta trae siempre `total_lista`,
+        // `pago_total` y los tres `anticipos`, así que el resumen puede
+        // mostrar el ahorro por pagar todo desde el paso 2 sin recotizar.
         porcentaje_anticipo: paso === 4 ? pctAnticipo : null,
       });
       setCotizacion(c);
@@ -320,7 +325,10 @@ export function FlujoReserva() {
                 // online: ofrecer un pago que va a fallar es peor que mandar
                 // a WhatsApp de más.
                 cobroOnline={config?.cobro_online ?? false}
-                descuentoPagoTotalPct={config?.descuento_pago_total_pct ?? 0}
+                // La cuenta bancaria sale de `configuracion` vía
+                // `/public/config`: si no está cargada, no se ofrece
+                // transferencia en vez de mostrar un CBU viejo del código.
+                transferencia={config?.transferencia ?? null}
                 pctAnticipo={pctAnticipo}
                 onCambiarAnticipo={setPctAnticipo}
               />

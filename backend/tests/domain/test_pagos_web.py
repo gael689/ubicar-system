@@ -191,3 +191,48 @@ class TestReferenciaExterna:
 
     def test_referencia_corrupta_no_explota(self):
         assert reserva_de_referencia("ubicar-reserva-ocho") is None
+
+
+class TestMotivoDelDescuentoWeb:
+    """
+    El motivo que se guarda en la reserva cuando la web cobra menos que el
+    precio de lista.
+
+    **Sin motivo, `ReservaService.create` rechaza la reserva entera** —y hace
+    bien: un precio por debajo del de lista sin explicación es un descuento que
+    nadie autorizó. Acá se dejaba constancia sólo del D-30 (la palanca de
+    `configuracion`, hoy en 0) y no del descuento por duración, que en la web
+    también se gana pagando el 100%. Consecuencia: **toda reserva web al 100%
+    de 3 días o más moría en un 409 antes de llegar a la pasarela**, o sea
+    justo la opción que la web empuja. Con seña parcial no pasaba, porque ahí
+    no hay descuento y no hay nada que explicar.
+    """
+
+    class _Cot:
+        def __init__(self, monto="0", nombre=None, porcentaje="0"):
+            self.descuento_monto = Decimal(monto)
+            self.descuento_nombre = nombre
+            self.descuento_porcentaje = Decimal(porcentaje)
+
+    def _motivo(self, cot, pct=100, d30="0"):
+        from app.services.pago_web_service import _motivo_descuento
+
+        return _motivo_descuento(cot, pct, Decimal(d30))
+
+    def test_sena_parcial_no_necesita_motivo(self):
+        assert self._motivo(self._Cot(), pct=30) is None
+
+    def test_el_descuento_por_duracion_deja_constancia(self):
+        motivo = self._motivo(self._Cot("97500", "7 a 15 días", "15"))
+        assert motivo is not None
+        assert "7 a 15 días" in motivo and "D-49" in motivo
+
+    def test_los_dos_descuentos_se_nombran(self):
+        motivo = self._motivo(
+            self._Cot("97500", "7 a 15 días", "15"), d30="27625"
+        )
+        assert "D-49" in motivo and "D-30" in motivo
+
+    def test_solo_el_d30_cuando_no_hay_escalon(self):
+        motivo = self._motivo(self._Cot(), d30="5000")
+        assert motivo == "Descuento por pago total del 100% (D-30)"

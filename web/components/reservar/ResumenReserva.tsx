@@ -23,6 +23,12 @@ interface Props {
  * contenedor la reemplaza para no comerse la pantalla.
  */
 export function ResumenReserva({ rango, categoriaNombre, cotizacion, cargando }: Props) {
+  // La opción de pagar el 100%, tal como la calculó el backend. Acá no se
+  // calcula ningún precio: el ahorro y el total ya vienen resueltos por el
+  // mismo motor que después cobra.
+  const pagoTotal = cotizacion?.anticipos?.find((a) => a.porcentaje === 100);
+  const ahorroPagandoTodo = pagoTotal?.ahorro ?? 0;
+
   return (
     <aside className="rounded-lg border border-border bg-white p-5 shadow-sm">
       <h2 className="font-semibold text-[#1B3F6B]">Tu reserva</h2>
@@ -65,6 +71,11 @@ export function ResumenReserva({ rango, categoriaNombre, cotizacion, cargando }:
             valor={pesos(cotizacion.subtotal + (cotizacion.recargo_edad?.monto ?? 0))}
           />
 
+          {/* El descuento por duración. Se muestra cuando **efectivamente se
+              está aplicando**, o sea cuando el cliente eligió pagar el 100%
+              (D-49): listarlo antes sería anunciar una rebaja que todavía no
+              tiene. Lo que falta —que exista y no la esté aprovechando— se
+              cuenta abajo, con el ahorro en plata. */}
           {cotizacion.descuento_monto > 0 && (
             <Linea
               etiqueta={cotizacion.descuento_nombre ?? "Descuento"}
@@ -84,17 +95,54 @@ export function ResumenReserva({ rango, categoriaNombre, cotizacion, cargando }:
           <div className="flex items-end justify-between border-t border-border pt-3">
             <span className="font-semibold text-foreground">Total</span>
             <div className="text-right">
-              {cotizacion.total_referencia &&
-                cotizacion.total_referencia > cotizacion.total && (
+              {(() => {
+                // El mismo criterio que la grilla del paso 1: si el descuento
+                // por pago total está corriendo, el tachado es el precio de
+                // lista —que es lo que paga quien seña parcial, un número
+                // real—; si no, el tachado es el de referencia de la promo de
+                // calendario. Nunca los dos, porque dos precios tachados en la
+                // misma línea no se leen.
+                const tachado =
+                  cotizacion.total_lista > cotizacion.total
+                    ? cotizacion.total_lista
+                    : cotizacion.total_referencia &&
+                        cotizacion.total_referencia > cotizacion.total
+                      ? cotizacion.total_referencia
+                      : null;
+                return tachado ? (
                   <p className="text-xs text-muted-foreground line-through">
-                    {pesos(cotizacion.total_referencia)}
+                    {pesos(tachado)}
                   </p>
-                )}
+                ) : null;
+              })()}
               <p className="text-xl font-bold leading-tight text-[#1B3F6B]">
                 {pesos(cotizacion.total)}
               </p>
             </div>
           </div>
+
+          {/* Promoción de calendario: si el precio de estos días es promocional,
+              se dice cuál. Un total más bajo sin explicación se lee como un
+              error de la web, no como una oferta. */}
+          {cotizacion.tiene_promocion && cotizacion.promociones.length > 0 && (
+            <p className="text-xs font-semibold text-[hsl(var(--ubicar-green))]">
+              {cotizacion.promociones.join(" · ")}
+            </p>
+          )}
+
+          {/* El descuento que existe y todavía no está aprovechando. Va acá,
+              en la columna que acompaña todo el flujo, y no sólo en el paso 4:
+              enterarse de que pagando el total se ahorra plata recién en el
+              checkout llega tarde. **En pesos**, que es como se decide. */}
+          {cotizacion.descuento_monto === 0 && ahorroPagandoTodo > 0 && (
+            <p className="rounded border border-[hsl(var(--ubicar-green))]/30 bg-[hsl(var(--ubicar-green))]/5 px-2.5 py-2 text-xs text-muted-foreground">
+              Pagando el 100% por adelantado{" "}
+              <strong className="text-[hsl(var(--ubicar-green))]">
+                ahorrás {pesos(ahorroPagandoTodo)}
+              </strong>{" "}
+              — te queda en {pesos(pagoTotal?.total)}.
+            </p>
+          )}
 
           <p className="text-xs text-muted-foreground">
             Impuestos incluidos. El combustible y los peajes van por tu cuenta.

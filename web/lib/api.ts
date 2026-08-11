@@ -17,6 +17,7 @@ import type {
   ContratoParaFirmar,
   Cotizacion,
   Hold,
+  ReservaPorTransferencia,
   RespuestaDisponibilidad,
 } from "./types";
 
@@ -78,6 +79,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 /** URL pública de una foto guardada en el storage del backend. */
 export function urlFoto(key: string | null): string | null {
   return key ? `${ORIGEN}/static/${key.replace(/^\//, "")}` : null;
+}
+
+/**
+ * El cuerpo del paso 4, igual para los dos caminos de pago.
+ *
+ * **No lleva precio.** El total se recalcula en el servidor: es un endpoint
+ * público y el monto a cobrar es justamente lo que alguien querría manipular
+ * desde el navegador.
+ */
+export interface ReservaWebBody {
+  hold_token: string;
+  nombre: string;
+  email: string;
+  telefono: string;
+  dni: string;
+  lugar_entrega: string;
+  lugar_devolucion?: string;
+  porcentaje_anticipo: number;
+  adicionales: { adicional_id: number; cantidad: number }[];
+  fecha_nacimiento?: string | null;
+  notas?: string;
+  /** Para el comprobante. No cambia el precio: los precios ya son finales con
+   *  IVA incluido. Ver `Cliente.condicion_iva` en el backend. */
+  condicion_iva?: CondicionIva | null;
+  razon_social?: string | null;
 }
 
 // ─── Endpoints ───────────────────────────────────────────────────────────────
@@ -174,8 +200,14 @@ export const api = {
     /** La declarada en el Hero. Sostiene el precio en los pasos 2 y 3, antes
      *  de que exista la fecha de nacimiento. Cuando esa llega, manda ella. */
     edad?: number | null;
-    /** Cuánto adelanta. **Cambia el total**: el descuento por duración sólo
-     *  corre pagando el 100%. Va en `null` mientras no lo haya elegido. */
+    /**
+     * Cuánto adelanta. **Cambia el total**: el descuento por duración sólo
+     * corre pagando el 100%. Va en `null` mientras no lo haya elegido.
+     *
+     * Mándelo o no, la respuesta trae **los dos escenarios** (`total_lista`,
+     * `pago_total` y `anticipos`): esto sólo elige cuál de los dos viene
+     * desglosado línea por línea en el cuerpo de la cotización.
+     */
     porcentaje_anticipo?: number | null;
   }) => request<Cotizacion>("/public/cotizar", { method: "POST", body: JSON.stringify(body) }),
 
@@ -190,24 +222,24 @@ export const api = {
    * al volver del checkout: el cliente puede cerrar la pestaña y el pago
    * igual entra.
    */
-  crearReserva: (body: {
-    hold_token: string;
-    nombre: string;
-    email: string;
-    telefono: string;
-    dni: string;
-    lugar_entrega: string;
-    lugar_devolucion?: string;
-    porcentaje_anticipo: number;
-    adicionales: { adicional_id: number; cantidad: number }[];
-    fecha_nacimiento?: string | null;
-    notas?: string;
-    /** Para el comprobante. No cambia el precio: los precios ya son finales
-     *  con IVA incluido. Ver `Cliente.condicion_iva` en el backend. */
-    condicion_iva?: CondicionIva | null;
-    razon_social?: string | null;
-  }) =>
+  crearReserva: (body: ReservaWebBody) =>
     request<CheckoutIniciado>("/public/reservas", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /**
+   * La misma reserva, a pagar por **transferencia bancaria**.
+   *
+   * Mismo hold y mismo recálculo de precio del lado del servidor que el
+   * checkout de Mercado Pago, con una diferencia de fondo: **acá no hay
+   * webhook**. La reserva queda en `pendiente_pago` y no se confirma sola —
+   * el cliente manda el comprobante por WhatsApp y alguien del equipo lo
+   * concilia contra el extracto. Por eso la respuesta trae los datos de la
+   * cuenta y el WhatsApp: sin eso el cliente no sabe qué hacer después.
+   */
+  crearReservaTransferencia: (body: ReservaWebBody) =>
+    request<ReservaPorTransferencia>("/public/reservas/transferencia", {
       method: "POST",
       body: JSON.stringify(body),
     }),

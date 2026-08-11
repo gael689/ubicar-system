@@ -544,3 +544,113 @@ class TestDescuentoPorDuracionSoloConPagoTotal:
         como mejora al elegir el pago total. Al revés, el precio subiría al
         elegir pagar menos y se leería como un recargo escondido."""
         assert not aplica_descuento_por_duracion("web", None)
+
+
+# ─── Los tres montos del paso 4 ───────────────────────────────────────────────
+
+class TestLosTresMontosDelPaso4:
+    """
+    Las tarjetas de 30 / 50 / 100% del checkout web, con el caso que las rompió.
+
+    **Cada opción sale de un precio distinto**: con seña parcial se cobra el
+    precio de lista y con el 100% corre el descuento por duración (D-49). El
+    front estimaba las tres multiplicando un solo total, así que la del 100%
+    mostraba el precio **sin** descuento —$172.500 en vez de $146.625— y el
+    cliente no veía los $25.875 que se ahorraba justo en la opción que más le
+    convenía. Sólo bajaba al tocarla, cuando ya había decidido.
+
+    Acá se fija la composición que hace `POST /public/cotizar`: dos pasadas por
+    `cotizar` (una por escenario) y `calcular_anticipo` sobre cada una. Son las
+    mismas dos funciones puras que usa `PagoWebService` para decidir cuánto se
+    cobra de verdad, así que si esto pasa, el botón muestra el monto que va a
+    la pasarela.
+    """
+
+    # 9 días a $172.500 en total. Los precios diarios vienen como lista porque
+    # es lo que devuelve `cotizar_por_bandas` desde D-35: el precio de un día
+    # depende del bloque al que pertenece.
+    PRECIOS_DIA = [Decimal("19166.67")] * 8 + [Decimal("19166.64")]
+    INICIO = date(2026, 9, 1)
+    FIN = date(2026, 9, 10)          # 9 días: el de devolución no se cobra
+
+    def _cotizar(self, anticipo):
+        return cotizar(
+            self.INICIO, self.FIN, [],
+            precio_fallback=self.PRECIOS_DIA,
+            descuentos=ESCALERA,
+            canal="web",
+            porcentaje_anticipo=anticipo,
+        )
+
+    def test_el_caso_de_9_dias(self):
+        """
+        Nueve días caen en el escalón de 7 a 15 (−15%). Los tres montos que
+        tiene que mostrar la pantalla, al peso.
+        """
+        from app.domain.pagos_web import calcular_anticipo
+
+        lista = self._cotizar(30)
+        c100 = self._cotizar(100)
+
+        assert lista.duracion_dias == 9
+        assert lista.total == Decimal("172500.00")
+        assert lista.descuento_monto == Decimal("0.00")
+
+        assert c100.descuento_porcentaje == Decimal("15")
+        assert c100.descuento_nombre == "7 a 15 días"
+        assert c100.total == Decimal("146625.00")
+
+        montos = {
+            p: calcular_anticipo(c100.total if p == 100 else lista.total, p)
+            for p in (30, 50, 100)
+        }
+        assert montos[30].monto_a_cobrar == Decimal("51750.00")
+        assert montos[50].monto_a_cobrar == Decimal("86250.00")
+        # Lo que estaba mal: acá salía 172.500, el total sin descuento.
+        assert montos[100].monto_a_cobrar == Decimal("146625.00")
+
+        # Y el número que hace cambiar de opción, en plata.
+        assert lista.total - montos[100].total_final == Decimal("25875.00")
+
+    def test_la_sena_parcial_deja_saldo_y_el_pago_total_no(self):
+        from app.domain.pagos_web import calcular_anticipo
+
+        lista = self._cotizar(30)
+        c100 = self._cotizar(100)
+
+        assert calcular_anticipo(lista.total, 30).saldo == Decimal("120750.00")
+        assert calcular_anticipo(lista.total, 50).saldo == Decimal("86250.00")
+        assert calcular_anticipo(c100.total, 100).saldo == Decimal("0.00")
+
+    def test_el_descuento_por_pago_total_se_apila_sobre_el_de_duracion(self):
+        """
+        D-30 (palanca de `configuracion`) va **arriba** de D-43, no en su lugar.
+        Con 5%: 146.625 − 7.331,25 = 139.293,75, y el ahorro contra la seña
+        parcial pasa de 25.875 a 33.206,25.
+        """
+        from app.domain.pagos_web import calcular_anticipo
+
+        lista = self._cotizar(30)
+        a = calcular_anticipo(self._cotizar(100).total, 100, Decimal("5"))
+
+        assert a.descuento == Decimal("7331.25")
+        assert a.total_final == Decimal("139293.75")
+        assert lista.total - a.total_final == Decimal("33206.25")
+
+    def test_sin_escalon_no_hay_dos_escenarios(self):
+        """
+        Dos días no llegan al primer escalón: pagar todo no cambia el precio.
+        La pantalla no puede prometer un ahorro que no existe.
+        """
+        from app.domain.pagos_web import calcular_anticipo
+
+        corto = dict(precio_fallback=Decimal("100000"), descuentos=ESCALERA,
+                     canal="web")
+        lista = cotizar(date(2026, 9, 1), date(2026, 9, 3), [],
+                        porcentaje_anticipo=30, **corto)
+        c100 = cotizar(date(2026, 9, 1), date(2026, 9, 3), [],
+                       porcentaje_anticipo=100, **corto)
+
+        assert c100.descuento_monto == Decimal("0.00")
+        assert c100.total == lista.total == Decimal("200000.00")
+        assert lista.total - calcular_anticipo(c100.total, 100).total_final == 0

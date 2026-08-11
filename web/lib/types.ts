@@ -32,6 +32,25 @@ export interface ConfigPublica {
    * nunca a cambiarlas.
    */
   escalones_duracion: EscalonDuracion[];
+  /**
+   * La cuenta a la que el cliente transfiere, o `null` si no está habilitada.
+   *
+   * **Sale de `configuracion`, no del código de la web.** Un CBU pisado en el
+   * front es un CBU que un día cambia y nadie corrige, y el síntoma es la
+   * plata de un cliente yendo a una cuenta que ya no existe.
+   */
+  transferencia: DatosTransferencia | null;
+}
+
+export interface DatosTransferencia {
+  titular: string;
+  alias: string;
+  cbu: string;
+  cuenta: string;
+  cuit: string;
+  /** WhatsApp al que mandar el comprobante. Sin comprobante nadie concilia
+   *  la transferencia y la reserva no se confirma. */
+  whatsapp_comprobante: string;
 }
 
 export interface EscalonDuracion {
@@ -84,6 +103,25 @@ export interface CheckoutIniciado {
   total: number;
   descuento: number;
   saldo: number;
+}
+
+/**
+ * Lo que devuelve `POST /public/reservas/transferencia`.
+ *
+ * **La reserva no queda confirmada.** Acá no hay webhook: nadie le avisa al
+ * sistema que la plata llegó, así que alguien del equipo concilia el
+ * comprobante contra el extracto y recién ahí la confirma. Por eso la
+ * respuesta trae los datos de la cuenta y el WhatsApp al que mandar el
+ * comprobante: el cliente tiene que salir sabiendo **qué hacer**.
+ */
+export interface ReservaPorTransferencia {
+  reserva_id: number;
+  numero: string;
+  monto_a_transferir: number;
+  total: number;
+  saldo: number;
+  porcentaje_anticipo: number;
+  banco: DatosTransferencia;
 }
 
 export interface PrecioCategoria {
@@ -193,11 +231,51 @@ export interface Cotizacion {
   adicionales: AdicionalCotizado[];
   total_adicionales: number;
   recargo_edad: { id: number; nombre: string; edad: number; monto: number } | null;
+  /** El total del escenario pedido: con descuento por duración si se mandó
+   *  `porcentaje_anticipo: 100`, y de lista en cualquier otro caso. */
   total: number;
   precio_dia_promedio: number;
   total_referencia: number | null;
   tiene_promocion: boolean;
   promociones: string[];
+  /**
+   * Lo que sale el alquiler señando parcial — el precio de lista, sin el
+   * descuento por duración. Es la base de los montos del 30% y el 50%, y el
+   * número que va tachado cuando el cliente elige pagar todo.
+   */
+  total_lista: number;
+  /** El mismo alquiler pagando el 100% (D-49). `null` si no hay descuento por
+   *  duración para esta duración. Misma forma que `precio.pago_total`. */
+  pago_total: CotizacionPagoTotal | null;
+  /**
+   * Los tres botones del paso 4, ya resueltos por el backend.
+   *
+   * **Los montos no se estiman en el navegador.** Salen de `calcular_anticipo`,
+   * la misma función que después decide cuánto se le cobra de verdad al
+   * cliente: el botón muestra el monto exacto que va a la pasarela.
+   */
+  anticipos: OpcionAnticipo[];
+}
+
+export interface CotizacionPagoTotal {
+  total: number;
+  descuento_monto: number;
+  descuento_porcentaje: number;
+  descuento_nombre: string | null;
+}
+
+export interface OpcionAnticipo {
+  porcentaje: number;
+  /** Lo que termina saliendo el alquiler completo con esta opción. */
+  total: number;
+  /** Lo que se paga ahora. */
+  monto_a_cobrar: number;
+  /** Lo que queda para el mostrador, al retirar el vehículo. */
+  saldo: number;
+  /** D-30: descuento extra por pagar todo hoy, arriba del de duración. */
+  descuento_pago_total: number;
+  /** Cuánta plata se ahorra respecto de señar parcial. 0 en el 30% y el 50%. */
+  ahorro: number;
 }
 
 /** Lo que el usuario va armando a lo largo de los 4 pasos. */
