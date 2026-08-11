@@ -15,13 +15,28 @@ export function useClientesConPagoPendiente() {
   });
 }
 
-export function useCuentasCorrientes() {
+/**
+ * Las cuentas corrientes, con búsqueda por cliente.
+ *
+ * `q` busca por **nombre, razón social, DNI y CUIT** a la vez. Es lo que hace
+ * falta en el mostrador: nadie recuerda el número de cuenta de nadie — se
+ * tiene el apellido, o el DNI que el cliente está dictando por teléfono.
+ * El backend ignora puntos y guiones, así que el mismo CUIT encuentra escrito
+ * de las dos formas.
+ */
+export function useCuentasCorrientes(q?: string) {
+  const termino = (q ?? '').trim();
   return useQuery({
-    queryKey: [KEY],
+    queryKey: [KEY, termino],
     queryFn: async () => {
-      const res = await api.get<{ data: CuentaCorriente[] }>('/cuentas-corrientes');
+      const res = await api.get<{ data: CuentaCorriente[] }>('/cuentas-corrientes', {
+        params: termino ? { q: termino } : undefined,
+      });
       return res.data.data;
     },
+    // Mantiene la lista anterior mientras llega la nueva: sin esto la tabla
+    // parpadea en vacío con cada tecla y se lee como que no hay resultados.
+    placeholderData: (previa) => previa,
   });
 }
 

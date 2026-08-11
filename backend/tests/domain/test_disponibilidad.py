@@ -273,6 +273,7 @@ class TestHoldsOcupanCupo:
 # ─── Ventana de rotación (el auto que vuelve ese mismo día) ───────────────────
 
 from app.domain.disponibilidad import (  # noqa: E402
+    con_preparacion,
     proponer_entrega_por_rotacion,
 )
 
@@ -441,3 +442,117 @@ class TestVentanaDeRotacion:
         )
         assert p is not None
         assert calcular_cupo(9, p.entrega, PEDIDO_FIN, FLOTA_UNICA, ocupaciones).hay_cupo
+
+
+class TestPreparacionDelAutoQueVuelve:
+    """
+    Un auto que vuelve no está listo en el mismo instante en que entra.
+
+    **Lo que se vendía mal**: `solapa()` trata los rangos adyacentes como
+    compatibles —y hace bien, es la regla del calendario—, así que una unidad
+    devuelta a las 10:00 figuraba libre para entregar a las 10:00. El sitio la
+    vendía sin un minuto para limpiarla y el problema aparecía en el mostrador,
+    con el cliente enfrente.
+    """
+
+    OCUPADA_HASTA_LAS_10 = [
+        reserva(datetime(2026, 9, 1, 10, 0), datetime(2026, 9, 3, 10, 0))
+    ]
+
+    def test_sin_preparacion_el_auto_figuraba_libre_al_instante(self):
+        """El comportamiento viejo, para que se vea qué cambia."""
+        c = calcular_cupo(
+            9, datetime(2026, 9, 3, 10, 0), PEDIDO_FIN,
+            FLOTA_UNICA, self.OCUPADA_HASTA_LAS_10,
+        )
+        assert c.hay_cupo
+
+    def test_con_preparacion_no_se_entrega_a_la_hora_que_vuelve(self):
+        c = calcular_cupo(
+            9, datetime(2026, 9, 3, 10, 0), PEDIDO_FIN, FLOTA_UNICA,
+            con_preparacion(self.OCUPADA_HASTA_LAS_10, 2),
+        )
+        assert not c.hay_cupo
+
+    def test_pasado_el_margen_vuelve_a_estar_libre(self):
+        c = calcular_cupo(
+            9, datetime(2026, 9, 3, 12, 0), PEDIDO_FIN, FLOTA_UNICA,
+            con_preparacion(self.OCUPADA_HASTA_LAS_10, 2),
+        )
+        assert c.hay_cupo
+
+    def test_pedir_a_la_misma_hora_que_vuelve_ofrece_la_ventana(self):
+        """
+        El caso del que salió la regla: pide 10:00, el auto vuelve 10:00. No es
+        "sin disponibilidad" ni es entregarlo sucio a las 10 — es a las 12.
+        """
+        p = proponer_entrega_por_rotacion(
+            9, datetime(2026, 9, 3, 10, 0), PEDIDO_FIN,
+            FLOTA_UNICA, self.OCUPADA_HASTA_LAS_10,
+        )
+        assert p is not None
+        assert p.entrega == datetime(2026, 9, 3, 12, 0)
+        assert p.devolucion_unidad == datetime(2026, 9, 3, 10, 0)
+
+    def test_pedir_despues_del_margen_se_alquila_normal(self):
+        """
+        Pide 14:00 y el auto vuelve 10:00: a las 14 ya está listo. No se toca
+        nada — el cliente retira a la hora que pidió.
+        """
+        p = proponer_entrega_por_rotacion(
+            9, datetime(2026, 9, 3, 14, 0), PEDIDO_FIN,
+            FLOTA_UNICA, self.OCUPADA_HASTA_LAS_10,
+        )
+        assert p is None
+        assert calcular_cupo(
+            9, datetime(2026, 9, 3, 14, 0), PEDIDO_FIN, FLOTA_UNICA,
+            con_preparacion(self.OCUPADA_HASTA_LAS_10, 2),
+        ).hay_cupo
+
+    def test_justo_en_el_limite_del_margen_ya_esta_listo(self):
+        """Vuelve 10:00, pide 12:00: adyacente a la preparación, se entrega."""
+        p = proponer_entrega_por_rotacion(
+            9, datetime(2026, 9, 3, 12, 0), PEDIDO_FIN,
+            FLOTA_UNICA, self.OCUPADA_HASTA_LAS_10,
+        )
+        assert p is None
+
+    def test_el_bloqueo_no_necesita_preparacion(self):
+        """Un auto que sale del taller ya viene revisado."""
+        bloqueo = OcupacionCategoria(
+            inicio=datetime(2026, 9, 1, 0, 0), fin=datetime(2026, 9, 3, 10, 0),
+            vehiculo_id=90, origen="bloqueo",
+        )
+        assert con_preparacion([bloqueo], 2) == [bloqueo]
+
+    def test_el_hold_no_necesita_preparacion(self):
+        """Un hold que vence libera el cupo solo; no hay auto que limpiar."""
+        hold = OcupacionCategoria(
+            inicio=datetime(2026, 9, 1, 0, 0), fin=datetime(2026, 9, 3, 10, 0),
+            categoria_id=9, origen="hold",
+        )
+        assert con_preparacion([hold], 2) == [hold]
+
+    def test_margen_cero_no_cambia_nada(self):
+        """Para apagar la preparación sin tocar código."""
+        assert con_preparacion(self.OCUPADA_HASTA_LAS_10, 0) == self.OCUPADA_HASTA_LAS_10
+
+    def test_lo_que_se_ofrece_es_lo_que_despues_hay(self):
+        """
+        La invariante que conecta las dos puntas: el horario propuesto tiene
+        cupo **con la preparación contada**, que es como lo va a medir el
+        `HoldService`. Si no, la web ofrecería un horario que el hold rechaza.
+        """
+        for pedido in (
+            datetime(2026, 9, 3, 8, 0),
+            datetime(2026, 9, 3, 10, 0),
+            datetime(2026, 9, 3, 11, 59),
+        ):
+            p = proponer_entrega_por_rotacion(
+                9, pedido, PEDIDO_FIN, FLOTA_UNICA, self.OCUPADA_HASTA_LAS_10,
+            )
+            assert p is not None, pedido
+            assert calcular_cupo(
+                9, p.entrega, PEDIDO_FIN, FLOTA_UNICA,
+                con_preparacion(self.OCUPADA_HASTA_LAS_10, 2),
+            ).hay_cupo, pedido

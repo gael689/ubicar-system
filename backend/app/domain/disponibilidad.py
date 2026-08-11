@@ -143,27 +143,73 @@ def calcular_cupos(
     ]
 
 
-# ─── Ventana de rotación: el auto que vuelve ese mismo día ───────────────────
+# ─── Preparación y ventana de rotación ───────────────────────────────────────
 #
-# El caso concreto: la única unidad de la categoría se devuelve a las 10:00 y el
-# cliente la pide a las 08:00 del mismo día. Hoy eso es "sin disponibilidad" y
-# la venta se pierde, cuando en realidad el auto **está**: falta limpiarlo y
-# revisarlo. Con dos horas de margen se entrega a las 12:00 y el alquiler sale.
+# **Un auto que vuelve no está listo en el mismo instante en que entra.** Hay
+# que limpiarlo, cargarlo y revisarlo, y eso lleva un par de horas.
 #
-# Tres condiciones, y las tres importan:
+# Esto arregla dos cosas que son la misma:
+#
+# 1. **Lo que se vendía mal.** `solapa()` trata los rangos adyacentes como
+#    compatibles —y hace bien, es la regla de siempre para el calendario—, así
+#    que un auto que se devuelve a las 10:00 figuraba libre para entregar a las
+#    10:00. El sitio lo vendía sin un minuto para prepararlo, y el problema
+#    aparecía en el mostrador con el cliente parado enfrente.
+# 2. **Lo que se perdía por nada.** Con la preparación contada, ese mismo auto
+#    pedido a las 08:00 da "sin disponibilidad" — cuando en realidad **está**,
+#    sólo que a partir de las 12:00. En una flota donde varias categorías
+#    tienen una sola unidad, ese es el caso más común, no el raro.
+#
+# La preparación se modela como parte de la ocupación (`con_preparacion`), no
+# como un caso especial del que ofrece la ventana: así el cupo que se muestra,
+# el que valida el hold y el que decide la propuesta son **el mismo número**.
+# Si la ventana lo tuviera en cuenta y el cupo no, el sitio ofrecería un
+# horario que después el hold rechaza.
+#
+# Condiciones de la propuesta, las tres necesarias:
 #
 # 1. **Sólo si no queda ninguna unidad libre.** Si hay cupo se alquila normal,
 #    a la hora que el cliente pidió. Correrle el horario a alguien que podía
 #    retirar a las 8 sería empeorarle la reserva por nada.
 # 2. **Sólo si la unidad vuelve ese mismo día.** Mover el retiro al día
 #    siguiente no es la misma reserva: son días distintos y otro precio.
-# 3. **Sólo reservas.** Un bloqueo que termina es un auto que sale del taller y
-#    un hold que vence es un cupo que se libera solo, ninguno de los dos es un
-#    auto que hay que preparar. Además los bloqueos terminan a medianoche, así
-#    que ofrecerían una entrega a las 02:00.
+# 3. **Sólo reservas.** Un bloqueo que termina es un auto que sale del taller
+#    —ya viene revisado— y un hold que vence es un cupo que se libera solo, sin
+#    auto que preparar. Además los bloqueos terminan a medianoche, así que
+#    sumarles el margen ofrecería una entrega a las 02:00.
 
 MARGEN_ROTACION_HORAS = 2
 REDONDEO_ENTREGA_MINUTOS = 30
+
+
+def con_preparacion(
+    ocupaciones: list[OcupacionCategoria],
+    margen_horas: float = MARGEN_ROTACION_HORAS,
+) -> list[OcupacionCategoria]:
+    """
+    Las mismas ocupaciones, con la preparación de cada auto que vuelve incluida.
+
+    Una reserva que termina a las 10:00 deja el auto ocupado hasta las 12:00:
+    no es que el cliente lo tenga, es que el auto no está en condiciones de
+    salir. Para el cupo son lo mismo, y por eso conviene que sean una sola
+    cosa.
+
+    Sólo se estiran las reservas — ver la condición 3 de arriba.
+    """
+    if margen_horas <= 0:
+        return ocupaciones
+    margen = timedelta(hours=margen_horas)
+    return [
+        OcupacionCategoria(
+            inicio=o.inicio,
+            fin=o.fin + margen,
+            categoria_id=o.categoria_id,
+            vehiculo_id=o.vehiculo_id,
+            origen=o.origen,
+        )
+        if o.origen == "reserva" else o
+        for o in ocupaciones
+    ]
 
 
 @dataclass(frozen=True)
@@ -214,19 +260,26 @@ def proponer_entrega_por_rotacion(
     las 10, entonces a las 12 está libre", se estaría ignorando que esa misma
     unidad puede tener otra reserva encima a las 14 — y se prometería un auto
     que no está.
+
+    Ojo con una asimetría necesaria: el cupo se mide contra las ocupaciones
+    **con la preparación adentro**, pero el candidato es la devolución **real**.
+    Es lo que permite que "pide 10:00 y el auto vuelve 10:00" ofrezca las 12:00
+    en vez de no ofrecer nada: para el cupo el auto está ocupado hasta las
+    12:00, y para el cliente el motivo es que vuelve a las 10:00.
     """
+    preparadas = con_preparacion(ocupaciones, margen_horas)
+
     # Condición 1: si hay cupo, no hay nada que ofrecer. Se alquila normal.
-    if calcular_cupo(categoria_id, inicio, fin, vehiculos, ocupaciones).hay_cupo:
+    if calcular_cupo(categoria_id, inicio, fin, vehiculos, preparadas).hay_cupo:
         return None
 
     ids_categoria = {v.id for v in vehiculos if v.categoria_id == categoria_id}
+    margen = timedelta(hours=margen_horas)
 
     candidatas: list[datetime] = []
     for o in ocupaciones:
         # Condición 3: sólo un auto que un cliente devuelve.
         if o.origen != "reserva":
-            continue
-        if not solapa(inicio, fin, o.inicio, o.fin):
             continue
         # Que la ocupación sea de esta categoría: con vehículo asignado, que el
         # auto lo sea; sin asignar, que la reserva lo sea.
@@ -235,21 +288,20 @@ def proponer_entrega_por_rotacion(
                 continue
         elif o.categoria_id != categoria_id:
             continue
-        # Condición 2: vuelve ese mismo día, y después de la hora pedida (si
-        # volviera antes no sería esta unidad la que traba el alquiler).
-        if o.fin <= inicio or o.fin.date() != inicio.date():
+        # Condición 2: vuelve ese mismo día. Y que sea **esta** unidad la que
+        # traba el retiro: si ya estuviera lista y limpia a la hora pedida, no
+        # es la que hay que esperar.
+        if o.fin + margen <= inicio or o.fin.date() != inicio.date():
             continue
         candidatas.append(o.fin)
 
     for devolucion in sorted(set(candidatas)):
-        entrega = _redondear_arriba(
-            devolucion + timedelta(hours=margen_horas), redondeo_minutos
-        )
+        entrega = _redondear_arriba(devolucion + margen, redondeo_minutos)
         # El margen no puede empujar la entrega al día siguiente ni pasarse de
         # la devolución del propio cliente.
         if entrega.date() != inicio.date() or entrega >= fin:
             continue
-        if calcular_cupo(categoria_id, entrega, fin, vehiculos, ocupaciones).hay_cupo:
+        if calcular_cupo(categoria_id, entrega, fin, vehiculos, preparadas).hay_cupo:
             return EntregaPorRotacion(
                 entrega=entrega,
                 devolucion_unidad=devolucion,

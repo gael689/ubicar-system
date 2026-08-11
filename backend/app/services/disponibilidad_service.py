@@ -21,6 +21,7 @@ from app.domain.disponibilidad import (
     OcupacionCategoria,
     VehiculoDisponible,
     calcular_cupos,
+    con_preparacion,
     proponer_entrega_por_rotacion,
 )
 from app.domain.recargo_edad import vista_con_recargo_incluido
@@ -200,16 +201,31 @@ class DisponibilidadService:
 
         flota = self._cargar_flota()
         ocupaciones = self._cargar_ocupaciones(fecha_inicio, fecha_fin, excluir_hold_token)
+
+        # **Un auto que vuelve no está listo en el mismo instante.** Los rangos
+        # adyacentes no solapan —regla de siempre del calendario—, así que sin
+        # esto una unidad devuelta a las 10:00 figuraba libre para entregar a
+        # las 10:00, y el sitio la vendía sin un minuto para limpiarla. El
+        # problema aparecía en el mostrador, con el cliente enfrente.
+        #
+        # Se aplica acá, en el único lugar del que cuelgan los tres caminos de
+        # venta web (la grilla, el hold y la re-verificación del webhook), para
+        # que **el cupo que se muestra sea el mismo que después se acepta**.
+        # El mostrador no pasa por acá: `ReservaService` usa
+        # `domain/solapamientos`, así que quien sabe lo que hace puede seguir
+        # cargando una entrega pegada a una devolución.
+        margen_rotacion = self._margen_rotacion()
+        ocupadas = con_preparacion(ocupaciones, margen_rotacion)
+
         cupos = {
             c.categoria_id: c
             for c in calcular_cupos(
-                inicio_dt, fin_dt, flota, ocupaciones,
+                inicio_dt, fin_dt, flota, ocupadas,
                 categoria_ids=[c.id for c in categorias],
             )
         }
 
         precio_service = PrecioService(self.db)
-        margen_rotacion = self._margen_rotacion()
         resultado = []
         for cat in categorias:
             cupo: CupoCategoria = cupos[cat.id]
@@ -220,6 +236,11 @@ class DisponibilidadService:
             # esto ni se pregunta, así que no cuesta nada en el caso normal.
             rotacion = None
             if not cupo.hay_cupo:
+                # Las ocupaciones **sin preparar**: el motor la suma él mismo, y
+                # necesita la devolución real para poder explicarle al cliente
+                # de dónde sale el horario. Pasarle `ocupadas` contaría el
+                # margen dos veces y ofrecería las 14:00 por un auto que vuelve
+                # a las 10:00.
                 propuesta = proponer_entrega_por_rotacion(
                     cat.id, inicio_dt, fin_dt, flota, ocupaciones,
                     margen_horas=margen_rotacion,
@@ -364,13 +385,20 @@ class DisponibilidadService:
 
         Es lo que necesita la bandeja de reservas web para **sugerir** qué
         vehículo asignar al aceptar una reserva que vino sin auto.
+
+        Cuenta la preparación igual que `consultar`: sugerir un auto que se
+        devuelve a la misma hora en que hay que entregarlo es sugerir el que no
+        va a estar listo.
         """
         inicio_dt = datetime.combine(fecha_inicio, hora_inicio)
         fin_dt = datetime.combine(fecha_fin, hora_fin)
         cupos = calcular_cupos(
             inicio_dt, fin_dt,
             self._cargar_flota(),
-            self._cargar_ocupaciones(fecha_inicio, fecha_fin),
+            con_preparacion(
+                self._cargar_ocupaciones(fecha_inicio, fecha_fin),
+                self._margen_rotacion(),
+            ),
             categoria_ids=[categoria_id],
         )
         return cupos[0].vehiculos_libres if cupos else []

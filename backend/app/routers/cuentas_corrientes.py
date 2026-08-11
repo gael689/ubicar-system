@@ -1,7 +1,8 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_current_user
@@ -118,11 +119,53 @@ def list_clientes_con_pago_pendiente(
 
 @router.get("")
 def list_cuentas(
+    q: str | None = Query(
+        None,
+        description="Busca por nombre, razon social, DNI o CUIT del cliente",
+    ),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    ccs = db.query(CuentaCorriente).all()
-    return ok([_cc_response(cc, db) for cc in ccs])
+    """
+    Las cuentas corrientes, con su saldo.
+
+    **`q` busca por el cliente, no por la cuenta**, y es lo que se necesita en
+    el mostrador: nadie recuerda el numero de cuenta corriente de nadie: se
+    tiene el apellido, o el DNI que el cliente esta dictando por telefono, o el
+    CUIT que figura en una factura.
+
+    Se busca en los tres campos a la vez y sin distinguir mayusculas. El DNI y
+    el CUIT comparten columna (`dni_cuit`), asi que **tambien se ignoran los
+    puntos y los guiones**: el mismo CUIT se escribe `30-71756601-3` en un
+    papel y `30716016013` en otro, y obligar a acertar el formato es garantizar
+    que la busqueda falle justo cuando hay alguien esperando.
+    """
+    consulta = db.query(CuentaCorriente)
+
+    termino = (q or "").strip()
+    if termino:
+        patron = f"%{termino.lower()}%"
+        # Solo digitos, para que un CUIT con separadores encuentre al mismo
+        # cliente cargado sin ellos, y al reves.
+        digitos = "".join(c for c in termino if c.isdigit())
+
+        condiciones = [
+            func.lower(Cliente.nombre_completo).like(patron),
+            func.lower(func.coalesce(Cliente.razon_social, "")).like(patron),
+            func.lower(Cliente.dni_cuit).like(patron),
+        ]
+        if digitos:
+            condiciones.append(
+                func.replace(
+                    func.replace(Cliente.dni_cuit, "-", ""), ".", ""
+                ).like(f"%{digitos}%")
+            )
+
+        consulta = consulta.join(
+            Cliente, Cliente.id == CuentaCorriente.cliente_id
+        ).filter(or_(*condiciones))
+
+    return ok([_cc_response(cc, db) for cc in consulta.all()])
 
 
 @router.get("/cliente/{cliente_id}")
