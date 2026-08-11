@@ -21,7 +21,16 @@ from reportlab.lib.units import mm
 from reportlab.lib.colors import HexColor, white
 from reportlab.pdfgen import canvas
 
-_LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
+# **El logo va en blanco, no el de siempre.** El de siempre es tinta azul
+# oscura sobre transparente, y acá se dibuja encima de la banda de marca, que
+# también es oscura: el resultado era un logo que no se veía. Es la misma
+# imagen con los píxeles visibles pasados a blanco, conservando el canal alfa
+# para que los bordes sigan suaves.
+#
+# Los otros dos PDF —recibo y contrato— dibujan sobre fondo blanco, así que
+# **ahí el logo oscuro es el correcto** y no hay que tocarlos.
+_LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "logo_blanco.png"
+_LOGO_FALLBACK = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
 
 # Paleta corporativa de Ubicar (misma que --primary en el frontend).
 _BRAND = HexColor("#407EC9")
@@ -97,9 +106,10 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     c.setFillColor(_BRAND)
     c.rect(0, height - banda_h, width, banda_h, stroke=0, fill=1)
 
-    if _LOGO_PATH.exists():
+    logo = _LOGO_PATH if _LOGO_PATH.exists() else _LOGO_FALLBACK
+    if logo.exists():
         c.drawImage(
-            str(_LOGO_PATH), margin, height - banda_h + 8 * mm,
+            str(logo), margin, height - banda_h + 8 * mm,
             width=38 * mm, height=18 * mm,
             preserveAspectRatio=True, mask="auto",
         )
