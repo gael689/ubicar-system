@@ -96,6 +96,29 @@ export function ReservasList() {
     loadReservas().catch(() => {});
   }, [loadReservas]);
 
+  /**
+   * Recargar al volver a la pestaña.
+   *
+   * El caso real es el contrato: se le manda el link al cliente, firma **desde
+   * el teléfono**, y en la computadora el listado sigue diciendo "Sin firmar"
+   * porque se cargó antes. Nadie sabe que tiene que apretar F5, así que la
+   * pantalla miente hasta que alguien recarga por casualidad.
+   *
+   * Pasa lo mismo con cualquier cambio hecho desde otra máquina: son varios
+   * usando el sistema a la vez.
+   */
+  useEffect(() => {
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') loadReservas().catch(() => {});
+    };
+    window.addEventListener('focus', alVolver);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.removeEventListener('focus', alVolver);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, [loadReservas]);
+
   const [cancelarId, setCancelarId] = useState<number | null>(null);
 
   const handleCancelar = async (motivo: string) => {

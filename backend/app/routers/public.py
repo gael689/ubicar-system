@@ -10,7 +10,9 @@ import logging
 from datetime import date, datetime, time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -777,6 +779,7 @@ def firmar_contrato_por_token(
     token: str,
     payload: FirmarPorLinkRequest,
     request: Request,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """
@@ -815,8 +818,20 @@ def firmar_contrato_por_token(
         codigo = 422 if e.rule in ("faltan_aceptaciones", "falta_firma") else 409
         raise HTTPException(status_code=codigo, detail=_mensaje(e))
 
-    _avisar_contrato_firmado(db, contrato)
+    # **La firma se guarda y se contesta. Los avisos van después.**
+    #
+    # Antes esto corría dentro del request: generar el PDF y mandar dos mails
+    # con el adjunto, con el SDK de Resend que es síncrono y sin timeout. El
+    # cliente veía "Firmando…" **uno o dos minutos** con el dedo todavía en la
+    # pantalla, sin saber si había quedado — que es justo el momento en que
+    # alguien recarga y vuelve a firmar.
+    #
+    # Ahora se responde apenas la firma está en la base, que es lo único que
+    # el cliente necesita saber, y el aviso sale por atrás. Si el mail falla,
+    # queda registrado y se reintenta desde el panel: la firma ya está.
     db.commit()
+    contrato_id = contrato.id
+    background.add_task(_avisar_contrato_firmado_en_segundo_plano, contrato_id)
 
     return ok(
         {"numero": contrato.numero_formateado, "firmado_at": contrato.firmado_at},
@@ -874,6 +889,35 @@ def _ip_del_cliente(request: Request) -> str | None:
     if reenviada:
         return reenviada.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+def _avisar_contrato_firmado_en_segundo_plano(contrato_id: int) -> None:
+    """
+    Los avisos de la firma, ya fuera del request.
+
+    **Abre su propia sesión**: la del endpoint se cierra al devolver la
+    respuesta, así que reusarla acá daría un error de sesión cerrada apenas la
+    tarea corra un milisegundo tarde.
+
+    Envuelto entero en un `try`: esto se ejecuta cuando ya no hay a quién
+    devolverle un error. Lo único que corresponde es dejarlo en el log — el
+    contrato ya está firmado y guardado.
+    """
+    from app.database import SessionLocal
+    from app.models.contrato import Contrato
+
+    db = SessionLocal()
+    try:
+        contrato = db.get(Contrato, contrato_id)
+        if contrato is None:
+            return
+        _avisar_contrato_firmado(db, contrato)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("[Contratos] fallaron los avisos de firma de %s", contrato_id)
+    finally:
+        db.close()
 
 
 def _avisar_contrato_firmado(db: Session, contrato) -> None:

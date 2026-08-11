@@ -55,14 +55,35 @@ async function bakeCssFilter(img: HTMLImageElement): Promise<void> {
 
 export type ExportResult = 'shared' | 'downloaded' | 'cancelled';
 
-// En mobile (donde el navegador soporta compartir archivos), abre directamente
-// la hoja nativa de compartir en vez de descargar a una carpeta. En desktop o
-// navegadores sin soporte, cae automáticamente en la descarga de siempre.
+/**
+ * En el teléfono conviene la hoja de compartir: el PDF va directo al WhatsApp
+ * del cliente sin pasar por una carpeta que después hay que encontrar.
+ *
+ * **En la computadora, no.** Windows soporta `navigator.share` y abre el panel
+ * de compartir del sistema operativo: una ventana ajena al navegador, lenta, y
+ * que para descargar el archivo obliga a dar más vueltas que el botón de
+ * siempre. Ahí lo que se espera es que el PDF baje y listo.
+ *
+ * Se distingue por **puntero grueso sin puntero fino**: es la forma confiable
+ * de preguntar "¿esto se maneja con el dedo?". Mirar el ancho de la pantalla
+ * fallaría con una notebook chica, y mirar el user-agent falla siempre.
+ */
+function esDispositivoTactil(): boolean {
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(pointer: coarse)').matches &&
+    !window.matchMedia('(pointer: fine)').matches
+  );
+}
+
 async function shareOrDownload(pdf: jsPDF, filename: string): Promise<ExportResult> {
   const blob = pdf.output('blob') as Blob;
   const file = new File([blob], filename, { type: 'application/pdf' });
 
-  const canShareFile = typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+  const canShareFile =
+    esDispositivoTactil() &&
+    typeof navigator.canShare === 'function' &&
+    navigator.canShare({ files: [file] });
   if (canShareFile) {
     try {
       await navigator.share({ files: [file], title: filename });
