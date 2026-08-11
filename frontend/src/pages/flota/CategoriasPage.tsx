@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ComoSeArmaElPrecio } from '@/components/precios/ComoSeArmaElPrecio';
+import { EscaleraDuracion } from '@/components/precios/EscaleraDuracion';
 import { useCategorias, useTarifasCategoria, useCreateTarifaCategoria } from '@/hooks/useCategorias';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { TarifaCreate } from '@/hooks/useTarifas';
@@ -15,10 +17,15 @@ const TIPO_LABEL: Record<string, string> = {
   semanal: 'Semanal',
   mensual: 'Mensual',
 };
+
+// D-35: `monto` es el precio del BLOQUE COMPLETO, no el precio por día. Esta
+// pantalla decía lo contrario ("precio por día, no el total de la semana") y
+// era exactamente al revés: quien cargaba ahí un precio por día facturaba una
+// semana entera al precio de un día.
 const TIPO_HINT: Record<string, string> = {
-  diaria: 'Precio por día para alquileres de menos de 7 días',
-  semanal: 'Precio por día (no el total de la semana) para alquileres de 7 a 29 días',
-  mensual: 'Precio por día (no el total del mes) para alquileres de 30 días o más',
+  diaria: 'Precio de UN día al 100%. Es el único que hace falta con la escalera por duración cargada.',
+  semanal: 'Precio de la SEMANA COMPLETA (7 días). Con la escalera cargada, sobra y descuenta dos veces.',
+  mensual: 'Precio del MES COMPLETO (30 días). Con la escalera cargada, sobra y descuenta dos veces.',
 };
 
 export function CategoriasPage() {
@@ -36,6 +43,8 @@ export function CategoriasPage() {
         title="Categorías de vehículo"
         description="Cada vehículo se asigna a una categoría. Las tarifas se pueden cargar por categoría o por vehículo puntual — el vehículo específico siempre gana."
       />
+
+      <ComoSeArmaElPrecio />
 
       {isLoading ? (
         <div className="space-y-3">
@@ -60,6 +69,8 @@ function CategoriaCard({ categoria }: { categoria: Categoria }) {
 
   const [tipo, setTipo] = useState<TarifaCreate['tipo']>('diaria');
   const [monto, setMonto] = useState('');
+
+  const tarifaDiaria = (tarifas ?? []).find(t => t.tipo === 'diaria');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,8 +116,21 @@ function CategoriaCard({ categoria }: { categoria: Categoria }) {
                       {TIPO_LABEL[t.tipo]}
                     </span>
                     <div>
-                      <span className="text-sm font-semibold text-foreground tabular-nums">
-                        {formatCurrency(t.monto)} / día
+                      {/* Sin este cartel, un precio de relleno se lee igual que
+                          uno decidido — y se vende. */}
+                      {t.es_generica && (
+                        <span className="mb-1 inline-flex items-center rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning">
+                          Precio genérico — falta el de ustedes
+                        </span>
+                      )}
+                      <span className="block text-sm font-semibold text-foreground tabular-nums">
+                        {formatCurrency(t.monto)}
+                        {/* El sufijo cambia con la banda: sólo la diaria es
+                            un precio por día. Poner "/ día" en las tres era
+                            la mitad del malentendido. */}
+                        <span className="ml-1 font-normal text-muted-foreground">
+                          {t.tipo === 'diaria' ? '/ día' : t.tipo === 'semanal' ? '/ semana (7 días)' : '/ mes (30 días)'}
+                        </span>
                       </span>
                       <p className="text-[11px] text-muted-foreground">{TIPO_HINT[t.tipo]}</p>
                     </div>
@@ -116,6 +140,15 @@ function CategoriaCard({ categoria }: { categoria: Categoria }) {
               ))}
             </div>
           )}
+
+          {/* La escalera se muestra siempre, con precio o sin él: sin tarifa
+              diaria cargada es justamente cuando hay que ver que la categoría
+              todavía no cotiza. */}
+          <EscaleraDuracion
+            categoriaId={categoria.id}
+            precioDia={tarifaDiaria ? Number(tarifaDiaria.monto) : null}
+            tieneTarifaDeBloque={(tarifas ?? []).some(t => t.tipo !== 'diaria')}
+          />
 
           {formOpen && (
             <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/40 p-4 bg-primary/5">
@@ -133,7 +166,9 @@ function CategoriaCard({ categoria }: { categoria: Categoria }) {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Precio por día ($)</label>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {tipo === 'diaria' ? 'Precio del día ($)' : tipo === 'semanal' ? 'Precio de la semana ($)' : 'Precio del mes ($)'}
+                  </label>
                   <input
                     type="number" min="1" step="1"
                     value={monto} onChange={e => setMonto(e.target.value)}

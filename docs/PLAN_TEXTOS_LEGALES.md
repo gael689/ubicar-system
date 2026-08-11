@@ -48,29 +48,26 @@ Diez secciones. Al lado de cada una, de dónde sale el contenido:
 | Qué **no** incluye | Combustible, peajes, multas, limpieza especial (D-20) | ✅ |
 | Requisitos del conductor | T5 — edad mínima **pendiente** | 🟡 |
 | Reserva y pago | 30/50/100% (D-30), saldo al retirar | ✅ |
-| **Cancelación y no-show** | **D-11 — contradicción abierta** | 🔴 **Bloqueada** |
+| **Cancelación y no-show** | **D-11 — la seña no se reintegra** | ✅ Escrita (§4 de los T&C) |
 | Entrega y devolución | Puntos de retiro (D-10), horarios (**D-36 pendiente**), modelo 24hs (D-18), cargo por atraso (D-19) | 🟡 |
 | Combustible y limpieza | Tanque lleno, cargos si no (D-20) | ✅ |
 | Coberturas y franquicia | Adicionales tipo `cobertura` con su `franquicia`. Monto **pendiente (D-C3)** | 🟡 |
 | Responsabilidad del cliente | Resumen de la cláusula 5 de T4 | ✅ |
 
-**Siete de diez se pueden redactar hoy.** Las tres trabadas dependen de D-11,
-D-36 y D-C1/D-C3 — que son decisiones de negocio, no de redacción.
+**Ocho de diez se pueden redactar hoy.** Las dos trabadas dependen de D-36 y
+D-C1/D-C3 — que son decisiones de negocio, no de redacción.
 
 ### La sección que más importa
 
-**Cancelación y no-show** es la que más se lee, la que más reclamos genera y la
-única bloqueada por una contradicción real (ver D-11 en `docs/DECISIONES.md`):
-
-- **D-11 confirmada** dice: si cancela, la seña se retiene íntegra.
-- **El usuario dijo el 2026-07-28**: la seña no se pierde si el cliente no
-  aparece.
-
-Juntas producen una política que **premia no avisar**. Hay que elegir una sola
-y escribirla acá. La recomendación (D-11): **se devuelve si avisa con 48 horas,
-se retiene si no avisa**, aplicando lo mismo a la cancelación tardía y al
-no-show — porque desde el punto de vista del negocio son el mismo hecho: un
+**Cancelación y no-show** es la que más se lee y la que más reclamos genera.
+Está resuelta por D-11: **la seña no se reintegra**, ni por cancelación del
+cliente ni por no presentarse a retirar el vehículo. La cancelación tardía y el
+no-show reciben el mismo trato porque para el negocio son el mismo hecho: un
 auto que quedó sin alquilar y sin tiempo de revenderse.
+
+**La única excepción está escrita como tal:** si el que no puede cumplir es
+Ubicar Rent, se ofrece otro vehículo equivalente sin costo o se reintegra el
+100%.
 
 ---
 

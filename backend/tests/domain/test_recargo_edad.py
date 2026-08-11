@@ -9,10 +9,12 @@ from datetime import date
 from decimal import Decimal
 
 from app.domain.recargo_edad import (
+    RecargoAplicado,
     RecargoEdadInfo,
     calcular_edad,
     calcular_recargo,
     seleccionar_recargo,
+    vista_con_recargo_incluido,
 )
 
 
@@ -125,3 +127,58 @@ class TestCalcularRecargo:
     def test_recargo_que_da_cero_no_se_aplica(self):
         r = recargo(1, 18, 24, porcentaje=0.001)
         assert calcular_recargo(r, 20, Decimal("100"), 1) is None
+
+
+class TestVistaConRecargoIncluido:
+    """
+    El recargo entra en los tres números que muestra la tarjeta del paso 1, o
+    no entra en ninguno. Mezclarlos deja un total que no se corresponde con el
+    "por día" de al lado.
+    """
+
+    def aplicado(self, monto: str) -> RecargoAplicado:
+        return RecargoAplicado(id=1, nombre="Franja joven", edad=20,
+                               monto=Decimal(monto))
+
+    def test_sin_recargo_no_toca_nada(self):
+        promedio, referencia = vista_con_recargo_incluido(
+            Decimal("100000"), Decimal("350000"), None, 3,
+        )
+        assert promedio == Decimal("100000")
+        assert referencia == Decimal("350000")
+
+    def test_el_promedio_por_dia_absorbe_el_prorrateo(self):
+        promedio, _ = vista_con_recargo_incluido(
+            Decimal("100000"), None, self.aplicado("30000"), 3,
+        )
+        assert promedio == Decimal("110000.00")
+
+    def test_el_promedio_por_dia_reconstruye_el_total(self):
+        """Es la cuenta que hace cualquier cliente: por día × días. Si no da
+        el total mostrado, el precio parece inventado."""
+        subtotal_vehiculo, dias, recargo = Decimal("300000"), 3, "45000"
+        promedio, _ = vista_con_recargo_incluido(
+            subtotal_vehiculo / dias, None, self.aplicado(recargo), dias,
+        )
+        assert promedio * dias == subtotal_vehiculo + Decimal(recargo)
+
+    def test_la_referencia_sube_con_el_recargo(self):
+        """Si sube el total y no la referencia, el tachado del "antes" puede
+        quedar por debajo del precio vigente: una promo que muestra que te
+        cobran más."""
+        _, referencia = vista_con_recargo_incluido(
+            Decimal("100000"), Decimal("330000"), self.aplicado("30000"), 3,
+        )
+        assert referencia == Decimal("360000.00")
+
+    def test_referencia_nula_sigue_nula(self):
+        _, referencia = vista_con_recargo_incluido(
+            Decimal("100000"), None, self.aplicado("30000"), 3,
+        )
+        assert referencia is None
+
+    def test_duracion_cero_no_divide_por_cero(self):
+        promedio, _ = vista_con_recargo_incluido(
+            Decimal("0"), None, self.aplicado("5000"), 0,
+        )
+        assert promedio == Decimal("5000.00")

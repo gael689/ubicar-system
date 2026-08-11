@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,8 @@ import type { RangoBusqueda } from "./BuscadorRango";
 
 const CLIENTE_VACIO: DatosCliente = {
   nombre: "", apellido: "", dni: "", email: "", telefono: "",
-  fechaNacimiento: "", aceptaTerminos: false,
+  fechaNacimiento: "", condicionIva: "consumidor_final", razonSocial: "",
+  aceptaTerminos: false,
 };
 
 const LUGARES_FALLBACK = ["Paraguay 241", "Alsina 350", "Aeropuerto Comandante Espora"];
@@ -35,6 +36,7 @@ const LUGARES_FALLBACK = ["Paraguay 241", "Alsina 350", "Aeropuerto Comandante E
  */
 export function FlujoReserva() {
   const params = useSearchParams();
+  const router = useRouter();
 
   const [config, setConfig] = useState<ConfigPublica | null>(null);
   const [paso, setPaso] = useState(1);
@@ -53,7 +55,21 @@ export function FlujoReserva() {
   const [categoria, setCategoria] = useState<CategoriaDisponible | null>(null);
   const [adicionales, setAdicionales] = useState<Record<number, number>>({});
   const [cliente, setCliente] = useState<DatosCliente>(CLIENTE_VACIO);
+
+  /**
+   * La edad declarada en el Hero. No es estado: viene en la URL y no se toca
+   * en este flujo — si el cliente la quiere cambiar, vuelve al buscador, que
+   * es el único lugar donde se pide.
+   */
+  const edad = params.get("edad") ?? "";
   const [errores, setErrores] = useState<Partial<Record<keyof DatosCliente, string>>>({});
+
+  /**
+   * Cuánto adelanta. Vive acá y no en el paso 4 porque **cambia el precio**:
+   * el descuento por duración sólo corre pagando el 100%, así que la
+   * cotización tiene que rehacerse cuando el cliente toca estos botones.
+   */
+  const [pctAnticipo, setPctAnticipo] = useState(30);
 
   const [hold, setHold] = useState<{ token: string; segundos: number } | null>(null);
   const [cotizacion, setCotizacion] = useState<Cotizacion | null>(null);
@@ -64,6 +80,19 @@ export function FlujoReserva() {
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
   }, []);
+
+  /**
+   * Quien cae acá sin pasar por el Hero —un link compartido, un marcador— no
+   * declaró la edad, y sin ella el paso 1 mostraría un precio que después
+   * cambia. Se lo devuelve a la portada **con lo que ya venía elegido**, en
+   * vez de repetir el campo en esta pantalla: se pregunta en un solo lugar o
+   * termina habiendo dos formularios que se contradicen.
+   */
+  useEffect(() => {
+    if (params.get("edad")) return;
+    const qs = params.toString();
+    router.replace(qs ? `/?${qs}` : "/");
+  }, [params, router]);
 
   // Liberar el hold si el visitante cierra la pestaña: el cupo vuelve al
   // instante en vez de esperar los 20 minutos.
@@ -93,7 +122,16 @@ export function FlujoReserva() {
           adicional_id: Number(id),
           cantidad,
         })),
+        // Las dos: la declarada sostiene el precio hasta el paso 3, y desde
+        // ahí manda la fecha exacta. Si sólo se mandara la fecha, el total
+        // bajaría en el paso 2 —donde todavía está vacía— después de haberlo
+        // mostrado con el recargo en la grilla.
         fecha_nacimiento: cliente.fechaNacimiento || null,
+        edad: edad ? Number(edad) : null,
+        // Sólo desde el paso 4: antes el cliente no eligió cuánto adelanta, y
+        // mandar el 30% por defecto mostraría el precio de lista como si ya
+        // hubiera descartado el descuento.
+        porcentaje_anticipo: paso === 4 ? pctAnticipo : null,
       });
       setCotizacion(c);
     } catch (e) {
@@ -101,7 +139,10 @@ export function FlujoReserva() {
     } finally {
       setCotizando(false);
     }
-  }, [categoria, rango.fechaInicio, rango.fechaFin, adicionales, cliente.fechaNacimiento]);
+  }, [
+    categoria, rango.fechaInicio, rango.fechaFin, adicionales,
+    cliente.fechaNacimiento, edad, paso, pctAnticipo,
+  ]);
 
   useEffect(() => {
     if (categoria) void recotizar();
@@ -137,7 +178,16 @@ export function FlujoReserva() {
     const e: Partial<Record<keyof DatosCliente, string>> = {};
     if (!cliente.nombre.trim()) e.nombre = "Necesitamos tu nombre";
     if (!cliente.apellido.trim()) e.apellido = "Necesitamos tu apellido";
-    if (!/^\d{7,9}$/.test(cliente.dni.replace(/\D/g, ""))) e.dni = "Ingresá un DNI válido";
+    // Consumidor final va con DNI (7 a 9 dígitos); cualquier otra condición
+    // fiscal va con CUIT, que son 11 exactos. El campo es el mismo y termina
+    // en la misma columna `dni_cuit`: lo que cambia es qué se valida.
+    const soloDigitos = cliente.dni.replace(/\D/g, "");
+    if (cliente.condicionIva === "consumidor_final") {
+      if (!/^\d{7,9}$/.test(soloDigitos)) e.dni = "Ingresá un DNI válido";
+    } else {
+      if (!/^\d{11}$/.test(soloDigitos)) e.dni = "El CUIT tiene 11 dígitos";
+      if (!cliente.razonSocial.trim()) e.razonSocial = "Necesitamos la razón social";
+    }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cliente.email)) e.email = "Ingresá un email válido";
     if (cliente.telefono.replace(/\D/g, "").length < 8) e.telefono = "Ingresá un teléfono válido";
     if (!cliente.fechaNacimiento) e.fechaNacimiento = "La necesitamos para calcular la tarifa";
@@ -213,8 +263,19 @@ export function FlujoReserva() {
                 lugares={lugares}
                 anticipacionHoras={config?.anticipacion_minima_horas ?? 24}
                 seleccionada={categoria}
+                escalones={config?.escalones_duracion ?? []}
+                edad={edad}
                 onCambiarRango={(r) => {
                   setRango(r);
+                  setCategoria(null);
+                  setCotizacion(null);
+                }}
+                onEstirarDuracion={(diasNuevos) => {
+                  // Se mueve la devolución, no el retiro: el cliente ya
+                  // decidió cuándo lo necesita, lo negociable es hasta cuándo.
+                  const fin = new Date(`${rango.fechaInicio}T12:00:00`);
+                  fin.setDate(fin.getDate() + diasNuevos);
+                  setRango({ ...rango, fechaFin: fin.toISOString().split("T")[0] });
                   setCategoria(null);
                   setCotizacion(null);
                 }}
@@ -250,6 +311,8 @@ export function FlujoReserva() {
                 // a WhatsApp de más.
                 cobroOnline={config?.cobro_online ?? false}
                 descuentoPagoTotalPct={config?.descuento_pago_total_pct ?? 0}
+                pctAnticipo={pctAnticipo}
+                onCambiarAnticipo={setPctAnticipo}
               />
             )}
 

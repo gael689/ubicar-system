@@ -1,6 +1,6 @@
 # Ubicar Rent — cómo funciona el sistema
 
-**Para Franco y Martín** · Actualizado el 28 de julio de 2026
+**Para Franco y Martín** · Actualizado el 29 de julio de 2026
 
 Este documento cuenta **qué hace el sistema hoy**, **qué decisiones se tomaron
 y por qué**, y **qué falta**. Está escrito para leerse de corrido, sin
@@ -12,7 +12,7 @@ tecnicismos.
 
 1. [Dónde estamos parados](#1-dónde-estamos-parados)
 2. [Las cinco reglas que ordenan todo](#2-las-cinco-reglas-que-ordenan-todo)
-3. [La cuenta corriente: el cambio más importante](#3-la-cuenta-corriente-el-cambio-más-importante)
+3. [La cuenta corriente: el corazón del sistema](#3-la-cuenta-corriente-el-corazón-del-sistema)
 4. [El día a día: de la reserva a la devolución](#4-el-día-a-día-de-la-reserva-a-la-devolución)
 5. [Cómo se arman los precios](#5-cómo-se-arman-los-precios)
 6. [El contrato](#6-el-contrato)
@@ -49,9 +49,9 @@ tarjeta (Mercado Pago) y el guardado de archivos en la nube. Los usuarios con
 contraseña y el envío de mails **ya están funcionando**. Ninguno es difícil;
 hay que abrir las cuentas.
 
-> **Desde el 29 de julio el sistema está en línea**, con login real. Ya no es
-> una demostración en una computadora: se entra desde cualquier navegador.
-> La página web es lo único que todavía se muestra desde la computadora.
+> **El sistema está en línea**, con login real: se entra desde cualquier
+> navegador, no es una demostración en una computadora. La página web es lo
+> único que todavía se muestra desde la computadora.
 
 Mientras tanto el cliente completa toda la reserva por la web y el último paso
 coordina el pago a mano. **No se simula un cobro que no existe.**
@@ -102,7 +102,8 @@ siguen valiendo lo pactado**. Cambiar un precio nunca reescribe el pasado.
 
 ### 2.4 La cuenta corriente es el libro de todo
 
-Es el cambio más grande y tiene su propia sección: [§3](#3-la-cuenta-corriente-el-cambio-más-importante).
+De la cuenta corriente cuelga todo lo demás, así que tiene su propia sección:
+[§3](#3-la-cuenta-corriente-el-corazón-del-sistema).
 
 ### 2.5 Los errores se corrigen compensando, no borrando
 
@@ -115,17 +116,14 @@ puede reconstruir en qué momento se corrigió qué y quién lo hizo.
 
 ---
 
-## 3. La cuenta corriente: el cambio más importante
+## 3. La cuenta corriente: el corazón del sistema
 
-Es lo que más cambió respecto de cómo venían trabajando, así que vale
-explicarlo bien.
+Es la parte que conviene entender bien, porque de ella cuelga todo lo demás:
+los recibos, los echeqs, las multas, las facturas y los reportes.
 
-### Cómo era antes
+### Cómo funciona
 
-La cuenta corriente **sólo se movía si alguien elegía "Cuenta Corriente" como
-forma de pago**. Un cliente que pagaba en efectivo no dejaba ningún rastro ahí.
-
-### Cómo es ahora
+**No es sólo para los clientes que compran a plazo.** Es el libro de todo:
 
 **Todo alquiler genera una deuda automática** en la cuenta del cliente cuando
 se entrega el auto, sin importar cómo se vaya a cobrar. **Y todo cobro genera
@@ -148,21 +146,21 @@ Mismo alquiler, pero sólo deja una seña de $30.000:
   Saldo: $50.000              (la deuda real, visible en su ficha)
 ```
 
-### Qué van a ver distinto
+### Algo que puede sorprender
 
-**Los clientes que pagan al contado también van a tener movimientos.** Es
-normal ver una deuda y un pago del mismo monto el mismo día, cancelándose. No
-está mal: así funciona.
+**Los clientes que pagan al contado también tienen movimientos.** Es normal ver
+una deuda y un pago del mismo monto el mismo día, cancelándose. No está mal:
+así funciona.
 
-### Por qué se hizo así
+### Por qué está hecho así
 
-Con el modelo viejo, un cliente que siempre paga en efectivo **nunca aparecía
-en ningún lado con historial**. La cuenta corriente sólo mostraba a los que
-quedaban debiendo.
+Si la cuenta corriente sólo registrara a los que compran a plazo, **un cliente
+que siempre paga en efectivo no tendría historial en ningún lado** — y esos son
+la mayoría.
 
-Ahora la cuenta corriente de cada cliente es **su historial completo**: todo lo
-que alquiló, todo lo que pagó, y cuándo. Eso permite responder preguntas que
-antes no se podían responder sin revisar alquiler por alquiler:
+Con este método, la cuenta corriente de cada cliente es **su historial
+completo**: todo lo que alquiló, todo lo que pagó, y cuándo. Eso permite
+responder preguntas que de otro modo exigen revisar alquiler por alquiler:
 
 - *"¿Cuánto nos facturó este cliente en el año?"*
 - *"¿Cuánto tarda en pagarnos?"*
@@ -222,15 +220,14 @@ más el formulario cambia: no es la misma ficha con campos de más.
 | **Condición de pago** (contado / cta. cte.) | **Sí** | **—** |
 | Domicilio, localidad, provincia, CP | Sí | Sí |
 
-**La cuenta corriente es cosa de empresa.** A un particular ya no se le
-pregunta la condición de pago: alquila y paga, y si alguna vez hace falta un
-plazo, se decide **en esa reserva puntual**, que es donde corresponde.
+**La cuenta corriente es cosa de empresa.** A un particular no se le pregunta
+la condición de pago: alquila y paga. Si alguna vez hace falta darle un plazo,
+se decide **en esa reserva puntual**, que es donde corresponde.
 
-**Toda la licencia está en un solo lugar.** País, "desde" y vencimiento van
-juntos, en la sección Conductor. Antes el vencimiento estaba arriba y los otros
-dos abajo entre los datos fiscales, y se leían como dos licencias distintas.
-Y si el cliente **no** es el conductor, esos campos directamente no aparecen:
-se piden los del conductor designado y nada más.
+**Toda la licencia está en un solo lugar**: país, "desde" y vencimiento van
+juntos, en la sección Conductor. Y si el cliente **no** es el conductor, esos
+campos directamente no aparecen: se piden los del conductor designado y nada
+más.
 
 ### Cargar una reserva
 
@@ -260,8 +257,7 @@ cliente, que además queda archivado en su ficha.
 
 La segunda pregunta también aparece cuando eligen **contado**, y no es un
 detalle: entre que el auto sale y vuelve pueden pasar semanas, y "en el
-momento" no dice cuál de los dos momentos es. Antes el sistema asumía la
-entrega sin decirlo.
+momento" no dice cuál de los dos momentos es.
 
 > Si eligen "al devolverlo", **el saldo queda sin fecha de vencimiento hasta
 > que el auto vuelva** — recién en el check-in se sabe qué día es. El sistema
@@ -311,20 +307,57 @@ Los **daños nuevos** se cargan acá, con fotos.
 
 ## 5. Cómo se arman los precios
 
-> **Hay dos pantallas de precios, no una: "Precios de mostrador" y "Precios de
-> la web".** Están separadas a propósito. Son negocios distintos —la web
-> compite con precio publicado, el mostrador se negocia— y tenerlos en la misma
-> pantalla hacía que cargar un precio pensando en uno le cambiara el precio al
-> otro sin que nadie lo pidiera.
+### 5.0 Lo primero: hay dos capas, y no compiten
+
+Es la parte que más confunde, así que va antes que todo lo demás. **Los precios
+se cargan en dos lugares distintos, y hacen cosas distintas.**
+
+| | **La tarifa** | **La regla del calendario** |
+|---|---|---|
+| **Qué es** | El precio de siempre | La excepción para unas fechas |
+| **Dónde se carga** | Flota → Categorías, o la ficha de un auto | Precios de mostrador / Precios de la web |
+| **Cómo se expresa** | Diaria, semanal y mensual (precio del bloque) | Un precio **por día** |
+| **Tiene fechas** | **No.** Vale todo el año hasta que la cambien | **Sí.** Un desde y un hasta |
+| **Distingue web de mostrador** | **No.** Vale para los dos | **Sí.** Hay una pantalla por canal |
+| **Se puede cargar por auto puntual** | Sí, y le gana a la de la categoría | Sí también |
+
+**Cómo se combinan.** El sistema resuelve **día por día**:
+
+```
+Para cada día del alquiler:
+   ¿Hay una regla del calendario que cubra ese día, en ese canal?
+        SÍ  →  se cobra la de mayor prioridad
+        NO  →  se cobra la tarifa
+```
+
+Y después, sobre la suma de los días: resta el descuento por duración, suma el
+recargo por edad, y suma los seguros y extras.
+
+> **En criollo:** la **tarifa es el piso** y nunca sobra — es lo que se cobra
+> los 300 días del año en que no pasa nada especial. Las **reglas son para los
+> días que sí**: Navidad, un fin de semana largo, una promo de mayo.
 >
-> Cada pantalla muestra **sólo** las reglas de su canal, y lo que cargues ahí
-> nace atado a ese canal. Si querés que un precio valga en los dos, existe la
-> opción **"Los dos canales"**: esas reglas aparecen en las dos pantallas con
-> una etiqueta que lo aclara, para que se vea que editarlas toca las dos.
+> Por eso, **si la grilla del calendario muestra el mismo número todos los
+> días, es que no hay ninguna regla cargada** y todo está cayendo a la tarifa.
+> Es exactamente lo que pasa hoy.
 
-Hay dos formas de cargar precios, y la segunda le gana a la primera.
+**Y por qué hay dos pantallas de calendario.** Web y mostrador son negocios
+distintos: la web compite con precio publicado, el mostrador se negocia. Cada
+pantalla muestra **sólo** las reglas de su canal, y lo que se carga ahí nace
+atado a ese canal — así no hay forma de tocar un precio pensando en uno y
+cambiarle el precio al otro sin querer. Si el precio vale en los dos, existe la
+opción **"Los dos canales"**: esas reglas aparecen en las dos con una etiqueta
+que lo aclara.
 
-### 5.1 Precio por duración
+> **Ojo con esto:** la **tarifa no tiene canal**. Si cambiás la tarifa de una
+> categoría, cambia el precio de base en la web **y** en el mostrador. Para
+> diferenciarlos hace falta una regla de calendario.
+
+Este mismo cuadro está dentro del sistema, en el desplegable *"¿Cómo se
+combinan la tarifa del vehículo y el calendario de precios?"*, que aparece en
+las tres pantallas donde se cargan precios.
+
+### 5.1 La tarifa: precio por duración
 
 Se carga un precio para el **día**, uno para la **semana** y uno para el
 **mes** — por categoría o por auto puntual.
@@ -342,22 +375,33 @@ cargan "Semanal: $150.000", eso es lo que sale la semana.
 Así el cliente que alquila más tiempo paga proporcionalmente menos, que es lo
 que hace que valga la pena alquilar por semana.
 
-### 5.2 Precios por fecha (el calendario)
+**Por auto o por categoría.** Se puede cargar la tarifa de toda una categoría
+—y la heredan todos sus autos— o la de un auto puntual. **El auto puntual
+siempre le gana a la categoría**, así que sirve para el que vale más que el
+resto del grupo sin tener que sacarlo de la categoría.
+
+### 5.2 Las reglas del calendario: precios por fecha
 
 Para temporada alta, feriados y promociones. Se carga una regla con su rango de
-fechas y su **prioridad**.
+fechas y su **prioridad**. A diferencia de la tarifa, acá el precio que se
+carga **es el de un día**, no el de un bloque.
 
 **Las tres capas son lo mismo, con distinta prioridad:**
 
-| Capa | Prioridad |
-|---|---|
-| Precio base del año | 0 |
-| Feriado o temporada alta | 10 |
-| Promoción | 20 |
+| Capa | Prioridad | Para qué |
+|---|---|---|
+| Precio base del año | 0 | El precio publicado de la categoría, con fechas |
+| Feriado o temporada alta | 10 | Le gana al anterior |
+| Promoción | 20 | Le gana a todo, y sale con etiqueta en la web |
 
 **La de mayor prioridad gana, sin borrar la de abajo.** Eso significa que
 cuando se termina la promo y la dan de baja, **el precio anterior vuelve solo**.
 Es lo que permite tocar precios todas las semanas sin miedo a romper nada.
+
+> **¿Hace falta cargar el "Precio base del año" acá si ya está la tarifa?**
+> No es obligatorio: sin ninguna regla, todos los días caen a la tarifa y el
+> sistema cotiza igual. Conviene cargarlo cuando quieran que **la web tenga un
+> precio distinto al del mostrador**, porque la tarifa no distingue canales.
 
 ### 5.3 Descuento por alquilar más días
 
@@ -380,8 +424,17 @@ para saltar a la otra.
 Cada pantalla tiene:
 
 Una **grilla de categorías por días del mes** con el precio de cada celda ya
-resuelto **para ese canal**. Las celdas sin precio cargado se ven en rojo, así
-se detecta de un vistazo dónde falta cargar.
+resuelto **para ese canal**. Los colores dicen de dónde salió cada número:
+
+| Color | Qué significa |
+|---|---|
+| **Azul** | Hay una regla del calendario para ese día |
+| **Naranja** | Hay una **promoción** |
+| **Gris** | **No hay regla, y se cobra la tarifa.** No está vacío |
+| **Rojo** | **No hay ni regla ni tarifa**: ese día no se puede cotizar |
+
+El gris es el que más confunde: parece un hueco y no lo es. Sólo el **rojo** es
+un hueco de verdad.
 
 La **lista de reglas de ese canal** — no las del otro.
 
@@ -427,8 +480,9 @@ aprendérselo.
 **Los dos usos que preguntaste, resueltos:**
 
 - **Precios para todo el año.** Una regla del 1 de enero al 31 de diciembre,
-  prioridad 0, una por categoría. Con eso la grilla deja de estar en rojo y
-  todos los días tienen precio.
+  prioridad 0, una por categoría. Sirve cuando quieren que **ese canal tenga un
+  precio propio** distinto de la tarifa. Si el precio es el mismo para los dos
+  canales, la tarifa sola alcanza: no hace falta esta regla.
 - **Fechas especiales.** Una regla por cada período, prioridad 10, con su
   rango. Si el período ya está cargado en **Fechas especiales**, la regla lo
   puede **heredar** en vez de repetir las fechas: se cambia la fecha en un solo
@@ -443,6 +497,21 @@ hay ninguna regla cargada todavía** — ese número sale de la tarifa por durac
 de demostración, que es el piso al que cae el sistema cuando ninguna regla
 cubre el día. Apenas carguen la primera regla, esos días pasan a mostrar el
 precio de la regla.
+
+### 5.6 Por dónde empezar
+
+Si sólo van a hacer una cosa, que sea la primera. Las demás son mejoras encima.
+
+| | Qué hacer | Dónde | Qué resuelve |
+|---|---|---|---|
+| **1** | **La tarifa real de cada categoría** — diaria, semanal y mensual | Flota → Categorías | Que se pueda cotizar **todo el año**, por los dos canales. Es lo que más falta |
+| **2** | **El precio de las fechas especiales** ya cargadas (hay 22 sin precio) | Precios de mostrador | Que Navidad no se cobre igual que un martes |
+| **3** | **El precio de la web**, si va a ser distinto | Precios de la web | Diferenciar los canales |
+| **4** | Promociones | Precios de la web | Marketing |
+
+**No hace falta cargar los tres precios de la tarifa.** Con la diaria alcanza
+para cotizar; la semanal y la mensual son las que hacen que alquilar más días
+salga proporcionalmente más barato.
 
 ---
 
@@ -461,12 +530,13 @@ franquicia— y **se puede corregir** antes de emitirlo.
 
 ### Cuándo se emite
 
-**Apenas se acuerda el alquiler**, sin esperar a la entrega. Antes había que
-esperar al check-out, o sea al momento con menos tiempo de todos: el cliente
-esperando en la puerta y el auto listo para salir.
+**Apenas se acuerda el alquiler**, sin esperar a la entrega — y no en el
+check-out, que es el momento con menos tiempo de todos: el cliente esperando en
+la puerta y el auto listo para salir.
 
-Emitirlo antes tiene tres ventajas concretas: hay tiempo de leerlo, de corregir
-un dato mal cargado, y de mandárselo al cliente para que lo lea tranquilo.
+Emitirlo con anticipación tiene tres ventajas concretas: hay tiempo de leerlo,
+de corregir un dato mal cargado, y de mandárselo al cliente para que lo lea
+tranquilo.
 
 Si se emite antes de la entrega, **el kilometraje y el combustible de salida
 salen como líneas en blanco** para completar a mano el día del retiro. Es a
@@ -560,10 +630,8 @@ este pago → saldo actual*, que es lo que el cliente quiere ver.
 ustedes, no algo que el sistema haga por su cuenta. Pero no cuesta nada: en el
 listado de **Cobros**, los que todavía no tienen recibo muestran un botón
 **Emitir**. Un click y listo — el concepto lo arma el sistema con los datos del
-cobro (*"Alquiler #16 — Toyota Hilux DX (AF977FD)"*).
-
-Antes había que escribir ese concepto a mano cada vez, y eso era exactamente lo
-que hacía que el recibo terminara sin emitirse.
+cobro (*"Alquiler #16 — Toyota Hilux DX (AF977FD)"*). **No hay que escribir el
+concepto a mano**, que es lo que hace que un recibo termine sin emitirse.
 
 Si un cobro ya está registrado, se le puede emitir el recibo después sin que el
 saldo se mueva.
@@ -581,8 +649,8 @@ Entra el echeq   →  EN CARTERA  →  crédito en su cuenta
                         └─ REBOTA      → vuelve la deuda + aviso urgente
 ```
 
-**El rebote es el caso que más plata cuesta** y ahora está contemplado: exige
-escribir el motivo, revierte el crédito y dispara un aviso.
+**El rebote es el caso que más plata cuesta**, y por eso es el que más control
+tiene: exige escribir el motivo, revierte el crédito y dispara un aviso urgente.
 
 ### Facturas y notas
 
@@ -637,9 +705,9 @@ genera los avisos. Aparecen en la campana del menú y llegan por mail.
 Se pueden marcar como leídos, posponer o descartar. Y **se cierran solos**
 cuando el problema se resuelve.
 
-**Los urgentes van primero.** Antes se ordenaban sólo por fecha, así que un
-aviso crítico de ayer quedaba debajo de uno menor de hoy — y la campana muestra
-los primeros. Ahora manda la urgencia y después la fecha.
+**Los urgentes van primero.** Ordena por urgencia y recién después por fecha,
+porque la campana muestra los primeros: un aviso crítico de ayer tiene que
+quedar arriba de uno menor de hoy.
 
 Se pueden filtrar por familia y por urgencia desde la pantalla de
 **Notificaciones**.
@@ -752,13 +820,18 @@ configura desde la pantalla de Configuración, sin tocar el sistema.
 
 ## 11. Decisiones que tomamos sin ustedes (y por qué)
 
-Estas se tomaron para poder avanzar. Son razonables, están implementadas y
-**funcionan** — pero cambian cómo se ve la plata del negocio, así que vale que
-las revisen.
+**Ninguna de estas la confirmaron ustedes.** Se tomaron para poder avanzar con
+la construcción, están implementadas y **funcionan** — pero cambian cómo se ve
+la plata del negocio, así que hay que revisarlas.
+
+> Cambiar cualquiera de estas **no es rehacer el sistema**: en casi todos los
+> casos es cambiar un valor de Configuración o un texto. Están acá para que las
+> discutan, no para darlas por cerradas.
 
 | Decisión | Qué se hizo | Por qué |
 |---|---|---|
-| **Cuenta corriente de todo** | Todo alquiler genera deuda, todo cobro la cancela | Es el único modo de tener el historial completo de cada cliente ([§3](#3-la-cuenta-corriente-el-cambio-más-importante)) |
+| **La seña no se devuelve** | Ni por cancelación ni si el cliente no aparece. Si el que no puede cumplir es Ubicar Rent, se reintegra todo | Es la cláusula que más se lee de los términos, y tiene que estar definida antes del primer cobro online |
+| **Cuenta corriente de todo** | Todo alquiler genera deuda, todo cobro la cancela | Es el único modo de tener el historial completo de cada cliente ([§3](#3-la-cuenta-corriente-el-corazón-del-sistema)) |
 | **Multas en la misma cuenta** | Una multa imputada suma a la deuda del cliente | Es coherente con lo anterior. Si prefieren llevarlas aparte, se cambia |
 | **Garantías fuera de la cuenta** | El depósito no genera movimiento | Es un depósito que se devuelve, no una venta |
 | **Combustible y limpieza no se le cobran al cliente** | Van como gasto del auto | Es donde impactan de verdad en la rentabilidad de la unidad |
@@ -797,21 +870,26 @@ orden, porque cada cosa depende de la anterior:
 
 1. **La razón social y el CUIT de Ubicar.** Mientras falten, cada contrato que
    se emita sale marcado "DOCUMENTO PROVISORIO".
-2. **Los precios reales.** Verificado el 29/07: hay **cero reglas de precio
-   cargadas**, y por eso la grilla muestra el mismo número todos los días. Se
-   carga una regla "Precio base" por categoría, del 1/1 al 31/12, en cada una
-   de las dos pantallas de precios (o una sola marcada "los dos canales").
+2. **La tarifa real de cada categoría** — diaria, semanal y mensual, en **Flota
+   → Categorías**. Es la capa de abajo ([§5.0](#50-lo-primero-hay-dos-capas-y-no-compiten))
+   y es lo que más falta: con la diaria sola ya se puede cotizar los 365 días
+   por los dos canales. Los precios que se ven hoy son de demostración.
 3. **El precio de las fechas especiales.** Hay **22 períodos cargados y ninguno
-   tiene precio propio**: hoy Navidad se cobra igual que un martes de marzo.
-4. **Autos para SUV y Furgón.** Esas dos categorías **no tienen ningún auto
+   tiene precio propio**: hoy Navidad se cobra igual que un martes de marzo. Va
+   como regla de calendario, capa "Fecha especial", heredando el rango del
+   período ya cargado.
+4. **El precio propio de la web**, sólo si va a ser distinto al del mostrador.
+   La tarifa no distingue canales; para diferenciarlos hace falta una regla en
+   la pantalla de cada canal.
+5. **Autos para SUV y Furgón.** Esas dos categorías **no tienen ningún auto
    asignado**, así que no aparecen con disponibilidad ni en el sistema ni en la
    web. Tampoco tienen foto.
-5. **Las fotos y los datos de cada categoría** (cuántos pasajeros, cuántas
+6. **Las fotos y los datos de cada categoría** (cuántos pasajeros, cuántas
    valijas, si es automático). Las tarjetas de la web salen grises sin eso.
-6. **Los seguros y extras** con su precio y su franquicia. Hay 4 cargados, hay
+7. **Los seguros y extras** con su precio y su franquicia. Hay 4 cargados, hay
    que confirmar que los precios sean los reales.
-7. **Las franjas de recargo por edad**, si quieren usarlas. Hay 1 cargada.
-8. **Los descuentos por alquilar más días**, si los quieren. Hoy hay ninguno.
+8. **Las franjas de recargo por edad**, si quieren usarlas. Hay 1 cargada.
+9. **Los descuentos por alquilar más días**, si los quieren. Hoy hay ninguno.
 
 > **No hace falta acordarse de nada de esto.** El sistema lo reclama solo: los
 > avisos de la familia **"📌 Falta completar"** detectan cada hueco y
@@ -828,32 +906,12 @@ orden, porque cada cosa depende de la anterior:
 | **¿Se alquila también en Capital Federal por la web?** Y si sí, ¿la flota es la misma? | Hoy la web vende sólo Bahía Blanca |
 | **¿Qué descuento por pagar el 100% adelantado?** | Ya está la casilla para cargarlo, en Configuración. Hoy está en 0: sin descuento |
 | **¿A qué mail llegan los avisos de reservas web?** | Ya está la casilla en Configuración. Vacía, llegan al mismo lugar que el resumen de las 08:00 |
-| **¿La seña se pierde si el cliente no aparece?** | Es la única contradicción abierta. Ver el recuadro |
-
-> ### ⚠️ La seña: hay que decidir esto antes de publicar la web
->
-> Nos dijeron dos cosas que juntas no cierran. Por un lado, que **al cancelar
-> se retiene la seña**. Por el otro, que **la seña no se pierde si el cliente
-> no aparece**.
->
-> Combinadas, la política queda así: **al que avisa que no viene se le retiene
-> la seña; al que no avisa nada, se le devuelve.** Eso premia exactamente el
-> peor comportamiento. Y cuesta plata de forma concreta: **el auto que se
-> libera con 48 horas de aviso se vuelve a vender; el que se libera porque
-> nadie apareció, no.**
->
-> **Lo que recomendamos:** la seña **no se pierde si avisa con 48 horas de
-> anticipación**, y **se retiene si avisa tarde o no avisa**. Alinea lo que
-> le conviene al cliente con lo que el negocio necesita, que es enterarse a
-> tiempo.
->
-> Hay que cerrarlo antes de publicar los términos y condiciones, porque es la
-> cláusula que más se lee y la que más reclamos genera.
+| **¿Cuántas cuotas se aceptan en Mercado Pago?** | Las cuotas **las paga el vendedor**: cuantas más se ofrecen, menos queda de cada alquiler |
+| **¿Cuándo quieren la plata de Mercado Pago?** | Al instante con más comisión (~6% + IVA), o a 10/18 días con menos |
 
 ### El sistema ya está en línea
 
-**Desde el 29 de julio el sistema funciona en internet**, no sólo en la
-computadora del desarrollador:
+**El sistema funciona en internet**, no en la computadora del desarrollador:
 
 - **El sistema de gestión** entra desde cualquier navegador, con usuario y
   contraseña reales
@@ -898,9 +956,10 @@ los mismos datos, y eso trae problemas que no existen cuando lo usa uno solo.
 
 **Dos personas no pueden reservar el mismo auto.** Si dos confirman la misma
 unidad en el mismo instante, el sistema deja pasar una y a la otra le avisa que
-el auto ya está ocupado. Suena obvio, pero antes pasaban las dos: cada una
-miraba la disponibilidad, veía el auto libre, y grababa. El problema recién
-aparecía el día de la entrega. Se reprodujo el caso y se cerró.
+el auto ya está ocupado. Suena obvio, pero es el error más típico de un sistema
+compartido: las dos personas miran la disponibilidad, las dos ven el auto
+libre, y las dos graban — y el problema aparece recién el día de la entrega. Se
+reprodujo el caso a propósito para verificar que no pasa.
 
 **Las pantallas se ponen al día solas.** Lo que cambia seguido —reservas,
 disponibilidad, caja, avisos— se actualiza cada 15 segundos y **al volver a la
@@ -939,6 +998,7 @@ y cada línea se abre para ver **qué decía antes y qué quedó después**.
 para auditar. Si algo está mal, se corrige compensando —regla 2.5— y quedan
 las dos cosas registradas.
 
-> Hasta ahora todos entraban con el mismo usuario de prueba, así que este
-> registro no distinguía a nadie. Con las cuentas de Franco, Martín y Ramiro
-> creadas, cada línea dice quién fue.
+> **Para que esto sirva, cada uno tiene que entrar con su propia cuenta.**
+> Falta crear las de Franco, Martín y Ramiro — se hace en dos minutos con sus
+> mails. Mientras compartan un usuario, el registro no puede distinguir quién
+> hizo qué.

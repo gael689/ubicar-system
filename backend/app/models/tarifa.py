@@ -28,3 +28,12 @@ class Tarifa(Base):
     monto: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     vigencia_desde: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+
+    # Tarifa de relleno, sembrada para que la categoría pueda cotizar antes de
+    # que alguien cargue el precio real (migración 058). **Mientras esté en
+    # True, la campana sigue reclamando esa categoría**: sin la marca, sembrar
+    # la tarifa apagaría el aviso `categoria_sin_precio` y el recordatorio de
+    # poner el precio de verdad desaparecería justo cuando empieza a hacer
+    # falta. Se limpia sola: cargar una tarifa diaria nueva desactiva la
+    # anterior, así que la genérica pasa al histórico.
+    es_generica: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

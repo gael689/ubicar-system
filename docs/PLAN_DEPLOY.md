@@ -1,5 +1,10 @@
 # Plan de puesta en producción
 
+> ⚠️ **§2 quedó desactualizado — ver `DECISION_HOSTING.md` (2026-08-11).** El
+> sistema interno (`frontend/`) va a **Railway**, no a Vercel, y la web pública
+> se queda en Vercel pero **en plan pago**. Todo lo demás de este documento
+> sigue vigente.
+
 **Fecha:** 2026-07-28
 **Objetivo:** sacar Ubicar Rent a producción — la web pública, el sistema
 interno y la API — con la base de datos en Railway y el frontend en Vercel.

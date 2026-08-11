@@ -2,7 +2,13 @@
 
 **Registro de decisiones tomadas.** Cada una fija cómo se construye el sistema. Si alguna cambia, se actualiza acá y se revisan los documentos afectados.
 
-**Confirmadas por Franco/Martín el 2026-07-25.**
+> ⚠️ **Quién decidió qué.** Todas las decisiones de este documento las tomó
+> **Gael**, para poder avanzar con la construcción. **Los dueños no confirmaron
+> ninguna todavía** — es justamente lo que hay que llevar a la reunión.
+>
+> Están tomadas con criterio y ya están implementadas y funcionando, así que
+> revisarlas no frena nada: cambiar cualquiera es cambiar un valor o un texto,
+> no reescribir el sistema. Pero **no hay que presentarlas como acordadas**.
 
 ---
 
@@ -500,7 +506,7 @@ Actualizado el **2026-07-28**. Ordenadas por urgencia.
 
 | # | Decisión | Bloquea | Urgencia |
 |---|---|---|---|
-| **D-C1** | **Quién es el locador** del contrato: nombre, CUIT, II.BB, domicilio fiscal, contacto | Todo el módulo de Contratos | 🔴 **Ya** |
+| **D-C1b** | **Ingresos Brutos de FINAR** — es el último dato fiscal que falta. Lo emite **ARBA**; no figura en la constancia de ARCA, que es nacional. Se lo pide la contadora | Un dato menos en el pie del contrato. Ya no lo marca como provisorio | 🟠 Pronto |
 | D-18 | **¿La devolución es a la hora que se carga, o siempre a la misma hora del retiro?** | El arreglo del cálculo de excedente — es un P0 | 🔴 Ya |
 | D-19 | **Umbral de día completo** por atraso: ¿bajar de 12 a 6 horas? | Cargo por excedente | 🔴 Ya |
 | **D-C3** | **Monto de la franquicia** — valor único para web, reserva y sistema. Los dueños lo cargan; falta entender cómo lo manejan hoy | Bloque de franquicia del contrato y de la web | 🟠 Fase 4 |
@@ -516,17 +522,46 @@ Actualizado el **2026-07-28**. Ordenadas por urgencia.
 | D-22 | **Límite de crédito** por cliente con cuenta corriente | Alerta y bloqueo | 🟠 Fase 1 |
 | D-23 | **Descuento máximo** sin autorización del dueño | Control de márgenes | 🟠 Fase 1 |
 
-## Cerradas el 2026-07-29 (decididas por el usuario, no por los dueños)
+## Cerradas el 2026-07-29
 
 | # | Decisión | Detalle |
 |---|---|---|
-| **D-40** | **El calendario de precios se parte en dos pantallas**, web y mostrador | El canal deja de ser un filtro de la vista y pasa a definir qué precios se están tocando. Los descuentos por duración quedan explícitamente compartidos. Ver `CIERRE_2026-07-29.md` §1 |
-| **D-41** | **"Contado" también pregunta el momento**: al entregar, al devolver, u otra fecha | Antes contado asumía la entrega sin decirlo. Con ancla check-in, el saldo nace sin vencimiento y el check-in lo completa |
+| **D-11** | **La seña nunca se devuelve** | Ni por cancelación ni por no presentarse. Única excepción: si el que no puede cumplir es Ubicar Rent, se reintegra el 100% o se ofrece otro vehículo. Ya escrito en los términos de la web (§4) e implementado en `ReservaService.cancelar()` |
+| **D-40** | **El calendario de precios se parte en dos pantallas**, web y mostrador | El canal define qué precios se están tocando, no sólo lo que se ve. Los descuentos por duración y la tarifa por bandas quedan explícitamente compartidos entre canales. Ver `CIERRE_2026-07-29.md` §1 |
+| **D-41** | **"Contado" también pregunta el momento**: al entregar, al devolver, u otra fecha | Entre que el auto sale y vuelve pueden pasar semanas, y de ahí sale la fecha de vencimiento. Con ancla check-in el saldo nace sin vencimiento y el check-in lo completa |
 | **D-42** | **La condición de pago es sólo de empresa** | Un particular alquila y paga; si hace falta un plazo se decide en esa reserva puntual |
 
 **Cerradas en esta ronda (2026-07-28):** D-07 (texto del contrato, ver D-33), **D-11** (ratificada: la seña la retiene el negocio, cancele o no aparezca — y con eso **D-17** queda subsumida), D-25 a D-34, **D-35** (prorrateo por bloques), **D-38** (recargo por edad en vez de mínimo), **D-39** (sólo Bahía Blanca), y el punto 7 de `VALIDAR_CON_DUENOS.md` (categorías de la flota, D-29) que era el bloqueante principal de la web.
 
 ---
+
+## Cerradas el 2026-08-09
+
+Estaban decididas y aplicadas, pero **nunca se registraron acá** — se
+documentaron sólo en `CIERRE_2026-08-09.md`. Se anotan para que este archivo
+vuelva a ser la fuente de verdad.
+
+| # | Decisión | Detalle |
+|---|---|---|
+| **D-C1** ✅ | **El locador es FINAR GRUPO FINANCIERO S.R.L.** | Ubicar Rent es el nombre comercial, no una persona jurídica. CUIT 30-71756601-3, Paraguay 241 Piso 9 Dpto A, Bahía Blanca. Se agregó `empresa.nombre_comercial` para que el papel diga las dos cosas sin mentir ninguna. **Falta sólo Ingresos Brutos** |
+| **D-43** ✅ | **El precio es un número y una escalera** | Una tarifa diaria por categoría, y el largo se descuenta con porcentajes: 1-2 días sin descuento, 3-6 −10%, 7-15 −15%, 16 o más −30%. Se corrigieron los dos huecos de lo pedido (el día 15 quedaba sin banda; el día 31 volvía al 100%) |
+| **D-C6** ✅ | **El contrato se firma por link** | Tres caminos que terminan en la misma fila: link (el principal), papel con escaneo adjunto, y firma en pantalla. Se guarda **el texto completo de lo aceptado**, no un booleano: `acepto = true` no prueba nada el día que los términos cambien |
+
+## Cerradas el 2026-08-11
+
+| # | Decisión | Detalle |
+|---|---|---|
+| **D-44** ✅ | **La edad se pregunta en el Hero, y el precio ya la incluye** | Antes el recargo por edad (D-38) aparecía en el paso 3 y el precio **subía después** de que el cliente eligió. Ahora la edad es obligatoria para avanzar desde la portada. Se pide la **edad, no la fecha de nacimiento**: en la portada todavía no hay un cliente, hay alguien mirando precios. La fecha exacta se sigue pidiendo en el paso 3 y **manda sobre la declarada**. El recargo va **dentro de la línea del alquiler**, sin rótulo — pero los términos y las FAQ siguen diciendo que la tarifa varía según la edad, y eso no se toca |
+| **D-45** ✅ | **La condición de IVA se pide en la reserva web** | Selector con los cuatro valores, por defecto consumidor final. Al elegir otra, aparece razón social y el campo DNI pasa a ser CUIT. **No habilita a facturar**: el sistema no emite comprobantes fiscales. Guarda el dato para quien factura por afuera y para la facturación electrónica futura |
+| **D-46** ✅ | **El bucket público sirve sólo el catálogo** | Habilitar el dominio público de R2 dejó todo el bucket de lectura sin credenciales, y las claves de los contratos son predecibles (`contratos/7/firma.png`). Ahora `categorias/` va por el dominio público y **todo lo demás con URL firmada que vence en 1 hora**. La lista declara lo público, no lo privado: al revés, un prefijo nuevo nacería público por olvido |
+| **D-47** ✅ | **El contrato web se emite al asignar el vehículo, no al pagar** | Ni antes de pagar (la reserva no existe hasta el webhook, y trece cláusulas antes del botón matan el checkout) ni al acreditarse el pago (la web vende por categoría: todavía no hay patente, y un contrato sin patente no identifica qué auto se entregó). **Asignar el vehículo pasa a ser el paso que dispara todo.** ⏳ Decidido, **sin implementar** |
+| **D-48** ✅ | **Reasignar un vehículo con contrato firmado: anular y re-emitir** | El cliente firma de nuevo. Un contrato que nombra un auto que ya no es, no sirve para lo único que importa cuando hay un reclamo |
+| **D-49** ✅ | **En la web, el descuento por duración se gana pagando el 100%** | Con seña del 30% o 50% se cobra el precio de lista. **En el mostrador sigue aplicando siempre**: ahí el precio se conversa. En los pasos 1 a 3 se muestra el precio de lista y el descuento aparece como **mejora** al elegir el pago total — al revés, el precio subiría al elegir pagar menos y se leería como un recargo escondido |
+| **D-50** ✅ | **Las reservas online necesitan 72 horas de anticipación** | Eran 24. Una reserva web dispara trabajo de mostrador antes de que el cliente aparezca —asignar el vehículo, emitir el contrato, esperar la firma (D-47)— y con un día no entra. **Se avisa en el Hero**, no sólo al validar |
+| **D-39** 🔄 | **Capital Federal sale de todo el sitio, no sólo del flujo de reserva** | Completa lo decidido el 28/07. CABA queda **únicamente en la sección de Contacto**, donde es un dato de contacto verdadero. Sale del `areaServed` del JSON-LD, de la metadata, de `llms.txt` y de la tarjeta de ubicaciones: ahí no era contacto sino **promesa de servicio**, y declarar dos ciudades diluye la señal local de Bahía Blanca. El `<h1>` queda en "Alquiler de vehículos en Bahía Blanca", que resuelve la duda que D-39 había dejado abierta |
+
+**Consecuencia fiscal de D-39:** operando en una sola provincia, el Ingresos
+Brutos que falta es el de **ARBA**, no el de Convenio Multilateral.
 
 ## Documentos afectados por estas decisiones
 

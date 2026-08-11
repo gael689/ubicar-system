@@ -1,5 +1,10 @@
 # Deploy paso a paso — Railway + Vercel
 
+> ⚠️ **§2.1 quedó desactualizado — ver `DECISION_HOSTING.md` (2026-08-11).** El
+> sistema interno va a **Railway**, no a Vercel. El orden obligatorio de abajo
+> no cambia: la API sigue yendo primero, porque su URL se congela adentro del
+> build del sistema igual que antes.
+
 > Orden obligatorio: **Railway primero**. Los dos proyectos de Vercel necesitan
 > la dirección del backend metida adentro del build, así que sin esa URL hay
 > que rehacerlos.

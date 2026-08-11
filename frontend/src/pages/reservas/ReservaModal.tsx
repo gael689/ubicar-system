@@ -30,6 +30,22 @@ function formatTime(t: string) { return t.slice(0, 5); }
 function today() { return new Date().toISOString().split('T')[0]; }
 function formatFecha(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; }
 
+/** Suma días a una fecha ISO sin pasar por Date local (evita corrimientos de zona). */
+function sumarDias(iso: string, dias: number): string {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().split('T')[0];
+}
+
+// Un `<input type="date">` vacío obliga a tipear el año entero, y el año casi
+// siempre es el corriente. Arrancando con una fecha real, el campo ya viene con
+// el año puesto y sólo se corrige el día y el mes. `min`/`max` no lo bloquean:
+// acotan el calendario a la ventana en la que se opera, y llegan hasta el fin
+// del año que viene para que una reserva de la próxima temporada entre igual.
+const ANIO_ACTUAL = new Date().getFullYear();
+const FECHA_MIN = `${ANIO_ACTUAL}-01-01`;
+const FECHA_MAX = `${ANIO_ACTUAL + 1}-12-31`;
+
 export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, onClose, onSuccess }: Props) {
   const isEdit = !!reserva;
   const { createReserva, updateReserva, loading, error } = useReservas();
@@ -45,7 +61,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const { data: conductoresCliente } = useConductores(clienteId ? Number(clienteId) : 0);
   const [fechaInicio, setFechaInicio]         = useState(reserva?.fecha_inicio ?? initialFechaInicio ?? today());
   const [horaInicio, setHoraInicio]           = useState(reserva ? formatTime(reserva.hora_inicio) : '10:00');
-  const [fechaFin, setFechaFin]               = useState(reserva?.fecha_fin ?? '');
+  // La devolución arranca al día siguiente del retiro: es el alquiler más corto
+  // posible y deja el campo con año y mes ya cargados.
+  const [fechaFin, setFechaFin]               = useState(
+    reserva?.fecha_fin ?? sumarDias(initialFechaInicio ?? today(), 1)
+  );
   // D-18: el auto se devuelve a la misma hora en que se entrega — hora_fin se
   // deriva de hora_inicio, no es un campo libre. La única excepción es un
   // "late checkout acordado" (más abajo), que define hora_devolucion_acordada.
@@ -568,7 +588,15 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <Calendar className="w-4 h-4 text-slate-400" /> Inicio *
               </label>
               <div className="flex gap-2">
-                <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)}
+                <input type="date" value={fechaInicio} min={FECHA_MIN} max={FECHA_MAX}
+                  onChange={e => {
+                    const nueva = e.target.value;
+                    setFechaInicio(nueva);
+                    // Mover el retiro más allá de la devolución dejaría una
+                    // duración negativa y el precio en cero hasta que alguien
+                    // toque el otro campo. La devolución acompaña.
+                    if (nueva && fechaFin && fechaFin <= nueva) setFechaFin(sumarDias(nueva, 1));
+                  }}
                   className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" required />
                 <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)}
                   className="w-24 px-2 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
@@ -580,7 +608,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 {duracionDias > 0 && <span className="text-primary font-normal">({duracionDias} días)</span>}
               </label>
               <div className="flex gap-2">
-                <input type="date" value={fechaFin} min={fechaInicio} onChange={e => setFechaFin(e.target.value)}
+                <input type="date" value={fechaFin} min={fechaInicio || FECHA_MIN} max={FECHA_MAX}
+                  onChange={e => setFechaFin(e.target.value)}
                   className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" required />
                 <input type="time" value={horaFin} disabled title="Se devuelve a la misma hora en que se entrega"
                   className="w-24 px-2 py-2.5 rounded-lg border border-slate-200 bg-slate-100 text-slate-500 text-sm cursor-not-allowed" />
@@ -953,7 +982,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-600">Forma de pago esperada (opcional)</label>
                 <div className="flex gap-2 flex-wrap">
-                  {['efectivo', 'transferencia', 'tarjeta', 'cheque', 'echeq', 'cuenta_corriente'].map(m => (
+                  {['efectivo', 'transferencia', 'tarjeta', 'wapa', 'cheque', 'echeq', 'cuenta_corriente'].map(m => (
                     <button
                       key={m} type="button"
                       onClick={() => setFormaPagoPrevista(m === formaPagoPrevista ? '' : m)}

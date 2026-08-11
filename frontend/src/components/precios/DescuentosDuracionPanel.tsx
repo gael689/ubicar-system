@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Percent, Plus, X, RotateCcw, Trash2 } from 'lucide-react';
+import { Percent, Plus, X, RotateCcw, Trash2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  useDescuentosDuracion, useCrearDescuentoDuracion,
+  useDescuentosDuracion, useCrearDescuentoDuracion, useActualizarDescuentoDuracion,
   useDarDeBajaDescuentoDuracion, useReactivarDescuentoDuracion,
 } from '@/hooks/usePrecios';
 import { useCategorias } from '@/hooks/useCategorias';
 import { cn, extractError } from '@/lib/utils';
+import { EscaleraDuracion } from './EscaleraDuracion';
+import type { DescuentoDuracion } from '@/types';
 
 const FORM_VACIO = {
   nombre: '',
@@ -17,6 +19,18 @@ const FORM_VACIO = {
   porcentaje: '',
   categoria_id: '',
 };
+
+type FormEscalon = typeof FORM_VACIO;
+
+function formDe(d: DescuentoDuracion): FormEscalon {
+  return {
+    nombre: d.nombre,
+    dias_desde: String(d.dias_desde),
+    dias_hasta: d.dias_hasta === null ? '' : String(d.dias_hasta),
+    porcentaje: String(Number(d.porcentaje)),
+    categoria_id: d.categoria_id === null ? '' : String(d.categoria_id),
+  };
+}
 
 /**
  * Descuento por alquilar muchos días. Es un eje distinto al del calendario:
@@ -29,29 +43,59 @@ export function DescuentosDuracionPanel() {
   const { data: descuentos = [] } = useDescuentosDuracion(verInactivos);
   const { data: categorias = [] } = useCategorias();
   const crear = useCrearDescuentoDuracion();
+  const actualizar = useActualizarDescuentoDuracion();
   const darDeBaja = useDarDeBajaDescuentoDuracion();
   const reactivar = useReactivarDescuentoDuracion();
 
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(FORM_VACIO);
+  const [form, setForm] = useState<FormEscalon>(FORM_VACIO);
+  // `null` = el formulario está creando. Un id = está editando ese escalón.
+  // Corregir un 10% que quedó mal tenía que hacerse dando de baja y volviendo
+  // a cargar, y eso deja la escalera con un hueco mientras dura.
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+
+  function abrirNuevo() {
+    setEditandoId(null);
+    setForm(FORM_VACIO);
+    setShowForm(true);
+  }
+
+  function abrirEdicion(d: DescuentoDuracion) {
+    setEditandoId(d.id);
+    setForm(formDe(d));
+    setShowForm(true);
+  }
+
+  function cerrar() {
+    setShowForm(false);
+    setEditandoId(null);
+    setForm(FORM_VACIO);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const payload = {
+      nombre: form.nombre,
+      dias_desde: Number(form.dias_desde),
+      dias_hasta: form.dias_hasta ? Number(form.dias_hasta) : null,
+      porcentaje: form.porcentaje,
+      categoria_id: form.categoria_id ? Number(form.categoria_id) : null,
+    };
     try {
-      await crear.mutateAsync({
-        nombre: form.nombre,
-        dias_desde: Number(form.dias_desde),
-        dias_hasta: form.dias_hasta ? Number(form.dias_hasta) : null,
-        porcentaje: form.porcentaje,
-        categoria_id: form.categoria_id ? Number(form.categoria_id) : null,
-      });
-      toast.success('Descuento creado');
-      setForm(FORM_VACIO);
-      setShowForm(false);
+      if (editandoId === null) {
+        await crear.mutateAsync(payload);
+        toast.success('Escalón creado');
+      } else {
+        await actualizar.mutateAsync({ id: editandoId, payload });
+        toast.success('Escalón actualizado');
+      }
+      cerrar();
     } catch (err) {
       toast.error(extractError(err));
     }
   }
+
+  const guardando = crear.isPending || actualizar.isPending;
 
   return (
     <Card className="p-5 space-y-4">
@@ -70,24 +114,29 @@ export function DescuentosDuracionPanel() {
           <Button variant="outline" size="sm" onClick={() => setVerInactivos(v => !v)}>
             {verInactivos ? 'Ver sólo activos' : 'Ver dados de baja'}
           </Button>
-          <Button size="sm" onClick={() => setShowForm(v => !v)}>
+          <Button size="sm" onClick={abrirNuevo}>
             <Plus className="h-4 w-4" /> Nuevo
           </Button>
         </div>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Se aplica sobre el total de los días ya calculados. Si dos descuentos se solapan, gana el
-        de mayor porcentaje — el cliente nunca sale perdiendo por un solapamiento mal cargado.
-        <strong> Estos descuentos valen igual en web y en mostrador</strong>: son la misma lista
-        en las dos pantallas.
+        El precio de la categoría es <strong className="text-foreground">uno solo: cuánto sale un
+        día al 100%</strong>. Estos escalones son lo que se descuenta según cuántos días se lleve,
+        y el sistema los aplica solo en la web y en el mostrador. Se calcula sobre el total de los
+        días del auto, antes de los seguros y extras. Si dos escalones se solapan gana el de mayor
+        porcentaje: el cliente nunca sale perdiendo por un solapamiento mal cargado.
       </p>
+
+      <EscaleraDuracion />
 
       {showForm && (
         <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-foreground">Nuevo descuento</span>
-            <button type="button" onClick={() => setShowForm(false)}
+            <span className="text-sm font-medium text-foreground">
+              {editandoId === null ? 'Nuevo escalón' : 'Editar escalón'}
+            </span>
+            <button type="button" onClick={cerrar}
               className="text-muted-foreground hover:text-foreground">
               <X className="h-4 w-4" />
             </button>
@@ -146,17 +195,19 @@ export function DescuentosDuracionPanel() {
             </select>
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setShowForm(false)}>
+            <Button type="button" variant="outline" size="sm" onClick={cerrar}>
               Cancelar
             </Button>
-            <Button type="submit" size="sm" disabled={crear.isPending}>Crear</Button>
+            <Button type="submit" size="sm" disabled={guardando}>
+              {editandoId === null ? 'Crear' : 'Guardar cambios'}
+            </Button>
           </div>
         </form>
       )}
 
       {descuentos.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4 text-center">
-          Sin descuentos por duración cargados.
+          Sin escalones cargados: hoy un día y un mes salen lo mismo por día.
         </p>
       ) : (
         <div className="space-y-1.5">
@@ -176,9 +227,14 @@ export function DescuentosDuracionPanel() {
                 </p>
               </div>
               {d.activo ? (
-                <Button variant="ghost" size="sm" onClick={() => darDeBaja.mutate(d.id)} title="Dar de baja">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => abrirEdicion(d)} title="Editar">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => darDeBaja.mutate(d.id)} title="Dar de baja">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </>
               ) : (
                 <Button variant="ghost" size="sm" onClick={() => reactivar.mutate(d.id)} title="Reactivar">
                   <RotateCcw className="h-3.5 w-3.5" />

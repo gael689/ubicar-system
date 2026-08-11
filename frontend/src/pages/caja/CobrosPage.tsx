@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { MetodoPago } from '@/types';
 
 const MEDIOS: MetodoPago[] = [
-  'efectivo', 'transferencia', 'tarjeta', 'cheque', 'echeq', 'cuenta_corriente',
+  'efectivo', 'transferencia', 'tarjeta', 'cheque', 'echeq', 'cuenta_corriente', 'wapa',
 ];
 
 const MEDIO_COLOR: Record<string, string> = {

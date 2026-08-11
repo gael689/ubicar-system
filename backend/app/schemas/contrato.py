@@ -70,9 +70,27 @@ class ContratoResponse(BaseModel):
     firmado_at: datetime | None = None
     firmado_por_nombre: str | None = None
     firmado_por_dni: str | None = None
+    # "link" | "pantalla" | "papel"
     firma_medio: str | None = None
     atendido_por: int | None = None
     anulado: bool
     motivo_anulacion: str | None = None
     fecha_generacion: datetime
+
+    # ── Firma por link (D-C6) ────────────────────────────────────────────
+    # **El token no se expone.** La pantalla necesita saber si hay un link
+    # vivo y hasta cuándo, no cuál es: la URL completa viaja en
+    # `link_prellenado`, que es lo que se copia, y devolver además el token
+    # suelto sólo agrega un lugar más del que se puede filtrar.
+    link_prellenado: str | None = None
+    firma_token_expira: datetime | None = None
+    # Qué aceptó el cliente, con el texto congelado. Es la contingencia: sin
+    # esto, "aceptó los términos" no dice qué términos.
+    firma_aceptaciones: list | None = None
+    firma_ip: str | None = None
+    # ¿Está adjuntado el papel firmado? Se manda como booleano y no como key:
+    # la key es una ruta interna del storage y el frontend baja el archivo por
+    # `GET /contratos/{id}/escaneo`, no armando URLs a mano.
+    tiene_escaneo: bool = False
+
     model_config = {"from_attributes": True}

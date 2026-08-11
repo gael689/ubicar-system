@@ -1,13 +1,20 @@
 import { useRef, useState, useEffect } from 'react';
-import { FileText, Download, PenLine, Ban, AlertTriangle } from 'lucide-react';
+import {
+  FileText, Download, PenLine, Ban, AlertTriangle, Link2, Copy, Check,
+  Upload, Paperclip, X,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import {
   useContratoDeReserva, usePrepararContrato, useCrearContrato,
   useFirmarContrato, useAnularContrato, descargarPdfContrato,
+  useGenerarLinkFirma, useRevocarLinkFirma, useSubirEscaneoContrato,
+  verEscaneoContrato, type LinkFirma,
 } from '@/hooks/useContratos';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { extractError, formatCurrency, formatDate } from '@/lib/utils';
+import type { Contrato } from '@/types';
 
 interface Props {
   reservaId: number;
@@ -111,14 +118,23 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
         </div>
 
         {contrato.firmado && (
-          <p className="text-xs text-muted-foreground">
-            Firmó {contrato.firmado_por_nombre} · DNI {contrato.firmado_por_dni}
-            {contrato.firmado_at && ` · ${formatDate(contrato.firmado_at)}`}
-            {/* Con qué medio importa: si dice "en papel" y no hay imagen, el
-                original firmado está en un cajón y no es un error. */}
-            {contrato.firma_medio === 'papel' && ' · en papel'}
-            {contrato.firma_medio === 'pantalla' && ' · en pantalla'}
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Firmó {contrato.firmado_por_nombre} · DNI {contrato.firmado_por_dni}
+              {contrato.firmado_at && ` · ${formatDate(contrato.firmado_at)}`}
+              {/* Con qué medio importa: si dice "en papel" y no hay imagen, el
+                  original firmado está en un cajón y no es un error. */}
+              {contrato.firma_medio === 'papel' && ' · en papel'}
+              {contrato.firma_medio === 'pantalla' && ' · en pantalla'}
+              {contrato.firma_medio === 'link' && ' · desde el link'}
+            </p>
+            {contrato.firma_medio === 'link' && (
+              <p className="text-[11px] text-muted-foreground">
+                Aceptó {contrato.firma_aceptaciones?.length ?? 0} declaraciones
+                {contrato.firma_ip && ` · desde ${contrato.firma_ip}`}
+              </p>
+            )}
+          </div>
         )}
         {contrato.anulado && contrato.motivo_anulacion && (
           <p className="text-xs text-muted-foreground">Motivo: {contrato.motivo_anulacion}</p>
@@ -126,13 +142,15 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
 
         {contrato.snapshot && <ResumenAnverso snapshot={contrato.snapshot} />}
 
+        {!contrato.firmado && !contrato.anulado && <BloqueFirma contrato={contrato} />}
+
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => descargarPdfContrato(contrato)}>
             <Download className="h-4 w-4" /> Descargar PDF
           </Button>
           {!contrato.firmado && !contrato.anulado && (
             <Button size="sm" onClick={() => setFirmando(true)}>
-              <PenLine className="h-4 w-4" /> Firmar
+              <PenLine className="h-4 w-4" /> Firmar en el mostrador
             </Button>
           )}
           {!contrato.anulado && (
@@ -141,6 +159,11 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
             </Button>
           )}
         </div>
+
+        {/* El papel firmado se puede adjuntar aunque el contrato ya esté
+            marcado como firmado: el orden natural es marcar y después subir,
+            o al revés, y forzar una secuencia sólo agrega clics. */}
+        {!contrato.anulado && <AdjuntarPapel contrato={contrato} />}
       </Card>
 
       {firmando && (
@@ -163,6 +186,154 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
         }}
       />
     </>
+  );
+}
+
+// ─── Los tres caminos para firmar ────────────────────────────────────────────
+
+/**
+ * El link es **el camino principal**: el cliente lee el contrato entero con
+ * calma en su teléfono, tilda las declaraciones y firma. Nadie tiene que
+ * imprimir nada ni resolverlo con el auto en la puerta.
+ *
+ * Los otros dos —papel y mostrador— siguen estando y se ofrecen abajo. No es
+ * redundancia: hay clientes sin teléfono a mano, y hay veces que el papel
+ * firmado es lo que pide la otra parte.
+ */
+function BloqueFirma({ contrato }: { contrato: Contrato }) {
+  const generar = useGenerarLinkFirma();
+  const revocar = useRevocarLinkFirma();
+  const [link, setLink] = useState<LinkFirma | null>(
+    contrato.link_prellenado
+      ? { url: contrato.link_prellenado, expira: contrato.firma_token_expira ?? null, mensaje: '' }
+      : null
+  );
+  const [copiado, setCopiado] = useState<'url' | 'mensaje' | null>(null);
+
+  async function copiar(texto: string, cual: 'url' | 'mensaje') {
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(cual);
+      setTimeout(() => setCopiado(null), 2000);
+    } catch {
+      toast.error('No se pudo copiar. Seleccioná el texto a mano.');
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Link2 className="h-4 w-4 text-primary" />
+        <p className="text-sm font-semibold text-foreground">Que lo firme el cliente</p>
+      </div>
+
+      {!link ? (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Genera un link para mandarle por WhatsApp. El cliente lee el contrato completo,
+            acepta las condiciones y firma desde el celular. Cuando firma,{' '}
+            <strong className="text-foreground">nos llega el aviso con el PDF firmado</strong>.
+          </p>
+          <Button
+            size="sm"
+            disabled={generar.isPending}
+            onClick={() =>
+              generar.mutate(contrato.id, {
+                onSuccess: setLink,
+                onError: e => toast.error(extractError(e)),
+              })
+            }
+          >
+            <Link2 className="h-4 w-4" />
+            {generar.isPending ? 'Generando…' : 'Generar link de firma'}
+          </Button>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+            <code className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+              {link.url}
+            </code>
+            <Button size="sm" variant="ghost" onClick={() => copiar(link.url, 'url')}>
+              {copiado === 'url' ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+
+          {link.expira && (
+            <p className="text-[11px] text-muted-foreground">
+              Vence el {formatDate(link.expira)}. Después se genera uno nuevo.
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {link.mensaje && (
+              <Button size="sm" variant="secondary" onClick={() => copiar(link.mensaje, 'mensaje')}>
+                {copiado === 'mensaje' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                Copiar mensaje para WhatsApp
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={revocar.isPending}
+              onClick={() =>
+                revocar.mutate(contrato.id, {
+                  onSuccess: () => { setLink(null); toast.success('Link revocado'); },
+                })
+              }
+            >
+              <X className="h-3.5 w-3.5" /> Revocar
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * El camino en papel, completo.
+ *
+ * Marcar "firmado en papel" ya se podía; lo que faltaba era el ejemplar con la
+ * firma. Sin él, el sistema afirmaba que había un contrato firmado y no tenía
+ * con qué respaldarlo: el papel vivía en una carpeta.
+ */
+function AdjuntarPapel({ contrato }: { contrato: Contrato }) {
+  const subir = useSubirEscaneoContrato();
+  const input = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+      <input
+        ref={input}
+        type="file"
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={e => {
+          const archivo = e.target.files?.[0];
+          e.target.value = '';   // permite volver a elegir el mismo archivo
+          if (!archivo) return;
+          subir.mutate(
+            { id: contrato.id, archivo },
+            {
+              onSuccess: () => toast.success('Contrato firmado adjuntado'),
+              onError: err => toast.error(extractError(err)),
+            }
+          );
+        }}
+      />
+      <Button size="sm" variant="ghost" disabled={subir.isPending} onClick={() => input.current?.click()}>
+        <Upload className="h-3.5 w-3.5" />
+        {subir.isPending
+          ? 'Subiendo…'
+          : contrato.tiene_escaneo ? 'Reemplazar el papel firmado' : 'Subir el firmado en papel'}
+      </Button>
+      {contrato.tiene_escaneo && (
+        <Button size="sm" variant="ghost" onClick={() => verEscaneoContrato(contrato)}>
+          <Paperclip className="h-3.5 w-3.5" /> Ver el papel adjuntado
+        </Button>
+      )}
+    </div>
   );
 }
 

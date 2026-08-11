@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { whatsappLinkCABA, WHATSAPP_GENERAL } from "@/lib/constants";
+import { WHATSAPP_GENERAL } from "@/lib/constants";
 import {
-  MapPin, ChevronDown, CalendarDays, Check, ShieldCheck, MessageCircle,
+  MapPin, ChevronDown, CalendarDays, Check, ShieldCheck, MessageCircle, UserRound,
 } from "lucide-react";
 import { trackLeadEvent } from "@/lib/meta-pixel";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,10 +25,14 @@ const LUGARES = [
   "Paraguay 241 Bahía Blanca",
   "Alsina 350 Bahía Blanca",
   "Aeropuerto Comandante Espora Bahía Blanca",
-  "Capital Federal, Juan Francisco Segui 3607",
 ];
 
 const PASOS = ["Elegí fechas", "Elegí tu vehículo", "Sumá extras", "Reservá"];
+
+// 17 a 80, y un 81 que representa "más de 80": arriba de esa edad ninguna
+// franja de recargo distingue, así que pedir el número exacto no cambia el
+// precio y sí alarga la lista.
+const EDADES = Array.from({ length: 65 }, (_, i) => i + 17);
 
 /**
  * El Hero.
@@ -52,30 +56,64 @@ const Hero = () => {
   const [horaEntrega, setHoraEntrega] = useState("10:00");
   const [fechaDevolucion, setFechaDevolucion] = useState<Date>();
   const [horaDevolucion, setHoraDevolucion] = useState("10:00");
+  const [edad, setEdad] = useState("");
+  const [faltaEdad, setFaltaEdad] = useState(false);
+
+  /**
+   * Recupera lo que ya venía elegido cuando `/reservar` rebota para acá por
+   * falta de la fecha de nacimiento. Se lee de `window.location` y no con
+   * `useSearchParams` a propósito: ese hook obliga a envolver la portada en un
+   * `Suspense` y la saca del renderizado estático, y esto es un caso de borde
+   * que no justifica pagar eso en la página principal.
+   */
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (![...p.keys()].length) return;
+
+    const lugar = p.get("lugar");
+    const devolucion = p.get("devolucion");
+    const desde = p.get("desde");
+    const hasta = p.get("hasta");
+
+    if (lugar) setLugarEntrega(lugar);
+    if (devolucion) {
+      setDevolverOtroLugar(true);
+      setLugarDevolucion(devolucion);
+    }
+    if (desde) setFechaEntrega(new Date(`${desde}T12:00:00`));
+    if (hasta) setFechaDevolucion(new Date(`${hasta}T12:00:00`));
+    if (p.get("hora_desde")) setHoraEntrega(p.get("hora_desde")!);
+    if (p.get("hora_hasta")) setHoraDevolucion(p.get("hora_hasta")!);
+  }, []);
 
   /**
    * El buscador es el paso 1 de la reserva. **No valida nada acá**: si falta
    * un dato, el paso 1 se lo pide con el mismo calendario. Frenar con un
    * `alert()` a alguien que recién llegó es la peor manera de recibirlo.
    *
-   * Capital Federal sigue yendo por WhatsApp (D-39): el flujo online es sólo
-   * Bahía Blanca hasta resolver si la flota de CABA es la misma.
+   * Ya no hay desvío a WhatsApp por Capital Federal: la operación es Bahía
+   * Blanca y la zona, así que los tres puntos de retiro van por el flujo
+   * online. El contacto de CABA queda en la sección de Contacto, que es un
+   * canal de consulta y no un lugar donde se retira un auto.
+   *
+   * **La edad es el único campo obligatorio acá**, y es a propósito: es el
+   * dato que falta para que el precio del paso 1 sea el definitivo. Sin él
+   * habría que cotizar dos veces y corregir el número después de que el
+   * cliente eligió.
+   *
+   * Se pide la edad y no la fecha de nacimiento: en la portada todavía no hay
+   * un cliente, hay alguien mirando precios. Un campo de documento de
+   * identidad en el primer formulario es fricción pura. La fecha exacta se
+   * carga en el paso 3, que es donde ya hay una reserva en juego.
    */
   const handleBuscar = () => {
-    trackLeadEvent();
-
-    if (lugarEntrega === "Capital Federal, Juan Francisco Segui 3607") {
-      const f = (d?: Date) => (d ? format(d, "dd/MM/yyyy") : "No especificada");
-      window.open(
-        whatsappLinkCABA(
-          `Hola! Quiero cotizar un alquiler en Capital Federal.\n` +
-          `*Retiro:* ${f(fechaEntrega)} ${horaEntrega}\n` +
-          `*Devolución:* ${f(fechaDevolucion)} ${horaDevolucion}`,
-        ),
-        "_blank",
-      );
+    if (!edad) {
+      setFaltaEdad(true);
+      document.getElementById("hero-edad")?.focus();
       return;
     }
+
+    trackLeadEvent();
 
     const params = new URLSearchParams();
     if (lugarEntrega) params.set("lugar", lugarEntrega);
@@ -84,28 +122,31 @@ const Hero = () => {
     if (fechaDevolucion) params.set("hasta", format(fechaDevolucion, "yyyy-MM-dd"));
     params.set("hora_desde", horaEntrega);
     params.set("hora_hasta", horaDevolucion);
+    params.set("edad", edad);
     router.push(`/reservar?${params.toString()}`);
   };
 
   return (
     <section className="relative flex min-h-screen items-center overflow-hidden pb-16 pt-32 lg:pb-20 lg:pt-36">
-      {/* Foto de fondo */}
+      {/* Foto de fondo. El encuadre se corre a la derecha (65%) para que el
+          auto y las luces no queden cortados en pantallas angostas. */}
       <Image
-        src="/img/hero.png"
+        src="/img/hero.jpg"
         alt=""
         fill
         priority
         sizes="100vw"
-        className="object-cover"
+        className="object-cover object-[65%_center]"
       />
-      {/* Un solo degradé, de oscuro a menos oscuro. El buscador blanco es lo
-          único que tiene que llamar la atención: cualquier textura detrás le
-          compite. */}
+      {/* El velo es **neutro, no azul**: la foto es un atardecer y el degradé
+          corporativo que había antes le apagaba el naranja hasta dejarla gris.
+          Arranca casi opaco donde va el titular y se abre hacia la derecha,
+          que es donde está la luz de la foto. */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(100deg, rgba(13,30,53,0.93) 0%, rgba(19,45,79,0.85) 42%, rgba(27,63,107,0.60) 100%)",
+            "linear-gradient(100deg, rgba(8,15,26,0.92) 0%, rgba(11,20,34,0.80) 40%, rgba(16,26,42,0.38) 100%)",
         }}
       />
 
@@ -119,9 +160,12 @@ const Hero = () => {
               className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-[#7FB3E8] opacity-0 animate-fade-up"
               style={{ animationDelay: "0.08s" }}
             >
-              Reservá online
+              Reservá online, a cualquier hora
             </p>
 
+            {/* El titular es "alquiler de vehículos en Bahía Blanca" y nada
+                más: es la búsqueda por la que entra la gente y el h1 de la
+                portada. */}
             <h1
               className="text-[2.2rem] font-bold leading-[1.08] tracking-tight text-white opacity-0 animate-fade-up sm:text-[3rem] lg:text-[3.5rem]"
               style={{ animationDelay: "0.14s" }}
@@ -135,8 +179,9 @@ const Hero = () => {
               className="mt-6 max-w-md text-base leading-relaxed text-white/75 opacity-0 animate-fade-up md:text-lg"
               style={{ animationDelay: "0.2s" }}
             >
-              Consultá disponibilidad, mirá el precio final y reservá tu vehículo
-              en cuatro pasos.
+              Elegí las fechas, mirá el precio final con el seguro incluido y
+              reservá. Cuatro pasos y el auto queda a tu nombre — sin llamar a
+              nadie ni esperar respuesta.
             </p>
 
             {/* Los cuatro pasos, como una línea de texto sobria: hace visible
@@ -229,6 +274,51 @@ const Hero = () => {
                   />
                 </div>
 
+                {/* Va acá y no en el paso 3 para que la grilla de precios
+                    salga bien la primera vez. Es un desplegable y no un campo
+                    numérico: no admite un tipeo de más —un "2" en lugar de un
+                    "25" cotiza cualquier cosa— y no abre el teclado en el
+                    teléfono. Arranca en 17, que es la edad a la que ya se
+                    puede tener licencia: D-38 no fija un mínimo, así que la
+                    lista tampoco puede inventar uno. */}
+                <div>
+                  <label
+                    htmlFor="hero-edad"
+                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Edad del responsable
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="hero-edad"
+                      value={edad}
+                      onChange={(e) => {
+                        setEdad(e.target.value);
+                        if (e.target.value) setFaltaEdad(false);
+                      }}
+                      aria-invalid={faltaEdad}
+                      className={cn(
+                        "h-[52px] w-full cursor-pointer appearance-none rounded-lg border bg-white pl-11 pr-9 text-base font-semibold text-[#1B3F6B] outline-none transition-colors focus:border-primary focus:ring-4 focus:ring-primary/15",
+                        faltaEdad ? "border-destructive" : "border-border",
+                      )}
+                    >
+                      <option value="">Elegí la edad</option>
+                      {EDADES.map((e) => (
+                        <option key={e} value={e}>
+                          {e === 81 ? "Más de 80 años" : `${e} años`}
+                        </option>
+                      ))}
+                    </select>
+                    <UserRound className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" />
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                  {faltaEdad && (
+                    <p className="mt-1.5 text-xs font-medium text-destructive">
+                      Necesitamos la edad de quien va a alquilar.
+                    </p>
+                  )}
+                </div>
+
                 <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-muted-foreground">
                   <Checkbox
                     checked={devolverOtroLugar}
@@ -258,8 +348,12 @@ const Hero = () => {
                   Ver vehículos disponibles
                 </Button>
 
+                {/* El plazo se avisa acá, antes de elegir la fecha. Que el
+                    formulario te rechace el retiro recién al validar es la
+                    peor forma de enterarse de una regla del negocio. */}
                 <p className="text-center text-xs text-muted-foreground">
-                  Ver los precios no te compromete a nada.
+                  Las reservas online se toman con <strong>72 horas</strong> de
+                  anticipación. Ver los precios no te compromete a nada.
                 </p>
               </div>
 

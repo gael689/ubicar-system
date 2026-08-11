@@ -8,9 +8,10 @@ de la flota en segundos.
 """
 import logging
 from datetime import date, datetime, time
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -37,7 +38,12 @@ router = APIRouter(prefix="/public", tags=["Público"])
 
 # Decisión #2 de docs/DECISIONES_RESERVAS_WEB.md — todavía sin confirmar por
 # los dueños. Es un parámetro y no una constante enterrada justamente por eso.
-ANTICIPACION_MINIMA_HORAS = 24
+# 72 horas, no 24. Una reserva web dispara trabajo de mostrador antes de que el
+# cliente aparezca —asignar el vehículo, emitir el contrato y esperar la firma
+# (D-47)—, y con un día de plazo eso no entra. Se avisa en el Hero, no sólo al
+# validar: enterarse del plazo recién cuando el formulario te rechaza la fecha
+# es la peor forma de comunicarlo.
+ANTICIPACION_MINIMA_HORAS = 72
 DURACION_MAXIMA_DIAS = 90
 
 
@@ -47,6 +53,13 @@ def get_disponibilidad(
     fecha_fin: date = Query(..., description="Devolución, ISO YYYY-MM-DD"),
     hora_inicio: time = Query(time(10, 0)),
     hora_fin: time = Query(time(10, 0)),
+    # Los topes son una validación de entrada, no una regla de negocio: D-38
+    # dice que la edad modifica el precio y no rechaza a nadie. Sirven para que
+    # un `edad=-5` no llegue al motor de precios.
+    edad: int | None = Query(
+        None, ge=16, le=110,
+        description="Edad declarada del responsable. Hace que el precio salga con el recargo por edad ya incluido",
+    ),
     db: Session = Depends(get_db),
 ):
     """
@@ -73,6 +86,7 @@ def get_disponibilidad(
 
     categorias = DisponibilidadService(db).consultar(
         fecha_inicio, hora_inicio, fecha_fin, hora_fin,
+        edad_conductor=edad,
     )
     return ok({
         "fecha_inicio": fecha_inicio,
@@ -134,6 +148,16 @@ class CotizarPublicoRequest(BaseModel):
     categoria_id: int
     adicionales: list[AdicionalElegido] = []
     fecha_nacimiento: date | None = None
+    # La declarada en el buscador de la portada. Sostiene el precio en los
+    # pasos 2 y 3, mientras todavía no se cargó la fecha de nacimiento: sin
+    # esto el total **bajaría** al avanzar desde el paso 1, que ya cotizó con
+    # el recargo. Cuando llega la fecha exacta, esa manda (ver PrecioService).
+    edad: int | None = Field(None, ge=16, le=110)
+    # Cuánto piensa adelantar. **Cambia el precio**: en la web el descuento por
+    # duración sólo corre pagando el 100% (ver `aplica_descuento_por_duracion`).
+    # Sin este dato se cotiza sin descuento, que es lo correcto en los pasos 1 a
+    # 3, donde el cliente todavía no eligió.
+    porcentaje_anticipo: int | None = Field(None, ge=1, le=100)
 
 
 @router.post("/cotizar", dependencies=[Depends(limite_consultas)])
@@ -169,6 +193,8 @@ def cotizar_publico(payload: CotizarPublicoRequest, db: Session = Depends(get_db
             canal="web",
             adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
             fecha_nacimiento=payload.fecha_nacimiento,
+            edad_conductor=payload.edad,
+            porcentaje_anticipo=payload.porcentaje_anticipo,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -208,9 +234,37 @@ def get_config_publica(db: Session = Depends(get_db)):
     from app.domain.pagos_web import (
         CLAVE_DESCUENTO_PAGO_TOTAL, DESCUENTO_PAGO_TOTAL_DEFAULT, PORCENTAJES_ANTICIPO,
     )
+    from app.models.tarifa_calendario import DescuentoDuracion
     from app.services.configuracion_service import ConfiguracionService
 
+    # La escalera por duración es información de venta: "llevátelo una semana y
+    # ahorrás 15%". Sin exponerla, el cliente sólo descubre el descuento después
+    # de cambiar las fechas y ver que el total bajó — que es justo al revés de
+    # lo que hace que alquile más días.
+    #
+    # Sólo salen las generales: una banda atada a una categoría es una decisión
+    # comercial puntual y publicarla en el config del sitio la vuelve un precio
+    # de lista que después hay que sostener.
+    escalones = (
+        db.query(DescuentoDuracion)
+        .filter(
+            DescuentoDuracion.activo.is_(True),
+            DescuentoDuracion.categoria_id.is_(None),
+        )
+        .order_by(DescuentoDuracion.dias_desde)
+        .all()
+    )
+
     return ok({
+        "escalones_duracion": [
+            {
+                "nombre": d.nombre,
+                "dias_desde": d.dias_desde,
+                "dias_hasta": d.dias_hasta,
+                "porcentaje": float(d.porcentaje),
+            }
+            for d in escalones
+        ],
         # Con esto la web decide si muestra el botón de pagar o el cartel de
         # "coordinamos por WhatsApp", en vez de ofrecer un pago que va a fallar.
         "cobro_online": cobro_habilitado(),
@@ -429,6 +483,15 @@ def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Dep
     )
 
 
+# Los mismos cuatro valores del enum `condicion_iva` de la base (migración
+# 023). Se declara acá y no se importa el enum de SQLAlchemy para que un
+# valor inventado desde el navegador falle con un 422 legible en vez de
+# reventar en el INSERT.
+CondicionIvaWeb = Literal[
+    "responsable_inscripto", "monotributo", "consumidor_final", "exento",
+]
+
+
 class ReservaWebRequest(BaseModel):
     """
     Paso 4 del flujo web. **No lleva precio**: el total se recalcula en el
@@ -447,6 +510,13 @@ class ReservaWebRequest(BaseModel):
     adicionales: list[AdicionalElegido] = []
     fecha_nacimiento: date | None = None
     notas: str | None = None
+    # Datos fiscales. El sistema **todavía no emite comprobantes fiscales**:
+    # esto no habilita a facturar, guarda el dato para que quien factura no
+    # tenga que perseguir al cliente por el CUIT después, y para el día que se
+    # conecte la facturación electrónica. Los campos ya existían en `Cliente`
+    # (migración 023), sólo que la web nunca los cargaba.
+    condicion_iva: CondicionIvaWeb | None = None
+    razon_social: str | None = None
 
 
 @router.post("/reservas", status_code=status.HTTP_201_CREATED,
@@ -490,6 +560,8 @@ def crear_reserva_publica(payload: ReservaWebRequest, db: Session = Depends(get_
             adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
             fecha_nacimiento=payload.fecha_nacimiento,
             notas=payload.notas,
+            condicion_iva=payload.condicion_iva,
+            razon_social=payload.razon_social,
             url_base_web=settings.web_url,
             url_webhook=_url_webhook(),
         )
@@ -523,6 +595,223 @@ def _url_webhook() -> str:
     """
     base = (settings.backend_public_url or "").rstrip("/")
     return f"{base}/api/v1/public/webhooks/mercadopago" if base else ""
+
+
+# ─── Firma del contrato por link (D-C6) ──────────────────────────────────────
+#
+# El cliente recibe `{web}/contrato/{token}` y firma desde su teléfono. Estos
+# tres endpoints son toda la superficie pública: leer, firmar y descargar.
+#
+# **El token es la credencial.** No hay login del otro lado y no puede haberlo:
+# quien firma es alguien que alquiló un auto una vez, no un usuario del
+# sistema. Por eso el token es largo, vence, y se revoca desde el mostrador.
+
+
+class FirmarPorLinkRequest(BaseModel):
+    nombre: str
+    dni: str
+    # PNG en data-URL, el mismo formato que manda el mostrador.
+    firma_base64: str
+    # Las claves de `contrato_clausulado.ACEPTACIONES` que el cliente tildó.
+    # Se mandan todas o el service rechaza: no es un formulario a completar a
+    # medias.
+    aceptaciones: list[str] = []
+
+
+def _contrato_para_el_cliente(contrato, plantilla) -> dict:
+    """
+    Lo que ve el cliente. **Es el snapshot congelado**, igual que el PDF: si
+    esta pantalla leyera las tablas vivas, mostraría un contrato distinto del
+    que se emitió, y la firma valdría sobre otro texto.
+    """
+    from app.domain import contrato_clausulado
+
+    return {
+        "numero": contrato.numero_formateado,
+        "snapshot": contrato.snapshot or {},
+        "clausulado": {
+            "version": plantilla.version,
+            "titulo": plantilla.titulo,
+            "clausulas": plantilla.clausulas,
+        },
+        "aceptaciones": contrato_clausulado.ACEPTACIONES,
+        "firmado": contrato.firmado,
+        "firmado_at": contrato.firmado_at,
+        "firmado_por_nombre": contrato.firmado_por_nombre,
+        "expira": contrato.firma_token_expira,
+        # La pantalla decide con esto si muestra el formulario o el "ya está
+        # firmado, acá lo tenés". El backend no puede delegar la validez del
+        # link al navegador, pero sí puede evitarle un intento perdido.
+        "vencido": bool(
+            contrato.firma_token_expira
+            and contrato.firma_token_expira <= datetime.utcnow()
+        ),
+    }
+
+
+@router.get("/contratos/{token}", dependencies=[Depends(limite_consultas)])
+def ver_contrato_por_token(token: str, db: Session = Depends(get_db)):
+    """
+    El contrato completo, para leerlo antes de firmar.
+
+    **Sigue respondiendo después de firmado y después de vencido**, a
+    propósito: es lo que permite que el cliente vuelva a abrir el link que
+    tiene en el WhatsApp y se baje su copia. Un link que muere al firmar deja
+    a la persona sin el documento que acaba de aceptar.
+    """
+    from app.models.contrato import ContratoPlantilla
+    from app.services.contrato_service import ContratoService
+
+    svc = ContratoService(db)
+    try:
+        contrato = svc.por_token(token, para_firmar=False)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Este link no es válido.")
+    except BusinessRuleError as e:
+        raise HTTPException(status_code=410, detail=_mensaje(e))
+
+    plantilla = (
+        db.get(ContratoPlantilla, contrato.plantilla_id)
+        if contrato.plantilla_id else svc.plantilla_vigente()
+    )
+    return ok(_contrato_para_el_cliente(contrato, plantilla))
+
+
+@router.post("/contratos/{token}/firmar", dependencies=[Depends(limite_solicitudes)])
+def firmar_contrato_por_token(
+    token: str,
+    payload: FirmarPorLinkRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    El cliente firma. Es el único endpoint público que escribe en `contratos`.
+
+    Va con el limitador de solicitudes y no con el de consultas: firmar es una
+    acción, y sin tope alguien con el token podría martillarlo.
+    """
+    import base64
+
+    from app.services.contrato_service import ContratoService
+
+    try:
+        crudo = payload.firma_base64.split(",", 1)[-1]
+        firma_bytes = base64.b64decode(crudo) if crudo else None
+    except Exception:
+        raise HTTPException(status_code=422, detail="La firma no se pudo leer. Volvé a trazarla.")
+
+    svc = ContratoService(db)
+    try:
+        contrato = svc.firmar_por_link(
+            token,
+            nombre=payload.nombre.strip(),
+            dni=payload.dni.strip(),
+            firma_bytes=firma_bytes,
+            aceptadas=payload.aceptaciones,
+            ip=_ip_del_cliente(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Este link no es válido.")
+    except BusinessRuleError as e:
+        # 422 cuando falta algo del formulario y el cliente puede corregirlo;
+        # 409 cuando el contrato ya no admite la firma (vencido, anulado o ya
+        # firmado) y no hay nada que corregir.
+        codigo = 422 if e.rule in ("faltan_aceptaciones", "falta_firma") else 409
+        raise HTTPException(status_code=codigo, detail=_mensaje(e))
+
+    _avisar_contrato_firmado(db, contrato)
+    db.commit()
+
+    return ok(
+        {"numero": contrato.numero_formateado, "firmado_at": contrato.firmado_at},
+        "Contrato firmado. Te mandamos una copia por mail.",
+    )
+
+
+@router.get("/contratos/{token}/pdf", dependencies=[Depends(limite_consultas)])
+def descargar_contrato_por_token(token: str, db: Session = Depends(get_db)):
+    """
+    El PDF, para que el cliente se lo lleve.
+
+    Se sirve `inline` y no como adjunto: en el teléfono, un `attachment` cae en
+    una carpeta de Descargas que mucha gente no encuentra, mientras que
+    `inline` lo abre en el visor y desde ahí se comparte o se guarda.
+    """
+    from app.services.contrato_service import ContratoService
+
+    svc = ContratoService(db)
+    try:
+        contrato = svc.por_token(token, para_firmar=False)
+        pdf = svc.generar_pdf(contrato.id)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Este link no es válido.")
+    except BusinessRuleError as e:
+        raise HTTPException(status_code=410, detail=_mensaje(e))
+
+    nombre = f"contrato_{contrato.numero_formateado}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{nombre}"'},
+    )
+
+
+def _mensaje(e: BusinessRuleError) -> str:
+    """
+    El texto sin el `[codigo]` que antepone `BusinessRuleError`.
+
+    Adentro del sistema ese prefijo ayuda a rastrear el error; en una pantalla
+    pública es ruido que el cliente lee como si algo se hubiera roto. Los
+    mensajes de estas reglas están redactados para mostrárselos tal cual.
+    """
+    texto = str(e)
+    return texto.split("] ", 1)[1] if texto.startswith("[") and "] " in texto else texto
+
+
+def _ip_del_cliente(request: Request) -> str | None:
+    """
+    La IP real detrás del proxy de Railway. `request.client.host` sería la del
+    balanceador y registraría la misma para todos los clientes, que es lo mismo
+    que no registrar nada.
+    """
+    reenviada = request.headers.get("x-forwarded-for")
+    if reenviada:
+        return reenviada.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+def _avisar_contrato_firmado(db: Session, contrato) -> None:
+    """
+    Avisa que el contrato se firmó: campana adentro, mail con el PDF adjunto
+    para el equipo y para el cliente.
+
+    **Nada de esto puede voltear la firma.** El cliente ya firmó; que falle un
+    mail no puede devolver un error que lo deje pensando que no quedó.
+    """
+    from app.services.contrato_firmado_email import notificar_contrato_firmado
+    from app.services.notificacion_service import NotificacionService
+
+    reserva = contrato.reserva
+    try:
+        NotificacionService(db).generar_una({
+            "tipo": "contrato_firmado",
+            "titulo": "Contrato firmado por el cliente",
+            "descripcion": (
+                f"{contrato.numero_formateado} — {contrato.firmado_por_nombre} "
+                f"firmó desde el link"
+                + (f" (reserva #{reserva.id})" if reserva else "")
+            ),
+            "urgencia": "media",
+            "entidad_tipo": "contrato",
+            "entidad_id": contrato.id,
+            "url_destino": f"/reservas?reserva={reserva.id}" if reserva else "/contratos",
+            "fecha_objetivo": reserva.fecha_inicio if reserva else None,
+        })
+    except Exception:
+        logger.exception("[Contratos] falló la notificación de firma de %s", contrato.id)
+
+    notificar_contrato_firmado(db, contrato)
 
 
 @router.post("/webhooks/mercadopago")

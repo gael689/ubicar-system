@@ -19,10 +19,10 @@ const GA_ID = "G-25783YNP7G";
 
 const TITULO = "Alquiler de Autos en Bahía Blanca | Ubicar Rent";
 const DESCRIPCION =
-  "Alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y CABA. " +
-  "Reserva rápida por WhatsApp. Atención a empresas y particulares. ¡Consultá disponibilidad!";
+  "Alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y la zona. " +
+  "Reservá online con precio final. Atención a empresas y particulares. ¡Consultá disponibilidad!";
 const DESCRIPCION_SOCIAL =
-  "Alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y CABA. Reservá por WhatsApp.";
+  "Alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y la zona. Reservá online.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -90,7 +90,7 @@ const JSON_LD = {
       "@id": `${SITE}/#business`,
       name: "Ubicar Rent",
       description:
-        "Empresa de alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y Buenos Aires. Reserva online con precio final y kilometraje libre, para particulares y empresas.",
+        "Empresa de alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y el sur de la Provincia de Buenos Aires. Reserva online con precio final y kilometraje libre, para particulares y empresas.",
       url: `${SITE}/`,
       logo: `${SITE}/og-image.jpeg`,
       image: `${SITE}/og-image.jpeg`,
@@ -107,9 +107,13 @@ const JSON_LD = {
         addressCountry: "AR",
       },
       geo: { "@type": "GeoCoordinates", latitude: -38.7196, longitude: -62.2724 },
+      // La zona de servicio es Bahía Blanca y el sur de la provincia. CABA
+      // estaba declarada acá y no corresponde: no se retira ni se entrega un
+      // vehículo allá, y declararla le parte a Google la señal local con
+      // Bahía, que es la búsqueda que interesa. El contacto de CABA sigue en
+      // la sección de Contacto, que es otra cosa.
       areaServed: [
         { "@type": "City", name: "Bahía Blanca" },
-        { "@type": "City", name: "Ciudad Autónoma de Buenos Aires" },
         { "@type": "AdministrativeArea", name: "Sur de la Provincia de Buenos Aires" },
       ],
       sameAs: ["https://www.instagram.com/ubicar_rent/"],
@@ -179,9 +183,9 @@ const JSON_LD = {
             "@type": "Offer",
             itemOffered: {
               "@type": "Service",
-              name: "Alquiler de vehículos para empresas en CABA",
+              name: "Alquiler de vehículos para empresas en Bahía Blanca",
               description:
-                "Soluciones corporativas de movilidad en Buenos Aires: flota empresarial, vehículos de reemplazo y alquileres a largo plazo.",
+                "Soluciones corporativas de movilidad: flota empresarial, vehículos de reemplazo y alquileres a largo plazo en Bahía Blanca y la zona.",
             },
           },
         ],
@@ -213,7 +217,7 @@ const JSON_LD = {
           name: "¿Dónde queda Ubicar Rent en Bahía Blanca?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Ubicar Rent está en Paraguay 241, Bahía Blanca, Buenos Aires, Argentina. También atendemos en Capital Federal (CABA) al +54 9 11 2516-4791.",
+            text: "Ubicar Rent está en Paraguay 241, Bahía Blanca, Buenos Aires, Argentina. También entregamos en Alsina 350 y en el Aeropuerto Comandante Espora.",
           },
         },
         {
@@ -237,7 +241,7 @@ const JSON_LD = {
           name: "¿Cómo reservo un auto o maquinaria?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Podés reservar completando el formulario de disponibilidad en nuestra web o por WhatsApp: +54 9 291 418-0554 (Bahía Blanca) o +54 9 11 2516-4791 (CABA). También podés escribirnos a ubicar.rent@gmail.com.",
+            text: "Podés reservar online desde nuestra web en cuatro pasos, o por WhatsApp al +54 9 291 418-0554. También podés escribirnos a ubicar.rent@gmail.com.",
           },
         },
         {
@@ -245,7 +249,7 @@ const JSON_LD = {
           name: "¿Hacen alquileres para empresas?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Sí, Ubicar Rent ofrece soluciones corporativas de movilidad: gestión de flota, vehículos de reemplazo y alquileres a largo plazo en Bahía Blanca y CABA. Contactanos al +54 9 291 418-0554.",
+            text: "Sí, Ubicar Rent ofrece soluciones corporativas de movilidad: gestión de flota, vehículos de reemplazo y alquileres a largo plazo en Bahía Blanca y la zona. Contactanos al +54 9 291 418-0554.",
           },
         },
       ],

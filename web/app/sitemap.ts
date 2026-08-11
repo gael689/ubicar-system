@@ -20,6 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: `${SITE}/`, lastModified: hoy, changeFrequency: "weekly", priority: 1 },
     { url: `${SITE}/maquinaria`, lastModified: hoy, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${SITE}/preguntas-frecuentes`, lastModified: hoy, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE}/terminos`, lastModified: hoy, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE}/privacidad`, lastModified: hoy, changeFrequency: "yearly", priority: 0.3 },
   ];

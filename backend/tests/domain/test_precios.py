@@ -11,6 +11,7 @@ from decimal import Decimal
 import pytest
 
 from app.domain.precios import (
+    aplica_descuento_por_duracion,
     ReglaPrecio,
     DescuentoDuracionInfo,
     cotizar,
@@ -432,3 +433,114 @@ class TestCotizarConAdicionales:
                     precio_fallback=Decimal("100000"),
                     adicionales=[adic(unidad_cobro="por_dia")])
         assert c.precio_dia_promedio == Decimal("100000.00")
+
+
+# ─── La escalera por duración (D-43) ──────────────────────────────────────────
+#
+# El precio de una categoría es UN número —cuánto sale un día al 100%— y el
+# largo del alquiler se descuenta con porcentajes. Estas bandas son las que
+# siembra la migración 054, y este bloque las fija: si alguien las cambia sin
+# querer, el test lo dice antes que la facturación.
+
+ESCALERA = [
+    DescuentoDuracionInfo(id=1, nombre="3 a 6 días", dias_desde=3, dias_hasta=6,
+                          porcentaje=Decimal("10")),
+    DescuentoDuracionInfo(id=2, nombre="7 a 15 días", dias_desde=7, dias_hasta=15,
+                          porcentaje=Decimal("15")),
+    DescuentoDuracionInfo(id=3, nombre="16 días o más", dias_desde=16, dias_hasta=None,
+                          porcentaje=Decimal("30")),
+]
+
+
+class TestEscaleraPorDuracion:
+    @pytest.mark.parametrize("dias,porcentaje", [
+        (1, 0), (2, 0),                      # precio de lista
+        (3, 10), (4, 10), (6, 10),
+        (7, 15), (14, 15), (15, 15),         # el 15 entra: no queda hueco
+        (16, 30), (30, 30),
+        (31, 30), (60, 30), (365, 30),       # la última banda no tiene tope
+    ])
+    def test_cada_duracion_cae_en_su_escalon(self, dias, porcentaje):
+        d = seleccionar_descuento(dias, ESCALERA)
+        assert (Decimal(porcentaje) if d is None else d.porcentaje) == Decimal(porcentaje)
+
+    def _porcentaje(self, dias: int) -> Decimal:
+        d = seleccionar_descuento(dias, ESCALERA)
+        return d.porcentaje if d else Decimal("0")
+
+    def test_el_precio_por_dia_nunca_sube_al_alargar(self):
+        """
+        La invariante de la escalera: más días nunca puede salir más caro **por
+        día**. Es lo que rompe un hueco (el día 15 sin banda volvería al 100%
+        entre dos tramos con descuento) y lo que rompe una última banda con
+        tope (el día 31 volvería al 100%).
+        """
+        porcentajes = [self._porcentaje(d) for d in range(1, 400)]
+        assert porcentajes == sorted(porcentajes), (
+            "hay un día en el que el descuento baja: alargar el alquiler lo encarece por día"
+        )
+
+    def test_el_salto_de_15_a_30_deja_un_tramo_donde_conviene_alargar(self):
+        """
+        **Consecuencia conocida de la escalera, no un bug.**
+
+        El salto del 15% al 30% es grande, así que 16 días (−30%, 1.120.000)
+        sale menos plata que 14 (1.190.000) y que 15 (1.275.000). A un cliente
+        que pide 15 días le conviene llevárselo 16. Con 13 no pasa: 1.105.000
+        ya está por debajo, así que el tramo es exactamente 14 y 15.
+
+        Se deja fijado en un test para que sea una decisión y no una sorpresa:
+        si algún día se quiere que el total tampoco baje, hay que suavizar el
+        salto (por ejemplo 20% en el tramo del medio). Mientras tanto, la web
+        se lo ofrece sola — ver `AhorroPorDuracion`.
+        """
+        precio_dia = Decimal("100000")
+
+        def total(dias: int) -> Decimal:
+            return precio_dia * dias * (Decimal("100") - self._porcentaje(dias)) / Decimal("100")
+
+        conviene_alargar = [
+            dias for dias in range(1, 60)
+            if any(total(mas) < total(dias) for mas in range(dias + 1, 61))
+        ]
+        assert conviene_alargar == [14, 15]
+
+    def test_el_descuento_sale_del_total_de_los_dias(self):
+        """20 días a $100.000: 2.000.000 − 30% = 1.400.000."""
+        c = cotizar(date(2026, 5, 1), date(2026, 5, 21), [],
+                    precio_fallback=Decimal("100000"), descuentos=ESCALERA)
+        assert c.duracion_dias == 20
+        assert c.subtotal == Decimal("2000000.00")
+        assert c.descuento_porcentaje == Decimal("30")
+        assert c.subtotal_vehiculo == Decimal("1400000.00")
+        assert c.descuento_nombre == "16 días o más"
+
+
+class TestDescuentoPorDuracionSoloConPagoTotal:
+    """
+    En la web el descuento por duración se gana pagando el 100% por adelantado.
+    En el mostrador va siempre.
+
+    El test que más importa es `test_el_cobro_usa_el_mismo_criterio_que_la_vista`:
+    si la cotización que se le muestra al cliente y la que se cobra no reciben
+    el mismo anticipo, se le cobra de más justo a quien más adelanta.
+    """
+
+    def test_en_el_mostrador_siempre_aplica(self):
+        assert aplica_descuento_por_duracion("mostrador", None)
+        assert aplica_descuento_por_duracion("mostrador", 30)
+        assert aplica_descuento_por_duracion("mostrador", 100)
+
+    def test_en_la_web_solo_con_el_100(self):
+        assert aplica_descuento_por_duracion("web", 100)
+
+    def test_en_la_web_con_sena_parcial_no(self):
+        assert not aplica_descuento_por_duracion("web", 30)
+        assert not aplica_descuento_por_duracion("web", 50)
+        assert not aplica_descuento_por_duracion("web", 99)
+
+    def test_sin_elegir_todavia_no_aplica(self):
+        """Pasos 1 a 3: se muestra el precio de lista y el descuento aparece
+        como mejora al elegir el pago total. Al revés, el precio subiría al
+        elegir pagar menos y se leería como un recargo escondido."""
+        assert not aplica_descuento_por_duracion("web", None)

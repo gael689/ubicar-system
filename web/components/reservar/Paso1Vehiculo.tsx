@@ -6,7 +6,8 @@ import { Users, Briefcase, Snowflake, Cog, Car, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, pesos, urlFoto } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { CategoriaDisponible } from "@/lib/types";
+import type { CategoriaDisponible, EscalonDuracion } from "@/lib/types";
+import { AhorroPorDuracion } from "./AhorroPorDuracion";
 import { BuscadorRango, type RangoBusqueda } from "./BuscadorRango";
 import { DialogoSinCupo } from "./DialogoSinCupo";
 
@@ -15,12 +16,18 @@ interface Props {
   lugares: string[];
   anticipacionHoras: number;
   seleccionada: CategoriaDisponible | null;
+  escalones?: EscalonDuracion[];
+  /** La declarada en el Hero. El precio de las tarjetas sale con el recargo
+   *  por edad ya adentro, así no cambia más adelante. */
+  edad: string;
   onCambiarRango: (r: RangoBusqueda) => void;
+  onEstirarDuracion?: (dias: number) => void;
   onElegir: (c: CategoriaDisponible) => void;
 }
 
 export function Paso1Vehiculo({
-  rango, lugares, anticipacionHoras, seleccionada, onCambiarRango, onElegir,
+  rango, lugares, anticipacionHoras, seleccionada, escalones = [],
+  edad, onCambiarRango, onEstirarDuracion, onElegir,
 }: Props) {
   const [categorias, setCategorias] = useState<CategoriaDisponible[] | null>(null);
   const [sinCupo, setSinCupo] = useState<CategoriaDisponible | null>(null);
@@ -28,6 +35,19 @@ export function Paso1Vehiculo({
   const [error, setError] = useState<string | null>(null);
 
   const buscado = Boolean(rango.fechaInicio && rango.fechaFin && rango.lugarRetiro);
+
+  // Los mismos días que cobra el backend: el de devolución no se cuenta.
+  const dias =
+    rango.fechaInicio && rango.fechaFin
+      ? Math.max(
+          0,
+          Math.round(
+            (new Date(`${rango.fechaFin}T12:00:00`).getTime() -
+              new Date(`${rango.fechaInicio}T12:00:00`).getTime()) /
+              86_400_000,
+          ),
+        )
+      : 0;
 
   useEffect(() => {
     if (!buscado) return;
@@ -41,13 +61,17 @@ export function Paso1Vehiculo({
         fecha_fin: rango.fechaFin,
         hora_inicio: rango.horaInicio,
         hora_fin: rango.horaFin,
+        edad: edad || undefined,
       })
       .then((data) => !cancelado && setCategorias(data))
       .catch((e) => !cancelado && setError(e.message))
       .finally(() => !cancelado && setCargando(false));
 
     return () => { cancelado = true; };
-  }, [buscado, rango.fechaInicio, rango.fechaFin, rango.horaInicio, rango.horaFin]);
+  }, [
+    buscado, rango.fechaInicio, rango.fechaFin, rango.horaInicio, rango.horaFin,
+    edad,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -58,6 +82,14 @@ export function Paso1Vehiculo({
         onBuscar={onCambiarRango}
         compacto={buscado}
       />
+
+      {buscado && (
+        <AhorroPorDuracion
+          escalones={escalones}
+          dias={dias}
+          onEstirar={onEstirarDuracion}
+        />
+      )}
 
       {!buscado && (
         <p className="py-10 text-center text-sm text-muted-foreground">
@@ -120,7 +152,10 @@ function TarjetaCategoria({
   onAvisarme: () => void;
   indice: number;
 }) {
-  const foto = urlFoto(c.foto_key);
+  // `foto_url` la resuelve el backend y contempla el bucket; `urlFoto` arma la
+  // ruta vieja contra `/static`, que sólo sirve con storage local. Queda de
+  // respaldo por si la API todavía no devuelve la URL resuelta.
+  const foto = c.foto_url ?? urlFoto(c.foto_key);
   const disponible = c.hay_cupo;
 
   return (

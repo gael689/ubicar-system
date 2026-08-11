@@ -333,6 +333,31 @@ def validar_seleccion_adicionales(adicionales: list[AdicionalSolicitado]) -> Non
         )
 
 
+def aplica_descuento_por_duracion(canal: str, porcentaje_anticipo: int | None) -> bool:
+    """
+    ¿Corresponde aplicar el descuento por duración?
+
+    **En el mostrador, siempre.** Ahí el precio se conversa y la forma de pago
+    se acuerda en el momento; el descuento por alquiler largo es parte de la
+    lista.
+
+    **En la web, sólo si el cliente paga el 100% por adelantado.** Deja de ser
+    un precio de lista y pasa a ser la contraprestación por cobrar todo hoy: el
+    negocio resigna margen a cambio de no financiar el alquiler ni quedar
+    expuesto a la seña que no alcanza. Con 30% o 50% de anticipo se cobra el
+    precio de lista, sin descuento por duración.
+
+    `None` —que es el caso del paso 1, cuando todavía no eligió cuánto adelanta—
+    se trata como "no corresponde": la grilla muestra el precio de lista y el
+    descuento aparece como una mejora al elegir el pago total. **Mostrarlo al
+    revés sería peor**: un precio que sube cuando el cliente elige pagar menos
+    se lee como un recargo escondido, aunque la cuenta sea la misma.
+    """
+    if canal != "web":
+        return True
+    return porcentaje_anticipo == 100
+
+
 def seleccionar_descuento(
     duracion_dias: int,
     descuentos: list[DescuentoDuracionInfo],
@@ -369,6 +394,7 @@ def cotizar(
     adicionales: list[AdicionalSolicitado] | None = None,
     recargos_edad: list[RecargoEdadInfo] | None = None,
     edad_conductor: int | None = None,
+    porcentaje_anticipo: int | None = None,
 ) -> Cotizacion:
     """
     Cotiza un alquiler resolviendo el precio día por día.
@@ -451,7 +477,13 @@ def cotizar(
 
         subtotal += precio
 
-    descuento = seleccionar_descuento(duracion_dias, descuentos or [], categoria_id)
+    # En la web el descuento por duración se gana pagando el 100% por
+    # adelantado; en el mostrador va siempre. Ver `aplica_descuento_por_duracion`.
+    descuento = (
+        seleccionar_descuento(duracion_dias, descuentos or [], categoria_id)
+        if aplica_descuento_por_duracion(canal, porcentaje_anticipo)
+        else None
+    )
     porcentaje = Decimal(str(descuento.porcentaje)) if descuento else Decimal("0")
     descuento_monto = _redondear(subtotal * porcentaje / Decimal("100"))
     subtotal_vehiculo = _redondear(subtotal - descuento_monto)

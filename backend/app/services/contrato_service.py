@@ -10,7 +10,8 @@ precios hayan cambiado tres veces.
 
 Ver `docs/PLAN_CONTRATOS.md` para el mapeo campo por campo del anverso.
 """
-from datetime import date, datetime
+import secrets
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -28,10 +29,17 @@ from app.services.configuracion_service import ConfiguracionService
 
 
 # Claves de `configuracion` que arma el pie institucional del contrato.
+#
+# `locador_nombre` es quien se obliga —lo que reemplaza a {{LOCADOR}} en las
+# trece cláusulas— y `nombre_comercial` es el nombre de fantasía que encabeza
+# el papel. Son dos cosas distintas y el contrato necesita las dos: el cliente
+# reconoce "Ubicar Rent", pero quien firma del otro lado es FINAR GRUPO
+# FINANCIERO S.R.L. (D-C1, migración 055).
 CLAVES_EMPRESA = [
-    "empresa.locador_nombre", "empresa.razon_social", "empresa.cuit",
-    "empresa.ingresos_brutos", "empresa.domicilio", "empresa.localidad",
-    "empresa.telefonos", "empresa.email", "empresa.jurisdiccion",
+    "empresa.locador_nombre", "empresa.nombre_comercial", "empresa.razon_social",
+    "empresa.cuit", "empresa.ingresos_brutos", "empresa.domicilio",
+    "empresa.localidad", "empresa.telefonos", "empresa.email",
+    "empresa.jurisdiccion",
 ]
 
 
@@ -426,6 +434,191 @@ class ContratoService:
         if alquiler:
             contrato.alquiler_id = alquiler.id
             alquiler.contrato_firmado = True
+        self.db.flush()
+        return contrato
+
+    # ── Firma por link (D-C6) ─────────────────────────────────────────────
+
+    CLAVE_HORAS_LINK = "contrato.link_firma_horas"
+    HORAS_LINK_DEFAULT = 72
+
+    def generar_link(self, contrato_id: int, url_base_web: str) -> Contrato:
+        """
+        Emite el link que se le manda al cliente para que firme desde su
+        teléfono.
+
+        **Regenerar invalida el anterior**, y eso es deliberado: el token es la
+        única credencial: si sobrevivieran dos, revocar el que se filtró no
+        serviría de nada. La contra —que el link viejo del WhatsApp deje de
+        andar— se resuelve devolviendo siempre el mismo mientras siga vigente,
+        en vez de fabricar uno nuevo en cada clic.
+        """
+        contrato = self.get(contrato_id)
+        if contrato.anulado:
+            raise BusinessRuleError("contrato_anulado", "El contrato está anulado")
+        if contrato.firmado:
+            raise BusinessRuleError(
+                "contrato_ya_firmado",
+                "El contrato ya está firmado: no hace falta mandar el link.",
+            )
+
+        vigente = (
+            contrato.firma_token
+            and contrato.firma_token_expira
+            and contrato.firma_token_expira > datetime.utcnow()
+        )
+        if not vigente:
+            # 32 bytes en base64url: no adivinable por fuerza bruta, y entra en
+            # un WhatsApp sin acortador.
+            contrato.firma_token = secrets.token_urlsafe(32)
+            contrato.firma_token_expira = datetime.utcnow() + timedelta(
+                hours=self._horas_link()
+            )
+
+        contrato.link_prellenado = self.url_de_firma(contrato, url_base_web)
+        self.db.flush()
+        return contrato
+
+    def _horas_link(self) -> int:
+        try:
+            return max(1, int(self.config.get(self.CLAVE_HORAS_LINK).valor))
+        except (NotFoundError, TypeError, ValueError):
+            return self.HORAS_LINK_DEFAULT
+
+    @staticmethod
+    def url_de_firma(contrato: Contrato, url_base_web: str) -> str:
+        return f"{(url_base_web or '').rstrip('/')}/contrato/{contrato.firma_token}"
+
+    def revocar_link(self, contrato_id: int) -> Contrato:
+        """
+        Mata el link. Se usa cuando se mandó a la persona equivocada o cuando
+        el cliente prefiere firmar en el mostrador.
+
+        No se toca `firmado`: revocar el link de un contrato ya firmado no
+        deshace la firma, sólo cierra la puerta.
+        """
+        contrato = self.get(contrato_id)
+        contrato.firma_token = None
+        contrato.firma_token_expira = None
+        contrato.link_prellenado = None
+        self.db.flush()
+        return contrato
+
+    def por_token(self, token: str, *, para_firmar: bool) -> Contrato:
+        """
+        Resuelve el contrato detrás de un link.
+
+        `para_firmar=False` es la lectura: sigue funcionando después de firmado
+        y después de vencido, para que el cliente pueda volver a abrir el link
+        y bajarse su copia. Un link que muere en el instante de firmar deja al
+        cliente sin el documento que acaba de aceptar.
+
+        `para_firmar=True` es estricto: vencido o ya firmado, no se firma.
+        """
+        contrato = (
+            self.db.query(Contrato)
+            .filter(Contrato.firma_token == token, Contrato.activo.is_(True))
+            .first()
+        )
+        # El mismo 404 para "no existe" y para "revocado": distinguirlos le
+        # confirmaría a alguien que prueba tokens cuáles existieron.
+        if contrato is None:
+            raise NotFoundError("Contrato", token)
+        if contrato.anulado:
+            raise BusinessRuleError("contrato_anulado", "Este contrato fue anulado.")
+
+        if para_firmar:
+            if contrato.firmado:
+                raise BusinessRuleError(
+                    "contrato_ya_firmado", "Este contrato ya está firmado."
+                )
+            if (
+                contrato.firma_token_expira is None
+                or contrato.firma_token_expira <= datetime.utcnow()
+            ):
+                raise BusinessRuleError(
+                    "link_vencido",
+                    "El link para firmar venció. Pedinos uno nuevo y lo mandamos.",
+                )
+        return contrato
+
+    def firmar_por_link(
+        self,
+        token: str,
+        *,
+        nombre: str,
+        dni: str,
+        firma_bytes: bytes | None,
+        aceptadas: list[str],
+        ip: str | None,
+        user_agent: str | None,
+    ) -> Contrato:
+        """
+        Firma remota. Es la misma firma ológrafa digitalizada de siempre, con
+        dos cosas más que el mostrador no necesita: **las aceptaciones con su
+        texto congelado** y **el rastro de dónde se firmó**.
+
+        El trazo es obligatorio acá y opcional en el mostrador: en el mostrador
+        hay alguien mirando y el papel se archiva; en remoto, el trazo es la
+        única prueba de que del otro lado había una persona.
+        """
+        contrato = self.por_token(token, para_firmar=True)
+
+        faltan = [
+            a["titulo"] for a in contrato_clausulado.ACEPTACIONES
+            if a["clave"] not in aceptadas
+        ]
+        if faltan:
+            raise BusinessRuleError(
+                "faltan_aceptaciones",
+                "Falta aceptar: " + ", ".join(faltan),
+            )
+        if not firma_bytes:
+            raise BusinessRuleError(
+                "falta_firma", "Firmá en el recuadro para poder confirmar."
+            )
+
+        ahora = datetime.utcnow()
+        contrato.firma_aceptaciones = [
+            {**a, "aceptado_at": ahora.isoformat()}
+            for a in contrato_clausulado.ACEPTACIONES
+        ]
+        contrato.firma_ip = (ip or "")[:45] or None
+        contrato.firma_user_agent = (user_agent or "")[:255] or None
+
+        self.firmar(
+            contrato.id, firma_bytes, nombre, dni, usuario_id=None, medio="link",
+        )
+        return contrato
+
+    # ── Escaneo del ejemplar firmado en papel ─────────────────────────────
+
+    def adjuntar_escaneo(self, contrato_id: int, contenido: bytes, content_type: str) -> Contrato:
+        """
+        Guarda la foto o el escaneo del contrato firmado a mano.
+
+        No exige que el contrato esté marcado como firmado: el orden natural es
+        subir el papel y marcarlo, o al revés, y bloquear uno de los dos
+        órdenes sólo obliga a hacer clics en la secuencia correcta.
+        """
+        from app.core.deps import get_storage
+
+        contrato = self.get(contrato_id)
+        if contrato.anulado:
+            raise BusinessRuleError("contrato_anulado", "El contrato está anulado")
+
+        extension = {
+            "application/pdf": "pdf", "image/jpeg": "jpg",
+            "image/png": "png", "image/webp": "webp",
+        }.get(content_type)
+        if extension is None:
+            raise BusinessRuleError(
+                "formato_no_soportado",
+                "Subí el contrato firmado como PDF, JPG, PNG o WEBP.",
+            )
+
+        key = f"contratos/{contrato.id}/firmado.{extension}"
+        contrato.escaneo_key = get_storage().upload(key, contenido, content_type)
         self.db.flush()
         return contrato
 

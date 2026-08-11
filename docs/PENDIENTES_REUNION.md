@@ -36,12 +36,23 @@ recargo por edad y resumen final— funciona de punta a punta.
 exactamente **cuatro datos**. Mientras falten, **cada contrato que se emita
 sale con la leyenda "DOCUMENTO PROVISORIO"** impresa.
 
+> ### ⚠️ Actualizado el 11/08 — de los cuatro, **falta uno solo**
+>
+> D-C1 se cerró el 09/08: el locador es **FINAR GRUPO FINANCIERO S.R.L.**, CUIT
+> 30-71756601-3, Paraguay 241 Piso 9 Dpto A, Bahía Blanca. Salió de la constancia
+> de ARCA. **Los contratos ya no salen marcados "PROVISORIO".**
+>
+> **Lo único que falta es Ingresos Brutos**, y no está en esa constancia porque
+> es un impuesto **provincial**: lo emite ARBA. Como se opera sólo en Bahía
+> Blanca (D-39), alcanza con el número provincial — no hace falta Convenio
+> Multilateral. **Se lo pide la contadora.**
+
 | Falta | Ejemplo de lo que necesitamos |
 |---|---|
-| **Razón social** | El nombre exacto como figura en AFIP |
-| **CUIT** | 30-XXXXXXXX-X |
-| **Ingresos Brutos** | Número de inscripción |
-| **Domicilio fiscal** | Calle, número, localidad |
+| ~~Razón social~~ | ✅ FINAR GRUPO FINANCIERO S.R.L. |
+| ~~CUIT~~ | ✅ 30-71756601-3 |
+| **Ingresos Brutos** | 🔴 Número de inscripción en **ARBA** |
+| ~~Domicilio fiscal~~ | ✅ Paraguay 241, Piso 9, Dpto. A, Bahía Blanca |
 
 > Ya están cargados: nombre del locador, localidad, jurisdicción, teléfonos y
 > mail. Faltan sólo esos cuatro.
@@ -52,28 +63,21 @@ en esos campos.
 
 ---
 
-# 🔴 2. La seña — bloquea publicar la web
+# ✅ 2. La política de la seña — cerrada
 
-Es la única decisión que impide publicar los términos y condiciones, y los
-términos hay que publicarlos **antes** de cobrar el primer peso online.
+**La seña nunca se devuelve.** Ni si el cliente cancela, ni si no se presenta.
 
-Nos dijeron dos cosas que juntas no cierran:
+Ya está así en las tres partes que tienen que decir lo mismo:
 
-- Que **al cancelar se retiene la seña**
-- Que **la seña no se pierde si el cliente no aparece**
+- **En los términos y condiciones de la web** (sección 4): *"El monto
+  adelantado al reservar no se reintegra en caso de cancelación por parte del
+  cliente ni si el cliente no se presenta a retirar el vehículo."*
+- **En el sistema:** al cancelar una reserva con seña cargada, queda registrada
+  como ingreso retenido en la cuenta corriente del cliente, con el motivo.
+- **La excepción, que sí devuelve el 100%:** cuando el que no puede cumplir es
+  Ubicar Rent. Ahí se ofrece otro vehículo sin costo o se reintegra todo.
 
-Combinadas, la política queda: **al que avisa se le retiene, al que no avisa se
-le devuelve.** Eso premia el peor comportamiento. Y cuesta plata: **el auto que
-se libera con 48 horas de aviso se revende; el que se libera porque nadie
-apareció, no.**
-
-**Recomendación:**
-
-| Situación | Seña |
-|---|---|
-| Avisa con **más de 48 horas** | Se devuelve completa |
-| Avisa con **menos de 48 horas** | Se retiene |
-| **No avisa** | Se retiene |
+No bloquea nada: se puede publicar la web con esta política tal como está.
 
 ---
 
@@ -87,19 +91,32 @@ ninguna regla cubre el día.
 **Hay 22 fechas especiales cargadas y ninguna tiene precio propio**, así que
 hoy Navidad y un martes de marzo se cobran igual.
 
-Lo que hay que cargar, en orden:
+> ### Antes que nada: hay **dos capas** de precio, y se cargan en lugares distintos
+>
+> | | **La tarifa** | **La regla del calendario** |
+> |---|---|---|
+> | Qué es | El precio de siempre | La excepción para unas fechas |
+> | Dónde | **Flota → Categorías** | **Precios de mostrador / de la web** |
+> | Fechas | No tiene: vale todo el año | Sí, un desde y un hasta |
+> | Canal | **Ninguno: vale para los dos** | Una pantalla por canal |
+>
+> El sistema resuelve día por día: si hay regla, manda la regla; si no, manda
+> la tarifa. **La tarifa es el piso y las reglas son las excepciones.**
 
-1. **Precio base por categoría** — una regla del 1/1 al 31/12, capa "Precio
-   base". Con seis reglas la grilla deja de estar en rojo.
+Lo que hay que cargar, **en este orden**:
+
+1. **La tarifa real de cada categoría** (diaria, semanal, mensual) — en
+   **Flota → Categorías**. Es lo que permite cotizar los 365 días por los dos
+   canales, y es lo que más falta. Con la diaria sola ya se puede vender.
 2. **Precio de las fechas especiales** — una regla por período, capa "Fecha
    especial". Se puede **heredar el rango** de las 22 ya cargadas.
-3. **Descuentos por duración**, si los quieren (hoy hay 0).
-4. **Franjas de recargo por edad** — hay 1 cargada, revisar si es la correcta.
+3. **Precio propio de la web**, sólo si va a ser distinto al del mostrador.
+4. **Descuentos por duración**, si los quieren (hoy hay 0).
+5. **Franjas de recargo por edad** — hay 1 cargada, revisar si es la correcta.
 
-> **Ahora son dos pantallas: "Precios de mostrador" y "Precios de la web".**
-> Están separadas a propósito, para que cargar un precio pensando en un canal
-> no le cambie el precio al otro. Si el precio es el mismo, se carga una vez
-> eligiendo "Los dos canales".
+> **Ojo:** cambiar la tarifa de una categoría cambia el precio **en la web y en
+> el mostrador a la vez**. Para que sean distintos hace falta una regla de
+> calendario en la pantalla del canal correspondiente.
 
 **Falta además:** SUV y Furgón **no tienen autos asignados** — no aparecen con
 disponibilidad, ni en el sistema ni en la web. Y no tienen foto.
@@ -173,7 +190,7 @@ las categorías sin tarifa, y los dos grupos sin autos asignados.
 
 | | Qué | Mientras tanto |
 |---|---|---|
-| 🟠 | **Almacenamiento de archivos** — falta el bucket. Cloudflare pide tarjeta | Los documentos y fotos subidos **se pierden en cada actualización del sistema** |
+| ✅ | ~~**Almacenamiento de archivos**~~ — **resuelto el 11/08**: Cloudflare R2 activo en producción, bucket `ubicarrent` | Los archivos ya **no** se pierden. Ver `CIERRE_2026-08-11.md` §1 |
 | 🟡 | **Publicar la web** | Se muestra desde la computadora |
 | 🟡 | **Dominios propios** | Todo anda con direcciones de Vercel y Railway |
 | 🟡 | **Usuarios de Franco, Martín y Ramiro** | Sólo está creado el de Gael. Se crean en dos minutos con sus mails — y hasta que existan, la auditoría no distingue quién hizo qué |
@@ -188,9 +205,8 @@ las categorías sin tarifa, y los dos grupos sin autos asignados.
 | | Qué | Bloquea |
 |---|---|---|
 | 1 | **Razón social, CUIT, Ingresos Brutos y domicilio fiscal** | Los contratos salen "provisorios" |
-| 2 | **Política de la seña** | Publicar los términos y condiciones |
-| 3 | **Los precios reales** — base por categoría y por fecha especial | Vender de verdad, por cualquier canal |
-| 4 | **Credenciales de Mercado Pago** | Cobrar online |
-| 5 | **Acceso al DNS del dominio** | Que los clientes reciban mails |
-| 6 | **Mails de Franco, Martín y Ramiro** | Que puedan entrar, y que la auditoría diga quién fue |
-| 7 | Autos para SUV y Furgón, y sus fotos | Que esas dos categorías se puedan vender |
+| 2 | **Los precios reales** — la **tarifa** de cada categoría primero, después las fechas especiales | Vender de verdad, por cualquier canal |
+| 3 | **Credenciales de Mercado Pago** | Cobrar online |
+| 4 | **Acceso al DNS del dominio** | Que los clientes reciban mails |
+| 5 | **Mails de Franco, Martín y Ramiro** | Que puedan entrar, y que la auditoría diga quién fue |
+| 6 | Autos para SUV y Furgón, y sus fotos | Que esas dos categorías se puedan vender |

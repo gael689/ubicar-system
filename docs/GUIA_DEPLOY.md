@@ -1,5 +1,10 @@
 # Guía de deploy — paso a paso
 
+> ⚠️ **El paso 5 quedó desactualizado — ver `DECISION_HOSTING.md`
+> (2026-08-11).** El sistema interno va a **Railway**, no a Vercel. Las
+> variables y las verificaciones del paso 5 valen igual; cambia el panel donde
+> se cargan.
+
 **Complementa a `PLAN_DEPLOY.md`**, que explica *qué* hay que hacer y *por qué*.
 Esto es el *cómo*: los comandos, la configuración de cada panel y el orden.
 
@@ -69,18 +74,37 @@ perfectamente vivo.
 
 ---
 
-## Paso 1 — Almacenamiento de archivos (Cloudflare R2)
+## Paso 1 — Almacenamiento de archivos (Cloudflare R2) ✅ HECHO
 
-**Primero esto**, porque el backend lo necesita al arrancar.
+> **Resuelto el 11/08 y andando en producción.** Queda documentado para poder
+> rehacerlo. El bucket real se llama **`ubicarrent`** (no `ubicar-rent-docs`) y
+> sirve por la *Public Development URL*
+> `https://pub-dc0a8f08881c4db095f52a836c074c3e.r2.dev`, todavía sin dominio
+> propio.
 
-1. En Cloudflare → **R2** → *Create bucket* → nombre `ubicar-rent-docs`.
-2. *Settings* → **Public access** → habilitar y conectar un dominio, por
-   ejemplo `archivos.ubicar-rent.com.ar`.
-3. **Manage R2 API Tokens** → *Create API token* con permiso **Object Read &
-   Write** sobre ese bucket. Anotar:
+1. En Cloudflare → **R2** → *Enable / Purchase R2*. **Este paso pide tarjeta y
+   no se puede hacer por API**: sin él, la API responde
+   `Please enable R2 through the Cloudflare Dashboard` y el endpoint S3 ni
+   siquiera resuelve TLS.
+2. *Create bucket* → nombre `ubicarrent`.
+3. *Settings* → **Public Development URL** → habilitar. Lo ideal es un dominio
+   propio (`archivos.ubicar-rent.com.ar`), pero eso depende del DNS.
+4. **Manage R2 API Tokens** → *Create API token* con permiso **Object Read &
+   Write** **sólo sobre ese bucket**. Anotar:
    - Access Key ID
    - Secret Access Key
-   - Endpoint (`https://<account_id>.r2.cloudflarestorage.com`)
+   - Endpoint (`https://<account_id>.r2.cloudflarestorage.com`) — **sin el
+     nombre del bucket al final**: ese va aparte, en `STORAGE_BUCKET`
+
+> ### ⚠️ El dominio público del bucket no pide credenciales
+>
+> Quien conoce la clave, se baja el archivo. Por eso `S3Storage.public_url()`
+> sirve por ese dominio **únicamente el prefijo `categorias/`** y todo lo demás
+> —contratos, firmas, documentos de clientes— con **URL firmada que vence a la
+> hora**. Ver D-46 y `CIERRE_2026-08-11.md` §3.
+>
+> **No amplíes esa lista sin leer el test candado** de
+> `tests/domain/test_storage_publico.py`.
 
 > **Por qué R2 y no S3:** no cobra egreso. Este sistema muestra fotos de daños
 > y reimprime contratos, o sea que lee mucho más de lo que escribe — y en S3
@@ -138,13 +162,27 @@ NOTIFICACIONES_DIGEST_DESTINATARIOS=franco@...,martin@...
 
 5. *Settings* → **Networking** → *Custom Domain* → `api.ubicar-rent.com.ar`.
 6. Deploy. **Las migraciones corren solas** antes de levantar el servidor
-   (`railway.toml`): si fallan, el deploy falla y queda sirviendo la versión
-   anterior — que es lo que se quiere.
+   (`railway.toml`).
 
-> La última migración es la **050**. Un `alembic current` en la base nueva
-> tiene que terminar en `050_firma_medio`. Varias son irreversibles a
-> propósito: la 043 y la 049 levantan un `RuntimeError` con el motivo si se
-> intenta bajarlas con datos que el esquema viejo no admite.
+> ### ⚠️ Corregido el 11/08 — un fallo de migración **no** frena el deploy
+>
+> El `startCommand` de `railway.toml` usa `alembic upgrade head; exec uvicorn…`
+> con **punto y coma, no `&&`**, y está puesto a propósito: la base se migra por
+> fuera del deploy. La consecuencia es que **si alembic falla, uvicorn levanta
+> igual contra el esquema viejo y el healthcheck da verde**.
+>
+> Por eso hay que **verificar `alembic current` a mano** después de cada deploy,
+> no confiar en el tilde de Railway.
+
+> La última migración es la **058**. Un `alembic current` tiene que terminar en
+> `058_tarifa_generica`. Varias son irreversibles a propósito: la 043 y la 049
+> levantan un `RuntimeError` con el motivo, y la **057** no se puede bajar porque
+> Postgres no quita valores de un ENUM.
+>
+> **Las 054 a 058 tocan precios.** Antes de correrlas en una base con datos, ver
+> `CIERRE_2026-08-11.md` §6 quater: hay que revisar qué categorías tienen tarifa
+> semanal o mensual **sin** diaria, porque ahí la escalera de descuentos se
+> aplica encima del precio por bloque y se descuenta dos veces.
 
 ### Verificar
 
@@ -195,9 +233,17 @@ dos storages. **No borres el disco local hasta verificar.**
 
 ```bash
 NEXT_PUBLIC_API_URL=https://api.ubicar-rent.com.ar/api/v1
+NEXT_PUBLIC_STORAGE_URL=https://pub-dc0a8f08881c4db095f52a836c074c3e.r2.dev
 META_CONVERSIONS_TOKEN=...     # ⚠️ el token ROTADO, ver abajo
 META_PIXEL_ID=26876823408666329
 ```
+
+> ⚠️ **`NEXT_PUBLIC_STORAGE_URL` no es opcional.** `next/image` necesita el host
+> de las imágenes declarado **en tiempo de build** (`next.config.ts`). Sin ella
+> el deploy sale en verde y **las fotos de las categorías no renderizan**, aunque
+> las URLs que devuelve la API sean correctas. Tiene que coincidir con
+> `STORAGE_PUBLIC_BASE_URL` del backend: es el mismo dominio del bucket,
+> declarado de los dos lados.
 
 4. **Domains** → `ubicar-rent.com.ar` y `www.ubicar-rent.com.ar`.
 
@@ -276,7 +322,7 @@ Y cargar desde el sistema, **en este orden** — cada cosa depende de la anterio
 **Infraestructura**
 
 - [ ] `/health` responde ok y dice `storage: ok`
-- [ ] `alembic current` termina en `050_firma_medio`
+- [ ] `alembic current` termina en `058_tarifa_generica` (verificado a mano, no por el tilde de Railway)
 - [ ] `python -m scripts.verificar_concurrencia` dice OK
 - [ ] Subir un documento a un cliente y **volver a abrirlo** (prueba el storage de verdad)
 

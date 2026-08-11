@@ -64,16 +64,6 @@ const DELIVERY_POINTS: DeliveryPoint[] = [
     zoom: 14,
     description: "Pick-up y drop-off en el Aeropuerto Comandante Espora.",
   },
-  {
-    id: "caba",
-    label: "Capital Federal",
-    sublabel: "Juan Francisco Seguí 3607",
-    lat: -34.578688,
-    lng: -58.409437,
-    icon: "city",
-    zoom: 17,
-    description: "Presencia en Buenos Aires para más destinos del país.",
-  },
 ];
 
 // Polígono de zona de cobertura — cubre todas las localidades listadas

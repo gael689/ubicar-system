@@ -58,28 +58,24 @@ pena resignar unos puntos de margen.
 cobra al check-out por el camino que ya existe (débito en CC + cobro). No hace
 falta lógica nueva de cobranza.
 
-### 🔴 Lo que quedó abierto y es urgente: ¿la seña se pierde?
+### ✅ La seña no se reintegra (D-11)
 
-> *"La seña no se pierde si el cliente no aparece. Para esto hay que dejar bien
-> escritas las políticas de la empresa, de privacidad, términos y condiciones."*
+La frase *"la seña no se pierde si el cliente no aparece"* significaba que **no
+se pierde para el negocio**: Ubicar la retiene. Aclarado por el usuario en la
+misma sesión, así que no había contradicción con D-11 sino un malentendido de
+lectura.
 
-**Esto contradice D-11**, que está confirmada y dice que al cancelar la seña se
-retiene íntegra. La combinación de las dos deja una política incoherente:
+La política, entonces, es una sola: **la seña no se reintegra**, ni por
+cancelación del cliente ni por no presentarse. Cancelación tardía y no-show
+reciben el mismo trato — para el negocio son el mismo hecho: un auto que quedó
+sin alquilar y sin tiempo de revenderse.
 
-> **Al que avisa que no viene se le retiene la seña. Al que no avisa nada se le
-> devuelve.**
+**La excepción, escrita como tal en los términos:** si el que no puede cumplir
+es Ubicar Rent, se ofrece otro vehículo equivalente sin costo o se reintegra el
+100%.
 
-Eso premia el peor comportamiento posible. Y es peor para el negocio de forma
-concreta: **el auto que se libera con 48 horas de aviso se revende; el que se
-libera porque nadie apareció, no.**
-
-**Recomendación: la seña no se pierde si avisa con 48 horas de anticipación, y
-se retiene si no avisa** (sea cancelación tardía o no-show). Alinea el
-incentivo del cliente con lo que el negocio necesita, que es enterarse a
-tiempo.
-
-Se resuelve junto con los textos legales (`PLAN_TEXTOS_LEGALES.md`), porque es
-la cláusula que más se lee y la que más reclamos genera.
+Está en los tres lugares que tienen que decir lo mismo: los T&C de la web (§4),
+`ReservaService.cancelar()` y el manual de los dueños (§11).
 
 ---
 
@@ -347,13 +343,13 @@ con el código, no después.
 | ~~Confirmación~~ | ~~Bandeja de reservas web~~ | ✅ Ya estaba (D-04) |
 | ~~Canal de aviso~~ | ~~Notificaciones~~ | ✅ Resuelta (D-32) |
 | ~~Categorías publicadas~~ | ~~Grilla de la web~~ | ✅ Resuelta (D-31) |
-| **Política de la seña (D-11)** | **T&C, contrato y paso 3** | 🔴 Contradicción abierta |
+| ~~Política de la seña (D-11)~~ | ~~T&C, contrato y paso 3~~ | ✅ Resuelta: no se reintegra |
 | Devoluciones (#5) | Rechazar una reserva cobrada | 🟡 Postura definida |
 | Sin cupo (#4) | Lógica del webhook | 🟡 Postura definida |
 | Anticipación (D-36) | Validación del paso 1 | 🟡 Default seguro |
 | Garantía online (D-37) | Paso 3 | 🟡 Recomendación: no pedir |
 | Textos legales | **Publicar**, no programar | 📄 Plan aparte |
 
-**Se puede construir todo el flujo hoy.** Lo único que no puede salir a
-producción sin resolverse es la política de la seña, porque es lo que el
-cliente acepta con un checkbox antes de pagar.
+**Se puede construir y publicar todo el flujo.** La política de la seña —que es
+lo que el cliente acepta con un checkbox antes de pagar— está resuelta y
+escrita en los términos.

@@ -355,3 +355,50 @@ ACEPTACION = (
     "Por la presente acepto la información, los términos y condiciones que figuran "
     "en el anverso y reverso del presente contrato."
 )
+
+
+# ─── Aceptaciones de la firma remota (D-C6) ───────────────────────────────────
+#
+# Cuando el cliente firma por el link, además del trazo tiene que tildar estas
+# casillas. **Las tres tienen que ser tildadas o no se puede firmar.**
+#
+# Por qué son varias y no una sola: cada una cubre un reclamo distinto. La
+# primera es el contrato; la segunda son los términos del sitio, que hablan de
+# la seña y la cancelación —cosas que el contrato de alquiler no toca porque
+# ocurren antes de que exista el alquiler—; la tercera es la declaración sobre
+# la licencia, que es lo primero que se discute cuando hay un siniestro y
+# aparece que el conductor manejaba con el registro vencido.
+#
+# El texto se **congela en `contratos.firma_aceptaciones` al firmar**. Guardar
+# sólo un booleano no probaría nada el día que estos textos cambien.
+
+ACEPTACIONES: list[dict] = [
+    {
+        "clave": "contrato",
+        "titulo": "Condiciones del contrato",
+        "texto": (
+            "Leí y acepto las cláusulas, condiciones y normas de utilización del "
+            "vehículo que figuran en este contrato, incluido el detalle de cargos, "
+            "la cobertura contratada y la franquicia a mi cargo."
+        ),
+    },
+    {
+        "clave": "terminos",
+        "titulo": "Términos y condiciones y Política de privacidad",
+        "texto": (
+            "Acepto los Términos y Condiciones y la Política de Privacidad del "
+            "sitio, incluida la política de seña y cancelación."
+        ),
+    },
+    {
+        "clave": "licencia",
+        "titulo": "Declaración sobre la licencia y los datos",
+        "texto": (
+            "Declaro que los datos consignados son correctos y que cuento con "
+            "licencia de conducir vigente y habilitante para el vehículo y las "
+            "jurisdicciones por las que voy a circular."
+        ),
+    },
+]
+
+CLAVES_ACEPTACION = [a["clave"] for a in ACEPTACIONES]

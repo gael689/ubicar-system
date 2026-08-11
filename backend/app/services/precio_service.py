@@ -280,6 +280,8 @@ class PrecioService:
         canal: str = "mostrador",
         adicionales: list[tuple[int, int]] | None = None,
         fecha_nacimiento: date | None = None,
+        edad_conductor: int | None = None,
+        porcentaje_anticipo: int | None = None,
     ) -> tuple[Cotizacion, int | None]:
         """
         Cotiza un alquiler. Devuelve (cotización, categoria_id efectiva).
@@ -287,6 +289,18 @@ class PrecioService:
         Si se pasa `vehiculo_id`, la categoría se infiere del vehículo: así la
         web (que reserva por categoría) y el mostrador (que reserva un auto
         puntual) atraviesan exactamente el mismo camino de cálculo.
+
+        La edad del conductor entra por dos puertas y **la fecha manda**:
+
+        - `fecha_nacimiento` es la vía exacta y la que usan el mostrador y el
+          paso 3 de la web. La edad se deriva al día del retiro.
+        - `edad_conductor` es lo que la persona declara en el buscador de la
+          portada, antes de que exista una ficha de cliente. Alcanza para
+          cotizar y evita pedir una fecha de nacimiento a alguien que todavía
+          está mirando precios.
+
+        Si llegan las dos, se ignora la declarada: un dato verificable no se
+        pisa con uno dicho al pasar.
         """
         if vehiculo_id is not None:
             vehiculo = self.db.get(Vehiculo, vehiculo_id)
@@ -319,8 +333,9 @@ class PrecioService:
             # de viajar ya no es un conductor joven (ver domain/recargo_edad.py).
             edad_conductor=(
                 calcular_edad(fecha_nacimiento, fecha_inicio)
-                if fecha_nacimiento is not None else None
+                if fecha_nacimiento is not None else edad_conductor
             ),
+            porcentaje_anticipo=porcentaje_anticipo,
         )
         return cotizacion, categoria_id
 

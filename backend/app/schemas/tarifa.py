@@ -27,5 +27,8 @@ class TarifaResponse(BaseModel):
     monto: Decimal
     activo: bool
     vigencia_desde: date
+    # Tarifa de relleno del sistema, no un precio decidido por nadie. La
+    # pantalla la marca y la campana la sigue reclamando (migracion 058).
+    es_generica: bool = False
 
     model_config = {"from_attributes": True}

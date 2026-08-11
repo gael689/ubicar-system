@@ -1,0 +1,36 @@
+# Servidor del sistema interno en Railway.
+#
+# Traduce a Caddy lo que `vercel.json` declaraba para Vercel: el rewrite de SPA
+# y los cuatro headers. Si se cambia uno, hay que cambiarlo en los dos lados o
+# van a divergir.
+
+:{$PORT:8080} {
+	root * /srv
+	encode gzip zstd
+
+	# **El rewrite de SPA no es opcional.** El router vive en el navegador: sin
+	# esto, entrar directo a `/flota/12` o apretar F5 en cualquier pantalla que
+	# no sea la raiz devuelve 404, porque en el disco ese archivo no existe.
+	try_files {path} /index.html
+	file_server
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+
+		# **Un back-office no se indexa.** Aunque el dominio no se publique, basta
+		# con que alguien pegue el link en un chat para que un crawler lo siga.
+		X-Robots-Tag "noindex, nofollow"
+
+		# Caddy delata su version por defecto.
+		-Server
+	}
+
+	# Los assets con hash en el nombre no cambian nunca: se cachean fuerte.
+	# `index.html` **no**, o el navegador sigue sirviendo la version vieja
+	# despues de un deploy y nadie ve el cambio.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	header /index.html Cache-Control "no-cache"
+}

@@ -113,7 +113,22 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
     c.setFillColor(_TINTA)
     c.drawString(_MARGEN, alto - _MARGEN - 10 * mm, "Contrato de Alquiler")
 
+    # Las dos identidades, juntas y desde arriba. El cliente llegó por "Ubicar
+    # Rent" y el logo dice eso, pero quien se obliga en las trece cláusulas es
+    # la sociedad. Que el papel no lo aclare deja que alguien discuta después
+    # contra quién firmó.
+    emp_cab = snap.get("empresa", {})
+    comercial = emp_cab.get("nombre_comercial")
+    legal = emp_cab.get("razon_social") or emp_cab.get("locador_nombre")
+    if comercial and legal and comercial.strip().lower() != legal.strip().lower():
+        c.setFont("Helvetica", 7)
+        c.setFillColor(_GRIS)
+        c.drawString(_MARGEN, alto - _MARGEN - 14.5 * mm,
+                     f"{comercial} es el nombre comercial de {legal}"
+                     + (f" — CUIT {emp_cab['cuit']}" if emp_cab.get("cuit") else ""))
+
     c.setFont("Helvetica", 8)
+    c.setFillColor(_TINTA)
     c.drawRightString(ancho - _MARGEN, alto - _MARGEN - 18 * mm,
                       f"Número de Contrato: {contrato.numero_formateado}")
 

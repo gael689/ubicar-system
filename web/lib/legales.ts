@@ -11,11 +11,15 @@
  * solos, el paso siguiente es la tabla `textos_legales` del plan §6 — el
  * `VERSION` de acá se convierte en su número de versión sin romper nada.
  *
- * ⚠️ **Lo que NO está resuelto no se inventa.** Los datos del locador (razón
- * social, CUIT, domicilio fiscal) dependen de D-C1, que sigue abierta. En vez
- * de poner un relleno que se lea como real, esas secciones remiten al contrato
- * y quedan marcadas como pendientes: un dato fiscal inventado en un documento
- * legal es peor que un espacio en blanco.
+ * **D-C1 cerrada.** El locador es FINAR GRUPO FINANCIERO S.R.L., CUIT
+ * 30-71756601-3, con domicilio en Paraguay 241, Piso 9, Dpto. A, Bahía Blanca.
+ * "Ubicar Rent" es el nombre comercial, no una persona jurídica: el que se
+ * obliga en el contrato y el responsable de la base de datos son la sociedad.
+ * Los datos salen de la constancia de inscripción de ARCA.
+ *
+ * ⚠️ **Ingresos Brutos sigue vacío.** No figura en la constancia de ARCA, que
+ * es nacional. No se inventa: un dato fiscal de relleno en un documento legal
+ * es peor que un espacio en blanco.
  */
 
 export const VERSION_TERMINOS = 1;
@@ -38,11 +42,9 @@ export const TERMINOS: SeccionLegal[] = [
     id: "quienes-somos",
     titulo: "1. Quiénes somos",
     parrafos: [
-      "Ubicar Rent presta servicios de alquiler de vehículos sin chofer en Bahía Blanca y la zona. Estos términos regulan la reserva de un vehículo a través de este sitio.",
-      "La relación entre las partes se completa con el contrato de alquiler que se firma al retirar el vehículo. Ante cualquier diferencia entre este texto y el contrato firmado, prevalece el contrato.",
+      "Ubicar Rent es el nombre comercial de FINAR GRUPO FINANCIERO S.R.L., CUIT 30-71756601-3, con domicilio en Paraguay 241, Piso 9, Dpto. A, Bahía Blanca (8000), Provincia de Buenos Aires. Prestamos servicios de alquiler de vehículos sin chofer en Bahía Blanca y la zona.",
+      "Estos términos regulan la reserva de un vehículo a través de este sitio. La relación entre las partes se completa con el contrato de alquiler, que se firma antes de retirar el vehículo. Ante cualquier diferencia entre este texto y el contrato firmado, prevalece el contrato.",
     ],
-    pendiente:
-      "Los datos societarios y fiscales del locador se incorporan a esta sección antes de la publicación definitiva.",
   },
   {
     id: "reserva",
@@ -157,9 +159,8 @@ export const PRIVACIDAD: SeccionLegal[] = [
     parrafos: [
       "Esta política explica qué datos personales recolectamos a través de este sitio, para qué los usamos, con quién los compartimos y qué derechos tenés sobre ellos.",
       "El tratamiento de datos personales se rige por la Ley 25.326 de Protección de los Datos Personales de la República Argentina.",
+      "El responsable de la base de datos es FINAR GRUPO FINANCIERO S.R.L. (nombre comercial Ubicar Rent), CUIT 30-71756601-3, con domicilio en Paraguay 241, Piso 9, Dpto. A, Bahía Blanca (8000), Provincia de Buenos Aires.",
     ],
-    pendiente:
-      "Los datos del responsable de la base (razón social, CUIT y domicilio) se incorporan antes de la publicación definitiva.",
   },
   {
     id: "que-datos",

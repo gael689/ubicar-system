@@ -52,7 +52,16 @@ export type MedioPagoGasto =
   | 'cheque'
   | 'echeq';
 
-export type MetodoPago = MedioPagoGasto | 'cuenta_corriente';
+/**
+ * Cómo entró la plata de un cobro.
+ *
+ * Es más amplio que `MedioPagoGasto` porque incluye los dos canales que sólo
+ * cobran y nunca pagan: `mercado_pago` (lo que entra por la web, lo escribe el
+ * webhook) y `wapa` (Banco Patagonia: mPOS, link o QR, lo carga una persona en
+ * el mostrador). Ninguno de los dos se pliega a `tarjeta`: se concilian contra
+ * extractos distintos y tienen otras comisiones.
+ */
+export type MetodoPago = MedioPagoGasto | 'cuenta_corriente' | 'mercado_pago' | 'wapa';
 
 // ─── Pagos ───────────────────────────────────────────────────────────────────
 
@@ -1463,12 +1472,28 @@ export interface Contrato {
   firmado_at: string | null;
   firmado_por_nombre: string | null;
   firmado_por_dni: string | null;
-  /** Cómo se firmó: en pantalla (hay imagen) o en papel (el original es físico). */
-  firma_medio?: 'pantalla' | 'papel' | null;
+  /**
+   * Cómo se firmó. Son tres caminos reales:
+   * - `link`: el cliente firmó desde su teléfono. Hay imagen y rastro.
+   * - `pantalla`: firmó en el mostrador. Hay imagen.
+   * - `papel`: se imprimió y se firmó con lapicera. No hay imagen y está bien:
+   *   el original es el papel, que se adjunta como escaneo.
+   */
+  firma_medio?: 'link' | 'pantalla' | 'papel' | null;
   atendido_por: number | null;
   anulado: boolean;
   motivo_anulacion: string | null;
   fecha_generacion: string;
+
+  // ── Firma por link (D-C6) ─────────────────────────────────────────────
+  /** La URL que se le mandó al cliente. `null` si no hay link vivo. */
+  link_prellenado?: string | null;
+  firma_token_expira?: string | null;
+  /** Qué aceptó el cliente, con el texto congelado al firmar. */
+  firma_aceptaciones?: { clave: string; titulo: string; texto: string; aceptado_at: string }[] | null;
+  firma_ip?: string | null;
+  /** ¿Está adjuntado el papel firmado? El archivo se baja por endpoint. */
+  tiene_escaneo?: boolean;
 }
 
 export interface ContratoSnapshot {

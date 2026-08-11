@@ -80,11 +80,36 @@ class Contrato(Base):
     firmado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     firmado_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     firma_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    # "pantalla" (trazo con el dedo o el mouse) | "papel" (se imprimió y se
-    # firmó con lapicera). Sin esto, un contrato firmado en papel y uno
-    # marcado por error se ven exactamente igual: los dos dicen "firmado" y
-    # ninguno tiene imagen.
+    # Cómo se firmó. Son tres caminos reales y hay que poder distinguirlos:
+    #   "link"     — el cliente abrió el link que le mandamos y firmó desde su
+    #                teléfono. Deja rastro: IP, navegador y aceptaciones.
+    #   "pantalla" — trazó la firma en el mostrador, con alguien al lado.
+    #   "papel"    — se imprimió y se firmó con lapicera. No hay trazo, y eso
+    #                es correcto: el original es el papel, que se adjunta en
+    #                `escaneo_key`.
+    # Sin este campo, un contrato firmado en papel y uno marcado por error se
+    # ven exactamente igual: los dos dicen "firmado" y ninguno tiene imagen.
     firma_medio: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    # ── Firma por link (D-C6) ───────────────────────────────────────────────
+    # El token es lo único que viaja en la URL, y **es un secreto**: quien lo
+    # tiene puede leer el contrato y firmarlo. Se revoca poniéndolo en NULL.
+    firma_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+    firma_token_expira: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Qué aceptó el cliente, **con el texto completo congelado**. Un booleano
+    # `acepto_terminos` no prueba nada el día que los términos cambien; lo que
+    # hace oponible la aceptación es haber guardado qué decían en ese momento.
+    # Forma: [{clave, titulo, texto, aceptado_at}].
+    firma_aceptaciones: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    firma_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    firma_user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # El ejemplar firmado en papel, escaneado o fotografiado. Es el original
+    # cuando `firma_medio == "papel"`: sin esto, el papel firmado vivía en una
+    # carpeta y el sistema sólo sabía que existía.
+    escaneo_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Quién firmó: puede no ser el titular de la reserva.
     firmado_por_nombre: Mapped[str | None] = mapped_column(String(255), nullable=True)
     firmado_por_dni: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -103,8 +128,11 @@ class Contrato(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
 
-    # Campos del diseño original que quedan sin uso por ahora: el contrato se
-    # firma en el mostrador, no por un link que se le manda al cliente.
+    # `link_prellenado` guarda la URL completa que se le mandó al cliente, para
+    # poder volver a copiarla sin regenerar el token (regenerarlo invalidaría
+    # el link que ya está en su WhatsApp). Los otros dos vienen del diseño
+    # original y siguen sin uso: la fecha de vencimiento vive en
+    # `firma_token_expira`, que es la que lee el endpoint público.
     datos_prellenados: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     link_prellenado: Mapped[str | None] = mapped_column(String(512), nullable=True)
     link_expiracion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

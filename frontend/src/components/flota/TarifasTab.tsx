@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { ComoSeArmaElPrecio } from '@/components/precios/ComoSeArmaElPrecio';
 
 import {
   useTarifas,
@@ -61,11 +62,15 @@ export function TarifasTab({ vehiculoId }: Props) {
 
   return (
     <Card className="p-5 space-y-4">
+      <ComoSeArmaElPrecio />
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-foreground">Tarifas vigentes</h3>
           <p className="text-xs text-muted-foreground">
             Solo una tarifa activa por tipo. Al crear una nueva del mismo tipo, la anterior se desactiva.
+            Esta tarifa es el precio de siempre y <strong>vale para web y mostrador</strong>: para un
+            precio distinto en una fecha o en un canal, va una regla en Precios.
           </p>
         </div>
         <Button size="sm" onClick={() => setFormOpen(true)}>

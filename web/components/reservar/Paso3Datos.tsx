@@ -19,14 +19,21 @@ interface Props {
  * campo extra acá baja la conversión, así que el resto (número de licencia,
  * domicilio) se completa al retirar el auto.
  *
- * La excepción es la **fecha de nacimiento**, que sí es obligatoria: desde
- * D-38 la edad no rechaza a nadie pero **modifica el precio**, así que sin
- * ella no se puede cotizar bien. Se explica al lado del campo para que no se
- * lea como un dato de más.
+ * La **fecha de nacimiento** sigue siendo obligatoria acá, pero ya no es la
+ * que fija el precio de entrada: eso lo resuelve la edad declarada en el Hero,
+ * así que para cuando el cliente llega a esta pantalla el total ya es el que
+ * vio en la grilla. Esta fecha es el dato exacto —el que va al contrato— y
+ * **manda sobre la declarada** si no coinciden.
+ *
+ * Todos los datos de esta pantalla son los del **titular**, que es quien firma
+ * y quien responde por el vehículo. No hay un "otro conductor" que completar.
  */
 export function Paso3Datos({ datos, errores, onCambiar }: Props) {
   const set = <K extends keyof DatosCliente>(k: K, v: DatosCliente[K]) =>
     onCambiar({ ...datos, [k]: v });
+
+  const esConsumidorFinal = datos.condicionIva === "consumidor_final";
+  const idCondicion = useId();
 
   return (
     <div className="space-y-6">
@@ -56,7 +63,7 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
           autoComplete="family-name"
         />
         <Campo
-          etiqueta="DNI"
+          etiqueta={esConsumidorFinal ? "DNI" : "CUIT"}
           valor={datos.dni}
           error={errores.dni}
           onChange={(v) => set("dni", v)}
@@ -89,9 +96,57 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
             error={errores.fechaNacimiento}
             onChange={(v) => set("fechaNacimiento", v)}
             type="date"
-            ayuda="La tarifa puede variar según la edad del conductor"
           />
         </div>
+
+        {/* Condición fiscal. Arranca en consumidor final, que es la enorme
+            mayoría: quien no lo es, lo sabe y lo busca. El CUIT y la razón
+            social aparecen recién al elegir otra cosa — pedírselos a alguien
+            que alquila para irse de vacaciones es fricción sin retorno. */}
+        <div className="sm:col-span-2">
+          <label
+            htmlFor={idCondicion}
+            className="mb-1 block text-sm font-medium text-foreground"
+          >
+            Condición frente al IVA
+          </label>
+          <select
+            id={idCondicion}
+            value={datos.condicionIva}
+            onChange={(e) =>
+              onCambiar({
+                ...datos,
+                condicionIva: e.target.value as DatosCliente["condicionIva"],
+                // Volver a consumidor final limpia la razón social: dejarla
+                // colgada mandaría al backend una empresa que el cliente ya
+                // dijo que no era.
+                razonSocial:
+                  e.target.value === "consumidor_final" ? "" : datos.razonSocial,
+              })
+            }
+            className="w-full rounded-md border border-border bg-white px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="consumidor_final">Consumidor final</option>
+            <option value="responsable_inscripto">Responsable inscripto</option>
+            <option value="monotributo">Monotributo</option>
+            <option value="exento">Exento</option>
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            El precio es el mismo en todos los casos. Nos sirve para el comprobante.
+          </p>
+        </div>
+
+        {!esConsumidorFinal && (
+          <div className="sm:col-span-2">
+            <Campo
+              etiqueta="Razón social"
+              valor={datos.razonSocial}
+              error={errores.razonSocial}
+              onChange={(v) => set("razonSocial", v)}
+              ayuda="Como figura en ARCA"
+            />
+          </div>
+        )}
       </div>
 
       <label

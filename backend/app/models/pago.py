@@ -27,8 +27,12 @@ class Pago(Base):
         # reusa "tarjeta" porque la caja del día mezclaría lo cobrado en el
         # mostrador con lo cobrado online, y se concilian contra extractos
         # distintos.
+        # `wapa` (migracion 057) es lo que se cobra por Banco Patagonia:
+        # mPOS, link de pago o QR. Tampoco se reusa "tarjeta", por lo mismo
+        # que `mercado_pago` — se concilia contra otro extracto y tiene otras
+        # comisiones.
         Enum("efectivo", "transferencia", "tarjeta", "cheque", "echeq",
-             "cuenta_corriente", "mercado_pago", name="medio_pago",
+             "cuenta_corriente", "mercado_pago", "wapa", name="medio_pago",
              create_type=False),
         nullable=False,
     )

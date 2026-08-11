@@ -21,6 +21,33 @@ from __future__ import annotations
 import mimetypes
 from functools import cached_property
 
+# ─── Qué se sirve por el dominio público y qué no ────────────────────────────
+#
+# El dominio público de un bucket **no pide credenciales**: quien conoce la
+# clave, se baja el archivo. Y las claves de los contratos son predecibles
+# (`contratos/7/firma.png`), así que publicarlas equivale a dejar las firmas y
+# los contratos escaneados al alcance de cualquiera que cuente del 1 en
+# adelante.
+#
+# Por eso la regla es al revés de lo intuitivo: **público sólo lo que tiene que
+# ser público**, que son las fotos del catálogo —las muestra el sitio a
+# visitantes sin login, no hay nada que proteger—. Todo lo demás sale con URL
+# firmada, que vence.
+#
+# Si mañana hace falta publicar otro prefijo, se agrega acá y queda a la vista
+# en el diff. Al revés —una lista de lo privado— un prefijo nuevo nacería
+# público por olvido, que es exactamente cómo se filtran estas cosas.
+PREFIJOS_PUBLICOS = ("categorias/",)
+
+# Una hora. Alcanza de sobra para abrir un documento o imprimir un contrato, y
+# limita la ventana de un link que se comparte por error.
+SEGUNDOS_URL_FIRMADA = 3600
+
+
+def es_publica(key: str) -> bool:
+    """¿Esta clave se puede servir por el dominio público del bucket?"""
+    return key.lstrip("/").startswith(PREFIJOS_PUBLICOS)
+
 
 class S3Storage:
     """
@@ -86,16 +113,24 @@ class S3Storage:
         self._cliente.delete_object(Bucket=self.bucket, Key=key.lstrip("/"))
 
     def public_url(self, key: str) -> str:
+        """
+        La URL con la que el navegador lee este archivo.
+
+        **Depende de qué archivo sea** (ver `PREFIJOS_PUBLICOS`):
+
+        - Fotos del catálogo → el dominio público del bucket. Son permanentes,
+          se cachean en el CDN y no pasan por la API.
+        - Todo lo demás —contratos, firmas, documentos de clientes, fotos de
+          daños— → **URL firmada que vence en una hora**. Caduca a propósito:
+          no se puede guardar ni indexar, y un link filtrado deja de servir.
+        """
         key = key.lstrip("/")
-        if self.public_base_url:
+        if self.public_base_url and es_publica(key):
             return f"{self.public_base_url}/{key}"
-        # Sin dominio público configurado, una URL firmada por una hora. Es un
-        # fallback para que nada quede roto, no la forma de operar: caduca, así
-        # que no se puede guardar ni mandar por mail.
         return self._cliente.generate_presigned_url(
             "get_object",
             Params={"Bucket": self.bucket, "Key": key},
-            ExpiresIn=3600,
+            ExpiresIn=SEGUNDOS_URL_FIRMADA,
         )
 
     @staticmethod

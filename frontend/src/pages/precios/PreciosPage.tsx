@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GrillaPrecios } from '@/components/precios/GrillaPrecios';
+import { ComoSeArmaElPrecio } from '@/components/precios/ComoSeArmaElPrecio';
 import { ReglasPrecioPanel } from '@/components/precios/ReglasPrecioPanel';
 import { DescuentosDuracionPanel } from '@/components/precios/DescuentosDuracionPanel';
 import { useCalendarioPrecios, useCalcularPrecio } from '@/hooks/usePrecios';
@@ -87,6 +88,8 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
         }
       />
 
+      <ComoSeArmaElPrecio />
+
       <Card className="p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -121,6 +124,17 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
           <Leyenda clase="bg-muted text-muted-foreground" texto="Sin regla — usa la tarifa por duración" />
           <Leyenda clase="bg-danger text-white" texto="Sin precio configurado" />
         </div>
+
+        {/* Las celdas grises son la mayoría el día que se empieza a usar esto,
+            y sin decir de dónde sale el número la pantalla parece rota. */}
+        <p className="text-xs text-muted-foreground">
+          Las celdas grises <strong>no están vacías</strong>: ese día no tiene ninguna
+          regla y se cobra la tarifa por duración, que se carga en{' '}
+          <Link to="/flota/categorias" className="text-primary underline underline-offset-2">
+            Flota → Categorías
+          </Link>
+          . Las rojas sí son un hueco: no hay ni regla ni tarifa, y ese día no se puede cotizar.
+        </p>
       </Card>
 
       <ProbadorDePrecio canal={canal} />

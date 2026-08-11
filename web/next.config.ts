@@ -1,17 +1,27 @@
 import type { NextConfig } from "next";
 
 /**
- * Las fotos de las categorías las sirve el backend desde `/static`, así que
- * `next/image` necesita tener declarado ese host — si no, tira
- * "hostname is not configured under images" y la grilla de vehículos no
+ * `next/image` sólo optimiza imágenes de hosts declarados acá: si falta uno,
+ * tira "hostname is not configured under images" y la grilla de vehículos no
  * renderiza.
  *
- * Se deriva de `NEXT_PUBLIC_API_URL` en vez de hardcodearse: el host cambia
- * entre desarrollo (localhost) y producción, y escribirlo a mano significaría
- * que las fotos se rompen justo al publicar.
+ * Hay **dos** orígenes posibles para las fotos, y los dos tienen que estar:
+ *
+ * - `/static` del backend, que es de donde salían con storage local. Se sigue
+ *   declarando porque en desarrollo se usa y porque es el respaldo.
+ * - El **bucket**, desde que los archivos viven en R2. El backend devuelve la
+ *   URL ya resuelta contra este dominio.
+ *
+ * Los dos se derivan de variables de entorno en vez de hardcodearse: el host
+ * cambia entre desarrollo y producción, y escribirlo a mano significaría que
+ * las fotos se rompen justo al publicar.
  */
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 const { protocol, hostname, port } = new URL(API);
+
+// El dominio público del bucket. Sin esta variable, las fotos guardadas en R2
+// no se optimizan y la grilla queda vacía.
+const STORAGE = process.env.NEXT_PUBLIC_STORAGE_URL;
 
 const nextConfig: NextConfig = {
   images: {
@@ -22,6 +32,12 @@ const nextConfig: NextConfig = {
         port: port || undefined,
         pathname: "/static/**",
       },
+      ...(STORAGE
+        ? [{
+            protocol: "https" as const,
+            hostname: new URL(STORAGE).hostname,
+          }]
+        : []),
       // La foto de fondo del Hero viene de Pexels.
       { protocol: "https", hostname: "images.pexels.com" },
     ],

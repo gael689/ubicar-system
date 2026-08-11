@@ -53,9 +53,16 @@ export function ResumenReserva({ rango, categoriaNombre, cotizacion, cargando }:
 
       {!cargando && cotizacion && (
         <div className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
+          {/* El recargo por edad va **dentro** de la línea del alquiler, no
+              aparte. La cuenta cierra igual —el descuento sigue calculándose
+              sobre el subtotal, así que alquiler + recargo − descuento +
+              adicionales da el mismo total—, y el cliente ve el precio de su
+              alquiler en vez de una línea que lo etiqueta por su edad. El
+              backend sigue devolviendo el desglose completo: la reserva, el
+              contrato y la caja lo necesitan. */}
           <Linea
             etiqueta={`Alquiler · ${cotizacion.duracion_dias} ${cotizacion.duracion_dias === 1 ? "día" : "días"}`}
-            valor={pesos(cotizacion.subtotal)}
+            valor={pesos(cotizacion.subtotal + (cotizacion.recargo_edad?.monto ?? 0))}
           />
 
           {cotizacion.descuento_monto > 0 && (
@@ -73,15 +80,6 @@ export function ResumenReserva({ rango, categoriaNombre, cotizacion, cargando }:
               valor={pesos(a.subtotal)}
             />
           ))}
-
-          {/* Se muestra como línea propia y con su nombre: un recargo que
-              aparece sin explicación es un reclamo asegurado. */}
-          {cotizacion.recargo_edad && (
-            <Linea
-              etiqueta={cotizacion.recargo_edad.nombre}
-              valor={pesos(cotizacion.recargo_edad.monto)}
-            />
-          )}
 
           <div className="flex items-end justify-between border-t border-border pt-3">
             <span className="font-semibold text-foreground">Total</span>

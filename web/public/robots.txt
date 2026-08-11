@@ -1,74 +1,100 @@
+# /contrato/ lleva el token que permite leer y firmar el contrato de un
+# cliente. No es contenido publico: los links se mandan por WhatsApp y no
+# se enlazan desde ningun lado. El Disallow evita que un bot descargue el
+# contrato de una persona; las paginas ademas llevan noindex.
+
 User-agent: Googlebot
 Allow: /
+Disallow: /contrato/
 
 User-agent: Bingbot
 Allow: /
+Disallow: /contrato/
 
 User-agent: Twitterbot
 Allow: /
+Disallow: /contrato/
 
 User-agent: facebookexternalhit
 Allow: /
+Disallow: /contrato/
 
 # Google AI (AI Overviews / Gemini)
 User-agent: Google-Extended
 Allow: /
+Disallow: /contrato/
 
 # OpenAI / ChatGPT
 User-agent: GPTBot
 Allow: /
+Disallow: /contrato/
 
 User-agent: OAI-SearchBot
 Allow: /
+Disallow: /contrato/
 
 User-agent: ChatGPT-User
 Allow: /
+Disallow: /contrato/
 
 # Anthropic / Claude
 User-agent: anthropic-ai
 Allow: /
+Disallow: /contrato/
 
 User-agent: ClaudeBot
 Allow: /
+Disallow: /contrato/
 
 User-agent: Claude-Web
 Allow: /
+Disallow: /contrato/
 
 # Perplexity AI
 User-agent: PerplexityBot
 Allow: /
+Disallow: /contrato/
 
 # Meta AI
 User-agent: meta-externalagent
 Allow: /
+Disallow: /contrato/
 
 User-agent: FacebookBot
 Allow: /
+Disallow: /contrato/
 
 # Apple
 User-agent: Applebot
 Allow: /
+Disallow: /contrato/
 
 User-agent: Applebot-Extended
 Allow: /
+Disallow: /contrato/
 
 # Common Crawl (fuente para muchos LLMs)
 User-agent: CCBot
 Allow: /
+Disallow: /contrato/
 
 # Cohere
 User-agent: cohere-ai
 Allow: /
+Disallow: /contrato/
 
 # You.com
 User-agent: YouBot
 Allow: /
+Disallow: /contrato/
 
 # Diffbot
 User-agent: Diffbot
 Allow: /
+Disallow: /contrato/
 
 User-agent: *
 Allow: /
+Disallow: /contrato/
 
 Sitemap: https://ubicar-rent.com.ar/sitemap.xml

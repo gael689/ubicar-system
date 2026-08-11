@@ -85,6 +85,63 @@ export function useAnularContrato() {
   });
 }
 
+// ─── Firma por link (D-C6) ───────────────────────────────────────────────────
+
+export interface LinkFirma {
+  url: string;
+  expira: string | null;
+  /** El texto listo para pegar en WhatsApp, armado por el backend. */
+  mensaje: string;
+}
+
+/**
+ * Genera —o recupera— el link que se le manda al cliente para que firme.
+ *
+ * Apretarlo dos veces devuelve el mismo link mientras siga vigente: quien lo
+ * aprieta de nuevo casi siempre quiere volver a copiarlo, y regenerar el token
+ * dejaría muerto el que ya está en el WhatsApp del cliente.
+ */
+export function useGenerarLinkFirma() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await api.post<{ data: LinkFirma }>(`/contratos/${id}/link`);
+      return res.data.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  });
+}
+
+export function useRevocarLinkFirma() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/contratos/${id}/link`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  });
+}
+
+/** Adjunta la foto o el escaneo del contrato firmado a mano. */
+export function useSubirEscaneoContrato() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, archivo }: { id: number; archivo: File }) => {
+      const form = new FormData();
+      form.append('archivo', archivo);
+      return api.post<{ data: Contrato }>(`/contratos/${id}/escaneo`, form);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  });
+}
+
+/** Abre en una pestaña el papel firmado que se subió. */
+export async function verEscaneoContrato(contrato: Contrato): Promise<void> {
+  const res = await api.get(`/contratos/${contrato.id}/escaneo`, { responseType: 'blob' });
+  const url = window.URL.createObjectURL(res.data as Blob);
+  window.open(url, '_blank', 'noopener');
+  // No se revoca en el acto: la pestaña nueva todavía la está leyendo.
+  setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+}
+
 export function usePlantillasContrato() {
   return useQuery({
     queryKey: [KEY, 'plantillas'],

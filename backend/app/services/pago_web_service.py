@@ -78,6 +78,8 @@ class PagoWebService:
         adicionales: list[tuple[int, int]] | None = None,
         fecha_nacimiento: date | None = None,
         notas: str | None = None,
+        condicion_iva: str | None = None,
+        razon_social: str | None = None,
         url_base_web: str | None = None,
         url_webhook: str | None = None,
     ) -> dict:
@@ -124,6 +126,12 @@ class PagoWebService:
             canal="web",
             adicionales=adicionales or [],
             fecha_nacimiento=fecha_nacimiento,
+            # **Imprescindible.** El descuento por duración depende de cuánto
+            # adelanta (`aplica_descuento_por_duracion`). Sin esto, el total que
+            # se cobra sale sin descuento aunque el cliente haya elegido pagar
+            # el 100% y visto el precio rebajado — se le cobraría de más
+            # exactamente a quien más adelanta.
+            porcentaje_anticipo=porcentaje_anticipo,
         )
         total = Decimal(str(cotizacion.total))
         anticipo = dom.calcular_anticipo(
@@ -146,7 +154,10 @@ class PagoWebService:
             else None
         )
 
-        cliente = self._cliente_para(nombre, email, telefono, dni, fecha_nacimiento)
+        cliente = self._cliente_para(
+            nombre, email, telefono, dni, fecha_nacimiento,
+            condicion_iva=condicion_iva, razon_social=razon_social,
+        )
         usuario_sistema = self._usuario_sistema()
 
         # Si el hold ya tenía un checkout abierto y el cliente cambió cuánto
@@ -466,6 +477,8 @@ class PagoWebService:
         telefono: str,
         dni: str,
         fecha_nacimiento: date | None,
+        condicion_iva: str | None = None,
+        razon_social: str | None = None,
     ) -> Cliente:
         """
         Busca por DNI/CUIT antes de crear.
@@ -473,6 +486,12 @@ class PagoWebService:
         Quien reserva por la web puede ser un cliente de siempre: duplicarlo
         partiría su cuenta corriente y su historial en dos, que es exactamente
         lo que el sistema evita en todos los otros caminos.
+
+        Los datos fiscales llegan del paso 3. **No habilitan a facturar** —el
+        sistema no emite comprobantes fiscales— pero dejan cargado el CUIT y la
+        razón social de quien va a pedir factura, que hoy hay que pedírselos
+        por WhatsApp después. Una razón social implica `tipo='empresa'`: es el
+        mismo criterio que usa el alta desde el mostrador.
         """
         existente = (
             self.db.query(Cliente)
@@ -490,6 +509,14 @@ class PagoWebService:
             # no, y esa diferencia se rechaza como un descuento sin motivo.
             if existente.fecha_nacimiento is None and fecha_nacimiento is not None:
                 existente.fecha_nacimiento = fecha_nacimiento
+            # Mismo criterio para lo fiscal: se completa el hueco, no se pisa.
+            # Si en el mostrador lo cargaron como responsable inscripto, un
+            # formulario web donde alguien dejó el default no puede degradarlo
+            # a consumidor final y cambiarle el comprobante que le corresponde.
+            if existente.condicion_iva is None and condicion_iva:
+                existente.condicion_iva = condicion_iva
+            if not existente.razon_social and razon_social:
+                existente.razon_social = razon_social
             self.db.flush()
             return existente
 
@@ -498,8 +525,10 @@ class PagoWebService:
             dni_cuit=dni,
             telefono=telefono,
             email=email,
-            tipo="particular",
+            tipo="empresa" if razon_social else "particular",
             fecha_nacimiento=fecha_nacimiento,
+            condicion_iva=condicion_iva,
+            razon_social=razon_social,
             notas="Alta automática desde una reserva web.",
         )
         self.db.add(cliente)

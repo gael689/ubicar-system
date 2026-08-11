@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { label: "Vehículos", href: "#vehiculos" },
   { label: "Empresas", href: "#empresas" },
   { label: "Maquinaria", href: "/maquinaria", route: true },
+  { label: "Preguntas frecuentes", href: "/preguntas-frecuentes", route: true },
   { label: "Ubicación", href: "#ubicacion" },
   { label: "Contacto", href: "#contacto" },
 ];
@@ -126,6 +127,13 @@ const Footer = () => {
               {" · "}
               {/* La politica de privacidad es obligacion legal (Ley 25.326) y
                   tiene que ser alcanzable desde cualquier pagina del sitio. */}
+              <a
+                href="/preguntas-frecuentes"
+                style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}
+              >
+                Preguntas frecuentes
+              </a>
+              {" · "}
               <a
                 href="/terminos"
                 style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}

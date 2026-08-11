@@ -13,6 +13,12 @@ export interface Tarifa {
   monto: number;
   activo: boolean;
   vigencia_desde: string;
+  /**
+   * Tarifa de relleno que trae el sistema, no un precio que alguien decidió.
+   * Existe para que la categoría pueda cotizar antes de que se cargue el
+   * precio real. Se marca en pantalla y la campana la sigue reclamando.
+   */
+  es_generica?: boolean;
 }
 
 export interface TarifaCreate {

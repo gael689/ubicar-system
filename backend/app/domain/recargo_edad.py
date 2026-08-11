@@ -132,3 +132,36 @@ def calcular_recargo(
     return RecargoAplicado(
         id=recargo.id, nombre=recargo.nombre, edad=edad, monto=importe
     )
+
+
+def vista_con_recargo_incluido(
+    precio_dia_promedio: Decimal,
+    total_referencia: Decimal | None,
+    recargo: RecargoAplicado | None,
+    duracion_dias: int,
+) -> tuple[Decimal, Decimal | None]:
+    """
+    Reparte el recargo en los otros dos números que muestra la web.
+
+    `Cotizacion.total` ya lo trae adentro, pero `precio_dia_promedio` se
+    calcula sobre `subtotal_vehiculo` —o sea, antes del recargo— y
+    `total_referencia` es el precio de lista. Si se los deja crudos pasan dos
+    cosas, las dos malas:
+
+    - la tarjeta muestra un total y un "por día" que no se corresponden, y
+      cualquiera que multiplique encuentra la diferencia;
+    - el tachado del "antes $X" puede quedar **por debajo** del precio
+      vigente, que es exactamente lo contrario de lo que una promo comunica.
+
+    O el recargo entra en los tres números o no entra en ninguno.
+    """
+    if recargo is None:
+        return precio_dia_promedio, total_referencia
+
+    dias = duracion_dias or 1
+    promedio = _redondear(precio_dia_promedio + recargo.monto / Decimal(dias))
+    referencia = (
+        _redondear(total_referencia + recargo.monto)
+        if total_referencia is not None else None
+    )
+    return promedio, referencia

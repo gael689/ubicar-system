@@ -16,6 +16,7 @@ const MEDIOS: { value: MetodoPago; label: string }[] = [
   { value: 'cheque', label: 'Cheque' },
   { value: 'echeq', label: 'Echeq' },
   { value: 'cuenta_corriente', label: 'Cuenta Corriente' },
+  { value: 'wapa', label: 'Wapa' },
 ];
 
 const schema = z.object({

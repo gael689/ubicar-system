@@ -30,6 +30,10 @@ interface Props {
   cobroOnline: boolean;
   /** D-30: descuento por pagar el 100%. 0 = sin descuento. */
   descuentoPagoTotalPct: number;
+  /** Cuánto adelanta. Es estado del flujo y no de esta pantalla porque
+   *  **cambia el precio**: el descuento por duración sólo corre con el 100%. */
+  pctAnticipo: number;
+  onCambiarAnticipo: (pct: number) => void;
 }
 
 /**
@@ -57,9 +61,14 @@ export function Paso4Pago({
   adicionales,
   cobroOnline,
   descuentoPagoTotalPct,
+  pctAnticipo,
+  onCambiarAnticipo,
 }: Props) {
   const router = useRouter();
-  const [pct, setPct] = useState<number>(30);
+  // El anticipo vive en `FlujoReserva`: cambia el precio, así que la
+  // cotización tiene que rehacerse cuando se toca.
+  const pct = pctAnticipo;
+  const setPct = onCambiarAnticipo;
   const [yendoAPagar, setYendoAPagar] = useState(false);
   const [errorPago, setErrorPago] = useState<string | null>(null);
 
@@ -94,6 +103,8 @@ export function Paso4Pago({
         porcentaje_anticipo: pct,
         adicionales,
         fecha_nacimiento: cliente.fechaNacimiento || null,
+        condicion_iva: cliente.condicionIva,
+        razon_social: cliente.razonSocial || null,
       });
       // Salida del sitio hacia Checkout Pro.
       window.location.href = r.init_point;
@@ -114,12 +125,12 @@ export function Paso4Pago({
     `*Retiro:* ${fechaCorta(rango.fechaInicio)} ${rango.horaInicio} — ${rango.lugarRetiro}`,
     `*Devolución:* ${fechaCorta(rango.fechaFin)} ${rango.horaFin} — ${rango.lugarDevolucion}`,
     "",
+    // Sólo los adicionales, que son los que el cliente eligió. El recargo por
+    // edad ya está dentro del total y no se lista: el mensaje lo escribe el
+    // cliente y termina en el WhatsApp del mostrador, no es un comprobante.
     ...cotizacion.adicionales.map(
       (a) => `• ${a.nombre}${a.cantidad > 1 ? ` ×${a.cantidad}` : ""} — ${pesos(a.subtotal)}`,
     ),
-    cotizacion.recargo_edad
-      ? `• ${cotizacion.recargo_edad.nombre} — ${pesos(cotizacion.recargo_edad.monto)}`
-      : "",
     "",
     `*Total:* ${pesos(cotizacion.total)}`,
     `*Quiero adelantar:* ${pct}% (${pesos(senia)})`,
@@ -178,7 +189,10 @@ export function Paso4Pago({
           </Dato>
         </div>
 
-        {(cotizacion.adicionales.length > 0 || cotizacion.recargo_edad) && (
+        {/* "Sumaste" son los adicionales y nada más. El recargo por edad
+            nunca perteneció acá —no es algo que el cliente haya sumado— y
+            ahora va dentro del precio del alquiler. */}
+        {cotizacion.adicionales.length > 0 && (
           <div className="mt-4 border-t border-border pt-3">
             <p className="mb-1.5 text-xs font-medium text-muted-foreground">Sumaste</p>
             <ul className="space-y-1 text-sm">
@@ -191,20 +205,14 @@ export function Paso4Pago({
                   <span className="shrink-0 text-muted-foreground">{pesos(a.subtotal)}</span>
                 </li>
               ))}
-              {cotizacion.recargo_edad && (
-                <li className="flex justify-between gap-4">
-                  <span className="text-foreground">{cotizacion.recargo_edad.nombre}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {pesos(cotizacion.recargo_edad.monto)}
-                  </span>
-                </li>
-              )}
             </ul>
           </div>
         )}
       </div>
 
-      {/* Cuánto adelanta (D-30) */}
+      {/* Cuánto adelanta (D-30). **Cambia el precio**, no sólo cuánto se cobra
+          hoy: el descuento por duración se gana pagando el 100% (D-49), así que
+          tocar estos botones vuelve a cotizar. */}
       <div className="grid gap-3 sm:grid-cols-3">
         {OPCIONES_SENA.map((o) => {
           const activa = pct === o.pct;
@@ -237,6 +245,31 @@ export function Paso4Pago({
           );
         })}
       </div>
+
+      {/* El descuento por duración es la contraprestación por cobrar todo hoy.
+          Se explica siempre —no sólo cuando ya lo eligió— porque es justamente
+          la información que hace que alguien cambie de opción. */}
+      {pct === 100 && cotizacion.descuento_monto > 0 ? (
+        <div className="rounded-lg border border-[hsl(var(--ubicar-green))]/30 bg-[hsl(var(--ubicar-green))]/5 px-4 py-3 text-sm">
+          <p className="font-semibold text-[hsl(var(--ubicar-green))]">
+            Se aplicó tu descuento: {pesos(cotizacion.descuento_monto)} menos
+          </p>
+          <p className="mt-0.5 text-muted-foreground">
+            {cotizacion.descuento_nombre ?? "Descuento por duración"} — lo tenés
+            por abonar el total ahora.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+          <p className="font-medium text-foreground">
+            Pagando el 100% ahora accedés al descuento por duración del alquiler.
+          </p>
+          <p className="mt-0.5 text-muted-foreground">
+            Con seña parcial se abona el precio de lista, y el saldo al retirar
+            el vehículo.
+          </p>
+        </div>
+      )}
 
       <div className="rounded-lg border border-border bg-white p-5">
         <div className="space-y-2 text-sm">

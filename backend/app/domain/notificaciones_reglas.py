@@ -969,30 +969,56 @@ def categoria_sin_precio(db: Session, hoy: date) -> list[dict]:
     }
     tarifas = db.query(Tarifa).filter(Tarifa.activo == True).all()
     con_tarifa = {t.categoria_id for t in tarifas if t.categoria_id}
+    # Categorías que sólo tienen la tarifa de relleno de la migración 058.
+    # Cotizan —la web las muestra disponibles— pero al precio equivocado, que
+    # es peor que no cotizar: se puede vender a un número que nadie decidió.
+    solo_generica = {
+        t.categoria_id
+        for t in tarifas
+        if t.categoria_id and getattr(t, "es_generica", False)
+    } - {
+        t.categoria_id
+        for t in tarifas
+        if t.categoria_id and not getattr(t, "es_generica", False)
+    }
     # Una tarifa sin categoría ni vehículo aplica a todo: si existe, nada queda
     # sin cotizar.
     hay_general = any(t.categoria_id is None and t.vehiculo_id is None for t in tarifas)
 
-    if hay_general:
-        return []
+    avisos = []
+    for c in categorias:
+        if c.id not in con_flota:
+            continue
 
-    return [
-        {
-            "tipo": "categoria_sin_precio",
-            "titulo": f"{c.nombre}: sin precio configurado",
-            "descripcion": (
-                "Tiene vehículos activos pero no se puede cotizar, así que la web "
-                "la muestra como sin disponibilidad."
-            ),
-            "urgencia": "alta",
-            "entidad_tipo": "categoria",
-            "entidad_id": c.id,
-            "url_destino": "/precios",
-            "fecha_objetivo": hoy,
-        }
-        for c in categorias
-        if c.id in con_flota and c.id not in con_tarifa
-    ]
+        if c.id in solo_generica:
+            avisos.append({
+                "tipo": "categoria_precio_generico",
+                "titulo": f"{c.nombre}: falta el precio real",
+                "descripcion": (
+                    "Está cotizando con el precio genérico que trae el sistema, no "
+                    "con el de ustedes. Se carga en Flota → Categorías."
+                ),
+                "urgencia": "alta",
+                "entidad_tipo": "categoria",
+                "entidad_id": c.id,
+                "url_destino": "/flota/categorias",
+                "fecha_objetivo": hoy,
+            })
+        elif not hay_general and c.id not in con_tarifa:
+            avisos.append({
+                "tipo": "categoria_sin_precio",
+                "titulo": f"{c.nombre}: sin precio configurado",
+                "descripcion": (
+                    "Tiene vehículos activos pero no se puede cotizar, así que la web "
+                    "la muestra como sin disponibilidad."
+                ),
+                "urgencia": "alta",
+                "entidad_tipo": "categoria",
+                "entidad_id": c.id,
+                "url_destino": "/flota/categorias",
+                "fecha_objetivo": hoy,
+            })
+    return avisos
 
 
 def vehiculo_sin_categoria(db: Session, hoy: date) -> list[dict]:

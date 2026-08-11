@@ -17,6 +17,7 @@ const MEDIOS = [
   { value: 'cheque', label: 'Cheque' },
   { value: 'echeq', label: 'Echeq' },
   { value: 'cuenta_corriente', label: 'Cuenta Corriente' },
+  { value: 'wapa', label: 'Wapa' },
 ];
 
 export function PendientesSection() {

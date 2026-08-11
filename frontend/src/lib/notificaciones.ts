@@ -51,6 +51,7 @@ export const TIPO_GRUPO: Record<string, string> = {
   // perder plata en silencio.
   fecha_especial_sin_precio: '📌 Falta completar',
   categoria_sin_precio: '📌 Falta completar',
+  categoria_precio_generico: '📌 Falta completar',
   vehiculo_sin_categoria: '📌 Falta completar',
   datos_empresa_sin_cargar: '📌 Falta completar',
 };

@@ -21,6 +21,7 @@ from app.domain.disponibilidad import (
     VehiculoDisponible,
     calcular_cupos,
 )
+from app.domain.recargo_edad import vista_con_recargo_incluido
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.hold import Hold
 from app.models.categoria import Categoria
@@ -157,6 +158,7 @@ class DisponibilidadService:
         solo_web: bool = True,
         categoria_ids: list[int] | None = None,
         excluir_hold_token: str | None = None,
+        edad_conductor: int | None = None,
     ) -> list[dict]:
         """
         Cupo y precio por categoría para el rango pedido.
@@ -164,6 +166,18 @@ class DisponibilidadService:
         Devuelve **todas** las categorías publicables, con o sin cupo: las que
         no tienen se muestran deshabilitadas en la web, no se ocultan — eso
         convierte, y evita que el cliente crea que no trabajamos el segmento.
+
+        `edad_conductor` hace que **el precio salga con el recargo por edad ya
+        incluido desde esta primera pantalla**. Antes el recargo aparecía
+        recién en el paso 3, cuando se pedían los datos: el cliente elegía una
+        categoría con un precio y en el paso siguiente veía otro. Un precio que
+        se mueve después de mostrado es la peor forma de perder una reserva, y
+        además obligaba a rotular el aumento para justificarlo.
+
+        Es la edad **declarada** en el buscador, no derivada de una fecha de
+        nacimiento: en la portada todavía no hay cliente, y pedir un documento
+        de identidad para ver una lista de precios espanta a cualquiera. La
+        exacta se calcula en el paso 3, cuando se carga la fecha real.
         """
         inicio_dt = datetime.combine(fecha_inicio, hora_inicio)
         fin_dt = datetime.combine(fecha_fin, hora_fin)
@@ -202,12 +216,21 @@ class DisponibilidadService:
                     fecha_fin=fecha_fin,
                     categoria_id=cat.id,
                     canal="web",
+                    edad_conductor=edad_conductor,
+                )
+                # `total` ya trae el recargo adentro; el promedio por día y el
+                # precio de referencia, no. Ver `vista_con_recargo_incluido`.
+                promedio, referencia = vista_con_recargo_incluido(
+                    cotizacion.precio_dia_promedio,
+                    cotizacion.total_referencia,
+                    cotizacion.recargo_edad,
+                    cotizacion.duracion_dias,
                 )
                 precio = {
                     "total": cotizacion.total,
-                    "precio_dia_promedio": cotizacion.precio_dia_promedio,
+                    "precio_dia_promedio": promedio,
                     "dias": cotizacion.duracion_dias,
-                    "total_referencia": cotizacion.total_referencia,
+                    "total_referencia": referencia,
                     "tiene_promocion": cotizacion.tiene_promocion,
                     "promociones": cotizacion.promociones,
                     "desglose": [

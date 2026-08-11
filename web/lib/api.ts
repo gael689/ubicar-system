@@ -12,7 +12,9 @@ import type {
   Adicional,
   CategoriaDisponible,
   CheckoutIniciado,
+  CondicionIva,
   ConfigPublica,
+  ContratoParaFirmar,
   Cotizacion,
   Hold,
   RespuestaDisponibilidad,
@@ -83,15 +85,26 @@ export function urlFoto(key: string | null): string | null {
 export const api = {
   config: () => request<ConfigPublica>("/public/config"),
 
-  /** Devuelve sólo las categorías: el rango ya lo conoce quien pregunta. */
+  /**
+   * Devuelve sólo las categorías: el rango ya lo conoce quien pregunta.
+   *
+   * `edad` es la que se declara en el Hero y hace que **el precio de cada
+   * tarjeta ya incluya el recargo por edad**. Sin ella el backend cotiza
+   * igual, pero el número mostrado acá subiría más adelante, cuando el
+   * cliente ya eligió.
+   */
   disponibilidad: async (p: {
     fecha_inicio: string;
     fecha_fin: string;
     hora_inicio: string;
     hora_fin: string;
+    edad?: string;
   }): Promise<CategoriaDisponible[]> => {
+    const query = new URLSearchParams(
+      Object.entries(p).filter(([, v]) => Boolean(v)) as [string, string][],
+    );
     const r = await request<RespuestaDisponibilidad>(
-      `/public/disponibilidad?${new URLSearchParams(p)}`,
+      `/public/disponibilidad?${query}`,
     );
     return r.categorias ?? [];
   },
@@ -158,6 +171,12 @@ export const api = {
     categoria_id: number;
     adicionales: { adicional_id: number; cantidad: number }[];
     fecha_nacimiento?: string | null;
+    /** La declarada en el Hero. Sostiene el precio en los pasos 2 y 3, antes
+     *  de que exista la fecha de nacimiento. Cuando esa llega, manda ella. */
+    edad?: number | null;
+    /** Cuánto adelanta. **Cambia el total**: el descuento por duración sólo
+     *  corre pagando el 100%. Va en `null` mientras no lo haya elegido. */
+    porcentaje_anticipo?: number | null;
   }) => request<Cotizacion>("/public/cotizar", { method: "POST", body: JSON.stringify(body) }),
 
   /**
@@ -183,11 +202,47 @@ export const api = {
     adicionales: { adicional_id: number; cantidad: number }[];
     fecha_nacimiento?: string | null;
     notas?: string;
+    /** Para el comprobante. No cambia el precio: los precios ya son finales
+     *  con IVA incluido. Ver `Cliente.condicion_iva` en el backend. */
+    condicion_iva?: CondicionIva | null;
+    razon_social?: string | null;
   }) =>
     request<CheckoutIniciado>("/public/reservas", {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  // ── Firma del contrato por link (D-C6) ────────────────────────────────────
+
+  /**
+   * El contrato que hay detrás de un link de firma.
+   *
+   * Sigue respondiendo después de firmado y después de vencido: es lo que
+   * permite volver a abrir el link y bajarse la copia.
+   */
+  contratoParaFirmar: (token: string) =>
+    request<ContratoParaFirmar>(`/public/contratos/${token}`),
+
+  firmarContrato: (
+    token: string,
+    body: {
+      nombre: string;
+      dni: string;
+      firma_base64: string;
+      aceptaciones: string[];
+    },
+  ) =>
+    request<{ numero: string; firmado_at: string }>(
+      `/public/contratos/${token}/firmar`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  /**
+   * URL del PDF. Se devuelve la dirección y no el archivo: el navegador lo
+   * abre en su visor, que en el teléfono es mucho mejor que una descarga que
+   * cae en una carpeta que nadie encuentra.
+   */
+  urlContratoPdf: (token: string) => `${BASE}/public/contratos/${token}/pdf`,
 };
 
 // ─── Formato ─────────────────────────────────────────────────────────────────
