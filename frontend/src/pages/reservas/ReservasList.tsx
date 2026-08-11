@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { AccionesContrato } from '@/components/reservas/AccionesContrato';
 import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -340,21 +341,18 @@ export function ReservasList() {
                       >
                         Sin contrato
                       </span>
-                    ) : r.contrato_estado === 'sin_emitir' ? (
-                      <span
-                        title="Todavía no se emitió el contrato de esta reserva"
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning text-white text-xs font-bold uppercase"
-                      >
-                        Sin contrato
-                      </span>
-                    ) : r.contrato_estado === 'emitido' ? (
-                      <span
-                        title="El contrato está emitido pero todavía sin firmar"
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-bold uppercase text-muted-foreground"
-                      >
-                        Sin firmar
-                      </span>
-                    ) : null}
+                    ) : (
+                      /* El cartel dejó de ser sólo un cartel: emite el
+                         contrato o copia el link de firma sin salir del
+                         listado. Señalar un problema sin ofrecer la solución
+                         es lo peor que puede hacer una pantalla que se mira
+                         con el cliente enfrente. */
+                      <AccionesContrato
+                        reservaId={r.id}
+                        estado={r.contrato_estado}
+                        onCambio={() => { loadReservas().catch(() => {}); }}
+                      />
+                    )}
                     {r.bloqueada_por_solape && !compacta && (
                       <div className="text-xs text-amber-600 mt-1 font-medium">⚠️ Solape pendiente</div>
                     )}
