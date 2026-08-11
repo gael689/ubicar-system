@@ -26,6 +26,8 @@ from app.schemas.precio import (
     DescuentoDuracionCreate,
     DescuentoDuracionResponse,
     DescuentoDuracionUpdate,
+    SimulacionReglaResponse,
+    SimularReglaRequest,
     TarifaCalendarioCreate,
     TarifaCalendarioResponse,
     TarifaCalendarioUpdate,
@@ -176,6 +178,44 @@ def get_calendario(
     return ok(CalendarioPreciosResponse(
         desde=desde, hasta=hasta, canal=canal, filas=filas,
     ))
+
+
+@router.post("/simular")
+def simular_regla(
+    payload: SimularReglaRequest,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    El efecto de una regla que todavía no existe.
+
+    La pantalla de precios deja marcar un rango arrastrando sobre el
+    calendario; esto es lo que contesta "del 3 al 10 de septiembre, Compacto a
+    $X por día: son N días, sale $Y, con el descuento por duración queda $Z" —
+    y si esos días ya los manda una promo, lo dice antes de guardar en vez de
+    después.
+
+    No escribe nada. Es sólo el motor de precios contestando una hipótesis.
+    """
+    if (payload.fecha_hasta - payload.fecha_desde).days > 400:
+        raise HTTPException(
+            status_code=422, detail="El rango no puede superar los 400 días"
+        )
+    if payload.categoria_id and db.get(Categoria, payload.categoria_id) is None:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
+
+    try:
+        data = PrecioService(db).simular_regla(
+            fecha_desde=payload.fecha_desde,
+            fecha_hasta=payload.fecha_hasta,
+            precio_dia=payload.precio_dia,
+            categoria_id=payload.categoria_id,
+            prioridad=payload.prioridad,
+            canal=payload.canal,
+        )
+    except BusinessRuleError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return ok(SimulacionReglaResponse(**data))
 
 
 # ─── ABM de reglas ────────────────────────────────────────────────────────────

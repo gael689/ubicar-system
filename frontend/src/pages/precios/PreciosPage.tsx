@@ -1,19 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, CalendarRange, Calculator, Globe, Store } from 'lucide-react';
+import {
+  ChevronLeft, ChevronRight, CalendarRange, Calculator, Globe, Store,
+  MousePointerClick, Maximize2, Minimize2, X,
+} from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { GrillaPrecios } from '@/components/precios/GrillaPrecios';
+import { GrillaPrecios, type SeleccionPrecio } from '@/components/precios/GrillaPrecios';
+import { PanelCargaPrecio, rangoEnPalabras } from '@/components/precios/PanelCargaPrecio';
 import { ComoSeArmaElPrecio } from '@/components/precios/ComoSeArmaElPrecio';
 import { ReglasPrecioPanel } from '@/components/precios/ReglasPrecioPanel';
 import { DescuentosDuracionPanel } from '@/components/precios/DescuentosDuracionPanel';
-import { useCalendarioPrecios, useCalcularPrecio } from '@/hooks/usePrecios';
+import { useCalendarioPrecios, useCalcularPrecio, useReglasPrecio } from '@/hooks/usePrecios';
+import { useFechasEspeciales } from '@/hooks/useFechasEspeciales';
 import { useCategorias } from '@/hooks/useCategorias';
 import { useAdicionales } from '@/hooks/useAdicionales';
+import { COLOR_FECHA_ESPECIAL, TIPO_FECHA_ESPECIAL_LABEL } from '@/lib/constants';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
-import type { Adicional, Canal } from '@/types';
+import type { Adicional, Canal, FechaEspecial } from '@/types';
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -30,14 +36,14 @@ const POR_CANAL = {
     titulo: 'Precios de mostrador',
     descripcion:
       'Lo que se cobra cuando el cliente reserva por teléfono, por WhatsApp o en el local. ' +
-      'La regla de mayor prioridad que cubre el día es la que se cobra.',
+      'Marcá un rango sobre el calendario y poné el precio ahí mismo.',
     otro: { label: 'Ver precios de la web', path: '/precios/web' },
   },
   web: {
     titulo: 'Precios de la web',
     descripcion:
       'Lo que ve y paga un cliente que reserva solo desde ubicar-rent.com.ar. ' +
-      'La regla de mayor prioridad que cubre el día es la que se cobra.',
+      'Marcá un rango sobre el calendario y poné el precio ahí mismo.',
     otro: { label: 'Ver precios de mostrador', path: '/precios/mostrador' },
   },
 } as const;
@@ -48,6 +54,12 @@ const POR_CANAL = {
  * Es la pantalla donde Franco y Martín cargan los precios ellos mismos:
  * "planificar precios base, y precios por fecha… que tengan la posibilidad
  * de poner precios promocionales para incentivar más al marketing".
+ *
+ * **El calendario es la herramienta de carga, no una tabla de sólo lectura.**
+ * Se arrastra sobre la fila de una categoría —"de acá a acá"— y se abre un
+ * panel que pide una sola cosa: cuánto sale el día. El formulario de doce
+ * campos sigue existiendo más abajo, en Reglas de precio, para los casos raros
+ * (una regla sin fechas fijas, de un vehículo puntual, con mínimo de días).
  *
  * **Hay una pantalla por canal, no una con un interruptor.** Antes el canal
  * era un botoncito arriba de la grilla que sólo cambiaba lo que se veía: la
@@ -61,17 +73,52 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
   const hoy = new Date();
   const [anio, setAnio] = useState(hoy.getFullYear());
   const [mes, setMes] = useState(hoy.getMonth());
+  const [cantidadMeses, setCantidadMeses] = useState(1);
+  const [compacto, setCompacto] = useState(false);
+  const [seleccion, setSeleccion] = useState<SeleccionPrecio | null>(null);
+  const [fechaAbierta, setFechaAbierta] = useState<FechaEspecial | null>(null);
 
   const cfg = POR_CANAL[canal];
   const desde = ymd(new Date(anio, mes, 1));
-  const hasta = ymd(new Date(anio, mes + 1, 0));
+  const hasta = ymd(new Date(anio, mes + cantidadMeses, 0));
+
   const { data: calendario, isLoading } = useCalendarioPrecios({ desde, hasta, canal });
+  const { data: fechasEspeciales = [] } = useFechasEspeciales({ desde, hasta });
+  // Las reglas del canal sirven para reconocer que un rango marcado ya ES una
+  // regla cargada: en ese caso el panel la edita en vez de apilar otra encima.
+  const { data: reglas = [] } = useReglasPrecio({ canal });
 
   function moverMes(delta: number) {
     const d = new Date(anio, mes + delta, 1);
     setAnio(d.getFullYear());
     setMes(d.getMonth());
   }
+
+  // Al cambiar de canal se está mirando otro juego de precios: sostener una
+  // selección de la pantalla anterior invitaría a cargarla en el canal
+  // equivocado, que es justo el error que las dos pantallas evitan.
+  useEffect(() => {
+    setSeleccion(null);
+    setFechaAbierta(null);
+  }, [canal]);
+
+  const fila = calendario?.filas.find(f => f.categoria_id === seleccion?.categoriaId);
+  const diasActuales = useMemo(
+    () => (seleccion && fila)
+      ? fila.dias.filter(d => d.fecha >= seleccion.desde && d.fecha <= seleccion.hasta)
+      : [],
+    [seleccion, fila]
+  );
+  const otrasCategorias = useMemo(
+    () => (calendario?.filas ?? [])
+      .filter(f => f.categoria_id !== seleccion?.categoriaId)
+      .map(f => ({ id: f.categoria_id, nombre: f.categoria_nombre })),
+    [calendario, seleccion]
+  );
+
+  const titulo = cantidadMeses === 1
+    ? `${MESES[mes]} ${anio}`
+    : `${MESES[mes]} ${anio} — ${MESES[(mes + cantidadMeses - 1) % 12]} ${new Date(anio, mes + cantidadMeses - 1, 1).getFullYear()}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -90,20 +137,48 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
 
       <ComoSeArmaElPrecio />
 
-      <Card className="p-5 space-y-4">
+      <Card className="space-y-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <CalendarRange className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-semibold text-foreground">
-              {MESES[mes]} {anio}
-            </h3>
+            <h3 className="text-sm font-semibold text-foreground">{titulo}</h3>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {[1, 2, 3].map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setCantidadMeses(n)}
+                  className={cn(
+                    'px-2.5 py-1 text-xs font-medium transition-colors',
+                    cantidadMeses === n
+                      ? 'bg-primary text-white'
+                      : 'bg-background text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {n === 1 ? '1 mes' : `${n} meses`}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCompacto(v => !v)}
+              title={compacto ? 'Celdas grandes con el precio completo' : 'Celdas chicas para ver más días'}
+            >
+              {compacto ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+              {compacto ? 'Agrandar' : 'Achicar'}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => moverMes(-1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm"
-              onClick={() => { setAnio(hoy.getFullYear()); setMes(hoy.getMonth()); }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setAnio(hoy.getFullYear()); setMes(hoy.getMonth()); }}
+            >
               Hoy
             </Button>
             <Button variant="outline" size="sm" onClick={() => moverMes(1)}>
@@ -112,13 +187,59 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
           </div>
         </div>
 
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <MousePointerClick className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span>
+            <strong className="text-foreground">Arrastrá sobre la fila de una categoría</strong> para
+            marcar de qué día a qué día, y poné el precio abajo. Un clic marca un solo día.
+            Las barras de colores son las fechas especiales: tocá una para ver cuál es.
+          </span>
+        </p>
+
         {isLoading ? (
-          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-64 w-full" />
         ) : calendario ? (
-          <GrillaPrecios data={calendario} />
+          <GrillaPrecios
+            data={calendario}
+            fechasEspeciales={fechasEspeciales}
+            seleccion={seleccion}
+            onSeleccion={setSeleccion}
+            onFechaEspecial={setFechaAbierta}
+            compacto={compacto}
+          />
         ) : null}
 
-        <div className="flex flex-wrap gap-4 pt-3 border-t border-border">
+        {fechaAbierta && (
+          <DetalleFechaEspecial
+            fecha={fechaAbierta}
+            categorias={(calendario?.filas ?? []).map(f => ({ id: f.categoria_id, nombre: f.categoria_nombre }))}
+            onPonerPrecio={cat => {
+              setSeleccion({
+                categoriaId: cat.id,
+                categoriaNombre: cat.nombre,
+                desde: fechaAbierta.fecha_desde,
+                hasta: fechaAbierta.fecha_hasta,
+              });
+              setFechaAbierta(null);
+            }}
+            onCerrar={() => setFechaAbierta(null)}
+          />
+        )}
+
+        {seleccion && (
+          <PanelCargaPrecio
+            canal={canal}
+            seleccion={seleccion}
+            diasActuales={diasActuales}
+            reglas={reglas}
+            fechasEspeciales={fechasEspeciales}
+            otrasCategorias={otrasCategorias}
+            onCambiarRango={(d, h) => setSeleccion(s => (s ? { ...s, desde: d, hasta: h } : s))}
+            onCerrar={() => setSeleccion(null)}
+          />
+        )}
+
+        <div className="flex flex-wrap gap-4 border-t border-border pt-3">
           <Leyenda clase="bg-primary/15 text-primary" texto="Precio cargado para esa fecha" />
           <Leyenda clase="bg-amber-500 text-white" texto="Promoción" />
           <Leyenda clase="bg-muted text-muted-foreground" texto="Sin regla — usa la tarifa por duración" />
@@ -150,6 +271,61 @@ function Leyenda({ clase, texto }: { clase: string; texto: string }) {
       <span className={cn('h-3.5 w-6 rounded', clase)} />
       {texto}
     </span>
+  );
+}
+
+/**
+ * "Si tocás en una fecha especial, que le salga qué fecha es."
+ *
+ * Además de decir cuál es, ofrece el único atajo que uno quiere en ese momento:
+ * ponerle precio a esos días, con el rango ya marcado.
+ */
+function DetalleFechaEspecial({
+  fecha, categorias, onPonerPrecio, onCerrar,
+}: {
+  fecha: FechaEspecial;
+  categorias: { id: number; nombre: string }[];
+  onPonerPrecio: (cat: { id: number; nombre: string }) => void;
+  onCerrar: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/40 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cn('rounded px-2 py-0.5 text-xs font-semibold', COLOR_FECHA_ESPECIAL[fecha.color].chip)}>
+          {fecha.nombre}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {TIPO_FECHA_ESPECIAL_LABEL[fecha.tipo]} · {rangoEnPalabras(fecha.fecha_desde, fecha.fecha_hasta)}
+          {' ('}{formatDate(fecha.fecha_desde)}
+          {fecha.fecha_hasta !== fecha.fecha_desde ? ` → ${formatDate(fecha.fecha_hasta)}` : ''}
+          {')'}
+        </span>
+        <button
+          type="button"
+          onClick={onCerrar}
+          title="Cerrar"
+          className="ml-auto text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {fecha.notas && <p className="mt-1.5 text-xs text-muted-foreground">{fecha.notas}</p>}
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Ponerle precio a estos días:</span>
+        {categorias.map(c => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onPonerPrecio(c)}
+            className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            {c.nombre}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

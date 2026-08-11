@@ -267,3 +267,49 @@ class CalendarioPreciosResponse(BaseModel):
     hasta: date
     canal: Canal
     filas: list[FilaCalendarioResponse]
+
+
+# ─── Simulación: el efecto de una regla ANTES de guardarla ────────────────────
+
+class SimularReglaRequest(BaseModel):
+    """
+    "De acá a acá, esta categoría, a $X por día: ¿cuánto sale, y sirve de algo?"
+
+    Es lo que la pantalla de precios necesita para mostrar el efecto de una
+    selección del calendario **antes** de crear la regla. Va contra el mismo
+    motor que después cobra: si la cuenta se hiciera en el frontend habría dos
+    motores de precios y tarde o temprano difieren — que es exactamente lo que
+    `domain/precios.py` existe para evitar.
+    """
+    fecha_desde: date
+    fecha_hasta: date   # inclusivo, igual que el rango de una regla
+    precio_dia: Decimal = Field(gt=0)
+    categoria_id: int | None = None
+    prioridad: int = 0
+    canal: Canal = "mostrador"
+
+    @model_validator(mode="after")
+    def _validar(self):
+        if self.fecha_hasta < self.fecha_desde:
+            raise ValueError("La fecha de fin no puede ser anterior a la de inicio")
+        return self
+
+
+class SimulacionReglaResponse(BaseModel):
+    dias: int
+    precio_dia: Decimal
+    subtotal: Decimal
+    descuento_nombre: str | None
+    descuento_porcentaje: Decimal
+    descuento_monto: Decimal
+    # Subtotal del auto ya con el descuento por duración. Sin adicionales ni
+    # recargo por edad: acá se está decidiendo el precio del auto, nada más.
+    total: Decimal
+    precio_dia_con_descuento: Decimal
+    # D-49: en la web el descuento por duración sólo corre pagando el 100% por
+    # adelantado. Sin este flag la pantalla mostraría un descuento que no aplica.
+    descuento_condicionado: bool
+    # En cuántos de esos días la regla propuesta realmente va a mandar, y quién
+    # le gana en el resto. Sale de resolver con el mismo desempate del motor.
+    dias_efectivos: int
+    pisado_por: list[str]

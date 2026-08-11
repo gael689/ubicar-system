@@ -1331,6 +1331,40 @@ export interface CalendarioPrecios {
   filas: FilaCalendarioPrecio[];
 }
 
+/**
+ * "De acá a acá, esta categoría, a $X por día: ¿cuánto sale?"
+ *
+ * Lo contesta el backend, no el frontend: la cuenta la hace el mismo motor que
+ * después cobra. Duplicar acá el descuento por duración sería un segundo motor
+ * de precios que tarde o temprano difiere del real.
+ */
+export interface SimularReglaRequest {
+  fecha_desde: string;
+  /** Inclusivo: es el rango de vigencia de la regla, no un check-out. */
+  fecha_hasta: string;
+  precio_dia: string;
+  categoria_id?: number | null;
+  prioridad?: number;
+  canal?: Canal;
+}
+
+export interface SimulacionRegla {
+  dias: number;
+  precio_dia: string;
+  subtotal: string;
+  descuento_nombre: string | null;
+  descuento_porcentaje: string;
+  descuento_monto: string;
+  /** Subtotal del auto ya con el descuento por duración, sin extras. */
+  total: string;
+  precio_dia_con_descuento: string;
+  /** D-49: en la web el descuento por duración sólo corre pagando el 100%. */
+  descuento_condicionado: boolean;
+  /** En cuántos de esos días la regla propuesta realmente va a mandar. */
+  dias_efectivos: number;
+  pisado_por: string[];
+}
+
 // ─── Adicionales (Fase 5, ítem 56) ───────────────────────────────────────────
 
 export type GrupoAdicional = 'cobertura' | 'extra';
@@ -1558,3 +1592,62 @@ export interface RecargoEdadCreate {
 }
 
 export type RecargoEdadUpdate = Partial<RecargoEdadCreate> & { activo?: boolean };
+
+
+// ─── Emails (registro de envíos por Resend) ──────────────────────────────────
+
+/**
+ * `omitido` no es un error: es un mail que **a propósito** no se intentó.
+ * Hoy pasa cuando el remitente configurado es el de prueba de Resend, que
+ * sólo entrega a la casilla dueña de la cuenta. Distinguirlo de `fallido` es
+ * lo que separa "el sistema está roto" de "falta verificar el dominio".
+ */
+export type EstadoEmail = 'enviado' | 'fallido' | 'omitido';
+
+export interface EmailEnviado {
+  id: number;
+  tipo: string;
+  destinatario: string;
+  remitente: string;
+  asunto: string;
+  entidad_tipo: string | null;
+  entidad_id: number | null;
+  estado: EstadoEmail;
+  /** El error de Resend, o el motivo por el que no se intentó. */
+  motivo: string | null;
+  proveedor_id: string | null;
+  con_adjunto: boolean;
+  /** false = lo mandó una persona desde el sistema (las ofertas). */
+  automatico: boolean;
+  intentos: number;
+  created_at: string;
+  ultimo_intento_at: string;
+}
+
+export interface EmailDetalle extends EmailEnviado {
+  cuerpo_html: string | null;
+}
+
+export interface EstadoIntegracionEmail {
+  remitente: string;
+  remitente_de_prueba: boolean;
+  /** Hay RESEND_API_KEY cargada. */
+  configurado: boolean;
+  destinatarios_equipo: string[];
+  /** `tipo` → nombre para mostrar. */
+  tipos: Record<string, string>;
+}
+
+export interface DestinatarioEmail {
+  id: number;
+  nombre: string;
+  email: string;
+}
+
+export interface ResultadoEnvioOferta {
+  total: number;
+  enviados: number;
+  fallidos: number;
+  omitidos: number;
+  items: EmailEnviado[];
+}

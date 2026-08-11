@@ -13,6 +13,7 @@ cotizador y la web llaman todos acá — "la idea es acoplar todo a esto".
 from datetime import date, timedelta
 from decimal import Decimal
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, BusinessRuleError
@@ -22,6 +23,7 @@ from app.domain.precios import (
     Cotizacion,
     DescuentoDuracionInfo,
     ReglaPrecio,
+    aplica_descuento_por_duracion,
     cotizar,
     resolver_regla_dia,
 )
@@ -409,3 +411,91 @@ class PrecioService:
                 "dias": dias,
             })
         return filas
+
+    # ─── Simulación de una regla antes de guardarla ───────────────────────────
+
+    def simular_regla(
+        self,
+        fecha_desde: date,
+        fecha_hasta: date,
+        precio_dia: Decimal,
+        categoria_id: int | None = None,
+        prioridad: int = 0,
+        canal: str = "mostrador",
+    ) -> dict:
+        """
+        Qué pasaría si se cargara esta regla: cuánto sale el rango completo, qué
+        descuento por duración le corresponde y en qué días la regla realmente
+        va a mandar.
+
+        Es la respuesta a "del 3 al 10 de septiembre, Compacto: ¿$X por día es
+        cuánto?" que la pantalla muestra mientras se arrastra sobre el
+        calendario. **La cuenta la hace el mismo motor que después cobra**: acá
+        sólo se arma una `ReglaPrecio` que todavía no existe en la base y se la
+        mete en `cotizar` como una más.
+
+        Dos detalles que no son obvios:
+
+        - El descuento por duración se calcula **siempre**, forzando
+          `porcentaje_anticipo=100`. En la web ese descuento se gana pagando el
+          100% (D-49), y la pantalla necesita poder decir "si paga todo, sale
+          $X" en vez de esconderlo. Que sea condicional viaja aparte, en
+          `descuento_condicionado`.
+        - `dias_efectivos` sale de resolver cada día con las reglas que ya
+          existen **más** la propuesta, usando el desempate real del motor. Sin
+          esto, cargar un precio abajo de una promo vigente se vería como
+          exitoso y no cambiaría ni un peso.
+        """
+        dias = (fecha_hasta - fecha_desde).days + 1
+        proximo_id = (self.db.query(func.max(TarifaCalendario.id)).scalar() or 0) + 1
+
+        propuesta = ReglaPrecio(
+            id=proximo_id,
+            nombre="(propuesta)",
+            precio_dia=Decimal(str(precio_dia)),
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+            prioridad=prioridad,
+            categoria_id=categoria_id,
+            # 'ambos' para que la propuesta no quede fuera por canal: el canal
+            # real lo pone el alta, y acá lo que se simula es el precio.
+            canal="ambos",
+        )
+
+        cot = cotizar(
+            fecha_inicio=fecha_desde,
+            fecha_fin=fecha_hasta + timedelta(days=1),
+            reglas=[propuesta],
+            descuentos=self._cargar_descuentos(categoria_id),
+            categoria_id=categoria_id,
+            canal=canal,
+            porcentaje_anticipo=100,
+        )
+
+        existentes = self._cargar_reglas(fecha_desde, fecha_hasta, categoria_id=categoria_id)
+        candidatas = existentes + [propuesta]
+        dias_efectivos = 0
+        pisado_por: list[str] = []
+        for offset in range(dias):
+            dia = fecha_desde + timedelta(days=offset)
+            gana = resolver_regla_dia(
+                dia, candidatas, dias, categoria_id=categoria_id, canal=canal
+            )
+            if gana is not None and gana.id == propuesta.id:
+                dias_efectivos += 1
+            elif gana is not None and gana.nombre not in pisado_por:
+                pisado_por.append(gana.nombre)
+
+        return {
+            "dias": dias,
+            "precio_dia": Decimal(str(precio_dia)),
+            "subtotal": cot.subtotal,
+            "descuento_nombre": cot.descuento_nombre,
+            "descuento_porcentaje": cot.descuento_porcentaje,
+            "descuento_monto": cot.descuento_monto,
+            "total": cot.subtotal_vehiculo,
+            "precio_dia_con_descuento": cot.precio_dia_promedio,
+            "descuento_condicionado": not aplica_descuento_por_duracion(canal, None),
+            "dias_efectivos": dias_efectivos,
+            "pisado_por": pisado_por,
+        }

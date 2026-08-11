@@ -9,6 +9,8 @@ import type {
   DescuentoDuracion,
   DescuentoDuracionCreate,
   DescuentoDuracionUpdate,
+  SimulacionRegla,
+  SimularReglaRequest,
   TarifaCalendario,
   TarifaCalendarioCreate,
   TarifaCalendarioUpdate,
@@ -66,6 +68,26 @@ export function useCalendarioPrecios(params: {
       const qs = new URLSearchParams({ desde: params.desde, hasta: params.hasta });
       if (params.canal) qs.set('canal', params.canal);
       const res = await api.get<{ data: CalendarioPrecios }>(`/precios/calendario?${qs}`);
+      return res.data.data;
+    },
+  });
+}
+
+/**
+ * Simula una regla que todavía no existe: cuántos días son, cuánto sale el
+ * rango, qué descuento por duración le toca y si algo la pisa.
+ *
+ * Es lo que le pone números a la selección del calendario mientras se arrastra.
+ * Va al backend a propósito — el descuento por duración y el desempate de
+ * prioridades tienen una sola implementación, y no está acá.
+ */
+export function useSimularRegla(payload: SimularReglaRequest | null) {
+  return useQuery({
+    ...CACHE.CATALOGO,
+    queryKey: [KEY, 'simular', payload],
+    enabled: Boolean(payload && Number(payload.precio_dia) > 0),
+    queryFn: async () => {
+      const res = await api.post<{ data: SimulacionRegla }>('/precios/simular', payload);
       return res.data.data;
     },
   });

@@ -180,16 +180,22 @@ export function ReglasPrecioPanel({ canal }: Props) {
           <Button variant="outline" size="sm" onClick={() => setVerInactivas(v => !v)}>
             {verInactivas ? 'Ver sólo activas' : 'Ver dadas de baja'}
           </Button>
-          <Button size="sm" onClick={abrirNueva}>
-            <Plus className="h-4 w-4" /> Nueva regla
+          {/* El camino normal para cargar un precio es arrastrar sobre el
+              calendario de arriba. Este formulario queda para lo que ahí no se
+              puede expresar: una regla de un vehículo puntual, de toda la
+              flota, o con mínimo de días. Por eso dice "a mano". */}
+          <Button size="sm" variant="outline" onClick={abrirNueva}>
+            <Plus className="h-4 w-4" /> Cargar a mano
           </Button>
         </div>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        La regla de <strong>mayor prioridad</strong> que cubre el día es la que manda. Apilar una
+        Cada precio que se marca en el calendario de arriba queda acá como una regla.
+        La de <strong>mayor prioridad</strong> que cubre el día es la que manda. Apilar una
         promoción no borra el precio de abajo: cuando la promo se da de baja, el precio anterior
-        vuelve a aplicar solo.
+        vuelve a aplicar solo. <strong>Cargar a mano</strong> es para lo que el calendario no puede
+        expresar: una regla de toda la flota, de un vehículo puntual, o con mínimo de días.
       </p>
       <p className="text-xs text-muted-foreground">
         Acá sólo se ve y se carga lo de <strong>{canal}</strong>. Las reglas marcadas
