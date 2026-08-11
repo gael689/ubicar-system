@@ -7,6 +7,7 @@ import { useClientes, useConductores } from '@/hooks/useClientes';
 import { useAdicionales } from '@/hooks/useAdicionales';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
 import api from '@/lib/api';
+import { toast } from 'sonner';
 import type { Adicional, Reserva, ReservaCreate, ReservaUpdate, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
 
 interface Props {
@@ -53,6 +54,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const { data: vehiculosData } = useVehiculos({ incluir_inactivos: false, page_size: 100 });
   const [clientSearch, setClientSearch] = useState('');
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
+  const [creandoCliente, setCreandoCliente] = useState(false);
   const { data: clientesData } = useClientes({ q: clientSearch || undefined, page_size: 100 });
 
   const [vehiculoId, setVehiculoId]           = useState(reserva?.vehiculo_id?.toString() ?? initialVehiculoId?.toString() ?? '');
@@ -126,6 +128,42 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     if (!isEdit) {
       if (c.condicion_pago_default) setCondicionPago(c.condicion_pago_default);
       setFacturaANombreDe(c.tipo === 'empresa' && c.razon_social ? c.razon_social : c.nombre_completo);
+    }
+  };
+
+  /**
+   * Da de alta un cliente con lo mínimo y lo deja seleccionado.
+   *
+   * **El caso es el mostrador con alguien enfrente**: llega uno que no está en
+   * el sistema y hay que reservarle ahora. Antes el formulario frenaba y había
+   * que irse a Clientes, cargar la ficha entera y volver a empezar la reserva
+   * desde cero. Con el cliente esperando, eso no pasa: se anota en un papel y
+   * el sistema deja de ser el lugar donde está la verdad.
+   *
+   * Se crea con el nombre. **DNI y teléfono quedan marcados como pendientes**,
+   * con ese texto exacto para que se vea de lejos en la ficha, y la campana los
+   * reclama hasta que alguien los complete. Es a propósito que sea visible y
+   * molesto: un cliente sin DNI no puede firmar un contrato.
+   */
+  const crearClienteRapido = async () => {
+    const nombre = clientSearch.trim();
+    if (nombre.length < 3) return;
+    setCreandoCliente(true);
+    try {
+      const { data } = await api.post('/clientes', {
+        nombre_completo: nombre,
+        dni_cuit: 'A COMPLETAR',
+        telefono: 'A COMPLETAR',
+        tipo: 'particular',
+        notas: 'Alta rápida desde una reserva. Faltan DNI/CUIT y teléfono.',
+      });
+      const creado = data?.data ?? data;
+      selectCliente({ id: creado.id, nombre_completo: creado.nombre_completo });
+      toast.success('Cliente creado. Falta cargarle DNI y teléfono.');
+    } catch {
+      toast.error('No pudimos crear el cliente. Probá desde la pantalla de Clientes.');
+    } finally {
+      setCreandoCliente(false);
     }
   };
 
@@ -542,7 +580,31 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 {clientDropdownOpen && !isEdit && (
                   <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-10">
                     {filteredClientes.length === 0 ? (
-                      <div className="p-3 text-sm text-slate-500 text-center">No se encontraron clientes</div>
+                      /* **Alta rapida.** Antes, si el cliente no existia, el
+                         formulario frenaba y habia que irse a Clientes, cargarlo
+                         entero y volver a empezar la reserva. Con alguien
+                         enfrente esperando, eso no pasa: se anota en un papel.
+                         Ahora se crea con el nombre y listo; el DNI y el
+                         telefono quedan marcados como pendientes y la campana
+                         los reclama hasta que se completen. */
+                      <div className="p-3">
+                        <p className="mb-2 text-sm text-slate-500">
+                          No hay ningun cliente con ese nombre.
+                        </p>
+                        <button
+                          type="button"
+                          disabled={creandoCliente || clientSearch.trim().length < 3}
+                          onClick={crearClienteRapido}
+                          className="w-full rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                        >
+                          {creandoCliente
+                            ? 'Creando...'
+                            : `Crear "${clientSearch.trim()}" y seguir`}
+                        </button>
+                        <p className="mt-1.5 text-xs text-slate-400">
+                          Se crea con el nombre. DNI y telefono quedan pendientes.
+                        </p>
+                      </div>
                     ) : (
                       <ul className="py-1">
                         {filteredClientes.map(c => (

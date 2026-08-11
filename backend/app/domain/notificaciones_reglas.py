@@ -1140,6 +1140,63 @@ def datos_empresa_sin_cargar(db: Session, hoy: date) -> list[dict]:
 
 # ── Catálogo completo ────────────────────────────────────────────────────────
 
+# El texto que deja el alta rápida en los campos que no se cargaron. Es una
+# constante y no un literal suelto porque lo escribe el frontend y lo busca
+# esta regla: si cambia de un lado y no del otro, la campana deja de reclamar
+# y nadie se entera.
+MARCA_PENDIENTE = "A COMPLETAR"
+
+
+def cliente_sin_completar(db: Session, hoy: date) -> list[dict]:
+    """
+    Clientes dados de alta rápido, con el DNI o el teléfono sin cargar.
+
+    **El alta rápida existe para no frenar una reserva con el cliente
+    enfrente**: se anota el nombre y se sigue. El precio de esa comodidad es
+    que queda una ficha a medias, y una ficha a medias que nadie reclama es una
+    ficha que se queda así para siempre.
+
+    Importa más de lo que parece: **sin DNI no se puede emitir un contrato**, y
+    eso se descubre el día de la entrega, con el auto en la puerta.
+
+    Sólo se avisa por clientes activos. Uno dado de baja con datos incompletos
+    no le hace falta a nadie.
+    """
+    from app.models.cliente import Cliente
+
+    clientes = (
+        db.query(Cliente)
+        .filter(
+            Cliente.activo.is_(True),
+            (Cliente.dni_cuit == MARCA_PENDIENTE) | (Cliente.telefono == MARCA_PENDIENTE),
+        )
+        .all()
+    )
+
+    avisos = []
+    for c in clientes:
+        falta = []
+        if c.dni_cuit == MARCA_PENDIENTE:
+            falta.append("DNI/CUIT")
+        if c.telefono == MARCA_PENDIENTE:
+            falta.append("teléfono")
+        avisos.append({
+            "tipo": "cliente_sin_completar",
+            "titulo": f"{c.nombre_completo}: falta {' y '.join(falta)}",
+            "descripcion": (
+                "Se dio de alta rápido desde una reserva. "
+                + ("Sin DNI no se le puede emitir el contrato. " if c.dni_cuit == MARCA_PENDIENTE else "")
+                + "Se completa en su ficha."
+            ),
+            "urgencia": "alta" if c.dni_cuit == MARCA_PENDIENTE else "media",
+            "entidad_tipo": "cliente",
+            "entidad_id": c.id,
+            "url_destino": f"/clientes/{c.id}",
+            "fecha_objetivo": hoy,
+        })
+    return avisos
+
+
 REGLAS = [
     entregas_hoy,
     devoluciones_hoy,
@@ -1176,6 +1233,7 @@ REGLAS = [
     vehiculo_sin_categoria,
     contrato_sin_emitir,
     datos_empresa_sin_cargar,
+    cliente_sin_completar,
 ]
 
 

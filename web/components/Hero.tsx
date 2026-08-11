@@ -27,6 +27,9 @@ const LUGARES = [
   "Aeropuerto Comandante Espora Bahía Blanca",
 ];
 
+// El valor que dispara el campo libre. No es un lugar: es un pedido.
+const OTRO = "__otro__";
+
 const PASOS = ["Elegí fechas", "Elegí tu vehículo", "Sumá extras", "Reservá"];
 
 // 17 a 80, y un 81 que representa "más de 80": arriba de esa edad ninguna
@@ -56,6 +59,8 @@ const Hero = () => {
   const [horaEntrega, setHoraEntrega] = useState("10:00");
   const [fechaDevolucion, setFechaDevolucion] = useState<Date>();
   const [horaDevolucion, setHoraDevolucion] = useState("10:00");
+  const [otroRetiro, setOtroRetiro] = useState("");
+  const [otraDevolucion, setOtraDevolucion] = useState("");
   const [edad, setEdad] = useState("");
   const [faltaEdad, setFaltaEdad] = useState(false);
 
@@ -115,9 +120,18 @@ const Hero = () => {
 
     intencionDeReserva("hero:buscador");
 
+    // "Otro" no viaja como tal: viaja lo que el cliente escribio, marcado
+    // como pedido para que el mostrador sepa que hay que confirmarlo.
+    const retiro = lugarEntrega === OTRO
+      ? (otroRetiro.trim() ? `A coordinar: ${otroRetiro.trim()}` : "")
+      : lugarEntrega;
+    const devolucion = lugarDevolucion === OTRO
+      ? (otraDevolucion.trim() ? `A coordinar: ${otraDevolucion.trim()}` : "")
+      : lugarDevolucion;
+
     const params = new URLSearchParams();
-    if (lugarEntrega) params.set("lugar", lugarEntrega);
-    if (devolverOtroLugar && lugarDevolucion) params.set("devolucion", lugarDevolucion);
+    if (retiro) params.set("lugar", retiro);
+    if (devolverOtroLugar && devolucion) params.set("devolucion", devolucion);
     if (fechaEntrega) params.set("desde", format(fechaEntrega, "yyyy-MM-dd"));
     if (fechaDevolucion) params.set("hasta", format(fechaDevolucion, "yyyy-MM-dd"));
     params.set("hora_desde", horaEntrega);
@@ -251,10 +265,29 @@ const Hero = () => {
                       {LUGARES.map((l) => (
                         <option key={l} value={l}>{l}</option>
                       ))}
+                      <option value={OTRO}>Otro lugar (a coordinar)</option>
                     </select>
                     <MapPin className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" />
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   </div>
+
+                  {lugarEntrega === OTRO && (
+                    <div className="mt-2">
+                      <input
+                        value={otroRetiro}
+                        onChange={(e) => setOtroRetiro(e.target.value)}
+                        placeholder="¿Dónde querés retirarlo?"
+                        className="h-[46px] w-full rounded-lg border border-border bg-white px-3.5 text-sm text-[#1B3F6B] outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
+                      />
+                      {/* Se dice acá y no después: el cliente tiene que saber
+                          que esto es un pedido antes de seguir, no enterarse
+                          cuando ya reservó. */}
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        Lo coordinamos con vos. <strong>Queda confirmado cuando
+                        Ubicar lo confirma</strong>, puede tener un costo extra.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Fechas */}
@@ -341,7 +374,23 @@ const Hero = () => {
                     {LUGARES.map((l) => (
                       <option key={l} value={l}>{l}</option>
                     ))}
+                    <option value={OTRO}>Otro lugar (a coordinar)</option>
                   </select>
+                )}
+
+                {devolverOtroLugar && lugarDevolucion === OTRO && (
+                  <div>
+                    <input
+                      value={otraDevolucion}
+                      onChange={(e) => setOtraDevolucion(e.target.value)}
+                      placeholder="¿Dónde querés devolverlo?"
+                      className="h-[46px] w-full rounded-lg border border-border bg-white px-3.5 text-sm text-[#1B3F6B] outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
+                    />
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Lo coordinamos con vos. <strong>Queda confirmado cuando
+                      Ubicar lo confirma</strong>, puede tener un costo extra.
+                    </p>
+                  </div>
                 )}
 
                 <Button
