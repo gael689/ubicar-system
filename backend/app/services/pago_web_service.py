@@ -92,7 +92,28 @@ class PagoWebService:
         self.db = db
         # Inyectable: los tests pasan la pasarela falsa y ejercitan el webhook
         # completo sin red.
-        self.pasarela = pasarela or get_pasarela()
+        self._pasarela = pasarela
+
+    @property
+    def pasarela(self) -> IPasarelaPago:
+        """
+        La pasarela, resuelta **recién cuando se la usa**.
+
+        Se resolvía en el constructor, y eso rompía el camino que no la
+        necesita: `reservar_para_transferencia` no habla con ninguna pasarela
+        —crea la reserva y devuelve el CBU— pero instanciar el service ya
+        levantaba `PasarelaNoConfigurada` en producción por no tener
+        credenciales de Mercado Pago.
+
+        O sea que **la transferencia, que existe justamente porque todavía no
+        hay Mercado Pago, no se podía usar hasta tener Mercado Pago.** Y el
+        síntoma en el navegador era un error de CORS: un 500 sin manejar sale
+        por fuera del middleware que agrega los headers, así que el browser
+        reporta el header faltante en vez del error real.
+        """
+        if self._pasarela is None:
+            self._pasarela = get_pasarela()
+        return self._pasarela
 
     # ─── Paso 4 de la web: abrir el checkout ─────────────────────────────────
 
