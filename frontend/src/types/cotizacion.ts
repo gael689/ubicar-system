@@ -34,4 +34,13 @@ export interface CotizacionData {
   email: string;
   notas: string;
   items: ItemCotizacion[];
+  /**
+   * Si el PDF cierra con la suma de todos los ítems.
+   *
+   * **No siempre corresponde.** Una cotización con varios vehículos puede ser
+   * un presupuesto de una flota —y ahí el total es el dato— o un abanico de
+   * opciones para que el cliente elija una sola, y ahí sumarlas informa un
+   * número que nadie va a pagar.
+   */
+  mostrar_total: boolean;
 }

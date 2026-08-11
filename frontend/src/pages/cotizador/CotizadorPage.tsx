@@ -78,12 +78,35 @@ function plusDays(n: number): string {
   const d = new Date(); d.setDate(d.getDate() + n);
   return d.toISOString().split('T')[0];
 }
+/**
+ * El número de cotización: cinco dígitos, correlativo.
+ *
+ * Antes era `COT-202608-473`, con las últimas tres cifras **al azar**: largo de
+ * dictar por teléfono y, peor, capaz de repetirse. Ahora es `00001`, `00002`…
+ *
+ * El contador vive en `localStorage`, o sea **en la máquina de quien cotiza**.
+ * Alcanza porque el cotizador es una herramienta de escritorio de una persona,
+ * pero tiene dos límites que conviene conocer: si cotizan desde dos máquinas
+ * los números se pisan, y si alguien limpia los datos del navegador vuelve a
+ * empezar de cero. El campo es editable justamente para poder corregirlo a
+ * mano cuando pase. El día que haga falta de verdad, esto se resuelve
+ * moviendo el contador al backend.
+ */
+const CLAVE_CONTADOR = 'ubicar.cotizador.ultimoNumero';
+
 function generateNumero(): string {
-  const now = new Date();
-  const yy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const rand = String(Math.floor(Math.random() * 900) + 100);
-  return `COT-${yy}${mm}-${rand}`;
+  let ultimo = 0;
+  try {
+    ultimo = parseInt(localStorage.getItem(CLAVE_CONTADOR) || '0', 10) || 0;
+  } catch {
+    // Navegador con el almacenamiento bloqueado: se arranca de cero y el
+    // usuario corrige a mano. No es motivo para romper la pantalla.
+  }
+  const siguiente = ultimo + 1;
+  try {
+    localStorage.setItem(CLAVE_CONTADOR, String(siguiente));
+  } catch { /* idem */ }
+  return String(siguiente).padStart(5, '0');
 }
 
 // ─── Subtotal inline en el formulario ─────────────────────────────────────────
@@ -136,13 +159,17 @@ export function CotizadorPage() {
   const [modo,         setModo]        = useState<ModoCotizacion>('categoria');
   const [formItems,    setFormItems]   = useState<FormItem[]>(() => [makeFormItem('categoria')]);
   const [exporting,    setExporting]   = useState(false);
+  // Arranca en true: sumar es lo que se espera de un presupuesto. Se apaga
+  // cuando la cotización es un abanico de opciones y no una flota.
+  const [mostrarTotal, setMostrarTotal] = useState(true);
 
   // Derivar CotizacionData para el preview en tiempo real
   const data: CotizacionData = useMemo(() => ({
     numero, fecha, validez_hasta: validezHasta, agente,
     empresa, contacto, email, notas,
     items: formItems.map(formItemToData),
-  }), [numero, fecha, validezHasta, agente, empresa, contacto, email, notas, formItems]);
+    mostrar_total: mostrarTotal,
+  }), [numero, fecha, validezHasta, agente, empresa, contacto, email, notas, formItems, mostrarTotal]);
 
   // ── Manejo de ítems ──────────────────────────────────────────────────────
   const addItem = useCallback(() => setFormItems(prev => [...prev, makeFormItem(modo)]), [modo]);
@@ -151,10 +178,16 @@ export function CotizadorPage() {
     setFormItems(prev => prev.filter((_, i) => i !== idx));
   }, []);
 
-  const changeModo = useCallback((m: ModoCotizacion) => {
-    setModo(m);
-    setFormItems([makeFormItem(m)]);
-  }, []);
+  /**
+   * Cambiar entre "por categoría" y "por unidad" **ya no borra lo cargado**.
+   *
+   * Antes reemplazaba la lista entera por un ítem vacío: quien tenía tres
+   * vehículos cotizados y quería agregar uno por unidad, perdía los tres y
+   * tenía que rehacerlos. Ahora el modo sólo decide **de qué tipo nace el
+   * próximo ítem** — cada uno guarda el suyo, así que una misma cotización
+   * puede combinar los dos.
+   */
+  const changeModo = useCallback((m: ModoCotizacion) => setModo(m), []);
 
   const updateItem = useCallback((idx: number, key: keyof FormItem, value: string) => {
     setFormItems(prev => prev.map((it, i) => {
@@ -293,10 +326,16 @@ export function CotizadorPage() {
                   {/* Fila 1: Categoría/Unidad + Modalidad */}
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
+                      {/* **El tipo lo define el ítem, no el modo global.** Antes
+                          cambiar el selector de arriba redibujaba TODOS los ítems
+                          como si fueran del tipo nuevo, y por eso habia que
+                          borrarlos. Un item con `unidad` cargada es "por unidad";
+                          el resto, por categoria. Asi conviven los dos en la misma
+                          cotizacion. */}
                       <Label className="text-xs text-muted-foreground mb-1 block">
-                        {modo === 'unidad' ? 'Unidad' : 'Categoría'}
+                        {item.unidad ? 'Unidad' : 'Categoría'}
                       </Label>
-                      {modo === 'unidad' ? (
+                      {item.unidad ? (
                         <Select
                           value={item.unidad}
                           onValueChange={v => updateItem(idx, 'unidad', v)}
@@ -442,6 +481,29 @@ export function CotizadorPage() {
               <Plus className="h-3.5 w-3.5" />
               Agregar vehículo
             </button>
+
+            {/* Sumar o no sumar. Sólo tiene sentido con más de un vehículo:
+                con uno solo, el total y el ítem son el mismo número. */}
+            {formItems.length > 1 && (
+              <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-muted/40 p-3">
+                <input
+                  type="checkbox"
+                  checked={mostrarTotal}
+                  onChange={e => setMostrarTotal(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-primary"
+                />
+                <span className="text-xs leading-relaxed">
+                  <span className="font-medium text-foreground">
+                    Sumar todos los vehículos en un total
+                  </span>
+                  <span className="mt-0.5 block text-muted-foreground">
+                    Dejalo tildado si el cliente se lleva todos (una flota).
+                    Destildalo si son <strong>opciones para que elija una</strong>:
+                    ahí el total sería una suma que nadie va a pagar.
+                  </span>
+                </span>
+              </label>
+            )}
           </section>
 
           {/* ── Nota ────────────────────────────────────────────────── */}
@@ -481,7 +543,24 @@ export function CotizadorPage() {
           <span className="text-xs px-3 py-1 rounded font-semibold bg-muted text-muted-foreground border border-border opacity-50 cursor-not-allowed" title="En revisión">
             Blanco Premium (en revisión)
           </span>
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">{numero}</span>
+          {/* Descarga rápida, al lado del número. El botón grande vive al pie
+              de la columna izquierda, que en pantallas chicas queda fuera de
+              vista justo cuando terminaste de revisar el preview: había que
+              scrollear el formulario para bajar el PDF que estabas mirando. */}
+          <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+            N° {numero}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 h-7"
+            onClick={handleExport}
+            disabled={exporting}
+            title="Descargar el PDF de esta cotización"
+          >
+            <FileDown className="h-3.5 w-3.5" />
+            {exporting ? 'Generando…' : 'Descargar'}
+          </Button>
         </div>
 
         <div className="flex-1 overflow-auto p-6">

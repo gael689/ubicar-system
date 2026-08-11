@@ -189,7 +189,12 @@ export function CotizacionPreview3({ data }: Props) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {items.map(item => <ItemCard key={item.id} item={item} />)}
-            {items.length > 1 && <TotalCombinado items={items} />}
+            {/* El total se suma **sólo si lo pidieron**. Cuando la cotización
+                es un abanico de opciones para que el cliente elija una, la
+                suma informa un número que nadie va a pagar. */}
+            {items.length > 1 && data.mostrar_total !== false && (
+              <TotalCombinado items={items} />
+            )}
           </div>
         )}
       </div>

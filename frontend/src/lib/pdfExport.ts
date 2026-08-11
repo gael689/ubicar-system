@@ -135,6 +135,20 @@ export async function exportCotizacionPDF(previewId: string, filename: string): 
       }
     }
 
+    /**
+     * **Que se abra mostrando la hoja entera.**
+     *
+     * Sin esto, el visor usa su zoom por defecto —normalmente 100%, o el
+     * último que usó la persona— y la cotización aparece gigante y cortada
+     * apenas se abre. El cliente lo primero que ve es un pedazo del
+     * encabezado, y tiene que alejar a mano para entender qué le mandaron.
+     *
+     * `fullpage` guarda esa preferencia **dentro del PDF**, así que vale igual
+     * en el celular, en el mail y en el visor del navegador. `fullwidth` sería
+     * peor: llena el ancho pero deja el pie afuera.
+     */
+    pdf.setDisplayMode('fullpage');
+
     return await shareOrDownload(pdf, filename);
   } finally {
     document.body.removeChild(clone);
