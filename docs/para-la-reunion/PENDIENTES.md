@@ -32,6 +32,12 @@ Reemplaza a `PENDIENTES_REUNION.md`, que quedó del 29/07.
 | 8 | **Backups de Postgres**: activarlos **y probar una restauración** |
 | 9 | **Fotos reales** de las categorías — hoy son de demostración |
 
+## 🟡 De código, pendiente
+
+| | Qué |
+|---|---|
+| 14 | **Sin cupo y sin rotación posible**: hoy se ofrece dejar los datos ("Avisarme cuando haya"). Falta poder **avanzar igual con la reserva, sin cobrar**, avisando que puede no haber disponibilidad y que un agente contacta. Decidido, sin implementar |
+
 ## 🟡 Para la semana que viene, con el dominio
 
 10. Sacar `ubicar-rent.com.ar` del proyecto viejo de Vercel y ponerlo en el nuevo.
