@@ -89,15 +89,20 @@ confirma**. El auto se libera solo y nadie se entera.
 1. Dentro de la aplicación → menú izquierdo → **Webhooks** (o
    **Notificaciones** → **Webhooks**)
 2. **Configurar notificaciones**
-3. En **URL de producción** poné:
+3. En **URL de producción** poné **esta, tal cual, copiada y pegada**:
 
    ```
-   https://<la-direccion-del-backend>/api/v1/public/webhooks/mercadopago
+   https://ubicar-system-production.up.railway.app/api/v1/public/webhooks/mercadopago
    ```
 
    > La dirección del backend te la paso yo cuando esté desplegado en Railway.
    > Va a ser algo tipo `https://ubicar-backend-production.up.railway.app`.
-   > **Fijate que termine en `/api/v1/public/webhooks/mercadopago`** — sin el
+   > **Esa direccion ya esta andando** (verificado el 11/08: responde 200). Es la
+> del ambiente de prueba; cuando conectemos `ubicar-rent.com.ar` cambia por
+> `https://api.ubicar-rent.com.ar/...` y **hay que actualizarla aca en Mercado
+> Pago tambien**, o los pagos dejan de confirmarse.
+>
+> **Fijate que termine en `/api/v1/public/webhooks/mercadopago`** — sin el
    > `/api/v1` no funciona.
 
 4. En **Eventos**, tildá únicamente: **Pagos** (`payment`)

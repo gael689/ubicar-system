@@ -213,10 +213,23 @@ const LocationSection = () => {
   const [active, setActive] = useState("paraguay");
   const [mapReady, setMapReady] = useState(false);
   const [zoneMode, setZoneMode] = useState(false); // true = vista zona expandida
+  /**
+   * El mapa **no se carga solo**: espera a que alguien lo pida.
+   *
+   * Leaflet viene de `unpkg.com` y los mosaicos de `basemaps.cartocdn.com`,
+   * o sea que apenas se renderiza esta sección **se le manda la IP del
+   * visitante a dos terceros, antes de que haya aceptado nada**. No ponen
+   * cookies, pero la política de privacidad promete que sin consentimiento no
+   * se comparte nada con terceros, y eso hay que cumplirlo.
+   *
+   * Con el clic de por medio, el visitante decide. Y de paso la portada deja
+   * de bajar ~150 KB de librería de mapas que la mayoría nunca mira.
+   */
+  const [mapaPedido, setMapaPedido] = useState(false);
 
   // ── Cargar Leaflet ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !mapaPedido) return;
 
     if (!document.getElementById("leaflet-css")) {
       const link = Object.assign(document.createElement("link"), {
@@ -563,6 +576,33 @@ const LocationSection = () => {
             {/* ── Mapa ───────────────────────────────────────────────────────── */}
             <div className="relative" style={{ background: C.bg }}>
               <div ref={mapRef} className="w-full h-full" style={{ minHeight: 560 }} />
+
+              {/* Hasta que alguien lo pide, el mapa es una tarjeta y no una
+                  llamada a dos CDN de terceros. Los tres puntos de retiro se
+                  leen igual en la lista de al lado — el mapa agrega contexto,
+                  no información que falte. */}
+              {!mapaPedido && (
+                <button
+                  type="button"
+                  onClick={() => setMapaPedido(true)}
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center transition-colors"
+                  style={{ background: C.bg }}
+                >
+                  <span
+                    className="flex h-12 w-12 items-center justify-center rounded-full"
+                    style={{ background: C.primary, color: C.white }}
+                  >
+                    <IconMapPin />
+                  </span>
+                  <span className="text-base font-bold" style={{ color: C.dark }}>
+                    Ver el mapa
+                  </span>
+                  <span className="max-w-xs text-xs" style={{ color: C.muted }}>
+                    Lo carga OpenStreetMap. Al abrirlo se conecta con ese
+                    servicio, por eso esperamos a que lo pidas.
+                  </span>
+                </button>
+              )}
 
               {/* Banner "modo zona" flotante sobre el mapa */}
               {mapReady && zoneMode && (
