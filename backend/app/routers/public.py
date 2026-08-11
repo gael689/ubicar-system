@@ -301,6 +301,12 @@ def _datos_transferencia(db: Session) -> dict | None:
     Devuelve `None` también si falta el CBU: mostrar un alias sin CBU es
     invitar a una transferencia que no se puede completar.
     """
+    # El import va acá dentro, igual que en `get_config_publica`: este módulo
+    # los hace locales para no arrastrar servicios pesados al arranque. Estaba
+    # tomado del scope de la otra función y **rompía `/public/config` con un
+    # 500**, que es el endpoint del que cuelga toda la web.
+    from app.services.configuracion_service import ConfiguracionService
+
     cfg = ConfiguracionService(db)
     if cfg.get_str("cobro.transferencia_habilitada", "false").lower() not in ("true", "1"):
         return None
