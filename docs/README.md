@@ -8,20 +8,24 @@ que arreglar el viejo o archivarlo.
 
 ---
 
+## 📁 Para la reunión → `para-la-reunion/`
+
+Lo que va a la reunión con Franco y Martín está **todo junto en esa carpeta**,
+con un `LEEME.md` que dice en qué orden usarlo y qué traerse de vuelta. Si
+estás preparando una reunión, no necesitás nada de lo que sigue.
+
 ## Empezá por acá
 
 | Documento | Para qué |
 |---|---|
 | **`DECISIONES.md`** | **La fuente de verdad.** Toda decisión de producto, con su porqué. Si algo del sistema no se entiende, la respuesta suele estar acá |
 | **`CIERRE_2026-08-11.md`** | Lo último que se hizo, qué quedó desplegado y qué falta para el deploy final |
-| **`PENDIENTES_REUNION.md`** | Qué falta y qué depende de los dueños, por urgencia |
+| **`para-la-reunion/PENDIENTES.md`** | Qué falta y qué depende de los dueños, por urgencia |
 
 ## Para los dueños
 
 | Documento | Para qué |
 |---|---|
-| `MANUAL_PARA_LOS_DUENOS.md` | Cómo funciona el sistema, en castellano. Es de ellos |
-| `PASO_A_PASO_MERCADOPAGO.md` | Los cinco datos a sacar de la cuenta de Mercado Pago |
 
 ## Poner en producción
 

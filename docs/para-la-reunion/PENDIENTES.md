@@ -98,3 +98,8 @@ Todas están en `DECISIONES.md` con el detalle. Las que más cambian el día a d
 - ✅ **Usuarios de Martín, Franco y Ramiro**: creados. La auditoría ya distingue
   quién hizo qué
 - ✅ **Datos fiscales del contrato**: completos, ya no sale "PROVISORIO"
+- ✅ **Transferencia bancaria**: la web ya cobra por transferencia, con los
+  datos de la cuenta cargados y el comprobante por WhatsApp
+- ✅ **El auto que vuelve ese mismo día**: antes se perdía como "sin
+  disponibilidad"; ahora se ofrece la entrega más tarde, con tiempo para
+  prepararlo

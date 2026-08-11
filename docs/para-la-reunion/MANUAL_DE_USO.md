@@ -213,3 +213,11 @@ Para que nadie lo descubra tarde:
 - **Cambiar la tarifa de una categoría cambia el precio en los dos canales.**
 - **Todo lo que toca plata queda auditado**, con quién lo hizo. Por eso importa
   que cada uno entre con su usuario y no con el de otro.
+- **Entre que un auto vuelve y sale de nuevo hay 2 horas de preparación.** La
+  web no vende una entrega pegada a una devolución: si el auto llega 10:00, lo
+  ofrece para las 12:00. El margen se cambia desde Configuración. **El
+  mostrador no tiene ese límite**: quien sabe lo que hace puede cargar a mano
+  una entrega pegada.
+- **Un cliente se puede crear con el nombre y nada más**, para no frenar una
+  reserva con alguien enfrente. DNI y teléfono quedan reclamados en la campana
+  hasta que se completen — **sin DNI no se puede emitir el contrato**.
