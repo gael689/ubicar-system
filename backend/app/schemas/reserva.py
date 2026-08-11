@@ -10,7 +10,20 @@ from pydantic import BaseModel, Field, field_validator
 from app.schemas.adicional import AdicionalSolicitadoRequest, GrupoAdicional, UnidadCobro
 
 
-EstadoReservaLiteral = Literal["pendiente", "confirmada", "activa", "vencida", "finalizada", "cancelada"]
+# Los tres estados web (migración 047) **faltaban acá**, y era un 500 esperando
+# a la primera reserva por transferencia: `ReservaResponse` valida `estado`
+# contra este Literal, así que cualquier página del listado que incluyera una
+# `pendiente_pago` reventaba entera — y con ella la bandeja de reservas web,
+# que devuelve exactamente esos tres estados y ningún otro.
+#
+# El modelo y el Enum del dominio ya los tenían; sólo el schema de salida se
+# quedó atrás. Se listan explícitos, y no como `str`, porque este Literal es lo
+# que documenta la API: aflojarlo a `str` habría tapado el bug en vez de
+# arreglarlo, y el próximo estado nuevo volvería a pasar desapercibido.
+EstadoReservaLiteral = Literal[
+    "pendiente", "confirmada", "activa", "vencida", "finalizada", "cancelada",
+    "pendiente_pago", "sin_disponibilidad", "revision_sin_cupo",
+]
 
 
 class ReservaAdicionalResponse(BaseModel):

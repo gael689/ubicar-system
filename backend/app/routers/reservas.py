@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.adapters.storage import IStorage
@@ -31,9 +32,35 @@ from app.services.email_service import EmailService
 from app.services.reserva_service import ReservaService
 from app.services.alquiler_service import AlquilerService
 
+from app.schemas.pago import MedioPago
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reservas", tags=["Reservas"])
+
+
+class RegistrarCobroRequest(BaseModel):
+    """
+    Plata que ya entró por una reserva que todavía no salió a la calle.
+
+    `confirmar` viene en `True` porque el caso real es la transferencia web:
+    quien la ve en el extracto está confirmando la reserva, no cargando un
+    dato. Se puede apagar para registrar una seña sin comprometer el auto.
+    """
+    monto: Decimal = Field(gt=0)
+    medio_pago: MedioPago = "transferencia"
+    fecha: date | None = None
+    # El número de operación de la transferencia. Es lo que después permite
+    # cruzar el cobro con el extracto cuando alguien pregunta.
+    referencia: str | None = None
+    confirmar: bool = True
+
+
+class AsignarVehiculoRequest(BaseModel):
+    vehiculo_id: int
+    # Asignar y confirmar son lo mismo cuando la plata ya está: se deja
+    # explícito para que la pantalla decida según lo que falte.
+    confirmar: bool = False
 
 
 def _parse_conflicto(exc: ConflictError) -> dict:
@@ -341,6 +368,160 @@ def cancelar_reserva(
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
     return ok(ReservaResponse.model_validate(reserva), "Reserva cancelada")
+
+
+@router.get("/{reserva_id}/vehiculos-disponibles")
+def vehiculos_disponibles(
+    reserva_id: int,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Los autos que están **libres de verdad** en las fechas de esta reserva.
+
+    Existe porque una reserva web llega por categoría (D-02) y hay que ponerle
+    un auto concreto. Un desplegable con la flota entera obliga al operador a
+    saberse de memoria qué está afuera, qué está en el taller y qué se
+    devuelve tarde — y a los tres minutos alguien asigna un auto ocupado y el
+    error aparece con el cliente enfrente.
+
+    Se devuelven **todas** las categorías, no sólo la pedida: dar un upgrade
+    es una decisión comercial válida y muchas veces la única forma de no
+    perder la venta. Los de la categoría pedida van primero y marcados.
+
+    Esto es una sugerencia, no una reserva: asignar revalida el auto elegido
+    en ese momento (`ReservaService.asignar_vehiculo`).
+    """
+    from app.models.categoria import Categoria
+    from app.models.vehiculo import Vehiculo
+    from app.services.disponibilidad_service import DisponibilidadService
+
+    reserva = db.get(Reserva, reserva_id)
+    if not reserva:
+        raise HTTPException(status_code=404, detail="Reserva no encontrada")
+
+    libres_por_categoria = DisponibilidadService(db).unidades_libres(
+        reserva.fecha_inicio, reserva.hora_inicio,
+        reserva.fecha_fin, reserva.hora_fin,
+        # La reserva no compite contra sí misma: si ya tenía un auto, ese
+        # tiene que seguir figurando como elegible.
+        excluir_reserva_id=reserva.id,
+    )
+
+    ids = [vid for lista in libres_por_categoria.values() for vid in lista]
+    vehiculos = (
+        db.query(Vehiculo).filter(Vehiculo.id.in_(ids)).all() if ids else []
+    )
+    nombres = {c.id: c.nombre for c in db.query(Categoria).all()}
+
+    items = [
+        {
+            "id": v.id,
+            "patente": v.patente,
+            "marca": v.marca,
+            "modelo": v.modelo,
+            "anio": v.anio,
+            "color": v.color,
+            "estado": v.estado,
+            "categoria_id": v.categoria_id,
+            "categoria_nombre": nombres.get(v.categoria_id),
+            "es_categoria_pedida": (
+                reserva.categoria_id is not None
+                and v.categoria_id == reserva.categoria_id
+            ),
+        }
+        for v in vehiculos
+    ]
+    # Primero la categoría pedida; dentro de cada grupo, por patente, que es
+    # como el mostrador nombra a los autos.
+    items.sort(key=lambda i: (not i["es_categoria_pedida"], i["patente"] or ""))
+
+    return ok({
+        "categoria_id": reserva.categoria_id,
+        "categoria_nombre": nombres.get(reserva.categoria_id),
+        "vehiculo_actual_id": reserva.vehiculo_id,
+        "vehiculos": items,
+    })
+
+
+@router.post("/{reserva_id}/registrar-cobro")
+def registrar_cobro(
+    reserva_id: int,
+    payload: RegistrarCobroRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Carga plata que ya entró por una reserva sin checkout y, por defecto, la
+    confirma en el mismo paso.
+
+    Es el camino de la reserva web por transferencia: no hay webhook que la
+    confirme, así que la confirma la persona que vio la transferencia en el
+    extracto. Cargar el monto y confirmar no son dos decisiones distintas.
+    """
+    svc = ReservaService(db)
+    try:
+        reserva = svc.registrar_cobro(
+            reserva_id=reserva_id,
+            monto=payload.monto,
+            medio_pago=payload.medio_pago,
+            usuario_id=current_user.id,
+            fecha=payload.fecha,
+            referencia=payload.referencia,
+            confirmar=payload.confirmar,
+        )
+        db.commit()
+    except ConflictError as e:
+        raise HTTPException(status_code=409, detail=_parse_conflicto(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except BusinessRuleError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return ok(ReservaResponse.model_validate(reserva), "Cobro registrado")
+
+
+@router.post("/{reserva_id}/asignar-vehiculo")
+def asignar_vehiculo(
+    reserva_id: int,
+    payload: AsignarVehiculoRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Le pone el auto concreto a una reserva por categoría.
+
+    D-47: es el paso que habilita el contrato — hasta que no hay un auto no
+    hay nada que firmar. La respuesta incluye `puede_emitir_contrato` para que
+    la pantalla lo ofrezca ahí mismo en vez de mandar a otra.
+    """
+    svc = ReservaService(db)
+    try:
+        reserva = svc.asignar_vehiculo(
+            reserva_id=reserva_id,
+            vehiculo_id=payload.vehiculo_id,
+            usuario_id=current_user.id,
+            confirmar=payload.confirmar,
+        )
+        db.commit()
+    except ConflictError as e:
+        raise HTTPException(status_code=409, detail=_parse_conflicto(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except BusinessRuleError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return ok(
+        {
+            **ReservaResponse.model_validate(reserva).model_dump(),
+            # `contrato_estado` sale de la reserva y ya contempla el caso: una
+            # reserva sin auto devuelve "no_aplica". Con auto y confirmada
+            # pasa a "sin_emitir", que es lo que la pantalla usa para ofrecer
+            # el botón sin tener que replicar la regla.
+            "puede_emitir_contrato": reserva.contrato_estado == "sin_emitir",
+        },
+        "Vehículo asignado",
+    )
 
 
 @router.post("/{reserva_id}/reasignar")

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AccionesContrato } from '@/components/reservas/AccionesContrato';
-import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2 } from 'lucide-react';
+import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2, Clock, Globe, Wrench } from 'lucide-react';
+import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
@@ -20,6 +21,9 @@ const ESTADOS: { value: EstadoReserva | ''; label: string }[] = [
   { value: 'confirmada', label: 'Confirmada' },
   { value: 'activa', label: 'Activa' },
   { value: 'vencida', label: 'Vencida' },
+  // Faltaba, y era el único estado que no se podía ni mirar desde acá: una
+  // reserva web esperando la transferencia no existía para este listado.
+  { value: 'pendiente_pago', label: 'Esperando pago' },
   { value: 'finalizada', label: 'Finalizada' },
   { value: 'cancelada', label: 'Cancelada' },
 ];
@@ -28,6 +32,7 @@ const ESTADO_COLORS: Record<string, string> = {
   confirmada: 'bg-blue-100 text-blue-800 border-blue-200',
   activa: 'bg-emerald-100 text-emerald-800 border-emerald-200',
   vencida: 'bg-red-100 text-red-800 border-red-300 animate-pulse',
+  pendiente_pago: 'bg-amber-100 text-amber-800 border-amber-200',
   finalizada: 'bg-slate-200 text-slate-800 border-slate-300',
   cancelada: 'bg-red-100 text-red-800 border-red-200',
 };
@@ -36,6 +41,7 @@ const ESTADO_ICONS: Record<string, React.ReactNode> = {
   confirmada: <CheckCircle2 className="w-3.5 h-3.5" />,
   activa: <Car className="w-3.5 h-3.5" />,
   vencida: <AlarmClockOff className="w-3.5 h-3.5" />,
+  pendiente_pago: <Clock className="w-3.5 h-3.5" />,
   finalizada: <Flag className="w-3.5 h-3.5" />,
   cancelada: <XCircle className="w-3.5 h-3.5" />,
 };
@@ -56,7 +62,27 @@ export function ReservasList() {
     refetchOnWindowFocus: false,
   });
 
+  /**
+   * Reservas web esperando la transferencia.
+   *
+   * Se consultan aparte del listado porque **se pierden entre las demás**: son
+   * ventas sin confirmar, sin auto tomado y con un cliente que ya mandó el
+   * comprobante por WhatsApp. Si aparecen sólo como una fila más entre
+   * cincuenta, nadie las ve hasta que el cliente vuelve a escribir.
+   */
+  const { data: webEsperandoPago = [] } = useQuery({
+    queryKey: ['reservas', 'web-esperando-pago'],
+    queryFn: async () => {
+      const { data } = await api.get<PaginatedResponse<Reserva>>('/reservas', {
+        params: { origen: 'web', estado: 'pendiente_pago', page_size: 50, page: 1 },
+      });
+      return data.data;
+    },
+    staleTime: 60_000,
+  });
+
   const { loading, error, listReservas, cancelarReserva } = useReservas();
+  const [resolverReserva, setResolverReserva] = useState<Reserva | null>(null);
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -251,6 +277,42 @@ export function ReservasList() {
         )}
       </div>
 
+      {/* Reservas web esperando la transferencia.
+          Por transferencia no hay webhook: nadie le avisa al sistema que la
+          plata llegó. La reserva se queda en `pendiente_pago` sin ocupar
+          calendario hasta que una persona concilia el comprobante contra el
+          extracto — y si nadie lo hace, la venta se cae sola. */}
+      {webEsperandoPago.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <Globe className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-800">
+                {webEsperandoPago.length} reserva{webEsperandoPago.length !== 1 ? 's' : ''} web esperando la transferencia
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                No se confirman solas. Registrá el cobro cuando lo veas en el extracto y asignales un auto.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {webEsperandoPago.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => setResolverReserva(r)}
+                    title="Cobrar, asignar el auto y emitir el contrato"
+                    className="inline-flex items-center gap-1 text-xs bg-white border border-amber-300 rounded-lg px-2 py-1 text-amber-900 font-medium hover:bg-amber-100 transition-colors"
+                  >
+                    <Wrench className="h-3 w-3" />
+                    #{r.id} · {r.cliente?.nombre_completo ?? r.web_contacto_nombre ?? `Cliente ${r.cliente_id}`}
+                    {' · '}{r.categoria?.nombre ?? 'sin categoría'}
+                    {' · '}{r.fecha_inicio}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Alerta: check-outs pendientes (autos no devueltos) */}
       {pendingCheckouts.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -386,6 +448,24 @@ export function ReservasList() {
                         PDF
                       </button>
 
+                      {/* Resolver: cobrar, asignar el auto y emitir el
+                          contrato, sin salir del listado.
+                          Aparece cuando falta algo de eso — el caso típico es
+                          la reserva web, que llega sin plata y sin auto, pero
+                          una de mostrador cargada por categoría tiene el
+                          mismo agujero. */}
+                      {!r.alquiler_id && r.estado !== 'cancelada' &&
+                        (r.estado === 'pendiente_pago' || !r.vehiculo_id) && (
+                        <button
+                          onClick={() => setResolverReserva(r)}
+                          title="Cobrar, asignar el vehículo y emitir el contrato"
+                          className="px-3 py-1.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold transition-colors inline-flex items-center gap-1"
+                        >
+                          <Wrench className="w-3 h-3" />
+                          Resolver
+                        </button>
+                      )}
+
                       {/* Editar / Cancelar (solo si no hay alquiler) */}
                       {!r.alquiler_id && r.estado !== 'cancelada' && (
                         <>
@@ -474,6 +554,13 @@ export function ReservasList() {
       )}
 
       {/* Modales */}
+      {resolverReserva && (
+        <PanelResolverReserva
+          reserva={resolverReserva}
+          onClose={() => { setResolverReserva(null); loadReservas().catch(() => {}); }}
+          onCambio={() => { loadReservas().catch(() => {}); }}
+        />
+      )}
       {showCreateModal && (
         <ReservaModal
           onClose={() => setShowCreateModal(false)}

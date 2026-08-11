@@ -1,44 +1,59 @@
 import { useState } from 'react';
-import { Globe, AlertTriangle, Clock, Check, X, Mail, Phone } from 'lucide-react';
+import { Globe, AlertTriangle, Clock, X, Mail, Phone, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
-import {
-  useReservasWeb, useResumenReservasWeb,
-  useAceptarReservaWeb, useRechazarReservaWeb,
-} from '@/hooks/useReservasWeb';
-import { useVehiculos } from '@/hooks/useVehiculos';
+import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
+import { useReservasWeb, useResumenReservasWeb, useRechazarReservaWeb } from '@/hooks/useReservasWeb';
+import { useListaReservas } from '@/hooks/useReservas';
 import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import type { Reserva } from '@/types';
 
 /**
- * Bandeja de Reservas Web (ítem 64).
+ * Bandeja de Reservas Web.
  *
- * Tres situaciones distintas, y el orden importa: primero lo que tiene plata
- * del cliente en juego.
+ * Tres secciones, y el orden importa: **primero lo que tiene plata del cliente
+ * en juego**.
+ *
+ * La sección que faltaba es la última. Una reserva web que se cobró y confirmó
+ * deja la bandeja al instante, aunque todavía no tenga auto ni contrato — y
+ * ahí se volvía invisible: no aparecía acá y en el listado general se veía
+ * igual que cualquier otra confirmada. Quedarse a mitad de camino es
+ * exactamente lo que pasa cuando entra un llamado, así que tiene que dejar
+ * una marca hasta que esté terminada.
  */
 export function ReservasWebPage() {
   const { data: resumen } = useResumenReservasWeb();
-  const { data: reservas, isLoading } = useReservasWeb();
-  const [aceptando, setAceptando] = useState<Reserva | null>(null);
+  const { data: reservas, isLoading, refetch } = useReservasWeb();
+  const [resolviendo, setResolviendo] = useState<Reserva | null>(null);
   const [rechazando, setRechazando] = useState<Reserva | null>(null);
   const rechazar = useRechazarReservaWeb();
 
-  // Lo que ya cobró va primero: ahí hay plata del cliente esperando.
-  const orden = { revision_sin_cupo: 0, sin_disponibilidad: 1, pendiente_pago: 2 } as Record<string, number>;
-  const ordenadas = [...(reservas ?? [])].sort(
-    (a, b) => (orden[a.estado] ?? 9) - (orden[b.estado] ?? 9),
+  // Las que ya se resolvieron a medias: confirmadas, pero sin auto o sin
+  // contrato firmado. Salen del listado general porque la bandeja sólo
+  // devuelve los tres estados sin resolver.
+  const { data: confirmadasWeb, refetch: refetchConfirmadas } = useListaReservas({
+    origen: 'web', estado: 'confirmada', page_size: 100,
+  });
+  const aMedias = (confirmadasWeb?.data ?? []).filter(
+    r => !r.vehiculo_id || r.contrato_estado === 'sin_emitir',
   );
 
+  const refrescar = () => { refetch(); refetchConfirmadas(); };
+
+  const todas = reservas ?? [];
+  const esperandoPago = todas.filter(r => r.estado === 'pendiente_pago');
+  const requierenDecision = todas.filter(r => r.estado !== 'pendiente_pago');
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Globe className="h-5 w-5 text-primary" />
         <div>
           <h1 className="text-xl font-semibold text-foreground">Reservas web</h1>
           <p className="text-sm text-muted-foreground">
-            Lo que entró por la web y espera una decisión.
+            Lo que entró por la web y todavía no es una venta cerrada.
           </p>
         </div>
       </div>
@@ -55,7 +70,7 @@ export function ReservasWebPage() {
 
       {isLoading && <Card className="p-6 text-sm text-muted-foreground">Cargando…</Card>}
 
-      {!isLoading && ordenadas.length === 0 && (
+      {!isLoading && todas.length === 0 && aMedias.length === 0 && (
         <Card className="p-8 text-center">
           <Globe className="mx-auto h-8 w-8 text-muted-foreground" />
           <p className="mt-2 text-sm font-medium text-foreground">No hay nada pendiente</p>
@@ -65,19 +80,56 @@ export function ReservasWebPage() {
         </Card>
       )}
 
-      <div className="space-y-3">
-        {ordenadas.map(r => (
+      <Seccion
+        titulo="Necesitan una decisión"
+        bajada="El cupo se fue, o el cliente pidió algo que no había. Hay que contestarle."
+        reservas={requierenDecision}
+      >
+        {r => (
           <FilaReservaWeb
             key={r.id}
             reserva={r}
-            onAceptar={() => setAceptando(r)}
+            onResolver={() => setResolviendo(r)}
             onRechazar={() => setRechazando(r)}
           />
-        ))}
-      </div>
+        )}
+      </Seccion>
 
-      {aceptando && (
-        <AsignarVehiculoDialog reserva={aceptando} onClose={() => setAceptando(null)} />
+      <Seccion
+        titulo="Esperando la transferencia"
+        bajada={
+          'Por transferencia no hay aviso automático: el cliente manda el ' +
+          'comprobante y alguien lo cruza contra el extracto. Hasta que no se ' +
+          'registra acá, la reserva no está confirmada y el auto no está tomado.'
+        }
+        reservas={esperandoPago}
+      >
+        {r => (
+          <FilaReservaWeb
+            key={r.id}
+            reserva={r}
+            onResolver={() => setResolviendo(r)}
+            onRechazar={() => setRechazando(r)}
+          />
+        )}
+      </Seccion>
+
+      <Seccion
+        titulo="Cobradas, pero sin terminar"
+        bajada="Ya se confirmaron y todavía les falta el auto o el contrato."
+        reservas={aMedias}
+      >
+        {r => (
+          <FilaReservaWeb key={r.id} reserva={r} onResolver={() => setResolviendo(r)} />
+        )}
+      </Seccion>
+
+      {resolviendo && (
+        <PanelResolverReserva
+          reserva={resolviendo}
+          onClose={() => { setResolviendo(null); refrescar(); }}
+          onCambio={refrescar}
+        />
       )}
 
       <MotivoDialog
@@ -94,17 +146,66 @@ export function ReservasWebPage() {
         loading={rechazar.isPending}
         onConfirm={motivo => {
           if (!rechazando) return;
-          rechazar.mutate({ id: rechazando.id, motivo }, { onSuccess: () => setRechazando(null) });
+          rechazar.mutate({ id: rechazando.id, motivo }, {
+            onSuccess: () => { setRechazando(null); refrescar(); },
+          });
         }}
       />
     </div>
   );
 }
 
+function Seccion({
+  titulo, bajada, reservas, children,
+}: {
+  titulo: string;
+  bajada: string;
+  reservas: Reserva[];
+  children: (r: Reserva) => React.ReactNode;
+}) {
+  if (reservas.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">
+          {titulo} <span className="text-muted-foreground">({reservas.length})</span>
+        </h2>
+        <p className="text-xs text-muted-foreground">{bajada}</p>
+      </div>
+      <div className="space-y-3">{reservas.map(children)}</div>
+    </section>
+  );
+}
+
+/** Hace cuánto que está esperando. Una reserva que espera se enfría. */
+function esperandoHace(desde: string | undefined): string | null {
+  if (!desde) return null;
+  const ms = Date.now() - new Date(desde).getTime();
+  if (Number.isNaN(ms) || ms < 0) return null;
+  const horas = Math.floor(ms / 3_600_000);
+  if (horas < 1) return 'recién entró';
+  if (horas < 24) return `hace ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  return `hace ${dias} día${dias === 1 ? '' : 's'}`;
+}
+
 function FilaReservaWeb({
-  reserva, onAceptar, onRechazar,
-}: { reserva: Reserva; onAceptar: () => void; onRechazar: () => void }) {
-  const esperandoPago = reserva.estado === 'pendiente_pago';
+  reserva, onResolver, onRechazar,
+}: { reserva: Reserva; onResolver: () => void; onRechazar?: () => void }) {
+  const total =
+    Number(reserva.precio_total ?? 0)
+    + Number(reserva.cargo_late_checkout ?? 0)
+    + Number(reserva.total_adicionales ?? 0);
+  const cobrado = Number(reserva.anticipo_monto ?? 0);
+  const falta = total - cobrado;
+  const espera = esperandoHace(reserva.created_at);
+
+  // Lo que le falta a esta reserva, en la fila: sin esto hay que abrirla una
+  // por una para saber cuál es la urgente.
+  const pendientes: string[] = [];
+  if (reserva.estado === 'pendiente_pago') pendientes.push('confirmar el pago');
+  if (!reserva.vehiculo_id) pendientes.push('asignar el auto');
+  if (reserva.vehiculo_id && reserva.contrato_estado === 'sin_emitir') pendientes.push('emitir el contrato');
 
   return (
     <Card className="p-4">
@@ -120,6 +221,11 @@ function FilaReservaWeb({
             </span>
             {reserva.categoria?.nombre && (
               <span className="text-sm text-muted-foreground">{reserva.categoria.nombre}</span>
+            )}
+            {espera && (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3" /> {espera}
+              </span>
             )}
           </div>
 
@@ -150,110 +256,36 @@ function FilaReservaWeb({
             )}
           </div>
 
-          {reserva.precio_total && (
-            <p className="text-sm font-semibold text-foreground">
-              {formatCurrency(reserva.precio_total)}
+          {total > 0 && (
+            <p className="text-sm text-foreground">
+              <span className="font-semibold">{formatCurrency(total)}</span>
+              {cobrado > 0 && (
+                <span className="text-muted-foreground"> · cobrado {formatCurrency(cobrado)}</span>
+              )}
+              {falta > 0 && (
+                <span className="font-semibold text-warning"> · falta cobrar {formatCurrency(falta)}</span>
+              )}
+            </p>
+          )}
+
+          {pendientes.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Falta: <span className="font-medium text-foreground">{pendientes.join(' · ')}</span>
             </p>
           )}
         </div>
 
-        {esperandoPago ? (
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" /> Esperando al cliente
-          </p>
-        ) : (
-          <div className="flex gap-2">
-            <Button size="sm" onClick={onAceptar}>
-              <Check className="h-4 w-4" /> Aceptar
-            </Button>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={onResolver}>
+            <Wrench className="h-4 w-4" /> Resolver
+          </Button>
+          {onRechazar && (
             <Button size="sm" variant="ghost" onClick={onRechazar}>
               <X className="h-4 w-4" /> Rechazar
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </Card>
-  );
-}
-
-/**
- * Aceptar es asignar un vehículo concreto: es el momento en que una reserva
- * por categoría vuelve a ser una reserva de un auto puntual. El backend
- * revalida la disponibilidad al asignar.
- */
-function AsignarVehiculoDialog({ reserva, onClose }: { reserva: Reserva; onClose: () => void }) {
-  const { data: vehiculosPag } = useVehiculos({ page_size: 100 });
-  const vehiculos = vehiculosPag?.data ?? [];
-  const aceptar = useAceptarReservaWeb();
-  const [vehiculoId, setVehiculoId] = useState<number | ''>('');
-  const [notas, setNotas] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  // Se ofrecen primero los de la categoría pedida, pero no se ocultan los
-  // demás: dar un upgrade es una decisión comercial válida.
-  const candidatos = [...vehiculos].sort((a, b) => {
-    const ca = a.categoria_id === reserva.categoria_id ? 0 : 1;
-    const cb = b.categoria_id === reserva.categoria_id ? 0 : 1;
-    return ca - cb;
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md space-y-4 rounded-xl bg-background p-5">
-        <div>
-          <h3 className="font-semibold text-foreground">Aceptar reserva #{reserva.id}</h3>
-          <p className="text-xs text-muted-foreground">
-            Asignale un vehículo. Se verifica que esté libre en esas fechas antes de confirmar.
-          </p>
-        </div>
-
-        {error && (
-          <p className="rounded-lg bg-danger px-3 py-2 text-xs text-white">{error}</p>
-        )}
-
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Vehículo *</label>
-          <select
-            value={vehiculoId}
-            onChange={e => setVehiculoId(e.target.value ? Number(e.target.value) : '')}
-            className="input-base"
-          >
-            <option value="">Elegí un vehículo…</option>
-            {candidatos.map(v => (
-              <option key={v.id} value={v.id}>
-                {v.patente} — {v.marca} {v.modelo}
-                {v.categoria_id !== reserva.categoria_id ? ' (otra categoría)' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Nota (opcional)</label>
-          <input value={notas} onChange={e => setNotas(e.target.value)} className="input-base" />
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button
-            size="sm"
-            disabled={!vehiculoId || aceptar.isPending}
-            onClick={() => {
-              setError(null);
-              aceptar.mutate(
-                { id: reserva.id, vehiculo_id: Number(vehiculoId), notas: notas || undefined },
-                {
-                  onSuccess: onClose,
-                  onError: (e: any) =>
-                    setError(e?.response?.data?.detail ?? 'No se pudo aceptar la reserva'),
-                },
-              );
-            }}
-          >
-            {aceptar.isPending ? 'Confirmando…' : 'Confirmar reserva'}
-          </Button>
-        </div>
-      </div>
-    </div>
   );
 }

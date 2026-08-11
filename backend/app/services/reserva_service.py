@@ -981,6 +981,224 @@ class ReservaService:
         """Vista D4: reservas de vehículos inactivos que necesitan reasignación."""
         return self.reserva_repo.find_a_reasignar()
 
+    # ── Resolver una reserva que llegó sin plata y sin auto ───────────────────
+    #
+    # Es el caso de la reserva web por transferencia: entra en
+    # `pendiente_pago`, sin vehículo, y **no se confirma sola** — no hay
+    # webhook. El cliente manda el comprobante por WhatsApp y alguien concilia
+    # contra el extracto. Los dos pasos que faltan son cobrar y asignar, y
+    # están acá para que el operador no tenga que saber en qué orden van.
+
+    # Los estados en los que todavía se puede cobrar una seña o mover el auto:
+    # antes del checkout. Después el dinero entra como `Pago` del alquiler y
+    # el auto ya está en la calle.
+    ESTADOS_RESOLUBLES = (
+        EstadoReserva.PENDIENTE.value,
+        EstadoReserva.PENDIENTE_PAGO.value,
+        EstadoReserva.CONFIRMADA.value,
+        EstadoReserva.REVISION_SIN_CUPO.value,
+        EstadoReserva.SIN_DISPONIBILIDAD.value,
+    )
+
+    def total_a_cobrar(self, reserva: Reserva) -> Decimal:
+        """
+        Todo lo que la reserva tiene que terminar pagando.
+
+        Los adicionales y el late checkout viven **fuera** de `precio_total`
+        (ver `Reserva.total_adicionales`), así que un saldo calculado sólo
+        contra `precio_total` cobra de menos.
+        """
+        return (
+            Decimal(str(reserva.precio_total or 0))
+            + Decimal(str(reserva.cargo_late_checkout or 0))
+            + Decimal(str(reserva.total_adicionales))
+        )
+
+    def saldo_pendiente(self, reserva: Reserva) -> Decimal:
+        return self.total_a_cobrar(reserva) - Decimal(str(reserva.anticipo_monto or 0))
+
+    def registrar_cobro(
+        self,
+        reserva_id: int,
+        monto: Decimal,
+        medio_pago: str,
+        usuario_id: int,
+        fecha: date | None = None,
+        referencia: str | None = None,
+        confirmar: bool = True,
+    ) -> Reserva:
+        """
+        Registra plata que **ya entró** por una reserva todavía sin checkout, y
+        —si se pide— la confirma en el mismo movimiento.
+
+        Es un paso solo a propósito: la transferencia web llega, alguien la ve
+        en el extracto, y confirmar la reserva después de cargar el monto no
+        es una segunda decisión sino la misma. Separarlas garantizaba reservas
+        cobradas que nadie confirmó.
+
+        **No crea un `Pago`.** Se acumula en `anticipo_monto`, que es el mismo
+        lugar donde el mostrador guarda una seña, y `AlquilerService.checkout`
+        lo convierte en `Pago` + crédito en cuenta corriente cuando el auto
+        sale. Crear el `Pago` acá lo duplicaría en el checkout, y esa cuenta
+        doble se descubriría recién al cerrar la caja.
+
+        Se **suma** a lo ya cobrado: una reserva puede recibir la seña por
+        transferencia y un refuerzo después, y pisar el monto perdería el
+        primero.
+        """
+        reserva = self.get(reserva_id)
+
+        if reserva.alquiler is not None:
+            raise BusinessRuleError(
+                "alquiler_en_curso",
+                "El auto ya salió: los cobros de un alquiler en curso se "
+                "registran desde Caja, no desde la reserva",
+            )
+        if reserva.estado not in self.ESTADOS_RESOLUBLES:
+            raise ConflictError(
+                f"estado_invalido|No se puede registrar un cobro sobre una "
+                f"reserva en estado '{reserva.estado}'"
+            )
+
+        monto = Decimal(str(monto))
+        if monto <= 0:
+            raise BusinessRuleError(
+                "monto_invalido", "El monto cobrado tiene que ser mayor a cero"
+            )
+
+        fecha = fecha or date.today()
+        if fecha > date.today():
+            raise BusinessRuleError(
+                "fecha_futura",
+                "No se puede registrar un cobro con fecha futura: se carga "
+                "cuando la plata entró",
+            )
+
+        cobrado_antes = Decimal(str(reserva.anticipo_monto or 0))
+        cobrado_ahora = cobrado_antes + monto
+        total = self.total_a_cobrar(reserva)
+        estado_antes = reserva.estado
+
+        with self.db.begin_nested():
+            reserva.anticipo_monto = cobrado_ahora
+            reserva.anticipo_fecha = fecha
+            reserva.anticipo_medio_pago = medio_pago
+            # Sin precio cargado no se puede afirmar que esté pagada: queda
+            # como anticipo, que es lo único cierto.
+            reserva.estado_pago = (
+                "pagado" if total > 0 and cobrado_ahora >= total else "anticipo"
+            )
+            if referencia:
+                marca = f"Cobro {fecha.isoformat()} — {medio_pago}: {referencia}"
+                reserva.notas = f"{reserva.notas}\n{marca}" if reserva.notas else marca
+
+            if confirmar and reserva.estado != EstadoReserva.CONFIRMADA.value:
+                reserva.estado = EstadoReserva.CONFIRMADA.value
+                # La bandeja web se vacía sola: una reserva resuelta no puede
+                # seguir figurando como pendiente de decisión.
+                if reserva.origen == "web":
+                    reserva.web_resuelta_por = usuario_id
+                    reserva.web_resuelta_en = datetime.utcnow()
+
+            auditoria_service.registrar(
+                self.db,
+                usuario_id=usuario_id,
+                accion="registrar_cobro_reserva",
+                entidad_tipo="reserva",
+                entidad_id=reserva.id,
+                descripcion=(
+                    f"Cobró ${monto} por {medio_pago} de la reserva #{reserva.id}"
+                    + (f" (ref: {referencia})" if referencia else "")
+                ),
+                datos_antes={"estado": estado_antes, "anticipo_monto": float(cobrado_antes)},
+                datos_despues={
+                    "estado": reserva.estado,
+                    "anticipo_monto": float(cobrado_ahora),
+                    "estado_pago": reserva.estado_pago,
+                    "medio_pago": medio_pago,
+                },
+                monto=monto,
+            )
+
+        self.db.refresh(reserva)
+        return reserva
+
+    def asignar_vehiculo(
+        self,
+        reserva_id: int,
+        vehiculo_id: int,
+        usuario_id: int,
+        confirmar: bool = False,
+    ) -> Reserva:
+        """
+        Le pone un auto concreto a una reserva que no lo tiene (o le cambia el
+        que tenía).
+
+        D-47: **asignar el vehículo es lo que habilita el contrato.** Hasta que
+        no hay un auto puntual no hay nada que firmar, porque una categoría no
+        se entrega. Por eso este es el paso que dispara la oferta de emitirlo.
+
+        Se diferencia de `reasignar` (D4, vehículo dado de baja) en que acepta
+        una reserva **sin** vehículo y en que puede confirmarla: es el camino
+        de la reserva web, que llega por categoría.
+
+        La disponibilidad se revalida contra el auto elegido en este momento y
+        no se confía en la lista que se vio al abrir la pantalla: entre listar
+        y asignar pueden pasar horas.
+        """
+        reserva = self.get(reserva_id)
+
+        if reserva.estado not in self.ESTADOS_RESOLUBLES:
+            raise ConflictError(
+                f"estado_invalido|No se puede asignar un vehículo a una "
+                f"reserva en estado '{reserva.estado}'"
+            )
+        if reserva.alquiler is not None:
+            raise BusinessRuleError(
+                "alquiler_en_curso",
+                "El auto ya salió: para cambiarlo hay que revertir el checkout",
+            )
+
+        vehiculo = self.db.get(Vehiculo, vehiculo_id)
+        if not vehiculo or not vehiculo.activo:
+            raise NotFoundError("Vehículo", vehiculo_id)
+
+        anterior = reserva.vehiculo_id
+        estado_antes = reserva.estado
+
+        self._lock_vehiculo(vehiculo_id)
+        self.validar_disponibilidad_vehiculo(
+            vehiculo_id,
+            reserva.fecha_inicio, reserva.hora_inicio,
+            reserva.fecha_fin, reserva.hora_fin,
+            excluir_reserva_id=reserva.id,
+        )
+
+        with self.db.begin_nested():
+            reserva.vehiculo_id = vehiculo_id
+            if confirmar and reserva.estado != EstadoReserva.CONFIRMADA.value:
+                reserva.estado = EstadoReserva.CONFIRMADA.value
+                if reserva.origen == "web":
+                    reserva.web_resuelta_por = usuario_id
+                    reserva.web_resuelta_en = datetime.utcnow()
+
+            auditoria_service.registrar(
+                self.db,
+                usuario_id=usuario_id,
+                accion="asignar_vehiculo",
+                entidad_tipo="reserva",
+                entidad_id=reserva.id,
+                descripcion=(
+                    f"Asignó {vehiculo.patente} a la reserva #{reserva.id}"
+                    + (f" (antes: vehículo {anterior})" if anterior else " (no tenía auto)")
+                ),
+                datos_antes={"vehiculo_id": anterior, "estado": estado_antes},
+                datos_despues={"vehiculo_id": vehiculo_id, "estado": reserva.estado},
+            )
+
+        self.db.refresh(reserva)
+        return reserva
+
     # ── Helpers privados ──────────────────────────────────────────────────────
 
     def _lock_vehiculo(self, vehiculo_id: int | None) -> None:

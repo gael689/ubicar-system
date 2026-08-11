@@ -81,7 +81,11 @@ class DisponibilidadService:
         return [VehiculoDisponible(id=v.id, categoria_id=v.categoria_id) for v in vehiculos]
 
     def _cargar_ocupaciones(
-        self, desde: date, hasta: date, excluir_hold_token: str | None = None
+        self,
+        desde: date,
+        hasta: date,
+        excluir_hold_token: str | None = None,
+        excluir_reserva_id: int | None = None,
     ) -> list[OcupacionCategoria]:
         """
         Todo lo que ocupa una unidad en el rango, normalizado.
@@ -95,18 +99,23 @@ class DisponibilidadService:
         cliente **sigue vigente** (se consume después), así que contarlo lo
         haría competir contra sí mismo. Sin esto, toda venta web de la última
         unidad cae a revisión manual — justo el caso que más importa.
+
+        `excluir_reserva_id` hace lo mismo con una reserva: lo usa
+        `unidades_libres` cuando se está por **cambiar** el auto de una reserva
+        que ya tiene uno. Sin esto, el auto que hoy tiene asignado figura
+        ocupado por ella misma y desaparece de la lista, que es justo el que
+        hay que poder dejar como está.
         """
         ocupaciones: list[OcupacionCategoria] = []
 
-        reservas = (
-            self.db.query(Reserva)
-            .filter(
-                Reserva.estado.in_(ESTADOS_QUE_OCUPAN),
-                Reserva.fecha_inicio <= hasta,
-                Reserva.fecha_fin >= desde,
-            )
-            .all()
+        q_reservas = self.db.query(Reserva).filter(
+            Reserva.estado.in_(ESTADOS_QUE_OCUPAN),
+            Reserva.fecha_inicio <= hasta,
+            Reserva.fecha_fin >= desde,
         )
+        if excluir_reserva_id is not None:
+            q_reservas = q_reservas.filter(Reserva.id != excluir_reserva_id)
+        reservas = q_reservas.all()
         for r in reservas:
             ocupaciones.append(OcupacionCategoria(
                 inicio=datetime.combine(r.fecha_inicio, r.hora_inicio),
@@ -402,3 +411,60 @@ class DisponibilidadService:
             categoria_ids=[categoria_id],
         )
         return cupos[0].vehiculos_libres if cupos else []
+
+    def unidades_libres(
+        self,
+        fecha_inicio: date,
+        hora_inicio: time,
+        fecha_fin: date,
+        hora_fin: time,
+        categoria_ids: list[int] | None = None,
+        excluir_reserva_id: int | None = None,
+    ) -> dict[int, list[int]]:
+        """
+        Qué autos concretos están libres en el rango, **de todas las
+        categorías en una sola pasada**.
+
+        Es lo que necesita el operador para asignarle un auto a una reserva
+        que entró por la web: la web vende una categoría (D-02) y el auto
+        puntual se decide acá. Un desplegable con la flota entera obliga a
+        saberse de memoria qué está afuera; esto muestra sólo lo que está
+        libre de verdad.
+
+        Devuelve todas las categorías —no sólo la pedida— porque **dar un
+        upgrade es una decisión comercial válida** y muchas veces la única
+        forma de no perder la venta. Quién es la categoría pedida lo sabe
+        quien llama; acá se devuelve el mapa completo.
+
+        `vehiculos_libres` sale de `calcular_cupos`, que resta únicamente las
+        ocupaciones **de una unidad concreta**. Las que son por categoría
+        (otra reserva sin auto asignado, o un hold web) bajan el cupo pero no
+        sacan ningún auto de la lista: no se puede saber cuál van a terminar
+        tomando. Por eso asignar siempre revalida contra el auto elegido — ver
+        `ReservaService.asignar_vehiculo`.
+
+        Cuenta la preparación igual que `consultar`: un auto que se devuelve a
+        la misma hora en que hay que entregarlo no está listo.
+        """
+        inicio_dt = datetime.combine(fecha_inicio, hora_inicio)
+        fin_dt = datetime.combine(fecha_fin, hora_fin)
+        if categoria_ids is None:
+            categoria_ids = [
+                c.id for c in self.db.query(Categoria.id)
+                .filter(Categoria.activo.is_(True)).all()
+            ]
+        if not categoria_ids:
+            return {}
+
+        cupos = calcular_cupos(
+            inicio_dt, fin_dt,
+            self._cargar_flota(),
+            con_preparacion(
+                self._cargar_ocupaciones(
+                    fecha_inicio, fecha_fin, excluir_reserva_id=excluir_reserva_id
+                ),
+                self._margen_rotacion(),
+            ),
+            categoria_ids=categoria_ids,
+        )
+        return {c.categoria_id: c.vehiculos_libres for c in cupos}
