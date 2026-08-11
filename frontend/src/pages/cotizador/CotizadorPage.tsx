@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CotizacionPreview3 } from '@/components/cotizador/CotizacionPreview3';
+import { SelectorCliente } from '@/components/cotizador/SelectorCliente';
 import { exportCotizacionPDF } from '@/lib/pdfExport';
 import type { CotizacionData, CategoriaVehiculo, ModalidadItem, ModoCotizacion, ItemCotizacion, UnidadNombre } from '@/types/cotizacion';
 import { UNIDADES_CAMIONETA, UNIDADES_VEHICULO, UNIDADES_UTILITARIO } from '@/types/cotizacion';
@@ -156,6 +157,8 @@ export function CotizadorPage() {
   const [contacto,     setContacto]    = useState('');
   const [email,        setEmail]       = useState('');
   const [notas,        setNotas]       = useState('');
+  // Id del cliente al que queda asociada la cotizacion. `null` = suelta.
+  const [clienteId,    setClienteId]   = useState<number | null>(null);
   const [modo,         setModo]        = useState<ModoCotizacion>('categoria');
   const [formItems,    setFormItems]   = useState<FormItem[]>(() => [makeFormItem('categoria')]);
   const [exporting,    setExporting]   = useState(false);
@@ -208,6 +211,7 @@ export function CotizadorPage() {
     setFecha(today());
     setValidezHasta(plusDays(7));
     setEmpresa(''); setContacto(''); setEmail(''); setNotas('');
+    setClienteId(null);
     setFormItems([makeFormItem(modo)]);
     toast.info('Formulario reiniciado');
   };
@@ -282,8 +286,22 @@ export function CotizadorPage() {
           <section>
             <SectionTitle>Empresa cliente</SectionTitle>
             <div className="grid grid-cols-2 gap-3">
+              <SelectorCliente
+                valor={{ id: clienteId, empresa, contacto, email }}
+                onCambiar={v => {
+                  setClienteId(v.id);
+                  setEmpresa(v.empresa);
+                  setContacto(v.contacto);
+                  setEmail(v.email);
+                }}
+              />
               <Field label="Razón social *">
-                <Input placeholder="Gulf Agency Company S.A." value={empresa} onChange={e => setEmpresa(e.target.value)} className="h-8 text-sm" />
+                <Input
+                  placeholder="Gulf Agency Company S.A."
+                  value={empresa}
+                  onChange={e => { setEmpresa(e.target.value); setClienteId(null); }}
+                  className="h-8 text-sm"
+                />
               </Field>
               <Field label="Contacto" half>
                 <Input placeholder="Nombre del interlocutor" value={contacto} onChange={e => setContacto(e.target.value)} className="h-8 text-sm" />
