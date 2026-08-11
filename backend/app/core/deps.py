@@ -129,10 +129,16 @@ def _usuario_desde_clerk(db: Session, claims: dict) -> Usuario:
         )
 
     email = claims.get("email") or f"{sub}@sin-email.clerk"
+    # **El nombre nunca se deriva del `sub`.** El token de Clerk puede venir sin
+    # el claim de email, y entonces el email sintético es `user_3HBPn…@…`: usar
+    # su parte local como nombre terminaba imprimiendo el ID de Clerk en el pie
+    # de los contratos ("Usted fue atendido por: user_3HBPn…"). Si no hay un
+    # nombre humano, se deja uno neutro y se corrige desde Usuarios.
     nombre = (
         claims.get("name")
         or " ".join(filter(None, [claims.get("first_name"), claims.get("last_name")])).strip()
-        or email.split("@")[0]
+        or (email.split("@")[0] if claims.get("email") else "")
+        or "Operador"
     )
     usuario = Usuario(
         email=email, nombre=nombre, rol="admin", auth_sub=sub, activo=True,

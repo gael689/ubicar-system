@@ -220,27 +220,59 @@ function TarjetaCategoria({
         <div className="mt-auto border-t border-border pt-3">
           {disponible && c.precio ? (
             <>
+              {/* Dos números, y **los dos son reales**: el tachado es lo que
+                  paga quien seña parcialmente, y el grande lo que paga quien
+                  abona el total (D-49). Por eso el tachado es legítimo y no un
+                  ancla inventada — pero si algún día se muestra un "antes" que
+                  nadie paga, deja de serlo. */}
               <div className="flex items-end justify-between gap-2">
                 <div>
                   <p className="text-xs text-muted-foreground">
                     {c.precio.dias} {c.precio.dias === 1 ? "día" : "días"} · total
                   </p>
-                  <p className="text-xl font-bold leading-tight text-[#1B3F6B]">
-                    {pesos(c.precio.total)}
-                  </p>
+                  {c.precio.pago_total ? (
+                    <>
+                      <p className="text-xs text-muted-foreground line-through">
+                        {pesos(c.precio.total)}
+                      </p>
+                      <p className="text-xl font-bold leading-tight text-[#1B3F6B]">
+                        {pesos(c.precio.pago_total.total)}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xl font-bold leading-tight text-[#1B3F6B]">
+                      {pesos(c.precio.total)}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right">
-                  {c.precio.total_referencia &&
+                  {!c.precio.pago_total &&
+                    c.precio.total_referencia &&
                     c.precio.total_referencia > c.precio.total && (
                       <p className="text-xs text-muted-foreground line-through">
                         {pesos(c.precio.total_referencia)}
                       </p>
                     )}
                   <p className="text-xs text-muted-foreground">
-                    {pesos(c.precio.precio_dia_promedio)} por día
+                    {pesos(
+                      c.precio.pago_total?.precio_dia_promedio ??
+                        c.precio.precio_dia_promedio,
+                    )}{" "}
+                    por día
                   </p>
                 </div>
               </div>
+
+              {/* La condición va acá, corta. La explicación completa está en el
+                  paso 4: si el descuento apareciera recién en el checkout, el
+                  que ya decidió señar el 30% siente que le escondieron una
+                  opción mejor. */}
+              {c.precio.pago_total && (
+                <p className="mt-1.5 text-xs font-semibold text-[hsl(var(--ubicar-green))]">
+                  −{Math.round(c.precio.pago_total.descuento_porcentaje)}% pagando
+                  el total
+                </p>
+              )}
               <Button onClick={onElegir} className="mt-3 w-full">
                 {elegida ? "Seleccionado" : "Elegir"}
               </Button>

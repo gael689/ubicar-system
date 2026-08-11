@@ -372,7 +372,7 @@ class ContratoService:
         datos = snapshot or self.preparar(reserva_id)
         # El nombre del operador se sella acá: es lo que se imprime en el pie.
         usuario = self.db.get(Usuario, usuario_id) if usuario_id else None
-        datos["atendido_por"] = getattr(usuario, "nombre", None) or getattr(usuario, "email", "") or ""
+        datos["atendido_por"] = _nombre_para_el_papel(usuario)
         datos["emitido_at"] = datetime.utcnow().isoformat()
 
         contrato = Contrato(
@@ -673,6 +673,36 @@ class ContratoService:
                 # Un adjunto perdido no puede impedir reimprimir el contrato.
                 firma = None
         return generar_pdf_contrato(contrato, plantilla, firma)
+
+
+def _nombre_para_el_papel(usuario) -> str:
+    """
+    Cómo se llama el operador en el pie del contrato.
+
+    **Un identificador técnico no puede aparecer en un documento que se firma.**
+    Pasó: cuando el token de Clerk viene sin el claim de email, el nombre del
+    usuario terminaba siendo el `sub`, y el contrato salía impreso con
+    *"Usted fue atendido por: user_3HBPnBzP6K0WDB3Q05CxEQzWtIF"*.
+
+    Se corrigió el origen (`core/deps.py`), pero los usuarios ya dados de alta
+    con ese nombre siguen en la base, así que el filtro se queda: es la última
+    línea antes del papel.
+
+    Si no hay nada presentable, devuelve vacío. El generador ya sabe omitir la
+    línea entera, y **un espacio en blanco es mejor que un dato que confunde**.
+    """
+    if usuario is None:
+        return ""
+
+    def _presentable(valor: str | None) -> str:
+        v = (valor or "").strip()
+        if not v or v.startswith("user_") or v.endswith("@sin-email.clerk"):
+            return ""
+        return v
+
+    return _presentable(getattr(usuario, "nombre", None)) or _presentable(
+        getattr(usuario, "email", None)
+    )
 
 
 def _iso(v) -> str | None:

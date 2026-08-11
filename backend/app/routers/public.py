@@ -286,7 +286,37 @@ def get_config_publica(db: Session = Depends(get_db)):
             # que está a 700 km. Se retoma con D-39b.
         ],
         "hold_minutos": HOLD_MINUTOS_DEFAULT,
+        # Cobro por transferencia. Los datos salen de `configuracion` y no del
+        # código de la web: un CBU pisado en el front es un CBU que un día
+        # cambia y nadie corrige, y el síntoma es la plata de un cliente yendo
+        # a una cuenta que ya no existe.
+        "transferencia": _datos_transferencia(db),
     })
+
+
+def _datos_transferencia(db: Session) -> dict | None:
+    """
+    La cuenta a la que el cliente transfiere, o `None` si no está habilitada.
+
+    Devuelve `None` también si falta el CBU: mostrar un alias sin CBU es
+    invitar a una transferencia que no se puede completar.
+    """
+    cfg = ConfiguracionService(db)
+    if cfg.get_str("cobro.transferencia_habilitada", "false").lower() not in ("true", "1"):
+        return None
+
+    cbu = cfg.get_str("cobro.banco_cbu", "")
+    if not cbu:
+        return None
+
+    return {
+        "titular": cfg.get_str("cobro.banco_titular", ""),
+        "alias": cfg.get_str("cobro.banco_alias", ""),
+        "cbu": cbu,
+        "cuenta": cfg.get_str("cobro.banco_cuenta", ""),
+        "cuit": cfg.get_str("cobro.banco_cuit", ""),
+        "whatsapp_comprobante": cfg.get_str("cobro.whatsapp_comprobante", ""),
+    }
 
 
 # ─── Holds (ítem 61) ─────────────────────────────────────────────────────────
@@ -517,6 +547,65 @@ class ReservaWebRequest(BaseModel):
     # (migración 023), sólo que la web nunca los cargaba.
     condicion_iva: CondicionIvaWeb | None = None
     razon_social: str | None = None
+
+
+@router.post("/reservas/transferencia", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(limite_solicitudes)])
+def crear_reserva_transferencia(payload: ReservaWebRequest, db: Session = Depends(get_db)):
+    """
+    Reserva a pagar por **transferencia bancaria**.
+
+    Es el mismo camino que el checkout de Mercado Pago —mismo hold, mismo
+    recálculo de precio del lado del servidor, misma reserva en
+    `pendiente_pago`— con una diferencia central: **acá no hay webhook**. Nadie
+    le avisa al sistema que la plata llegó, así que la reserva **no se confirma
+    sola**. Alguien del equipo concilia el comprobante contra el extracto y la
+    confirma desde el sistema.
+
+    Por eso la respuesta lleva los datos de la cuenta y el WhatsApp al que
+    mandar el comprobante: el cliente tiene que salir de acá sabiendo **qué
+    hacer** y **que todavía no tiene el auto reservado**.
+
+    El cupo lo sostiene el hold mientras tanto, igual que en el otro camino: si
+    la transferencia no llega antes de que venza, el auto se libera.
+    """
+    from app.services.pago_web_service import PagoWebService
+
+    datos_banco = _datos_transferencia(db)
+    if datos_banco is None:
+        raise HTTPException(
+            status_code=503,
+            detail="El pago por transferencia no está disponible en este momento. "
+                   "Escribinos por WhatsApp y cerramos la reserva.",
+        )
+
+    try:
+        resultado = PagoWebService(db).reservar_para_transferencia(
+            hold_token=payload.hold_token,
+            nombre=payload.nombre,
+            email=payload.email,
+            telefono=payload.telefono,
+            dni=payload.dni,
+            lugar_entrega=payload.lugar_entrega,
+            lugar_devolucion=payload.lugar_devolucion,
+            porcentaje_anticipo=payload.porcentaje_anticipo,
+            adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
+            fecha_nacimiento=payload.fecha_nacimiento,
+            notas=payload.notas,
+            condicion_iva=payload.condicion_iva,
+            razon_social=payload.razon_social,
+        )
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except NotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except BusinessRuleError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=_mensaje(e))
+
+    return ok({**resultado, "banco": datos_banco})
 
 
 @router.post("/reservas", status_code=status.HTTP_201_CREATED,

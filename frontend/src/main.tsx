@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import App from './App';
 import { queryClient } from './lib/queryClient';
+import { CLERK_ES } from './lib/clerkEspanol';
 import './index.css';
 
 // `clerk init` dejó el provider sin la key: sin esto el arranque explota con
@@ -19,7 +20,11 @@ if (!CLERK_PUBLISHABLE_KEY) {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/">
+    <ClerkProvider
+      publishableKey={CLERK_PUBLISHABLE_KEY}
+      afterSignOutUrl="/"
+      localization={CLERK_ES}
+    >
       <QueryClientProvider client={queryClient}>
         <App />
         <Toaster richColors position="top-right" />

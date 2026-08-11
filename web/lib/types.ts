@@ -94,6 +94,21 @@ export interface PrecioCategoria {
   total_referencia: number | null;
   tiene_promocion: boolean;
   promociones: string[];
+  /** El mismo alquiler pagando el 100% por adelantado. `null` si no hay
+   *  descuento por duración aplicable. Ver `PrecioPagoTotal`. */
+  pago_total: PrecioPagoTotal | null;
+}
+
+/**
+ * El mismo alquiler cotizado pagando el 100% por adelantado (D-49).
+ * `null` cuando no hay descuento por duración para esa duración.
+ */
+export interface PrecioPagoTotal {
+  total: number;
+  precio_dia_promedio: number;
+  descuento_monto: number;
+  descuento_porcentaje: number;
+  descuento_nombre: string | null;
 }
 
 export interface CategoriaDisponible {

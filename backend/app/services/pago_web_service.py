@@ -470,6 +470,105 @@ class PagoWebService:
         self.db.commit()
         return {"resultado": "revision", "motivo": motivo, "reserva_id": pago_web.reserva_id}
 
+    def reservar_para_transferencia(
+        self,
+        *,
+        hold_token: str,
+        nombre: str,
+        email: str,
+        telefono: str,
+        dni: str,
+        lugar_entrega: str,
+        lugar_devolucion: str | None,
+        porcentaje_anticipo: int,
+        adicionales: list[tuple[int, int]] | None = None,
+        fecha_nacimiento: date | None = None,
+        notas: str | None = None,
+        condicion_iva: str | None = None,
+        razon_social: str | None = None,
+    ) -> dict:
+        """
+        Reserva a pagar por transferencia bancaria.
+
+        **La diferencia de fondo con Mercado Pago es que acá no hay webhook.**
+        Nadie le avisa al sistema que la plata llegó: el cliente transfiere,
+        manda el comprobante por WhatsApp y **alguien del equipo lo concilia
+        contra el extracto** antes de confirmar. Por eso la reserva queda en
+        `pendiente_pago` y **no se confirma sola** — el que la confirma es una
+        persona, desde el sistema.
+
+        Que `pendiente_pago` no ocupe calendario es justamente lo que hace
+        seguro este camino: si la transferencia nunca llega, el auto no queda
+        bloqueado. Lo sostiene el hold, que vence solo.
+
+        No se crea ningún `PagoWeb`: esa tabla es el registro de una
+        preferencia de pasarela, y acá no hay pasarela. El pago se carga como
+        cobro cuando se acredita, por el mismo camino que cualquier otro.
+        """
+        dom.validar_porcentaje(porcentaje_anticipo)
+
+        self.db.execute(select(Hold.id).where(Hold.token == hold_token).with_for_update())
+        hold = HoldService(self.db).vigente_o_error(hold_token)
+        categoria = self.db.get(Categoria, hold.categoria_id)
+        if categoria is None or not categoria.activo:
+            raise NotFoundError("Categoría", hold.categoria_id)
+
+        cotizacion, categoria_id = PrecioService(self.db).calcular(
+            fecha_inicio=hold.fecha_inicio,
+            fecha_fin=hold.fecha_fin,
+            categoria_id=hold.categoria_id,
+            canal="web",
+            adicionales=adicionales or [],
+            fecha_nacimiento=fecha_nacimiento,
+            porcentaje_anticipo=porcentaje_anticipo,
+        )
+        total = Decimal(str(cotizacion.total))
+        anticipo = dom.calcular_anticipo(
+            total, porcentaje_anticipo, self._descuento_pago_total()
+        )
+
+        precio_vehiculo = total - Decimal(str(cotizacion.total_adicionales))
+        descuento_d30 = total - Decimal(str(anticipo.total_final))
+        motivo_d30 = (
+            f"Descuento por pago total del {porcentaje_anticipo}% (D-30)"
+            if descuento_d30 > 0 else None
+        )
+
+        cliente = self._cliente_para(
+            nombre, email, telefono, dni, fecha_nacimiento,
+            condicion_iva=condicion_iva, razon_social=razon_social,
+        )
+        usuario_sistema = self._usuario_sistema()
+
+        reserva, _ = ReservaService(self.db).create(
+            cliente_id=cliente.id,
+            categoria_id=categoria_id,
+            fecha_inicio=hold.fecha_inicio,
+            hora_inicio=hold.hora_inicio,
+            fecha_fin=hold.fecha_fin,
+            hora_fin=hold.hora_fin,
+            lugar_entrega=lugar_entrega,
+            lugar_devolucion=lugar_devolucion or lugar_entrega,
+            notas=notas,
+            precio_total=precio_vehiculo - descuento_d30,
+            descuento_motivo=motivo_d30,
+            forma_pago_prevista="transferencia",
+            adicionales=adicionales or [],
+            usuario_id=usuario_sistema.id,
+            canal="web",
+        )
+        reserva.estado = EstadoReserva.PENDIENTE_PAGO.value
+        reserva.origen = "web"
+        self.db.flush()
+
+        return {
+            "reserva_id": reserva.id,
+            "numero": getattr(reserva, "numero_formateado", None) or str(reserva.id),
+            "monto_a_transferir": float(anticipo.monto),
+            "total": float(anticipo.total_final),
+            "porcentaje_anticipo": porcentaje_anticipo,
+        }
+
     def _cliente_para(
         self,
         nombre: str,

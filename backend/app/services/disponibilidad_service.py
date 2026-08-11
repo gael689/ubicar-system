@@ -226,11 +226,43 @@ class DisponibilidadService:
                     cotizacion.recargo_edad,
                     cotizacion.duracion_dias,
                 )
+                # El mismo alquiler cotizado como si pagara el 100% por
+                # adelantado. Es lo que la tarjeta muestra como precio grande,
+                # con el de lista tachado al lado: los **dos números son
+                # reales** —el tachado es lo que efectivamente paga quien seña
+                # parcialmente—, así que el tachado no es un ancla inventada.
+                pago_total = None
+                try:
+                    c100, _ = precio_service.calcular(
+                        fecha_inicio=fecha_inicio,
+                        fecha_fin=fecha_fin,
+                        categoria_id=cat.id,
+                        canal="web",
+                        edad_conductor=edad_conductor,
+                        porcentaje_anticipo=100,
+                    )
+                    if c100.descuento_monto and c100.total < cotizacion.total:
+                        pago_total = {
+                            "total": c100.total,
+                            "precio_dia_promedio": vista_con_recargo_incluido(
+                                c100.precio_dia_promedio, None,
+                                c100.recargo_edad, c100.duracion_dias,
+                            )[0],
+                            "descuento_monto": c100.descuento_monto,
+                            "descuento_porcentaje": c100.descuento_porcentaje,
+                            "descuento_nombre": c100.descuento_nombre,
+                        }
+                except Exception:
+                    # Que falle el precio promocional no puede tumbar la grilla:
+                    # sin él la tarjeta muestra el de lista y se vende igual.
+                    pago_total = None
+
                 precio = {
                     "total": cotizacion.total,
                     "precio_dia_promedio": promedio,
                     "dias": cotizacion.duracion_dias,
                     "total_referencia": referencia,
+                    "pago_total": pago_total,
                     "tiene_promocion": cotizacion.tiene_promocion,
                     "promociones": cotizacion.promociones,
                     "desglose": [

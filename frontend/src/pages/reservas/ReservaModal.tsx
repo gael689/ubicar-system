@@ -757,7 +757,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </div>
             )}
             {vehiculoId && tarifasDisponibles.length === 0 && !cargandoTarifas && (
-              <p className="text-xs text-slate-400 italic">Este vehículo no tiene tarifas cargadas (ni propias ni de su categoría).</p>
+              /* Decía "no tiene tarifas cargadas" y dos renglones más abajo
+                 avisaba que el precio difería del **precio de lista**, con un
+                 número concreto. Las dos cosas eran ciertas y juntas no se
+                 entendían: lo que falta es tarifa propia o de categoría, pero
+                 la tarifa general existe y es de donde sale ese precio. */
+              <p className="text-xs text-slate-400 italic">
+                Sin tarifa propia ni de categoría: se cotiza con la tarifa general.
+              </p>
             )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">

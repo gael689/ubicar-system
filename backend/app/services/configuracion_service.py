@@ -36,6 +36,19 @@ class ConfiguracionService:
         self.db.flush()
         return conf
 
+    def get_str(self, clave: str, default: str = "") -> str:
+        """
+        El valor como texto, o el default si la clave no existe.
+
+        **Un valor vacío también devuelve el default.** Muchas claves nacen en
+        blanco a propósito —los datos fiscales de la empresa, por ejemplo— y
+        para quien consulta, "cargada pero vacía" y "no existe" son lo mismo.
+        """
+        conf = self.db.query(Configuracion).filter(Configuracion.clave == clave).first()
+        if not conf or not (conf.valor or "").strip():
+            return default
+        return conf.valor.strip()
+
     def get_int(self, clave: str, default: int) -> int:
         conf = self.db.query(Configuracion).filter(Configuracion.clave == clave).first()
         if not conf:
