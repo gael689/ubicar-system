@@ -12,12 +12,16 @@ Son dos destinatarios con necesidades distintas:
 
 - **El equipo** necesita saber que hay algo para atender, con lo mínimo para
   decidir: quién, qué categoría, qué fechas y si hay que resolver algo raro.
-- **El cliente** necesita el comprobante de lo que pagó y de lo que falta
+- **El cliente** necesita el comprobante de lo que reservó y de lo que falta
   pagar, más dónde y cuándo retira.
 
-Igual que el digest, si no hay `resend_api_key` esto es un no-op silencioso:
-`enviar_email` loguea y devuelve False. El aviso en la campana del sistema no
-depende de esto y sigue funcionando.
+Lo que va al cliente ya no se arma acá: es la plantilla `reserva_confirmada`
+de `email_plantillas.py`, la misma que se puede reenviar a mano desde el
+panel. Tener dos comprobantes distintos para el mismo hecho garantizaba que
+uno de los dos quedara desactualizado — y quedó.
+
+Todo sale por `EmailService`, así que cada intento queda registrado y ninguna
+falla puede tumbar la acreditación del pago.
 """
 import logging
 from decimal import Decimal
@@ -25,7 +29,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.services.notificaciones import enviar_email
+from app.services.email_plantillas import layout, pesos
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +37,6 @@ logger = logging.getLogger(__name__)
 # dueños puedan cambiar la casilla sin un deploy — que es exactamente lo que
 # arregló la migración 048 para `web.hold_minutos`.
 CLAVE_DESTINATARIOS = "web.emails_aviso_reserva"
-
-
-def _pesos(monto: Decimal | float | None) -> str:
-    if monto is None:
-        return "$0"
-    return f"${Decimal(str(monto)):,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
 
 
 def destinatarios_equipo(db: Session) -> list[str]:
@@ -60,19 +58,43 @@ def destinatarios_equipo(db: Session) -> list[str]:
     return [d.strip() for d in crudo.split(",") if d.strip()]
 
 
-def _bloque_datos(reserva) -> str:
+def _html_equipo(reserva, pago_web) -> str:
+    critica = reserva.estado == "revision_sin_cupo"
     categoria = reserva.categoria.nombre if reserva.categoria else "—"
-    return f"""
-      <table cellpadding="6" style="border-collapse:collapse;font-size:14px">
-        <tr><td><strong>Categoría</strong></td><td>{categoria}</td></tr>
-        <tr><td><strong>Retiro</strong></td>
-            <td>{reserva.fecha_inicio.strftime('%d/%m/%Y')} {reserva.hora_inicio.strftime('%H:%M')}
-                — {reserva.lugar_entrega}</td></tr>
-        <tr><td><strong>Devolución</strong></td>
-            <td>{reserva.fecha_fin.strftime('%d/%m/%Y')} {reserva.hora_fin.strftime('%H:%M')}
-                — {reserva.lugar_devolucion}</td></tr>
-      </table>
-    """
+    aviso = (
+        "<p style='color:#b00020;font-size:14px'><strong>El pago se acreditó pero ya no "
+        "queda unidad para esas fechas.</strong> Hay que ofrecer otra categoría, otras "
+        "fechas o devolver la plata.</p>"
+        if critica else ""
+    )
+    saldo = (
+        Decimal(str(pago_web.total_reserva))
+        - Decimal(str(pago_web.descuento_pago_total))
+        - Decimal(str(pago_web.monto))
+    )
+    cuerpo = f"""
+  {aviso}
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px">
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Contacto</td>
+        <td>{reserva.web_contacto_nombre or "—"} — {reserva.web_contacto_telefono or "—"}
+            — {reserva.web_contacto_email or "—"}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Categoría</td><td>{categoria}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Retiro</td>
+        <td>{reserva.fecha_inicio.strftime('%d/%m/%Y')} {reserva.hora_inicio.strftime('%H:%M')}
+            — {reserva.lugar_entrega}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Devolución</td>
+        <td>{reserva.fecha_fin.strftime('%d/%m/%Y')} {reserva.hora_fin.strftime('%H:%M')}
+            — {reserva.lugar_devolucion}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Cobrado online</td>
+        <td>{pesos(pago_web.monto)} ({pago_web.porcentaje_anticipo}%)</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Saldo al retirar</td>
+        <td>{pesos(saldo)}</td></tr>
+  </table>
+  <p style="font-size:13px;color:#666;margin-top:16px">
+    Entrá al sistema para asignarle el vehículo y emitir el contrato.
+  </p>
+"""
+    return layout(f"Reserva #{reserva.id} desde la web", cuerpo)
 
 
 def avisar_al_equipo(db: Session, reserva, pago_web) -> int:
@@ -83,92 +105,44 @@ def avisar_al_equipo(db: Session, reserva, pago_web) -> int:
     ese caso hay que resolverlo el mismo día, y un asunto genérico lo
     escondería entre los demás.
     """
+    from app.services.email_service import EmailService
+
     destinos = destinatarios_equipo(db)
     if not destinos:
         logger.info("[Email] sin destinatarios para el aviso de reserva web")
         return 0
 
     critica = reserva.estado == "revision_sin_cupo"
-    contacto = reserva.web_contacto_nombre or "—"
-    telefono = reserva.web_contacto_telefono or "—"
-    email_cliente = reserva.web_contacto_email or "—"
-
     asunto = (
-        f"🔴 Reserva web PAGADA SIN CUPO — resolver hoy (#{reserva.id})"
+        f"Reserva web PAGADA SIN CUPO — resolver hoy (#{reserva.id})"
         if critica
-        else f"Reserva nueva desde la web — {contacto} (#{reserva.id})"
+        else f"Reserva nueva desde la web — {reserva.web_contacto_nombre or 'sin nombre'} (#{reserva.id})"
     )
+    html = _html_equipo(reserva, pago_web)
 
-    aviso = (
-        "<p style='color:#b00020'><strong>El pago se acreditó pero ya no queda "
-        "unidad para esas fechas.</strong> Hay que ofrecer otra categoría, otras "
-        "fechas o devolver la plata.</p>"
-        if critica else ""
-    )
-
-    html = f"""
-      <h2>Reserva #{reserva.id} — {contacto}</h2>
-      {aviso}
-      {_bloque_datos(reserva)}
-      <table cellpadding="6" style="border-collapse:collapse;font-size:14px">
-        <tr><td><strong>Contacto</strong></td><td>{telefono} — {email_cliente}</td></tr>
-        <tr><td><strong>Cobrado online</strong></td>
-            <td>{_pesos(pago_web.monto)} ({pago_web.porcentaje_anticipo}%)</td></tr>
-        <tr><td><strong>Saldo al retirar</strong></td>
-            <td>{_pesos(Decimal(str(pago_web.total_reserva))
-                        - Decimal(str(pago_web.descuento_pago_total))
-                        - Decimal(str(pago_web.monto)))}</td></tr>
-      </table>
-      <p style="font-size:13px;color:#555">
-        Entrá al sistema para asignarle el vehículo y emitir el contrato.
-      </p>
-    """
-    return sum(1 for d in destinos if enviar_email(d, asunto, html))
-
-
-def confirmar_al_cliente(reserva, pago_web) -> bool:
-    """
-    El comprobante para quien pagó.
-
-    **No se manda si la reserva quedó sin cupo.** Decirle "tu reserva está
-    confirmada" a alguien a quien todavía no le podemos dar un auto es peor que
-    no escribirle: cuando lo llamen a explicarle, ya va a tener un mail que
-    dice lo contrario.
-    """
-    destino = reserva.web_contacto_email
-    if not destino:
-        return False
-    if reserva.estado != "confirmada":
-        logger.info(
-            "[Email] reserva #%s en estado '%s': no se manda confirmación al cliente",
-            reserva.id, reserva.estado,
+    svc = EmailService(db)
+    enviados = 0
+    for destino in destinos:
+        registro = svc.registrar_y_enviar(
+            tipo="reserva_web_equipo",
+            destinatario=destino,
+            asunto=asunto,
+            html=html,
+            entidad_tipo="reserva",
+            entidad_id=reserva.id,
         )
-        return False
+        if registro is not None and registro.estado == "enviado":
+            enviados += 1
+    return enviados
 
-    saldo = (
-        Decimal(str(pago_web.total_reserva))
-        - Decimal(str(pago_web.descuento_pago_total))
-        - Decimal(str(pago_web.monto))
-    )
-    resto = (
-        f"<p>Al retirar el vehículo abonás el saldo de <strong>{_pesos(saldo)}</strong>.</p>"
-        if saldo > 0
-        else "<p>Tu alquiler está <strong>pagado en su totalidad</strong>.</p>"
-    )
 
-    html = f"""
-      <h2>¡Listo! Tu reserva está confirmada</h2>
-      <p>Hola {reserva.web_contacto_nombre or ''}, recibimos tu pago
-         de <strong>{_pesos(pago_web.monto)}</strong>.</p>
-      {_bloque_datos(reserva)}
-      {resto}
-      <p style="font-size:13px;color:#555">
-        Acordate de llevar tu <strong>DNI y licencia de conducir vigente</strong>.
-        Número de reserva: <strong>#{reserva.id}</strong>.
-      </p>
-      <p style="font-size:13px;color:#555">Ubicar Rent — Bahía Blanca</p>
-    """
-    return enviar_email(destino, f"Reserva confirmada #{reserva.id} — Ubicar Rent", html)
+def confirmar_al_cliente(db: Session, reserva, pago_web) -> bool:
+    """El comprobante para quien pagó — la plantilla común de reserva
+    confirmada, con el PDF adjunto."""
+    from app.services.email_service import EmailService
+
+    registro = EmailService(db).enviar_reserva_confirmada(reserva, pago_web=pago_web)
+    return bool(registro is not None and registro.estado == "enviado")
 
 
 def notificar_reserva_pagada(db: Session, reserva, pago_web) -> dict:
@@ -184,7 +158,7 @@ def notificar_reserva_pagada(db: Session, reserva, pago_web) -> dict:
     except Exception:
         logger.exception("[Email] falló el aviso al equipo de la reserva #%s", reserva.id)
     try:
-        resultado["cliente"] = confirmar_al_cliente(reserva, pago_web)
+        resultado["cliente"] = confirmar_al_cliente(db, reserva, pago_web)
     except Exception:
         logger.exception("[Email] falló la confirmación al cliente de la reserva #%s", reserva.id)
     return resultado

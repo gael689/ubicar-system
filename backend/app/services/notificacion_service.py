@@ -24,7 +24,6 @@ from app.config import settings
 from app.core.exceptions import NotFoundError
 from app.domain.notificaciones_reglas import evaluar_todas
 from app.models.notificacion import Notificacion, PreferenciaNotificacion
-from app.services.notificaciones import enviar_email
 
 ESTADOS_ACTIVOS = ("pendiente", "enviada", "pospuesta")
 
@@ -319,8 +318,9 @@ class NotificacionService:
     # Último canal a implementar (a pedido explícito del usuario). El motor
     # ya corre a las 08:00 ART y persiste todo — esto sólo arma un resumen
     # de lo activo en ese momento y lo manda por Resend. Sin destinatarios
-    # configurados (`settings.notificaciones_digest_destinatarios` vacío) o
-    # sin `resend_api_key`, es un no-op silencioso (ver enviar_email).
+    # configurados (`settings.notificaciones_digest_destinatarios` vacío) no
+    # se manda nada; sin `resend_api_key` el intento queda registrado como
+    # fallido en `emails_enviados` (ver EmailService).
 
     _ORDEN_URGENCIA = ("critica", "alta", "media", "baja")
     _LABEL_URGENCIA = {
@@ -363,7 +363,13 @@ class NotificacionService:
     def enviar_digest_matutino(self, hoy: date | None = None) -> int:
         """Arma el digest y lo manda a los destinatarios configurados.
         Devuelve cuántos envíos se hicieron con éxito (0 si no hay nada que
-        avisar, no hay destinatarios, o falló Resend)."""
+        avisar, no hay destinatarios, o falló Resend).
+
+        Pasa por `EmailService` como todo lo demás: así el digest que no salió
+        un martes queda registrado en el panel, en vez de perderse en el log
+        del servidor."""
+        from app.services.email_service import EmailService
+
         destinatarios = [
             d.strip() for d in settings.notificaciones_digest_destinatarios.split(",") if d.strip()
         ]
@@ -373,5 +379,12 @@ class NotificacionService:
         if digest is None:
             return 0
         asunto, html = digest
-        enviados = sum(1 for d in destinatarios if enviar_email(d, asunto, html))
+        svc = EmailService(self.db)
+        enviados = 0
+        for destino in destinatarios:
+            registro = svc.registrar_y_enviar(
+                tipo="digest", destinatario=destino, asunto=asunto, html=html
+            )
+            if registro is not None and registro.estado == "enviado":
+                enviados += 1
         return enviados

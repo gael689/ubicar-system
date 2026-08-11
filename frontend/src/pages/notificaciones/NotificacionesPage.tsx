@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, ChevronRight } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EmailsTab } from '@/components/emails/EmailsTab';
 import { useHistorialNotificaciones } from '@/hooks/useNotificaciones';
 import { formatDate } from '@/lib/utils';
 import type { EstadoNotificacion } from '@/types';
@@ -34,7 +36,33 @@ const MESES = [
 
 const ANIOS = [2024, 2025, 2026, 2027];
 
+/**
+ * Notificaciones y mails, en la misma pantalla.
+ *
+ * Son la misma pregunta vista desde los dos lados: "¿de qué avisó el sistema
+ * puertas adentro?" y "¿qué le mandó al cliente?". Separarlos en dos módulos
+ * distintos obligaría a recordar cuál de los dos abrir cuando alguien llama
+ * preguntando si le llegó la confirmación — que es la única razón por la que
+ * cualquiera de las dos pantallas se abre.
+ */
 export function NotificacionesPage() {
+  return (
+    <Tabs defaultValue="notificaciones" className="max-w-4xl mx-auto space-y-4">
+      <TabsList>
+        <TabsTrigger value="notificaciones">Notificaciones</TabsTrigger>
+        <TabsTrigger value="emails">Mails enviados</TabsTrigger>
+      </TabsList>
+      <TabsContent value="notificaciones">
+        <HistorialNotificaciones />
+      </TabsContent>
+      <TabsContent value="emails">
+        <EmailsTab />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function HistorialNotificaciones() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [fecha, setFecha] = useState('');
@@ -75,7 +103,7 @@ export function NotificacionesPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-6 bg-card border border-border rounded-xl p-5">
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Día exacto</label>

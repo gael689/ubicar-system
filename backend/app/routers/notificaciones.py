@@ -178,6 +178,7 @@ def descartar_notificacion(
 
 @router.post("/notificaciones/enviar-digest")
 def enviar_digest(
+    db: Session = Depends(get_db),
     service: NotificacionService = Depends(_service),
     _: Usuario = Depends(get_current_user),
 ):
@@ -185,6 +186,7 @@ def enviar_digest(
     días a las 08:00 ART junto con `generar()`). Útil para probarlo sin
     esperar al cron, o para un botón de 'enviar ahora' más adelante."""
     enviados = service.enviar_digest_matutino()
+    db.commit()  # persiste el registro en `emails_enviados`
     return ok({"enviados": enviados}, "Digest procesado" if enviados else "Nada para enviar (sin destinatarios configurados o sin notificaciones activas)")
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 """
 Router de Reservas — Fase 3 completo.
 """
+import logging
 from datetime import date
 from decimal import Decimal
 
@@ -26,8 +27,11 @@ from app.schemas.reserva import (
     BloqueoItemResponse,
     SemaforoResponse,
 )
+from app.services.email_service import EmailService
 from app.services.reserva_service import ReservaService
 from app.services.alquiler_service import AlquilerService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reservas", tags=["Reservas"])
 
@@ -161,6 +165,11 @@ def create_reserva(
     doc = ReservaDocumentoService(db, storage).generar_y_archivar(reserva, current_user.id)
     if doc is not None:
         db.commit()
+
+    # Y la confirmación al cliente, misma lógica: después del commit y sin
+    # poder romper nada. Sólo sale si la reserva nació confirmada — a una
+    # pendiente todavía no se le puede prometer un auto.
+    EmailService.avisar(db, "reserva_confirmada", reserva)
 
     return ok(
         {
@@ -311,6 +320,7 @@ def confirmar_reserva(
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    EmailService.avisar(db, "reserva_confirmada", reserva)
     return ok(ReservaResponse.model_validate(reserva), "Reserva confirmada")
 
 
@@ -387,6 +397,11 @@ def checkout(
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # La constancia de entrega al cliente. Después del commit: el auto ya
+    # salió, y ninguna falla de Resend puede devolver un error acá.
+    EmailService.avisar(db, "checkout", alquiler)
+
     return ok(
         {**AlquilerResponse.model_validate(alquiler).model_dump(), "warnings": warnings},
         "Checkout registrado",

@@ -19,6 +19,7 @@ from app.schemas.alquiler import (
     PreviewExcedenteResponse,
 )
 from app.services.alquiler_service import AlquilerService
+from app.services.email_service import EmailService
 from app.domain.tarifas import calcular_duracion_dias
 
 router = APIRouter(prefix="/alquileres", tags=["Alquileres"])
@@ -153,6 +154,10 @@ def checkin(
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # El cierre al cliente, con los cargos si los hubo. Después del commit: el
+    # auto ya volvió, y ninguna falla de Resend puede devolver un error acá.
+    EmailService.avisar(db, "checkin", alquiler)
 
     return ok(AlquilerResponse.model_validate(alquiler), "Checkin registrado")
 

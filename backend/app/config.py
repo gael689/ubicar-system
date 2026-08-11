@@ -50,13 +50,19 @@ class Settings(BaseSettings):
     # Vacío = el endpoint de cron queda deshabilitado.
     cron_secret: str = ""
 
-    # Email
+    # Email (Resend)
     resend_api_key: str = ""
+    # **De este valor depende que los mails a clientes salgan o no.**
+    # Mientras termine en `@resend.dev` (el remitente compartido de prueba,
+    # que sólo entrega a la casilla dueña de la cuenta), EmailService registra
+    # los mails a clientes como `omitido` en vez de mandarlos a la nada. Con
+    # el dominio verificado en Resend, cambiar esto acá es todo lo que hay
+    # que hacer: no hay ninguna otra bandera.
     from_email: str = "noreply@ubicarrent.com"
     # Destinatarios del digest matutino de notificaciones, separados por coma.
-    # Vacío = no se envía nada (además de que enviar_email ya no hace nada
-    # sin resend_api_key). Sin usuarios reales todavía (pre-Clerk), es la
-    # única forma de configurar a quién le llega.
+    # Vacío = no se envía. Sin usuarios reales todavía (pre-Clerk), es la
+    # única forma de configurar a quién le llega. También es el respaldo de
+    # los avisos internos si `web.emails_aviso_reserva` está vacío.
     notificaciones_digest_destinatarios: str = ""
 
     # Pagos online (Mercado Pago — migración 051)

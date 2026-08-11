@@ -19,6 +19,7 @@ from app.routers import (
     servicios, notificaciones, cuentas_corrientes, recibos, categorias,
     comprobantes, configuracion, busqueda, danios, fechas_especiales,
     precios, adicionales, bloqueos, recargos_edad, reservas_web, auditoria,
+    emails,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,9 @@ def _correr_motor_notificaciones() -> None:
             resultado["creadas"], resultado["resueltas"], resultado["evaluadas"],
         )
         enviados = service.enviar_digest_matutino()
+        # El commit es por el registro en `emails_enviados`: sin él, un digest
+        # que no salió no queda anotado en ningún lado.
+        db.commit()
         if enviados:
             logger.info("[Scheduler] Digest matutino enviado a %s destinatarios", enviados)
     except Exception:
@@ -223,6 +227,7 @@ app.include_router(tarjetas.router, prefix=API_PREFIX)
 app.include_router(multas.router, prefix=API_PREFIX)
 app.include_router(servicios.router, prefix=API_PREFIX)
 app.include_router(notificaciones.router, prefix=API_PREFIX)
+app.include_router(emails.router, prefix=API_PREFIX)
 app.include_router(cuentas_corrientes.router, prefix=API_PREFIX)
 app.include_router(recibos.router, prefix=API_PREFIX)
 app.include_router(categorias.router, prefix=API_PREFIX)

@@ -17,18 +17,18 @@ cliente el contrato que acaba de firmar se evaluaron así:
 Los tres conviven porque resuelven cosas distintas, y ninguno depende de que
 los otros funcionen.
 
-⚠️ **Depende de que Resend tenga el dominio verificado.** Hoy el sistema sólo
-puede escribirle a la casilla de Ubicar; a un cliente real no le llega. Hasta
-que eso se resuelva, la copia del cliente es el botón de la pantalla y el link
-—que sí funcionan— y el equipo recibe el aviso igual. `enviar_email` es un
-no-op silencioso, así que nada de esto falla ruidosamente mientras tanto.
+⚠️ **Depende de que Resend tenga el dominio verificado.** Hoy el remitente es
+el de prueba de Resend, así que la copia del cliente **no se manda**: queda
+registrada como `omitido` en el panel de mails, con el motivo escrito, y el
+cliente se queda con el botón de la pantalla y el link —que sí funcionan—.
+El equipo recibe el aviso igual. Cuando el dominio esté verificado, alcanza
+con cambiar `FROM_EMAIL` y reintentar desde el panel.
 """
 import logging
 
 from sqlalchemy.orm import Session
 
 from app.services.email_reservas import destinatarios_equipo
-from app.services.notificaciones import enviar_email
 
 logger = logging.getLogger(__name__)
 
@@ -115,26 +115,34 @@ def notificar_contrato_firmado(db: Session, contrato) -> None:
     """
     try:
         from app.services.contrato_service import ContratoService
+        from app.services.email_service import EmailService
 
         svc = ContratoService(db)
+        emails = EmailService(db)
         pdf = svc.generar_pdf(contrato.id)
         adjunto = [(f"contrato_{contrato.numero_formateado}.pdf", pdf)]
         empresa = (contrato.snapshot or {}).get("empresa") or svc.datos_empresa()
 
         for destino in destinatarios_equipo(db):
-            enviar_email(
-                destino,
-                f"Contrato firmado — {contrato.numero_formateado}",
-                _html_equipo(contrato),
+            emails.registrar_y_enviar(
+                tipo="contrato_firmado_equipo",
+                destinatario=destino,
+                asunto=f"Contrato firmado — {contrato.numero_formateado}",
+                html=_html_equipo(contrato),
+                entidad_tipo="contrato",
+                entidad_id=contrato.id,
                 adjuntos=adjunto,
             )
 
         email_cliente = _email_del_cliente(contrato)
         if email_cliente:
-            enviar_email(
-                email_cliente,
-                f"Tu contrato firmado — {contrato.numero_formateado}",
-                _html_cliente(contrato, empresa),
+            emails.registrar_y_enviar(
+                tipo="contrato_firmado",
+                destinatario=email_cliente,
+                asunto=f"Tu contrato firmado — {contrato.numero_formateado}",
+                html=_html_cliente(contrato, empresa),
+                entidad_tipo="contrato",
+                entidad_id=contrato.id,
                 adjuntos=adjunto,
             )
         else:
