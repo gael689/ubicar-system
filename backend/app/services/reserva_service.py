@@ -665,6 +665,10 @@ class ReservaService:
         if conductor_id is not None:
             self._validar_conductor(conductor_id, reserva.cliente_id)
 
+        # Se guarda antes de tocar nada: es con lo que se decide, al final, si
+        # hubo reasignación de vehículo y qué hacer con el contrato (D-48).
+        vehiculo_anterior = reserva.vehiculo_id
+
         # Usar valores actuales si no se proveen
         v_id = vehiculo_id or reserva.vehiculo_id
         f_inicio = fecha_inicio or reserva.fecha_inicio
@@ -731,8 +735,59 @@ class ReservaService:
             if (fecha_inicio is not None or fecha_fin is not None) and reserva.adicionales:
                 self.recalcular_adicionales_por_duracion(reserva)
 
+        # D-48: si se cambió el auto de una reserva que ya tiene contrato
+        # firmado, ese contrato quedó nombrando un vehículo que no es. Se anula
+        # y hay que emitir uno nuevo — el aviso viaja como warning para que el
+        # operador se entere en el acto y no cuando el cliente llega.
+        if vehiculo_id is not None and vehiculo_id != vehiculo_anterior:
+            warnings.extend(self._avisar_contrato_por_reasignacion(reserva, usuario_id))
+
         self.db.refresh(reserva)
         return reserva, warnings
+
+    def _avisar_contrato_por_reasignacion(self, reserva, usuario_id: int) -> list[dict]:
+        """
+        Qué pasa con el contrato cuando se le cambia el auto a la reserva.
+
+        **Un contrato firmado que nombra otro vehículo no sirve** para lo único
+        que importa cuando hay un reclamo: identificar qué auto se entregó. Por
+        eso se anula (D-48) y el cliente firma de nuevo.
+
+        Se anula **sólo si estaba firmado**. Si todavía no lo firmó, alcanza con
+        que el contrato se regenere con los datos nuevos por el camino normal:
+        anularlo agregaría un número de contrato muerto sin ningún beneficio.
+        """
+        from app.services.contrato_service import ContratoService
+
+        svc = ContratoService(self.db)
+        contrato = svc.de_reserva(reserva.id)
+        if contrato is None or contrato.anulado:
+            return []
+
+        if not contrato.firmado:
+            return [{
+                "tipo": "contrato_a_regenerar",
+                "contrato_id": contrato.id,
+                "mensaje": (
+                    f"El contrato {contrato.numero_formateado} se emitió para el "
+                    "vehículo anterior. Volvé a emitirlo antes de mandarlo a firmar."
+                ),
+            }]
+
+        svc.anular(
+            contrato.id,
+            motivo="Se reasignó el vehículo de la reserva (D-48)",
+            usuario_id=usuario_id,
+        )
+        return [{
+            "tipo": "contrato_anulado_por_reasignacion",
+            "contrato_id": contrato.id,
+            "mensaje": (
+                f"Se anuló el contrato {contrato.numero_formateado}, que estaba "
+                "firmado para el vehículo anterior. Hay que emitir uno nuevo y "
+                "que el cliente lo firme de nuevo."
+            ),
+        }]
 
     # ── Confirmar reserva ─────────────────────────────────────────────────────
 
