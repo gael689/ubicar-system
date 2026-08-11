@@ -267,7 +267,18 @@ class AlquilerService:
                 )
 
             # Si hay un anticipo guardado en la reserva, creamos el Pago ahora
-            if reserva.anticipo_monto and reserva.anticipo_monto > 0:
+            #
+            # **Salvo que ya se haya cobrado de verdad.** El cobro online
+            # (`PagoWebService._acreditar`) crea el `Pago` y su credito en la
+            # cuenta corriente en el momento en que Mercado Pago acredita, y
+            # ademas deja `anticipo_monto` para que el mostrador vea cuanto
+            # adelanto el cliente. Si aca se creara otro, **la sena quedaria
+            # contada dos veces**: dos pagos en la caja y dos creditos en la
+            # cuenta del cliente, que terminaria con un saldo a favor que no
+            # existe. Se detecta por el movimiento ya asentado contra esta
+            # reserva, que es el hecho economico, no por el medio de pago.
+            ya_cobrado = self.cc_service.tiene_credito_de_reserva(reserva.id)
+            if reserva.anticipo_monto and reserva.anticipo_monto > 0 and not ya_cobrado:
                 pago_anticipo = Pago(
                     alquiler_id=alquiler.id,
                     cliente_id=reserva.cliente_id,

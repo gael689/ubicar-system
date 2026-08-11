@@ -22,6 +22,33 @@ class CuentaCorrienteService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def tiene_credito_de_reserva(self, reserva_id: int) -> bool:
+        """
+        ¿Ya se le acreditó algo a esta reserva?
+
+        Existe para que **la seña no se cuente dos veces**. El cobro online
+        asienta el crédito en el momento en que Mercado Pago acredita, y deja
+        además `anticipo_monto` en la reserva para que el mostrador sepa cuánto
+        adelantó el cliente. Sin esta pregunta, el check-out veía ese monto y
+        creaba un segundo pago con su segundo crédito: el cliente terminaba con
+        un saldo a favor que nadie le debía.
+
+        Se mira el **movimiento de cuenta corriente**, no el pago ni el medio:
+        el asiento es el hecho económico, y es lo único que hay que evitar
+        duplicar. Los movimientos anulados no cuentan — si alguien anuló el
+        crédito del cobro online, el anticipo vuelve a hacer falta.
+        """
+        return (
+            self.db.query(MovimientoCuentaCorriente.id)
+            .filter(
+                MovimientoCuentaCorriente.reserva_id == reserva_id,
+                MovimientoCuentaCorriente.tipo == "credito",
+                MovimientoCuentaCorriente.anulado.is_(False),
+            )
+            .first()
+            is not None
+        )
+
     def get_or_create(self, cliente_id: int) -> CuentaCorriente:
         cc = self.db.query(CuentaCorriente).filter(CuentaCorriente.cliente_id == cliente_id).first()
         if not cc:
