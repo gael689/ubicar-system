@@ -17,9 +17,11 @@ from sqlalchemy.orm import Session
 
 from app.domain.disponibilidad import (
     CupoCategoria,
+    MARGEN_ROTACION_HORAS,
     OcupacionCategoria,
     VehiculoDisponible,
     calcular_cupos,
+    proponer_entrega_por_rotacion,
 )
 from app.domain.recargo_edad import vista_con_recargo_incluido
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
@@ -38,6 +40,11 @@ from app.services.precio_service import PrecioService
 # sin cupo asignado — si ocuparan, una solicitud que no se pudo cumplir
 # bloquearía un auto que sí está libre.
 ESTADOS_QUE_OCUPAN = ("pendiente", "confirmada", "activa", "vencida")
+
+# Cuánto tarda el equipo en dejar listo un auto que vuelve. Vive en
+# `configuracion` (migración 061) porque es un dato del mostrador, no del
+# código: en temporada puede ser más.
+CLAVE_MARGEN_ROTACION = "disponibilidad.margen_rotacion_horas"
 
 
 def _url_publica(key: str | None) -> str | None:
@@ -202,9 +209,32 @@ class DisponibilidadService:
         }
 
         precio_service = PrecioService(self.db)
+        margen_rotacion = self._margen_rotacion()
         resultado = []
         for cat in categorias:
             cupo: CupoCategoria = cupos[cat.id]
+
+            # Sin cupo a la hora pedida, ¿hay una unidad que vuelve ese mismo
+            # día? El motor decide; acá sólo se traduce a algo mostrable.
+            # **Se calcula únicamente cuando no hay cupo**: con unidades libres
+            # esto ni se pregunta, así que no cuesta nada en el caso normal.
+            rotacion = None
+            if not cupo.hay_cupo:
+                propuesta = proponer_entrega_por_rotacion(
+                    cat.id, inicio_dt, fin_dt, flota, ocupaciones,
+                    margen_horas=margen_rotacion,
+                )
+                if propuesta is not None:
+                    rotacion = {
+                        "fecha_entrega": propuesta.entrega.date(),
+                        "hora_entrega": propuesta.entrega.strftime("%H:%M"),
+                        # Por qué esa hora y no otra. Sin esto el cliente ve un
+                        # horario corrido sin explicación y lo lee como un error.
+                        "hora_devolucion_unidad": (
+                            propuesta.devolucion_unidad.strftime("%H:%M")
+                        ),
+                        "margen_horas": propuesta.margen_horas,
+                    }
 
             # El precio se cotiza siempre, aunque no haya cupo: la web muestra
             # "desde $X" también en las categorías agotadas, que es lo que
@@ -297,9 +327,33 @@ class DisponibilidadService:
                 "disponibles": cupo.disponibles,
                 "hay_cupo": cupo.hay_cupo and precio is not None,
                 "ultima_unidad": cupo.ultima_unidad,
+                # Entrega más tarde ese mismo día sobre la unidad que vuelve.
+                # `None` siempre que haya cupo — y también cuando no hay cupo
+                # pero no vuelve nada ese día, que es el "no" de verdad.
+                # Sin precio la categoría no se puede vender, y tampoco ofrecer.
+                "rotacion": rotacion if precio is not None else None,
                 "precio": precio,
             })
         return resultado
+
+    def _margen_rotacion(self) -> float:
+        """
+        Horas de preparación entre que un auto vuelve y se puede volver a
+        entregar. Sale de `configuracion`: cuánto lleva limpiar y revisar un
+        auto lo sabe el mostrador, no el código.
+        """
+        from app.services.configuracion_service import ConfiguracionService
+
+        try:
+            return float(
+                ConfiguracionService(self.db).get_decimal(
+                    CLAVE_MARGEN_ROTACION, Decimal(str(MARGEN_ROTACION_HORAS))
+                )
+            )
+        except Exception:
+            # Un valor mal cargado no puede tumbar la consulta de la que cuelga
+            # toda la web: se cae al default del dominio.
+            return float(MARGEN_ROTACION_HORAS)
 
     def vehiculos_libres(
         self, categoria_id: int, fecha_inicio: date, hora_inicio: time,

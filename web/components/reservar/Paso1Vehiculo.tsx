@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Users, Briefcase, Snowflake, Cog, Car, BellRing } from "lucide-react";
+import { Users, Briefcase, Snowflake, Cog, Car, BellRing, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, pesos, urlFoto } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -23,11 +23,14 @@ interface Props {
   onCambiarRango: (r: RangoBusqueda) => void;
   onEstirarDuracion?: (dias: number) => void;
   onElegir: (c: CategoriaDisponible) => void;
+  /** El cliente acepta retirar más tarde ese mismo día, sobre la unidad que
+   *  vuelve. Corre la hora de retiro y sigue el flujo normal. */
+  onElegirConRotacion?: (c: CategoriaDisponible, horaEntrega: string) => void;
 }
 
 export function Paso1Vehiculo({
   rango, lugares, anticipacionHoras, seleccionada, escalones = [],
-  edad, onCambiarRango, onEstirarDuracion, onElegir,
+  edad, onCambiarRango, onEstirarDuracion, onElegir, onElegirConRotacion,
 }: Props) {
   const [categorias, setCategorias] = useState<CategoriaDisponible[] | null>(null);
   const [sinCupo, setSinCupo] = useState<CategoriaDisponible | null>(null);
@@ -124,6 +127,11 @@ export function Paso1Vehiculo({
                 categoria={c}
                 elegida={seleccionada?.categoria_id === c.categoria_id}
                 onElegir={() => onElegir(c)}
+                onElegirConRotacion={
+                  onElegirConRotacion && c.rotacion
+                    ? () => onElegirConRotacion(c, c.rotacion!.hora_entrega)
+                    : undefined
+                }
                 onAvisarme={() => setSinCupo(c)}
                 indice={i}
               />
@@ -144,11 +152,12 @@ export function Paso1Vehiculo({
 }
 
 function TarjetaCategoria({
-  categoria: c, elegida, onElegir, onAvisarme, indice,
+  categoria: c, elegida, onElegir, onElegirConRotacion, onAvisarme, indice,
 }: {
   categoria: CategoriaDisponible;
   elegida: boolean;
   onElegir: () => void;
+  onElegirConRotacion?: () => void;
   onAvisarme: () => void;
   indice: number;
 }) {
@@ -157,6 +166,12 @@ function TarjetaCategoria({
   // respaldo por si la API todavía no devuelve la URL resuelta.
   const foto = c.foto_url ?? urlFoto(c.foto_key);
   const disponible = c.hay_cupo;
+  // Sin cupo a la hora pedida, pero hay una unidad que vuelve ese mismo día y
+  // se puede entregar más tarde. **No es "sin disponibilidad"**: el auto está,
+  // y por eso la tarjeta se ve como una que se puede alquilar y no como un
+  // cartel de "no".
+  const rotacion = !disponible && c.precio ? c.rotacion : null;
+  const ofreceRotacion = Boolean(rotacion && onElegirConRotacion);
 
   return (
     <article
@@ -178,7 +193,7 @@ function TarjetaCategoria({
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className={cn(
               "object-cover transition-transform duration-500 group-hover:scale-105",
-              !disponible && "grayscale",
+              !disponible && !ofreceRotacion && "grayscale",
             )}
           />
         ) : (
@@ -220,61 +235,31 @@ function TarjetaCategoria({
         <div className="mt-auto border-t border-border pt-3">
           {disponible && c.precio ? (
             <>
-              {/* Dos números, y **los dos son reales**: el tachado es lo que
-                  paga quien seña parcialmente, y el grande lo que paga quien
-                  abona el total (D-49). Por eso el tachado es legítimo y no un
-                  ancla inventada — pero si algún día se muestra un "antes" que
-                  nadie paga, deja de serlo. */}
-              <div className="flex items-end justify-between gap-2">
-                <div>
-                  <p className="text-xs text-muted-foreground">
-                    {c.precio.dias} {c.precio.dias === 1 ? "día" : "días"} · total
-                  </p>
-                  {c.precio.pago_total ? (
-                    <>
-                      <p className="text-xs text-muted-foreground line-through">
-                        {pesos(c.precio.total)}
-                      </p>
-                      <p className="text-xl font-bold leading-tight text-[#1B3F6B]">
-                        {pesos(c.precio.pago_total.total)}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-xl font-bold leading-tight text-[#1B3F6B]">
-                      {pesos(c.precio.total)}
-                    </p>
-                  )}
-                </div>
-                <div className="text-right">
-                  {!c.precio.pago_total &&
-                    c.precio.total_referencia &&
-                    c.precio.total_referencia > c.precio.total && (
-                      <p className="text-xs text-muted-foreground line-through">
-                        {pesos(c.precio.total_referencia)}
-                      </p>
-                    )}
-                  <p className="text-xs text-muted-foreground">
-                    {pesos(
-                      c.precio.pago_total?.precio_dia_promedio ??
-                        c.precio.precio_dia_promedio,
-                    )}{" "}
-                    por día
-                  </p>
-                </div>
-              </div>
-
-              {/* La condición va acá, corta. La explicación completa está en el
-                  paso 4: si el descuento apareciera recién en el checkout, el
-                  que ya decidió señar el 30% siente que le escondieron una
-                  opción mejor. */}
-              {c.precio.pago_total && (
-                <p className="mt-1.5 text-xs font-semibold text-[hsl(var(--ubicar-green))]">
-                  −{Math.round(c.precio.pago_total.descuento_porcentaje)}% pagando
-                  el total
-                </p>
-              )}
+              <PrecioTarjeta precio={c.precio} />
               <Button onClick={onElegir} className="mt-3 w-full">
                 {elegida ? "Seleccionado" : "Elegir"}
+              </Button>
+            </>
+          ) : rotacion && c.precio && onElegirConRotacion ? (
+            /* Se libera uno ese mismo día. **El precio es el mismo**: cambia
+               la hora de retiro, no los días que se cobran. */
+            <>
+              <PrecioTarjeta precio={c.precio} />
+              <div className="mt-2 rounded-md border border-[#1B3F6B]/25 bg-[#1B3F6B]/5 px-2.5 py-2">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-[#1B3F6B]">
+                  <Clock className="h-3.5 w-3.5 shrink-0" />
+                  Te lo entregamos {rotacion.hora_entrega}
+                </p>
+                {/* El porqué, siempre. Un horario corrido sin explicación se
+                    lee como un error del sitio, no como una solución. */}
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Es la última unidad y se devuelve a las{" "}
+                  {rotacion.hora_devolucion_unidad}. La preparamos y te la
+                  entregamos {rotacion.hora_entrega} del mismo día.
+                </p>
+              </div>
+              <Button onClick={onElegirConRotacion} className="mt-3 w-full">
+                {elegida ? "Seleccionado" : `Reservar · retirás ${rotacion.hora_entrega}`}
               </Button>
             </>
           ) : (
@@ -301,6 +286,64 @@ function TarjetaCategoria({
         </div>
       </div>
     </article>
+  );
+}
+
+/**
+ * El precio de la tarjeta.
+ *
+ * **Dos números, y los dos son reales**: el tachado es lo que paga quien seña
+ * parcialmente, y el grande lo que paga quien abona el total (D-49). Por eso el
+ * tachado es legítimo y no un ancla inventada — pero si algún día se muestra un
+ * "antes" que nadie paga, deja de serlo.
+ */
+function PrecioTarjeta({ precio }: { precio: NonNullable<CategoriaDisponible["precio"]> }) {
+  return (
+    <>
+      <div className="flex items-end justify-between gap-2">
+        <div>
+          <p className="text-xs text-muted-foreground">
+            {precio.dias} {precio.dias === 1 ? "día" : "días"} · total
+          </p>
+          {precio.pago_total ? (
+            <>
+              <p className="text-xs text-muted-foreground line-through">
+                {pesos(precio.total)}
+              </p>
+              <p className="text-xl font-bold leading-tight text-[#1B3F6B]">
+                {pesos(precio.pago_total.total)}
+              </p>
+            </>
+          ) : (
+            <p className="text-xl font-bold leading-tight text-[#1B3F6B]">
+              {pesos(precio.total)}
+            </p>
+          )}
+        </div>
+        <div className="text-right">
+          {!precio.pago_total &&
+            precio.total_referencia &&
+            precio.total_referencia > precio.total && (
+              <p className="text-xs text-muted-foreground line-through">
+                {pesos(precio.total_referencia)}
+              </p>
+            )}
+          <p className="text-xs text-muted-foreground">
+            {pesos(precio.pago_total?.precio_dia_promedio ?? precio.precio_dia_promedio)}{" "}
+            por día
+          </p>
+        </div>
+      </div>
+
+      {/* La condición va acá, corta. La explicación completa está en el paso 4:
+          si el descuento apareciera recién en el checkout, el que ya decidió
+          señar el 30% siente que le escondieron una opción mejor. */}
+      {precio.pago_total && (
+        <p className="mt-1.5 text-xs font-semibold text-[hsl(var(--ubicar-green))]">
+          −{Math.round(precio.pago_total.descuento_porcentaje)}% pagando el total
+        </p>
+      )}
+    </>
   );
 }
 

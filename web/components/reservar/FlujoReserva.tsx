@@ -156,9 +156,18 @@ export function FlujoReserva() {
 
   // ── Navegación ────────────────────────────────────────────────────────────
 
-  const elegirCategoria = async (c: CategoriaDisponible) => {
+  /**
+   * `horaRetiro` corre la hora de retiro sin tocar las fechas: es la ventana
+   * de rotación, cuando la última unidad vuelve ese mismo día y se entrega más
+   * tarde. **Viaja como parámetro y no por el estado** porque `setRango` es
+   * asincrónico y el hold se pide en la misma función: con el estado, el hold
+   * saldría con la hora vieja —la que no tiene cupo— y el backend lo
+   * rechazaría con un "sin cupo" que el cliente no entendería.
+   */
+  const elegirCategoria = async (c: CategoriaDisponible, horaRetiro?: string) => {
     setError(null);
     setAvanzando(true);
+    const horaInicio = horaRetiro ?? rango.horaInicio;
     analitica.elegirCategoria({
       categoriaId: c.categoria_id, nombre: c.nombre, precio: c.precio?.total,
     });
@@ -169,10 +178,14 @@ export function FlujoReserva() {
       const h = await api.crearHold({
         categoria_id: c.categoria_id,
         fecha_inicio: rango.fechaInicio,
-        hora_inicio: rango.horaInicio,
+        hora_inicio: horaInicio,
         fecha_fin: rango.fechaFin,
         hora_fin: rango.horaFin,
       });
+      // Recién con el cupo tomado se mueve la hora del flujo: si el hold
+      // fallara, el cliente se queda con el horario que pidió y no con uno
+      // corrido sobre una reserva que no existe.
+      if (horaRetiro) setRango((r) => ({ ...r, horaInicio: horaRetiro }));
       setHold({ token: h.token, segundos: h.segundos_restantes });
       setCategoria(c);
       setPaso(2);
@@ -295,6 +308,11 @@ export function FlujoReserva() {
                   setCotizacion(null);
                 }}
                 onElegir={elegirCategoria}
+                // Acepta retirar más tarde ese mismo día sobre la unidad que
+                // vuelve. Mismos días y mismo precio: cambia la hora nomás.
+                onElegirConRotacion={(c, horaEntrega) =>
+                  void elegirCategoria(c, horaEntrega)
+                }
               />
             )}
 

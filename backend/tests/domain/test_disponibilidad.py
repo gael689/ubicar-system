@@ -268,3 +268,176 @@ class TestHoldsOcupanCupo:
             1, datetime(2026, 3, 1, 10), datetime(2026, 3, 5, 10), FLOTA, ocupaciones
         )
         assert cupo.disponibles == 1
+
+
+# ─── Ventana de rotación (el auto que vuelve ese mismo día) ───────────────────
+
+from app.domain.disponibilidad import (  # noqa: E402
+    proponer_entrega_por_rotacion,
+)
+
+# Una sola unidad en la categoría 9: es el caso real de una flota chica, donde
+# la categoría entera rota sobre un auto.
+FLOTA_UNICA = [VehiculoDisponible(id=90, categoria_id=9)]
+
+# El cliente la pide de 08:00 del 3/9 hasta las 10:00 del 6/9.
+PEDIDO_INICIO = datetime(2026, 9, 3, 8, 0)
+PEDIDO_FIN = datetime(2026, 9, 6, 10, 0)
+
+
+def reserva(inicio, fin, vehiculo_id=90, categoria_id=None):
+    return OcupacionCategoria(
+        inicio=inicio, fin=fin, vehiculo_id=vehiculo_id,
+        categoria_id=categoria_id, origen="reserva",
+    )
+
+
+class TestVentanaDeRotacion:
+    """
+    El caso que hoy se pierde: la única unidad vuelve a las 10:00 y el cliente
+    la pide a las 08:00 **del mismo día**. Con dos horas para limpiarla y
+    revisarla, el alquiler sale a las 12:00 en vez de mostrar "sin
+    disponibilidad" y perder la venta.
+    """
+
+    def test_el_caso_de_las_10_y_las_8(self):
+        vuelve = datetime(2026, 9, 3, 10, 0)
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA,
+            [reserva(datetime(2026, 8, 30, 10, 0), vuelve)],
+        )
+        assert p is not None
+        assert p.entrega == datetime(2026, 9, 3, 12, 0)
+        assert p.devolucion_unidad == vuelve
+        assert p.margen_horas == 2
+
+    def test_con_cupo_no_se_ofrece_nada(self):
+        """
+        La condición que evita empeorar una reserva que estaba bien: si hay una
+        unidad libre se alquila normal, a la hora que el cliente pidió.
+        """
+        flota = FLOTA_UNICA + [VehiculoDisponible(id=91, categoria_id=9)]
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, flota,
+            [reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 10, 0))],
+        )
+        assert p is None
+
+    def test_si_vuelve_al_dia_siguiente_no_se_ofrece(self):
+        """Correr el retiro un día es otra reserva: otros días y otro precio."""
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA,
+            [reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 4, 10, 0))],
+        )
+        assert p is None
+
+    def test_si_el_margen_cruza_la_medianoche_no_se_ofrece(self):
+        """23:00 + 2 h cae al día siguiente: ya no es el mismo día."""
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA,
+            [reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 23, 0))],
+        )
+        assert p is None
+
+    def test_no_se_ofrece_sobre_un_auto_que_sale_del_taller(self):
+        """
+        Un bloqueo no es un auto que un cliente devuelve, y además termina a
+        medianoche: ofrecería una entrega a las 02:00.
+        """
+        bloqueo = OcupacionCategoria(
+            inicio=datetime(2026, 8, 30, 0, 0), fin=datetime(2026, 9, 3, 10, 0),
+            vehiculo_id=90, origen="bloqueo",
+        )
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA, [bloqueo],
+        )
+        assert p is None
+
+    def test_no_se_ofrece_sobre_un_hold(self):
+        """Un hold que vence libera el cupo solo; no hay auto que preparar."""
+        hold = OcupacionCategoria(
+            inicio=datetime(2026, 8, 30, 10, 0), fin=datetime(2026, 9, 3, 10, 0),
+            categoria_id=9, origen="hold",
+        )
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA, [hold],
+        )
+        assert p is None
+
+    def test_no_promete_un_auto_que_vuelve_a_salir(self):
+        """
+        **El que rompía una implementación ingenua.** El auto vuelve 10:00, así
+        que "a las 12 está libre" parece cierto — pero tiene otra reserva a las
+        14 del mismo día. Se consulta el cupo real de la ventana propuesta, no
+        se deduce.
+        """
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA,
+            [
+                reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 10, 0)),
+                reserva(datetime(2026, 9, 3, 14, 0), datetime(2026, 9, 5, 10, 0)),
+            ],
+        )
+        assert p is None
+
+    def test_una_reserva_por_categoria_tambien_libera(self):
+        """Sin vehículo asignado sigue siendo una unidad que vuelve."""
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA,
+            [reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 10, 0),
+                     vehiculo_id=None, categoria_id=9)],
+        )
+        assert p is not None
+        assert p.entrega == datetime(2026, 9, 3, 12, 0)
+
+    def test_gana_la_primera_que_vuelve(self):
+        """Con dos unidades ocupadas se ofrece la más temprana de las dos."""
+        flota = FLOTA_UNICA + [VehiculoDisponible(id=91, categoria_id=9)]
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, flota,
+            [
+                reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 16, 0), 90),
+                reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 9, 30), 91),
+            ],
+        )
+        assert p is not None
+        assert p.entrega == datetime(2026, 9, 3, 11, 30)
+
+    def test_la_hora_se_redondea_a_la_media(self):
+        """Un mostrador no cita a las 12:07."""
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA,
+            [reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 10, 7))],
+        )
+        assert p is not None
+        assert p.entrega == datetime(2026, 9, 3, 12, 30)
+
+    def test_el_margen_es_configurable(self):
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA,
+            [reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 10, 0))],
+            margen_horas=4,
+        )
+        assert p is not None
+        assert p.entrega == datetime(2026, 9, 3, 14, 0)
+
+    def test_sin_nada_que_vuelva_sigue_siendo_que_no(self):
+        """Ocupada toda la semana: no hay ventana y no se inventa una."""
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA,
+            [reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 20, 10, 0))],
+        )
+        assert p is None
+
+    def test_la_entrega_propuesta_tiene_cupo_de_verdad(self):
+        """
+        La propuesta se puede tomar: pedir el hold a esa hora tiene que dar
+        cupo. Es la invariante que conecta lo que la web ofrece con lo que el
+        `HoldService` después acepta.
+        """
+        ocupaciones = [reserva(datetime(2026, 8, 30, 10, 0), datetime(2026, 9, 3, 10, 0))]
+        p = proponer_entrega_por_rotacion(
+            9, PEDIDO_INICIO, PEDIDO_FIN, FLOTA_UNICA, ocupaciones,
+        )
+        assert p is not None
+        assert calcular_cupo(9, p.entrega, PEDIDO_FIN, FLOTA_UNICA, ocupaciones).hay_cupo

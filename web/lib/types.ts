@@ -171,8 +171,26 @@ export interface CategoriaDisponible {
   disponibles: number;
   hay_cupo: boolean;
   ultima_unidad: boolean;
+  /**
+   * Entrega más tarde ese mismo día, sobre la unidad que vuelve.
+   *
+   * Sólo viene cuando **no queda ninguna unidad libre** y una se devuelve ese
+   * mismo día. Con cupo es siempre `null`: ahí se alquila normal, a la hora
+   * que el cliente pidió. Ver `proponer_entrega_por_rotacion` en el backend.
+   */
+  rotacion: EntregaPorRotacion | null;
   /** Null si la categoría no tiene precio configurado: no se puede vender. */
   precio: PrecioCategoria | null;
+}
+
+export interface EntregaPorRotacion {
+  fecha_entrega: string;
+  /** "12:00" — la hora a la que se puede retirar. */
+  hora_entrega: string;
+  /** "10:00" — cuándo vuelve la unidad. Es la explicación del horario: sin
+   *  ella, un retiro corrido se lee como un error del sitio. */
+  hora_devolucion_unidad: string;
+  margen_horas: number;
 }
 
 /** Lo que devuelve `GET /public/disponibilidad`: el rango + las categorías. */

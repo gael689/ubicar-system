@@ -26,7 +26,7 @@ El punto 2 es el que se olvida y produce sobreventa: una reserva web sin auto
 asignado no aparece en el solapamiento de ningún vehículo, pero **ya se vendió**.
 """
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 
 @dataclass(frozen=True)
@@ -141,6 +141,121 @@ def calcular_cupos(
         calcular_cupo(cid, inicio, fin, vehiculos, ocupaciones)
         for cid in categoria_ids
     ]
+
+
+# ─── Ventana de rotación: el auto que vuelve ese mismo día ───────────────────
+#
+# El caso concreto: la única unidad de la categoría se devuelve a las 10:00 y el
+# cliente la pide a las 08:00 del mismo día. Hoy eso es "sin disponibilidad" y
+# la venta se pierde, cuando en realidad el auto **está**: falta limpiarlo y
+# revisarlo. Con dos horas de margen se entrega a las 12:00 y el alquiler sale.
+#
+# Tres condiciones, y las tres importan:
+#
+# 1. **Sólo si no queda ninguna unidad libre.** Si hay cupo se alquila normal,
+#    a la hora que el cliente pidió. Correrle el horario a alguien que podía
+#    retirar a las 8 sería empeorarle la reserva por nada.
+# 2. **Sólo si la unidad vuelve ese mismo día.** Mover el retiro al día
+#    siguiente no es la misma reserva: son días distintos y otro precio.
+# 3. **Sólo reservas.** Un bloqueo que termina es un auto que sale del taller y
+#    un hold que vence es un cupo que se libera solo, ninguno de los dos es un
+#    auto que hay que preparar. Además los bloqueos terminan a medianoche, así
+#    que ofrecerían una entrega a las 02:00.
+
+MARGEN_ROTACION_HORAS = 2
+REDONDEO_ENTREGA_MINUTOS = 30
+
+
+@dataclass(frozen=True)
+class EntregaPorRotacion:
+    """
+    Una entrega más tarde que la pedida, sobre una unidad que vuelve ese día.
+
+    `devolucion_unidad` viaja para poder **decirle al cliente por qué**: "el
+    auto se devuelve a las 10:00, lo preparamos y te lo entregamos 12:00" se
+    acepta; un horario corrido sin explicación se lee como un error del sitio.
+    """
+    entrega: datetime
+    devolucion_unidad: datetime
+    margen_horas: float
+
+
+def _redondear_arriba(momento: datetime, minutos: int) -> datetime:
+    """
+    Al siguiente múltiplo de `minutos`. Un mostrador no cita a las 12:07.
+    """
+    if minutos <= 0:
+        return momento
+    momento = momento.replace(second=0, microsecond=0)
+    resto = (momento.minute % minutos)
+    if resto == 0:
+        return momento
+    return momento + timedelta(minutes=minutos - resto)
+
+
+def proponer_entrega_por_rotacion(
+    categoria_id: int,
+    inicio: datetime,
+    fin: datetime,
+    vehiculos: list[VehiculoDisponible],
+    ocupaciones: list[OcupacionCategoria],
+    margen_horas: float = MARGEN_ROTACION_HORAS,
+    redondeo_minutos: int = REDONDEO_ENTREGA_MINUTOS,
+) -> EntregaPorRotacion | None:
+    """
+    ¿Se puede cumplir este alquiler entregando más tarde el mismo día?
+
+    Devuelve `None` cuando no corresponde ofrecerlo — que es la mayoría de las
+    veces, y a propósito.
+
+    **La disponibilidad de la ventana propuesta la decide `calcular_cupo`, no
+    una cuenta paralela.** Se prueba cada horario candidato contra el mismo
+    motor que responde el resto del sitio: si acá se dedujera "el auto vuelve a
+    las 10, entonces a las 12 está libre", se estaría ignorando que esa misma
+    unidad puede tener otra reserva encima a las 14 — y se prometería un auto
+    que no está.
+    """
+    # Condición 1: si hay cupo, no hay nada que ofrecer. Se alquila normal.
+    if calcular_cupo(categoria_id, inicio, fin, vehiculos, ocupaciones).hay_cupo:
+        return None
+
+    ids_categoria = {v.id for v in vehiculos if v.categoria_id == categoria_id}
+
+    candidatas: list[datetime] = []
+    for o in ocupaciones:
+        # Condición 3: sólo un auto que un cliente devuelve.
+        if o.origen != "reserva":
+            continue
+        if not solapa(inicio, fin, o.inicio, o.fin):
+            continue
+        # Que la ocupación sea de esta categoría: con vehículo asignado, que el
+        # auto lo sea; sin asignar, que la reserva lo sea.
+        if o.vehiculo_id is not None:
+            if o.vehiculo_id not in ids_categoria:
+                continue
+        elif o.categoria_id != categoria_id:
+            continue
+        # Condición 2: vuelve ese mismo día, y después de la hora pedida (si
+        # volviera antes no sería esta unidad la que traba el alquiler).
+        if o.fin <= inicio or o.fin.date() != inicio.date():
+            continue
+        candidatas.append(o.fin)
+
+    for devolucion in sorted(set(candidatas)):
+        entrega = _redondear_arriba(
+            devolucion + timedelta(hours=margen_horas), redondeo_minutos
+        )
+        # El margen no puede empujar la entrega al día siguiente ni pasarse de
+        # la devolución del propio cliente.
+        if entrega.date() != inicio.date() or entrega >= fin:
+            continue
+        if calcular_cupo(categoria_id, entrega, fin, vehiculos, ocupaciones).hay_cupo:
+            return EntregaPorRotacion(
+                entrega=entrega,
+                devolucion_unidad=devolucion,
+                margen_horas=margen_horas,
+            )
+    return None
 
 
 def validar_rango_web(
