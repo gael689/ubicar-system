@@ -313,10 +313,18 @@ export function PanelCargaPrecio({
 
       {/* Lo único obligatorio. */}
       <div className="flex flex-wrap items-end gap-4">
+        {/* "Por día" tiene que ser imposible de malinterpretar: es la confusión
+            más cara de esta pantalla. Por eso el rótulo dice a cuántos días se
+            aplica y al lado se ve la multiplicación hecha. */}
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Precio por día</label>
-          <div className="flex items-center gap-1.5">
-            <span className="text-lg font-semibold text-muted-foreground">$</span>
+          <label className="text-xs font-semibold text-foreground">
+            Precio <span className="text-primary">por día</span>
+            <span className="font-normal text-muted-foreground">
+              {' '}— se aplica a {dias === 1 ? 'ese día' : `los ${dias} días`}
+            </span>
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-semibold text-muted-foreground">$</span>
             <input
               type="number"
               min="1"
@@ -325,8 +333,16 @@ export function PanelCargaPrecio({
               value={precio}
               onChange={e => setPrecio(e.target.value)}
               placeholder="0"
-              className="w-36 rounded-md border border-border bg-background px-3 py-1.5 text-lg font-bold tabular-nums focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-40 rounded-md border-2 border-border bg-background px-3 py-2 text-xl font-bold tabular-nums focus:border-primary focus:outline-none"
             />
+            {Number(precio) > 0 && (
+              <span className="whitespace-nowrap text-sm text-muted-foreground">
+                × {dias} {dias === 1 ? 'día' : 'días'} ={' '}
+                <strong className="text-foreground tabular-nums">
+                  {formatCurrency(Number(precio) * dias)}
+                </strong>
+              </span>
+            )}
           </div>
         </div>
 

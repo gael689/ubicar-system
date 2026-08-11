@@ -74,8 +74,11 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
   const [anio, setAnio] = useState(hoy.getFullYear());
   const [mes, setMes] = useState(hoy.getMonth());
   const [cantidadMeses, setCantidadMeses] = useState(1);
+  // Arranca en grande. Al revés nadie descubre que se puede agrandar: se ve
+  // una tabla apretada y se asume que la pantalla es así.
   const [compacto, setCompacto] = useState(false);
   const [seleccion, setSeleccion] = useState<SeleccionPrecio | null>(null);
+  const [arrastrando, setArrastrando] = useState<SeleccionPrecio | null>(null);
   const [fechaAbierta, setFechaAbierta] = useState<FechaEspecial | null>(null);
 
   const cfg = POR_CANAL[canal];
@@ -140,8 +143,8 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
       <Card className="space-y-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <CalendarRange className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-semibold text-foreground">{titulo}</h3>
+            <CalendarRange className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-bold text-foreground">{titulo}</h3>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -166,10 +169,10 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
               variant="outline"
               size="sm"
               onClick={() => setCompacto(v => !v)}
-              title={compacto ? 'Celdas grandes con el precio completo' : 'Celdas chicas para ver más días'}
+              title={compacto ? 'Celdas grandes con el precio completo' : 'Celdas chicas para ver más días de una'}
             >
               {compacto ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
-              {compacto ? 'Agrandar' : 'Achicar'}
+              {compacto ? 'Ver más grande' : 'Ver más días'}
             </Button>
             <Button variant="outline" size="sm" onClick={() => moverMes(-1)}>
               <ChevronLeft className="h-4 w-4" />
@@ -187,14 +190,28 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
           </div>
         </div>
 
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <MousePointerClick className="h-3.5 w-3.5 shrink-0 text-primary" />
-          <span>
-            <strong className="text-foreground">Arrastrá sobre la fila de una categoría</strong> para
-            marcar de qué día a qué día, y poné el precio abajo. Un clic marca un solo día.
-            Las barras de colores son las fechas especiales: tocá una para ver cuál es.
-          </span>
-        </p>
+        {/* Mientras se arrastra, esta línea deja de explicar y pasa a decir
+            qué se marcó. Es la confirmación en vivo de que lo que se está
+            eligiendo es un período entero, no un día. */}
+        {arrastrando ? (
+          <p className="flex items-center gap-2 rounded-lg border-2 border-primary bg-primary/15 px-3 py-2 text-sm font-bold text-primary">
+            <MousePointerClick className="h-4 w-4 shrink-0" />
+            {arrastrando.categoriaNombre}, {rangoEnPalabras(arrastrando.desde, arrastrando.hasta)}
+            <span className="rounded bg-primary px-1.5 py-0.5 text-xs text-white tabular-nums">
+              {diasDeRango(arrastrando.desde, arrastrando.hasta)} días
+            </span>
+          </p>
+        ) : (
+          <p className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground">
+            <MousePointerClick className="h-4 w-4 shrink-0 text-primary" />
+            <span>
+              <strong>Arrastrá sobre la fila de una categoría</strong> para marcar de qué día a qué
+              día — el precio que cargues es <strong>por día</strong> y se aplica a todo el rango.
+              Un clic marca un solo día. Las barras de colores son las fechas especiales: tocá una
+              para ver cuál es.
+            </span>
+          </p>
+        )}
 
         {isLoading ? (
           <Skeleton className="h-64 w-full" />
@@ -204,6 +221,7 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
             fechasEspeciales={fechasEspeciales}
             seleccion={seleccion}
             onSeleccion={setSeleccion}
+            onArrastrando={setArrastrando}
             onFechaEspecial={setFechaAbierta}
             compacto={compacto}
           />
@@ -240,16 +258,16 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
         )}
 
         <div className="flex flex-wrap gap-4 border-t border-border pt-3">
-          <Leyenda clase="bg-primary/15 text-primary" texto="Precio cargado para esa fecha" />
-          <Leyenda clase="bg-amber-500 text-white" texto="Promoción" />
-          <Leyenda clase="bg-muted text-muted-foreground" texto="Sin regla — usa la tarifa por duración" />
-          <Leyenda clase="bg-danger text-white" texto="Sin precio configurado" />
+          <Leyenda clase="bg-primary/25" texto="Precio cargado para esa fecha" />
+          <Leyenda clase="bg-amber-500" texto="Promoción" />
+          <Leyenda clase="border border-border bg-background" texto="Sin regla — usa la tarifa por duración" />
+          <Leyenda clase="bg-danger" texto="Sin precio configurado" />
         </div>
 
-        {/* Las celdas grises son la mayoría el día que se empieza a usar esto,
-            y sin decir de dónde sale el número la pantalla parece rota. */}
+        {/* Las celdas en blanco son la mayoría el día que se empieza a usar
+            esto, y sin decir de dónde sale el número la pantalla parece rota. */}
         <p className="text-xs text-muted-foreground">
-          Las celdas grises <strong>no están vacías</strong>: ese día no tiene ninguna
+          Las celdas en blanco <strong>no están vacías</strong>: ese día no tiene ninguna
           regla y se cobra la tarifa por duración, que se carga en{' '}
           <Link to="/flota/categorias" className="text-primary underline underline-offset-2">
             Flota → Categorías
@@ -267,11 +285,18 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
 
 function Leyenda({ clase, texto }: { clase: string; texto: string }) {
   return (
-    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <span className={cn('h-3.5 w-6 rounded', clase)} />
+    <span className="flex items-center gap-2 text-xs font-medium text-foreground">
+      <span className={cn('h-5 w-9 rounded', clase)} />
       {texto}
     </span>
   );
+}
+
+/** Días de un rango inclusivo. El 3 al 10 son 8 días, no 7. */
+function diasDeRango(desde: string, hasta: string): number {
+  return Math.round(
+    (new Date(`${hasta}T12:00:00`).getTime() - new Date(`${desde}T12:00:00`).getTime()) / 86_400_000
+  ) + 1;
 }
 
 /**
