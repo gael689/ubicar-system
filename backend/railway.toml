@@ -21,6 +21,23 @@
 #   FROM_EMAIL                    noreply@ubicar-rent.com.ar
 #   NOTIFICACIONES_DIGEST_DESTINATARIOS   mails separados por coma
 #   CRON_SECRET                   un token largo al azar
+#
+# Cobro online (Mercado Pago). Faltaban en esta lista: se agregaron el 14/08.
+#
+#   PAGOS_PROVIDER                mercadopago
+#   MERCADOPAGO_ACCESS_TOKEN      APP_USR-...  <-- el interruptor: sin token,
+#                                                  la web cobra por transferencia
+#   MERCADOPAGO_SANDBOX           false
+#   BACKEND_PUBLIC_URL            https://api.ubicar-rent.com.ar
+#                                 <-- el notification_url del webhook. Tiene que
+#                                     coincidir con lo cargado en el panel de MP
+#   WEB_URL                       https://ubicar-rent.com.ar
+#                                 <-- CRITICO y facil de olvidar: de aca salen
+#                                     las back_urls de la preferencia, y su
+#                                     default es localhost:3200. Mercado Pago
+#                                     RECHAZA una preferencia que apunte a
+#                                     localhost, asi que sin esto el boton de
+#                                     pagar tira error y no se llega al checkout
 
 [build]
 builder = "DOCKERFILE"

@@ -153,6 +153,20 @@ RESEND_API_KEY=...
 FROM_EMAIL=noreply@ubicar-rent.com.ar
 NOTIFICACIONES_DIGEST_DESTINATARIOS=franco@...,martin@...
 
+# Cobro online. Faltaban en esta guía — se agregaron el 14/08.
+# Ver docs/para-la-reunion/PASO_A_PASO_MERCADOPAGO.md
+PAGOS_PROVIDER=mercadopago
+MERCADOPAGO_ACCESS_TOKEN=APP_USR-...
+MERCADOPAGO_SANDBOX=false
+# El notification_url que viaja en cada preferencia. Tiene que ser el MISMO
+# que se carga en el panel de Mercado Pago: si se cambia uno solo, se rompe.
+BACKEND_PUBLIC_URL=https://api.ubicar-rent.com.ar
+# CRÍTICO y el más fácil de olvidar: de acá salen las URLs de retorno de la
+# preferencia, y su default es localhost:3200. Mercado Pago RECHAZA una
+# preferencia con back_urls a localhost, así que sin esto el botón de pagar
+# tira error y no se llega ni al checkout.
+WEB_URL=https://ubicar-rent.com.ar
+
 # Sólo si la API va a Vercel (en Railway el scheduler corre solo).
 # Sin esta variable el endpoint de cron queda deshabilitado, para que no
 # sea un agujero abierto por olvido.
