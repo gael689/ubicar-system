@@ -1,10 +1,10 @@
-const WHATSAPP_BASE = "https://wa.me/5492914180554";
-const WHATSAPP_CABA_BASE = "https://wa.me/5491125164791";
-export const whatsappLink = (message: string) =>
-  `${WHATSAPP_BASE}?text=${encodeURIComponent(message)}`;
+/**
+ * Re-exporta desde `contacto.ts`, que es la fuente única (D-61). Este archivo
+ * queda porque lo importan varios componentes; los datos ya no viven acá.
+ */
+import { CONTACTO, telefonoHref, emailHref, whatsappLink, whatsappLinkCABA } from "./contacto";
 
-export const whatsappLinkCABA = (message: string) =>
-  `${WHATSAPP_CABA_BASE}?text=${encodeURIComponent(message)}`;
+export { whatsappLink, whatsappLinkCABA };
 
 export const WHATSAPP_GENERAL = whatsappLink(
   "Hola! Quiero consultar por el alquiler de un vehículo. ¿Me pueden asesorar?"
@@ -14,7 +14,7 @@ export const WHATSAPP_CABA = whatsappLinkCABA(
   "Hola! Quiero consultar por el alquiler de un vehículo en CABA ¿Me pueden asesorar?"
 );
 
-export const PHONE_FRANCO = "tel:+5492923474791";
+export const PHONE_FRANCO = telefonoHref;
 export const PHONE_MARTIN = "tel:+5492923458779";
-export const EMAIL = "mailto:ubicar.rent@gmail.com";
-export const INSTAGRAM = "https://www.instagram.com/ubicar_rent/";
+export const EMAIL = emailHref;
+export const INSTAGRAM = CONTACTO.instagram;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { addDays, format } from "date-fns";
+import { addDays, format, startOfDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { MapPin, ChevronDown, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -62,10 +62,14 @@ export function BuscadorRango({
   );
   const [error, setError] = useState<string | null>(null);
 
-  // Los mismos tres bordes que valida `/public/disponibilidad` (D-52),
-  // ahora también deshabilitados en el propio calendario: antes se
-  // enteraban recién al tocar "ver vehículos" y toparse con el error.
-  const minRetiro = new Date(Date.now() + anticipacionHoras * 3_600_000);
+  // Los mismos tres bordes que valida `/public/disponibilidad` (D-52).
+  //
+  // D-60: el de abajo **ya no se deshabilita**. Si la portada deja elegir un
+  // día de los próximos {anticipacion} y acá no, el que toca "Cambiar" se topa
+  // con la puerta cerrada justo después de que le dijimos que se podía. Se
+  // puede elegir, y el cartel de derivación de `Paso1Vehiculo` —que hasta hoy
+  // era inalcanzable— lo manda a WhatsApp con todo cargado.
+  const minRetiro = startOfDay(new Date());
   const maxRetiro = horizonteMaximoDias ? addDays(new Date(), horizonteMaximoDias) : undefined;
   const inicioElegido = desdeIso(form.fechaInicio);
   const maxDevolucion =
@@ -189,13 +193,12 @@ export function BuscadorRango({
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <span>
           Los lugares y horarios de retiro y devolución están sujetos a
-          disponibilidad. Te confirmamos el punto exacto al reservar. Las
-          reservas online se toman con {textoPlazo(anticipacionHoras / 24)} de
-          anticipación
+          disponibilidad. Te confirmamos el punto exacto al reservar. Reservás
+          online desde {textoPlazo(anticipacionHoras / 24)} de anticipación
           {horizonteMaximoDias
             ? ` y hasta ${textoPlazo(horizonteMaximoDias, true)} adelante`
             : ""}
-          .
+          ; fuera de eso lo coordina un agente por WhatsApp.
         </span>
       </p>
 

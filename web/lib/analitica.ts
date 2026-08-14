@@ -355,7 +355,9 @@ export function intencionDeReserva(origen: string): void {
  */
 export function derivacionComercial(d: {
   motivo: "sin_cupo" | "anticipacion" | "horizonte" | "duracion" | "otro_lugar";
-  boton: "whatsapp" | "seguir_web" | "consulta";
+  // D-61: `telefono` y `mail` son canales nuevos del panel de derivación.
+  // Sin ellos acá, un click en "Llamar" no se contaba en ningún lado.
+  boton: "whatsapp" | "telefono" | "mail" | "seguir_web" | "consulta";
   categoria?: string;
 }): void {
   aGoogle("generate_lead", {

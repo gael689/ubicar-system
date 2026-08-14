@@ -1694,3 +1694,38 @@ export interface ResultadoEnvioOferta {
   omitidos: number;
   items: EmailEnviado[];
 }
+
+/**
+ * Alguien pidió que lo llamemos desde la web (D-61).
+ *
+ * **No es una reserva.** Vive en su propia tabla justamente para que el
+ * mostrador pueda distinguir "esta persona reservó" de "a esta persona le
+ * prometimos una llamada". Casi todo es opcional: quien deja el teléfono
+ * puede no haber elegido categoría ni fechas todavía.
+ */
+export type MotivoSolicitud = 'fuera_de_ventana' | 'sin_cupo' | 'otro_lugar';
+export type EstadoSolicitud = 'pendiente' | 'contactado' | 'cerrado';
+
+export interface SolicitudContacto {
+  id: number;
+  created_at?: string;
+  motivo: MotivoSolicitud;
+  nombre: string;
+  telefono: string;
+  email?: string | null;
+  categoria_id?: number | null;
+  categoria_nombre?: string | null;
+  fecha_inicio?: string | null;
+  fecha_fin?: string | null;
+  hora_inicio?: string | null;
+  hora_fin?: string | null;
+  lugar_retiro?: string | null;
+  lugar_devolucion?: string | null;
+  /** Lo que tipeó en "Otro lugar". Nunca es un punto de retiro real. */
+  lugar_texto_libre?: string | null;
+  edad_declarada?: number | null;
+  notas?: string | null;
+  estado: EstadoSolicitud;
+  resuelta_en?: string | null;
+  resultado?: string | null;
+}

@@ -280,6 +280,85 @@ def avisar_al_equipo_solicitud_sin_cupo(db: Session, reserva) -> int:
     return enviados
 
 
+MOTIVO_SOLICITUD_TEXTO = {
+    "fuera_de_ventana": "Las fechas que pidió están dentro de los días que la "
+                        "web no cierra sola — hay que confirmarle disponibilidad.",
+    "sin_cupo": "La categoría que pidió no tenía cupo en el sistema. Puede "
+                "ofrecerse una equivalente o un upgrade.",
+    "otro_lugar": "Pidió un punto de entrega fuera de los habituales. Hay que "
+                  "coordinarlo y ver si lleva costo extra.",
+}
+
+
+def avisar_al_equipo_solicitud_contacto(db: Session, solicitud) -> int:
+    """
+    Alguien dejó sus datos para que lo llamemos (D-61).
+
+    **Le prometimos una llamada**, así que el aviso no puede depender de que
+    alguien tenga la campana abierta en el momento justo.
+
+    A diferencia de los otros mails de este archivo, acá **se escapa el texto
+    que escribió la persona** antes de meterlo en el HTML: nombre, teléfono y
+    sobre todo `lugar_texto_libre` son campos abiertos de un endpoint público
+    sin autenticación. Los mails viejos interpolan directo (ver
+    `avisar_al_equipo_solicitud_sin_cupo`) y conviene no copiar ese patrón.
+    """
+    import html as _html
+
+    from app.services.email_service import EmailService
+
+    destinos = destinatarios_equipo(db)
+    if not destinos:
+        logger.info("[Email] sin destinatarios para la solicitud de contacto #%s", solicitud.id)
+        return 0
+
+    def esc(valor) -> str:
+        return _html.escape(str(valor)) if valor else "—"
+
+    categoria = esc(solicitud.categoria.nombre if solicitud.categoria else None)
+    if solicitud.fecha_inicio:
+        fechas = solicitud.fecha_inicio.strftime("%d/%m/%Y")
+        if solicitud.fecha_fin:
+            fechas += f" al {solicitud.fecha_fin.strftime('%d/%m/%Y')}"
+    else:
+        fechas = "no las eligió todavía"
+
+    lugar = esc(solicitud.lugar_texto_libre or solicitud.lugar_retiro)
+    porque = MOTIVO_SOLICITUD_TEXTO.get(solicitud.motivo, "")
+
+    cuerpo = f"""
+  <p style="font-size:14px;margin:0 0 12px">
+    <strong>Pidió que lo llamemos.</strong> Todavía no reservó nada.
+  </p>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px">
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Nombre</td><td>{esc(solicitud.nombre)}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Teléfono</td><td>{esc(solicitud.telefono)}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Email</td><td>{esc(solicitud.email)}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Categoría</td><td>{categoria}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Fechas</td><td>{esc(fechas)}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Lugar</td><td>{lugar}</td></tr>
+  </table>
+  <p style="font-size:13px;color:#666;margin-top:16px">{_html.escape(porque)}</p>
+"""
+    html_mail = layout(f"Piden que los llamemos #{solicitud.id}", cuerpo)
+    asunto = f"Piden que los llamemos — {solicitud.nombre} (#{solicitud.id})"
+
+    svc = EmailService(db)
+    enviados = 0
+    for destino in destinos:
+        registro = svc.registrar_y_enviar(
+            tipo="solicitud_contacto_equipo",
+            destinatario=destino,
+            asunto=asunto,
+            html=html_mail,
+            entidad_tipo="solicitud_contacto",
+            entidad_id=solicitud.id,
+        )
+        if registro is not None and registro.estado == "enviado":
+            enviados += 1
+    return enviados
+
+
 def notificar_reserva_pagada(db: Session, reserva, pago_web) -> dict:
     """
     Los dos envíos juntos, tolerante a fallas.

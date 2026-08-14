@@ -85,9 +85,13 @@ TABLAS_EN_ORDEN = [
     "movimientos_cuenta_corriente",
     "cuentas_corrientes",
     "pagos",
+    # Antes iba después de `reservas` y el DELETE de `alquileres` moría contra
+    # `multas_alquiler_id_fkey`: una multa se imputa al alquiler durante el
+    # cual se cometió la infracción. `_romper_ciclos` ya nulleó
+    # `movimientos_cuenta_corriente.multa_id`, así que nada la retiene acá.
+    "multas",
     "alquileres",
     "reservas",
-    "multas",
     "gastos",
     "presupuestos",
     "bloqueos_vehiculo",

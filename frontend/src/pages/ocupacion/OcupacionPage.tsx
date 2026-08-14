@@ -113,7 +113,8 @@ const FULL_DAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', '
 const MONTH_LABELS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 // 2.8: 'anual' es una **pre-vista** de 'timeline', no un reemplazo — cae ahí
-// mismo al elegir un mes o un día. El modo por defecto no cambia.
+// mismo al elegir un mes o un día. Es el modo por defecto en escritorio
+// (Gael la eligió como calendario principal, 14/08).
 type ViewMode = 'timeline' | 'agenda' | 'anual';
 
 export function OcupacionPage() {
@@ -121,7 +122,7 @@ export function OcupacionPage() {
   const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth());
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) return 'agenda';
-    return 'timeline';
+    return 'anual';
   });
   const [agendaDate, setAgendaDate] = useState<Date>(new Date());
 
@@ -340,7 +341,16 @@ export function OcupacionPage() {
       </button>
 
       {/* View mode toggle */}
+      {/* La anual va primera: es el calendario principal (14/08), así que
+          encabeza el selector además de ser el modo por defecto. */}
       <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <button
+          onClick={() => setViewMode('anual')}
+          className={`p-2 transition-colors ${viewMode === 'anual' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
+          title="Vista anual — el año completo"
+        >
+          <CalendarRange className="w-4 h-4" />
+        </button>
         <button
           onClick={() => setViewMode('timeline')}
           className={`p-2 transition-colors ${viewMode === 'timeline' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
@@ -354,13 +364,6 @@ export function OcupacionPage() {
           title="Vista agenda (mobile)"
         >
           <Calendar className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => setViewMode('anual')}
-          className={`p-2 transition-colors ${viewMode === 'anual' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
-          title="Vista anual — pre-vista del año completo"
-        >
-          <CalendarRange className="w-4 h-4" />
         </button>
       </div>
     </div>
@@ -384,7 +387,12 @@ export function OcupacionPage() {
         </div>
       </div>
 
-      {/* Leyenda */}
+      {/* Leyenda de estados. Sólo en timeline y agenda: la vista anual no
+          pinta por estado sino por densidad de ocupación, y trae su propia
+          leyenda adentro. Mostrar las dos juntas —como pasaba al volverla la
+          vista por defecto— es explicar colores que en esa pantalla no
+          aparecen. */}
+      {viewMode !== 'anual' && (
       <div className="flex items-center gap-5 flex-wrap text-sm px-1">
         {/* Sólo los estados de reserva. Los 5 motivos de bloqueo no van uno
             por uno: se resumen en un único ítem "Bloqueado" al final, con el
@@ -404,6 +412,7 @@ export function OcupacionPage() {
           <span className="text-slate-600 font-medium">Bloqueado</span>
         </div>
       </div>
+      )}
 
       {error && (
         <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>

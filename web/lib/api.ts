@@ -284,7 +284,7 @@ export const api = {
    */
   registrarBusquedaSinResultado: (body: {
     motivo: "sin_cupo" | "anticipacion" | "horizonte" | "duracion" | "otro_lugar";
-    boton_elegido: "whatsapp" | "seguir_web" | "consulta";
+    boton_elegido: "whatsapp" | "telefono" | "mail" | "seguir_web" | "consulta";
     categoria_id?: number | null;
     fecha_inicio?: string | null;
     fecha_fin?: string | null;

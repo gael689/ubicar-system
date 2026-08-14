@@ -19,7 +19,7 @@ from app.routers import (
     servicios, notificaciones, cuentas_corrientes, recibos, categorias,
     comprobantes, configuracion, busqueda, danios, fechas_especiales,
     precios, adicionales, bloqueos, recargos_edad, reservas_web, auditoria,
-    emails,
+    emails, solicitudes_contacto,
 )
 
 logger = logging.getLogger(__name__)
@@ -277,6 +277,7 @@ app.include_router(precios.router, prefix=API_PREFIX)
 app.include_router(adicionales.router, prefix=API_PREFIX)
 app.include_router(recargos_edad.router, prefix=API_PREFIX)
 app.include_router(reservas_web.router, prefix=API_PREFIX)
+app.include_router(solicitudes_contacto.router, prefix=API_PREFIX)
 app.include_router(bloqueos.router, prefix=API_PREFIX)
 app.include_router(configuracion.router, prefix=API_PREFIX)
 app.include_router(busqueda.router, prefix=API_PREFIX)

@@ -267,7 +267,7 @@ export function ReservasList() {
               {(search || fechaFiltro) && (
                 <button
                   onClick={() => { setSearch(''); setFechaFiltro(''); setPage(1); }}
-                  className="px-4 py-1.5 rounded-full text-sm font-medium border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 transition-all"
+                  className="px-4 py-1.5 rounded-full text-sm font-medium border bg-amber-600 text-white border-amber-700 hover:bg-amber-700 transition-all"
                 >
                   Limpiar filtros
                 </button>
@@ -283,14 +283,14 @@ export function ReservasList() {
           calendario hasta que una persona concilia el comprobante contra el
           extracto — y si nadie lo hace, la venta se cae sola. */}
       {webEsperandoPago.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div className="rounded-xl border border-amber-700 bg-amber-600 p-4">
           <div className="flex items-start gap-3">
-            <Globe className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <Globe className="h-5 w-5 text-white shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-amber-800">
+              <p className="text-sm font-semibold text-white">
                 {webEsperandoPago.length} reserva{webEsperandoPago.length !== 1 ? 's' : ''} web esperando la transferencia
               </p>
-              <p className="text-xs text-amber-700 mt-0.5">
+              <p className="text-xs text-amber-50 mt-0.5">
                 No se confirman solas. Registrá el cobro cuando lo veas en el extracto y asignales un auto.
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -299,7 +299,7 @@ export function ReservasList() {
                     key={r.id}
                     onClick={() => setResolverReserva(r)}
                     title="Cobrar, asignar el auto y emitir el contrato"
-                    className="inline-flex items-center gap-1 text-xs bg-white border border-amber-300 rounded-lg px-2 py-1 text-amber-900 font-medium hover:bg-amber-100 transition-colors"
+                    className="inline-flex items-center gap-1 text-xs bg-white border border-amber-900 rounded-lg px-2 py-1 text-amber-900 font-medium hover:bg-amber-100 transition-colors"
                   >
                     <Wrench className="h-3 w-3" />
                     #{r.id} · {r.cliente?.nombre_completo ?? r.web_contacto_nombre ?? `Cliente ${r.cliente_id}`}
@@ -315,17 +315,17 @@ export function ReservasList() {
 
       {/* Alerta: check-outs pendientes (autos no devueltos) */}
       {pendingCheckouts.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div className="rounded-xl border border-amber-700 bg-amber-600 p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-white shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-amber-800">
+              <p className="text-sm font-semibold text-white">
                 {pendingCheckouts.length} vehículo{pendingCheckouts.length !== 1 ? 's' : ''} con check-in pendiente
               </p>
-              <p className="text-xs text-amber-700 mt-0.5">La fecha de devolución ha pasado y el auto no fue devuelto.</p>
+              <p className="text-xs text-amber-50 mt-0.5">La fecha de devolución ha pasado y el auto no fue devuelto.</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {pendingCheckouts.map(r => (
-                  <span key={r.id} className="inline-flex items-center gap-1 text-xs bg-amber-100 border border-amber-200 rounded-lg px-2 py-1 text-amber-800 font-medium">
+                  <span key={r.id} className="inline-flex items-center gap-1 text-xs bg-amber-800 border border-amber-900 rounded-lg px-2 py-1 text-white font-medium">
                     <Car className="h-3 w-3" />
                     {r.vehiculo?.patente ?? `Veh.${r.vehiculo_id}`} · {r.cliente?.nombre_completo ?? `Cliente ${r.cliente_id}`} · vencida {r.fecha_fin}
                   </span>
@@ -338,7 +338,7 @@ export function ReservasList() {
 
       {/* Error */}
       {error && (
-        <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
+        <div className="p-4 rounded-xl bg-red-600 border border-red-700 text-white text-sm">
           {error}
         </div>
       )}

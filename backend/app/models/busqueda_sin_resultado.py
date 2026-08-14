@@ -37,7 +37,7 @@ class BusquedaSinResultado(Base):
     # sin_cupo | anticipacion | horizonte | duracion | otro_lugar
     motivo: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
 
-    # whatsapp | seguir_web | consulta — cuál de los tres caminos del cartel
+    # whatsapp | telefono | mail | seguir_web | consulta — cuál camino del cartel
     # se tocó. Es el dato que dice si el segundo botón ("seguir en la web")
     # se está pagando solo, o si el cartel está mal puesto.
     boton_elegido: Mapped[str] = mapped_column(String(20), nullable=False, index=True)

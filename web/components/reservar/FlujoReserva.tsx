@@ -287,11 +287,15 @@ export function FlujoReserva() {
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div>
+            {/* `?? 240` y no `?? 24`: con el fallback viejo, si
+                `/public/config` no cargaba, el flujo dejaba pasar una reserva
+                a 2 días que el backend después rechazaba con un 422 — y el
+                Hero, que ya caía en 240, mostraba otra cosa. */}
             {paso === 1 && (
               <Paso1Vehiculo
                 rango={rango}
                 lugares={lugares}
-                anticipacionHoras={config?.anticipacion_minima_horas ?? 24}
+                anticipacionHoras={config?.anticipacion_minima_horas ?? 240}
                 horizonteMaximoDias={config?.horizonte_maximo_dias}
                 duracionMaximaDias={config?.duracion_maxima_dias}
                 seleccionada={categoria}

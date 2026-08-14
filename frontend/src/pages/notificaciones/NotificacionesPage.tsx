@@ -23,10 +23,10 @@ const ESTADO_LABEL: Record<EstadoNotificacion, string> = {
 const ESTADO_COLOR: Record<EstadoNotificacion, string> = {
   pendiente: 'bg-muted text-muted-foreground',
   enviada: 'bg-muted text-muted-foreground',
-  leida: 'bg-primary/10 text-primary',
-  pospuesta: 'bg-warning/10 text-warning',
-  descartada: 'bg-danger/10 text-danger',
-  resuelta: 'bg-success/10 text-success',
+  leida: 'bg-primary text-white',
+  pospuesta: 'bg-warning text-white',
+  descartada: 'bg-danger text-white',
+  resuelta: 'bg-success text-white',
 };
 
 const MESES = [

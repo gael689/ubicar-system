@@ -6,7 +6,11 @@ import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva
 import { FilaReservaWeb } from '@/components/reservas/FilaReservaWeb';
 import { useReservasWeb, useResumenReservasWeb, useRechazarReservaWeb } from '@/hooks/useReservasWeb';
 import { useListaReservas } from '@/hooks/useReservas';
-import type { Reserva } from '@/types';
+import { FilaSolicitudContacto } from '@/components/reservas/FilaSolicitudContacto';
+import {
+  useSolicitudesContacto, useResolverSolicitudContacto,
+} from '@/hooks/useSolicitudesContacto';
+import type { Reserva, SolicitudContacto } from '@/types';
 
 /**
  * Bandeja de Reservas Web.
@@ -27,6 +31,15 @@ export function ReservasWebPage() {
   const [resolviendo, setResolviendo] = useState<Reserva | null>(null);
   const [rechazando, setRechazando] = useState<Reserva | null>(null);
   const rechazar = useRechazarReservaWeb();
+
+  // D-61: "Piden que los llamemos". Consulta aparte porque es otra entidad —
+  // no son reservas y no comparten ni bandeja ni acciones.
+  const { data: solicitudesData, refetch: refetchSolicitudes } = useSolicitudesContacto();
+  const solicitudes = solicitudesData ?? [];
+  const [resolviendoSolicitud, setResolviendoSolicitud] = useState<
+    { solicitud: SolicitudContacto; accion: 'contactado' | 'cerrar' } | null
+  >(null);
+  const resolverSolicitud = useResolverSolicitudContacto();
 
   // Las que ya se resolvieron a medias: confirmadas, pero sin auto o sin
   // contrato firmado. Salen del listado general porque la bandeja sólo
@@ -56,19 +69,29 @@ export function ReservasWebPage() {
         </div>
       </div>
 
-      {resumen && resumen.pendientes > 0 && (
+      {/* D-61: el aviso cuenta las dos cosas. Antes sólo miraba las reservas,
+          así que una tanda de pedidos de llamada no movía el cartel y podía
+          pasar el día entero sin que nadie los viera. */}
+      {(resumen?.pendientes ?? 0) + solicitudes.length > 0 && (
         <div className="flex items-center gap-2 rounded-xl bg-warning px-4 py-3 text-white">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <p className="text-sm font-medium">
-            {resumen.pendientes} solicitud{resumen.pendientes === 1 ? '' : 'es'} esperando respuesta.
-            Cada una es una venta que se puede caer.
+            {[
+              resumen?.pendientes
+                ? `${resumen.pendientes} reserva${resumen.pendientes === 1 ? '' : 's'} esperando respuesta`
+                : null,
+              solicitudes.length
+                ? `${solicitudes.length} ${solicitudes.length === 1 ? 'persona espera' : 'personas esperan'} que la${solicitudes.length === 1 ? '' : 's'} llamemos`
+                : null,
+            ].filter(Boolean).join(' · ')}
+            . Cada una es una venta que se puede caer.
           </p>
         </div>
       )}
 
       {isLoading && <Card className="p-6 text-sm text-muted-foreground">Cargando…</Card>}
 
-      {!isLoading && todas.length === 0 && aMedias.length === 0 && (
+      {!isLoading && todas.length === 0 && aMedias.length === 0 && solicitudes.length === 0 && (
         <Card className="p-8 text-center">
           <Globe className="mx-auto h-8 w-8 text-muted-foreground" />
           <p className="mt-2 text-sm font-medium text-foreground">No hay nada pendiente</p>
@@ -76,6 +99,36 @@ export function ReservasWebPage() {
             Las reservas que entren por la web van a aparecer acá.
           </p>
         </Card>
+      )}
+
+      {/* D-61 — va **primero y separado**: es lo único de esta pantalla donde
+          nosotros prometimos algo. Todo lo de abajo son reservas que esperan
+          una decisión nuestra; esto es gente esperando un llamado que dijimos
+          que íbamos a hacer. La bajada lo dice con todas las letras para que
+          nadie la trabaje como si fuera una venta cerrada. */}
+      {solicitudes.length > 0 && (
+        <section className="space-y-2">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">
+              Piden que los llamemos{' '}
+              <span className="text-muted-foreground">({solicitudes.length})</span>
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Dejaron sus datos desde la web. <strong>Todavía no reservaron nada</strong> —
+              es una llamada pendiente, no una venta cerrada.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {solicitudes.map(s => (
+              <FilaSolicitudContacto
+                key={s.id}
+                solicitud={s}
+                onContactado={() => setResolviendoSolicitud({ solicitud: s, accion: 'contactado' })}
+                onCerrar={() => setResolviendoSolicitud({ solicitud: s, accion: 'cerrar' })}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       <Seccion
@@ -129,6 +182,45 @@ export function ReservasWebPage() {
           onCambio={refrescar}
         />
       )}
+
+      {/* Qué pasó al llamar. Se puede dejar vacío a propósito: obligar a
+          escribir algo hace que la gente escriba cualquier cosa con tal de
+          poder sacarse el ítem de encima. */}
+      <MotivoDialog
+        open={!!resolviendoSolicitud}
+        onOpenChange={o => !o && setResolviendoSolicitud(null)}
+        title={
+          resolviendoSolicitud?.accion === 'contactado'
+            ? 'Marcar como contactado'
+            : 'Cerrar la solicitud'
+        }
+        description={
+          resolviendoSolicitud?.accion === 'contactado'
+            ? 'Queda registrado quién llamó y cuándo. Si querés, anotá qué dijo: sirve para el que atienda después.'
+            : 'Se termina el asunto: alquiló, no le servía, o no hubo forma de ubicarlo. Anotá cuál fue.'
+        }
+        confirmLabel={resolviendoSolicitud?.accion === 'contactado' ? 'Ya lo llamé' : 'Cerrar'}
+        destructive={false}
+        opcional
+        etiqueta="Qué pasó"
+        loading={resolverSolicitud.isPending}
+        onConfirm={resultado => {
+          if (!resolviendoSolicitud) return;
+          resolverSolicitud.mutate(
+            {
+              id: resolviendoSolicitud.solicitud.id,
+              accion: resolviendoSolicitud.accion,
+              resultado,
+            },
+            {
+              onSuccess: () => {
+                setResolviendoSolicitud(null);
+                refetchSolicitudes();
+              },
+            },
+          );
+        }}
+      />
 
       <MotivoDialog
         open={!!rechazando}

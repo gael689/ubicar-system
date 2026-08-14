@@ -444,7 +444,29 @@ def get_config_publica(db: Session = Depends(get_db)):
         # cambia y nadie corrige, y el síntoma es la plata de un cliente yendo
         # a una cuenta que ya no existe.
         "transferencia": _datos_transferencia(db),
+        # D-61: el panel de derivación ofrece tres canales, y los tres salían
+        # de constantes del front — el WhatsApp incluso hardcodeado adentro del
+        # propio cartel. Mismo criterio que los lugares y los plazos: si el
+        # número cambia, se cambia en Configuración y no en un deploy.
+        "contacto": _datos_contacto(db),
     })
+
+
+def _datos_contacto(db: Session) -> dict:
+    """Los canales que la web ofrece cuando no puede cerrar la venta sola.
+
+    Los defaults son los valores actuales: si la migración 069 todavía no
+    corrió, la web sigue mostrando los números correctos en vez de un hueco.
+    """
+    from app.services.configuracion_service import ConfiguracionService
+
+    cfg = ConfiguracionService(db)
+    return {
+        "whatsapp": cfg.get_str("contacto.whatsapp", "5492914180554"),
+        "whatsapp_display": cfg.get_str("contacto.whatsapp_display", "+54 9 291 418-0554"),
+        "telefono": cfg.get_str("contacto.telefono", "+5492923474791"),
+        "email": cfg.get_str("contacto.email", "ubicar.rent@gmail.com"),
+    }
 
 
 def _datos_transferencia(db: Session) -> dict | None:
@@ -1183,7 +1205,10 @@ def _extraer_payment_id(cuerpo: dict, query: dict) -> str | None:
 MotivoBusquedaSinResultado = Literal[
     "sin_cupo", "anticipacion", "horizonte", "duracion", "otro_lugar",
 ]
-BotonElegido = Literal["whatsapp", "seguir_web", "consulta"]
+# D-61: `telefono` y `mail` son los dos canales que el panel de derivación
+# sumó al lado de WhatsApp. Sin ellos en la unión, un click en "Llamar" volvía
+# 422 y la demanda no quedaba registrada en ningún lado.
+BotonElegido = Literal["whatsapp", "telefono", "mail", "seguir_web", "consulta"]
 
 
 class BusquedaSinResultadoRequest(BaseModel):
@@ -1226,3 +1251,107 @@ def registrar_busqueda_sin_resultado(
     db.add(registro)
     db.commit()
     return ok({"id": registro.id}, "Registrado")
+
+
+MotivoSolicitudContacto = Literal["fuera_de_ventana", "sin_cupo", "otro_lugar"]
+
+
+class SolicitudContactoRequest(BaseModel):
+    """
+    "Quiero que me contacten ustedes" — la segunda salida del panel de
+    derivación (D-61). Ver `models/solicitud_contacto.py`.
+
+    **Casi todo es opcional a propósito.** Quien pide una llamada puede no
+    haber elegido categoría (fuera de ventana), puede no tener fechas todavía,
+    y el mail es opcional porque el pedido es que lo llamen. Lo único que hace
+    falta de verdad es cómo ubicarlo.
+    """
+    motivo: MotivoSolicitudContacto
+    nombre: str = Field(min_length=2, max_length=255)
+    telefono: str = Field(min_length=6, max_length=30)
+    email: str | None = None
+    categoria_id: int | None = None
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+    hora_inicio: time | None = None
+    hora_fin: time | None = None
+    lugar_retiro: str | None = None
+    lugar_devolucion: str | None = None
+    lugar_texto_libre: str | None = None
+    edad_declarada: int | None = None
+    notas: str | None = None
+
+
+@router.post("/contacto", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(limite_solicitudes)])
+def crear_solicitud_contacto(
+    payload: SolicitudContactoRequest, db: Session = Depends(get_db),
+):
+    """
+    Registra un pedido de llamada. **No valida la ventana de venta** (D-61).
+
+    Esa omisión es el punto entero de este endpoint. `/public/solicitudes`
+    llama a `validar_rango_web` y rechaza con 422 exactamente el caso que lo
+    invoca: la persona ve el panel *porque* sus fechas están fuera de la
+    ventana, y después el formulario del panel le dice que sus fechas están
+    fuera de la ventana. Es un 422 autoinfligido, y era lo que D-59 dejó
+    anotado como "generalizarlo pide un endpoint propio".
+
+    La ventana existe para impedir que la web **venda** fuera de rango. Acá no
+    hay venta que impedir: no se toma cupo, no se cobra, no se ocupa
+    calendario. Se anota un teléfono.
+
+    Tampoco valida edad mínima ni existencia de cupo, por lo mismo. Lo único
+    que se chequea es higiene de datos —que haya con qué llamar y que las
+    fechas no estén dadas vuelta—, porque un registro que no se puede guardar
+    es un contacto perdido, que es justo lo que esto vino a evitar.
+
+    Endpoint nuevo y no un flag `saltear_ventana=true` sobre el viejo: un
+    booleano que apaga una validación de negocio, en una ruta pública y sin
+    autenticación, es una puerta que se abre desde la consola del navegador.
+    """
+    from app.models.solicitud_contacto import SolicitudContacto
+
+    if payload.fecha_inicio and payload.fecha_fin and payload.fecha_fin <= payload.fecha_inicio:
+        raise HTTPException(
+            status_code=422, detail="La devolución tiene que ser posterior al retiro.",
+        )
+
+    solicitud = SolicitudContacto(
+        motivo=payload.motivo,
+        nombre=payload.nombre.strip(),
+        telefono=payload.telefono.strip(),
+        email=(payload.email or "").strip() or None,
+        categoria_id=payload.categoria_id,
+        fecha_inicio=payload.fecha_inicio,
+        fecha_fin=payload.fecha_fin,
+        hora_inicio=payload.hora_inicio,
+        hora_fin=payload.hora_fin,
+        lugar_retiro=payload.lugar_retiro,
+        lugar_devolucion=payload.lugar_devolucion,
+        lugar_texto_libre=payload.lugar_texto_libre,
+        edad_declarada=payload.edad_declarada,
+        notas=payload.notas,
+        estado="pendiente",
+    )
+    db.add(solicitud)
+    db.flush()
+
+    # El aviso y el mail no pueden voltear el guardado: si falla el correo, la
+    # solicitud ya está en la base y el mostrador la ve igual en la bandeja.
+    try:
+        from app.services.notificacion_service import NotificacionService
+        NotificacionService(db).avisar_solicitud_contacto(solicitud)
+    except Exception:
+        logger.exception("[Contacto] falló el aviso de la solicitud #%s", solicitud.id)
+    try:
+        from app.services.email_reservas import avisar_al_equipo_solicitud_contacto
+        avisar_al_equipo_solicitud_contacto(db, solicitud)
+    except Exception:
+        logger.exception("[Contacto] falló el mail de la solicitud #%s", solicitud.id)
+
+    db.commit()
+    return ok(
+        {"id": solicitud.id},
+        "Listo, lo tenemos anotado. Un agente de Ubicar te va a escribir.",
+    )

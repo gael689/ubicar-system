@@ -31,10 +31,12 @@ from app.models.recibo import Recibo
 from app.models.pago_web import PagoWeb
 from app.models.auditoria import Auditoria
 from app.models.busqueda_sin_resultado import BusquedaSinResultado
+from app.models.solicitud_contacto import SolicitudContacto
 
 __all__ = [
     "Categoria", "Comprobante", "Configuracion", "Notificacion", "NotificacionVista", "EmailEnviado", "Recibo",
     "BusquedaSinResultado",
+    "SolicitudContacto",
     "Hold", "PagoWeb", "Auditoria",
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",
     "Tarifa", "Reserva", "Alquiler", "Contrato", "Pago",

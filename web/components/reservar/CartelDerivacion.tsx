@@ -1,15 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { MessageCircle, ArrowRight, Copy, Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  MessageCircle, ArrowRight, Copy, Check, CalendarClock, Phone, Mail, PhoneCall,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { whatsappLink } from "@/lib/constants";
+import { CONTACTO, whatsappLink, telefonoHref, emailHref } from "@/lib/contacto";
 import * as analitica from "@/lib/analitica";
+import type { MotivoVentana } from "@/lib/ventanaVenta";
 
-export type MotivoDerivacion =
-  | "sin_cupo" | "anticipacion" | "horizonte" | "duracion" | "otro_lugar";
-export type BotonDerivacion = "whatsapp" | "seguir_web" | "consulta";
+/** Los tres motivos de ventana (`anticipacion`/`horizonte`/`duracion`) salen
+ *  de `@/lib/ventanaVenta`, que es donde se calculan — acá se suman los dos
+ *  que no dependen de fechas. */
+export type MotivoDerivacion = MotivoVentana | "sin_cupo" | "otro_lugar";
+export type BotonDerivacion =
+  | "whatsapp" | "telefono" | "mail" | "seguir_web" | "consulta";
 
 interface Props {
   motivo: MotivoDerivacion;
@@ -31,9 +37,22 @@ interface Props {
   seguirWebLabel?: string;
   onSeguirWeb?: () => void;
   onDejarConsulta?: () => void;
+  /**
+   * D-60: el cartel ocupa el lugar de la tarjeta del buscador en la portada,
+   * así que tiene que pesar lo mismo que ella — tarjeta elevada, título
+   * grande, ícono. Sin esto queda igual que siempre: en `/reservar` es un
+   * bloque más dentro del flujo y no debe gritar.
+   */
+  resaltado?: boolean;
+  /** Una línea con lo que la persona ya eligió — "Retiro 20 ago · 10:00 —
+   *  Aeropuerto". Refuerza que no arranca de cero al pasar a WhatsApp. */
+  resumen?: string;
+  /** Lleva el foco al título al aparecer. Necesario cuando el cartel sale
+   *  solo, sin un click que lo pida: el foco venía del calendario que se
+   *  acaba de desmontar y si no se mueve queda en el `<body>`. */
+  autoFoco?: boolean;
 }
 
-const NUMERO_WHATSAPP = "+54 9 291 418-0554";
 
 /**
  * El cartel único de derivación comercial (plan de conexión 13/08, §3.9).
@@ -54,9 +73,15 @@ const NUMERO_WHATSAPP = "+54 9 291 418-0554";
 export function CartelDerivacion({
   motivo, detalle, mensajeWhatsapp, categoriaId, categoriaNombre,
   fechaInicio, fechaFin, seguirWebLabel, onSeguirWeb, onDejarConsulta,
+  resaltado = false, resumen, autoFoco = false,
 }: Props) {
   const copy = copiar(motivo, detalle);
   const [copiado, setCopiado] = useState(false);
+  const tituloRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (autoFoco) tituloRef.current?.focus();
+  }, [autoFoco, motivo]);
 
   const registrar = (boton: BotonDerivacion) => {
     analitica.derivacionComercial({ motivo, boton, categoria: categoriaNombre });
@@ -70,7 +95,7 @@ export function CartelDerivacion({
 
   const copiarNumero = async () => {
     try {
-      await navigator.clipboard.writeText(NUMERO_WHATSAPP);
+      await navigator.clipboard.writeText(CONTACTO.whatsappDisplay);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
     } catch {
@@ -79,26 +104,84 @@ export function CartelDerivacion({
   };
 
   return (
-    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-      <h3 className="text-base font-semibold text-[#1B3F6B]">{copy.titulo}</h3>
+    <div
+      // `role="status"` + `aria-live`: en la portada el cartel aparece sin que
+      // nadie lo pida —basta elegir una fecha—, así que un lector de pantalla
+      // tiene que anunciarlo solo.
+      role="status"
+      aria-live="polite"
+      className={
+        resaltado
+          ? "rounded-2xl bg-white p-5 shadow-2xl ring-1 ring-black/5 md:p-6"
+          : "rounded-lg border border-border bg-white p-5 shadow-sm"
+      }
+    >
+      {resaltado && (
+        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10">
+          <CalendarClock className="h-5 w-5 text-primary" />
+        </div>
+      )}
+      <h3
+        ref={tituloRef}
+        tabIndex={autoFoco ? -1 : undefined}
+        className={
+          resaltado
+            ? "text-xl font-bold text-[#1B3F6B] outline-none md:text-2xl"
+            : "text-base font-semibold text-[#1B3F6B] outline-none"
+        }
+      >
+        {copy.titulo}
+      </h3>
       <p className="mt-1.5 text-sm text-muted-foreground">{copy.cuerpo}</p>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2.5">
+      {resumen && (
+        <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground">
+          {resumen}
+        </p>
+      )}
+
+      {/* ── A. Hablá con un agente ahora ──────────────────────────────────
+          Los tres canales de Ubicar, no sólo WhatsApp: hay gente que llama y
+          gente que escribe un mail, y ofrecer un solo camino es volver a
+          armar un callejón, más angosto (D-61). */}
+      <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Hablá con un agente ahora
+      </p>
+
+      <div className="mt-2 space-y-2">
         <a
           href={whatsappLink(mensajeWhatsapp)}
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => registrar("whatsapp")}
+          className="block"
         >
-          <Button className="gap-2">
+          <Button
+            className={
+              resaltado
+                ? "h-[54px] w-full gap-2 text-base font-bold uppercase tracking-wide"
+                : "w-full gap-2"
+            }
+          >
             <MessageCircle className="h-4 w-4" /> {copy.botonWhatsapp}
           </Button>
         </a>
-        {onSeguirWeb && (
-          <Button variant="outline" onClick={() => { registrar("seguir_web"); onSeguirWeb(); }}>
-            {seguirWebLabel}
-          </Button>
-        )}
+        <p className="text-center text-[11px] text-muted-foreground">
+          Te va con tus datos ya cargados
+        </p>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <a href={telefonoHref} onClick={() => registrar("telefono")} className="block">
+            <Button variant="outline" className="w-full gap-2">
+              <Phone className="h-4 w-4" /> {CONTACTO.telefonoDisplay}
+            </Button>
+          </a>
+          <a href={emailHref} onClick={() => registrar("mail")} className="block">
+            <Button variant="outline" className="w-full gap-2">
+              <Mail className="h-4 w-4" /> Escribinos
+            </Button>
+          </a>
+        </div>
       </div>
 
       {/* En computadora, `wa.me` pide sesión de WhatsApp Web — sin ella el
@@ -110,16 +193,37 @@ export function CartelDerivacion({
         className="mt-2.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
       >
         {copiado ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-        {copiado ? "Copiado" : `O escribinos directo: ${NUMERO_WHATSAPP}`}
+        {copiado ? "Copiado" : `Copiar el WhatsApp: ${CONTACTO.whatsappDisplay}`}
       </button>
 
+      {/* ── B. O que te contactemos nosotros ───────────────────────────────
+          Dejó de ser un link chiquito al pie: es la mitad del pedido —"la
+          otra alternativa, que sea 'quiero que ustedes me contacten'"—, no
+          una tercera opción de descarte. */}
       {onDejarConsulta && (
+        <>
+          <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            O que te contactemos nosotros
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() => { registrar("consulta"); onDejarConsulta(); }}
+            className="mt-2 w-full gap-2"
+          >
+            <PhoneCall className="h-4 w-4" /> Prefiero que me llamen ustedes
+          </Button>
+        </>
+      )}
+
+      {/* Baja a link: en estos casos "seguir en la web" no resuelve nada por
+          sí solo, sólo devuelve al calendario. */}
+      {onSeguirWeb && (
         <button
           type="button"
-          onClick={() => { registrar("consulta"); onDejarConsulta(); }}
-          className="mt-3 flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          onClick={() => { registrar("seguir_web"); onSeguirWeb(); }}
+          className="mt-4 flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
-          ¿Preferís que te escribamos? Dejanos tus datos <ArrowRight className="h-3 w-3" />
+          {seguirWebLabel} <ArrowRight className="h-3 w-3" />
         </button>
       )}
     </div>
@@ -134,17 +238,21 @@ function copiar(motivo: MotivoDerivacion, detalle?: string) {
         cuerpo: "Podemos seguir por WhatsApp para ver la posibilidad de ofrecerte este vehículo o uno similar.",
         botonWhatsapp: "Sí, seguir por WhatsApp",
       };
+    // D-60: el copy no dice que no se puede — se puede, sólo que no lo cierra
+    // la web sola. El sujeto de la limitación es el sitio, nunca el cliente ni
+    // el negocio, y cierra prometiendo lo que la persona vino a buscar
+    // (disponibilidad y precio).
     case "anticipacion":
       return {
-        titulo: "Para estas fechas te atiende un agente",
-        cuerpo: `Las reservas online se toman con ${detalle ?? "unos días"} de anticipación. Para retirar antes, seguimos por WhatsApp y lo vemos con un agente comercial.`,
-        botonWhatsapp: "Sí, seguir por WhatsApp",
+        titulo: "Para esa fecha te lo arma un agente",
+        cuerpo: `Alquilar con menos de ${detalle ?? "unos días"} de anticipación se puede: lo que no lo hace sola es la web, lo confirma una persona. Escribinos y un agente de Ubicar te dice disponibilidad y precio en el momento — el mensaje ya te va con las fechas que elegiste.`,
+        botonWhatsapp: "Coordinar por WhatsApp",
       };
     case "horizonte":
       return {
-        titulo: "Todavía no tomamos esa fecha por la web",
-        cuerpo: `Online reservamos hasta ${detalle ?? "algunos meses"} adelante. Más lejos que eso lo reserva un agente comercial por WhatsApp.`,
-        botonWhatsapp: "Sí, seguir por WhatsApp",
+        titulo: "Para tan adelante lo reserva un agente",
+        cuerpo: `Online reservamos hasta ${detalle ?? "algunos meses"} adelante. Más lejos que eso lo toma un agente de Ubicar por WhatsApp, con las fechas que ya elegiste.`,
+        botonWhatsapp: "Coordinar por WhatsApp",
       };
     case "duracion":
       return {

@@ -2,6 +2,7 @@ import type {
   EstadoVehiculo,
   TipoVehiculo,
   EstadoReserva,
+  MotivoSolicitud,
   EstadoEcheq,
   TipoDocumento,
   TipoGasto,
@@ -63,6 +64,24 @@ export const ESTADO_RESERVA_COLOR: Record<EstadoReserva, string> = {
   pendiente_pago: 'bg-muted/40 text-muted-foreground border-border',
   sin_disponibilidad: 'bg-warning text-white border-warning',
   revision_sin_cupo: 'bg-danger text-white border-danger animate-pulse',
+};
+
+// ─── Solicitudes de contacto (D-61) ──────────────────────────────────────────
+// Por qué esa persona terminó pidiendo una llamada en vez de reservar sola.
+// Es lo primero que el mostrador necesita saber antes de marcar el número:
+// no se atiende igual "quiere para pasado mañana" que "quiere que se lo
+// llevemos al campo".
+
+export const MOTIVO_SOLICITUD_LABEL: Record<MotivoSolicitud, string> = {
+  fuera_de_ventana: 'Fecha muy cerca',
+  sin_cupo: 'Categoría sin cupo',
+  otro_lugar: 'Lugar a coordinar',
+};
+
+export const MOTIVO_SOLICITUD_COLOR: Record<MotivoSolicitud, string> = {
+  fuera_de_ventana: 'bg-warning text-white',
+  sin_cupo: 'bg-primary text-white',
+  otro_lugar: 'bg-success text-white',
 };
 
 // ─── Echeqs ──────────────────────────────────────────────────────────────────

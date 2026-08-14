@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -12,14 +12,12 @@ import { intencionDeReserva, contactoIniciado } from "@/lib/analitica";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { addDays, format } from "date-fns";
+import { addDays, format, startOfDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { api, textoPlazo } from "@/lib/api";
 import type { ConfigPublica } from "@/lib/types";
-import { CartelDerivacionModal } from "@/components/reservar/CartelDerivacionModal";
-import { SEGUIR_WEB_LABEL } from "@/components/reservar/CartelDerivacion";
-import { construirMensajeDerivacion } from "@/lib/mensajeDerivacion";
+import { motivoVentanaVenta } from "@/lib/ventanaVenta";
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, "0");
@@ -68,7 +66,6 @@ const Hero = () => {
   const [config, setConfig] = useState<ConfigPublica | null>(null);
   // D-56: "Otro lugar" ya no entra al flujo con "A coordinar: ..." pegado al
   // lugar — deriva directo, mismo patrón que sin cupo y la ventana de fechas.
-  const [derivarOtroLugar, setDerivarOtroLugar] = useState(false);
 
   // D-56: los lugares y los bordes de la ventana salen de `/public/config`,
   // no de una lista propia — la portada tenía su propia copia con "Bahía
@@ -77,12 +74,60 @@ const Hero = () => {
     api.config().then(setConfig).catch(() => setConfig(null));
   }, []);
   const lugares = config?.lugares_retiro ?? [];
-  const minFecha = config
+
+  /**
+   * D-60: el calendario ya **no** deshabilita los días de la ventana chica —
+   * sólo el pasado. Antes `disabled={{ before: minFecha }}` hacía que los
+   * próximos {anticipacion} fueran literalmente intocables, y el caso
+   * `anticipacion` del cartel de derivación era código inalcanzable: nadie
+   * podía llegar a dispararlo desde la portada.
+   *
+   * Ahora se puede elegir cualquier día futuro; si cae adentro de la ventana,
+   * el cuestionario se reemplaza por el cartel que deriva a WhatsApp. El borde
+   * de arriba (horizonte) sí se sigue deshabilitando: desbloquearlo obligaría
+   * a navegar meses sin ganancia — la demanda a más de {horizonte} es marginal
+   * y la de menos de {anticipacion} es diaria.
+   */
+  const minCalendario = startOfDay(new Date());
+  /** El borde real de la venta online. Ya no deshabilita nada: sólo pinta en
+   *  ámbar los días que van a derivar, y alimenta el chequeo de abajo. */
+  const minVenta = config
     ? new Date(Date.now() + config.anticipacion_minima_horas * 3_600_000)
-    : new Date();
+    : undefined;
   const maxFecha = config?.horizonte_maximo_dias
     ? addDays(new Date(), config.horizonte_maximo_dias)
     : undefined;
+
+  const limitesVentana = useMemo(
+    () => ({
+      anticipacionHoras: config?.anticipacion_minima_horas ?? 240,
+      horizonteMaximoDias: config?.horizonte_maximo_dias,
+      duracionMaximaDias: config?.duracion_maxima_dias,
+    }),
+    [config],
+  );
+
+  /**
+   * Derivado, no un `setState` adentro de un efecto: así no parpadea mientras
+   * `/public/config` viaja (sin config es `null` y no se muestra nada) y el
+   * cartel desaparece solo apenas la fecha vuelve a entrar en la ventana.
+   */
+  const motivoVentana = useMemo(
+    () =>
+      config
+        ? motivoVentanaVenta(
+            {
+              fechaInicio: fechaEntrega ? format(fechaEntrega, "yyyy-MM-dd") : null,
+              horaInicio: horaEntrega,
+              fechaFin: fechaDevolucion ? format(fechaDevolucion, "yyyy-MM-dd") : null,
+              horaFin: horaDevolucion,
+            },
+            limitesVentana,
+          )
+        : null,
+    [config, limitesVentana, fechaEntrega, horaEntrega, fechaDevolucion, horaDevolucion],
+  );
+
 
   /**
    * Recupera lo que ya venía elegido cuando `/reservar` rebota para acá por
@@ -138,13 +183,12 @@ const Hero = () => {
       return;
     }
 
-    // D-56: un lugar fuera de los tres configurados no entra al flujo de
-    // autoservicio — lo coordina un vendedor. Se pide antes de mostrar el
-    // cartel para que el WhatsApp salga con el pedido completo.
-    if (lugarEntrega === OTRO || (devolverOtroLugar && lugarDevolucion === OTRO)) {
-      setDerivarOtroLugar(true);
-      return;
-    }
+    // D-61: acá **ya no se frena nada**. Antes había dos `return` —uno por
+    // "Otro lugar" (D-56) y otro por la ventana de fechas (D-60)— que abrían
+    // un cartel y dejaban a la persona parada en la portada. La regla ahora es
+    // que siempre se puede avanzar: el desvío existe igual, pero vive en el
+    // paso 1, donde hay lugar para los tres canales de contacto y para el
+    // formulario de "que me llamen ustedes".
 
     intencionDeReserva("hero:buscador");
 
@@ -154,6 +198,17 @@ const Hero = () => {
     const params = new URLSearchParams();
     if (retiro) params.set("lugar", retiro);
     if (devolverOtroLugar && devolucion) params.set("devolucion", devolucion);
+    // D-61: el texto libre viaja **en su propio parámetro**, no pegado adentro
+    // de `lugar`. Meterlo ahí (`lugar=A coordinar: Camino...`) es exactamente
+    // lo que D-56 tuvo que sacar, porque desde ahí se filtraba solo a
+    // `reservas.lugar_entrega`. Separado, el flujo lo puede mostrar y mandar
+    // por WhatsApp sin que nunca llegue a ser el lugar de una reserva.
+    if (lugarEntrega === OTRO && otroRetiro.trim()) {
+      params.set("retiro_otro", otroRetiro.trim());
+    }
+    if (devolverOtroLugar && lugarDevolucion === OTRO && otraDevolucion.trim()) {
+      params.set("devolucion_otro", otraDevolucion.trim());
+    }
     if (fechaEntrega) params.set("desde", format(fechaEntrega, "yyyy-MM-dd"));
     if (fechaDevolucion) params.set("hasta", format(fechaDevolucion, "yyyy-MM-dd"));
     params.set("hora_desde", horaEntrega);
@@ -320,8 +375,9 @@ const Hero = () => {
                     hora={horaEntrega}
                     onFecha={setFechaEntrega}
                     onHora={setHoraEntrega}
-                    desde={minFecha}
+                    desde={minCalendario}
                     hasta={maxFecha}
+                    aCoordinarAntesDe={minVenta}
                   />
                   <CampoFecha
                     etiqueta="Devolución"
@@ -329,9 +385,22 @@ const Hero = () => {
                     hora={horaDevolucion}
                     onFecha={setFechaDevolucion}
                     onHora={setHoraDevolucion}
-                    desde={fechaEntrega ?? minFecha}
+                    desde={fechaEntrega ?? minCalendario}
                   />
                 </div>
+
+                {/* D-61: avisa, **no frena**. El calendario pinta esos días en
+                    ámbar; sin esta línea el color no se explica. El panel
+                    completo —los tres canales y el formulario— vive una sola
+                    vez, en el paso 1: repetirlo acá sería decirle dos veces lo
+                    mismo a alguien que ya lo escuchó. */}
+                {motivoVentana === "anticipacion" && (
+                  <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Esas fechas las cierra un agente, no la web. Seguí igual y
+                    te lo resolvemos en el paso siguiente.
+                  </p>
+                )}
 
                 {/* Va acá y no en el paso 3 para que la grilla de precios
                     salga bien la primera vez. Es un desplegable y no un campo
@@ -429,12 +498,18 @@ const Hero = () => {
                     D-52: el número sale de `/public/config`, no queda
                     hardcodeado — antes decía "72 horas" fijo aunque la
                     regla real ya era de 10 días. */}
+                {/* D-60: antes decía "se toman con 10 días de anticipación",
+                    que ahora que el calendario deja elegir antes se lee como
+                    una prohibición que el propio calendario desmiente. Dice lo
+                    mismo sin cerrar la puerta: adentro reservás solo, afuera
+                    lo coordina un agente. */}
                 <p className="text-center text-xs text-muted-foreground">
-                  Las reservas online se toman con{" "}
+                  Reservás online desde{" "}
                   <strong>
                     {textoPlazo((config?.anticipacion_minima_horas ?? 240) / 24)}
                   </strong>{" "}
-                  de anticipación. Ver los precios no te compromete a nada.
+                  de anticipación. Para antes de eso lo coordina un agente por
+                  WhatsApp. Ver los precios no te compromete a nada.
                 </p>
               </div>
 
@@ -455,40 +530,12 @@ const Hero = () => {
         </div>
       </div>
 
-      {derivarOtroLugar && (
-        <CartelDerivacionModal
-          motivo="otro_lugar"
-          detalle={lugares.join(" · ")}
-          fechaInicio={fechaEntrega ? format(fechaEntrega, "yyyy-MM-dd") : null}
-          fechaFin={fechaDevolucion ? format(fechaDevolucion, "yyyy-MM-dd") : null}
-          mensajeWhatsapp={construirMensajeDerivacion({
-            fechaInicio: fechaEntrega ? format(fechaEntrega, "yyyy-MM-dd") : null,
-            horaInicio: horaEntrega,
-            fechaFin: fechaDevolucion ? format(fechaDevolucion, "yyyy-MM-dd") : null,
-            horaFin: horaDevolucion,
-            lugarRetiro: lugarEntrega === OTRO ? (otroRetiro.trim() || "A coordinar") : lugarEntrega,
-            lugarDevolucion: devolverOtroLugar
-              ? (lugarDevolucion === OTRO ? (otraDevolucion.trim() || "A coordinar") : lugarDevolucion)
-              : null,
-            edad,
-            motivoTexto: "Me apareció que ese punto de retiro no está entre los que arma la web solo.",
-            preguntaFinal: "¿Lo podemos coordinar?",
-          })}
-          seguirWebLabel={SEGUIR_WEB_LABEL.otro_lugar}
-          onSeguirWeb={() => {
-            if (lugarEntrega === OTRO) setLugarEntrega("");
-            if (lugarDevolucion === OTRO) setLugarDevolucion("");
-            setDerivarOtroLugar(false);
-          }}
-          onCerrar={() => setDerivarOtroLugar(false)}
-        />
-      )}
     </section>
   );
 };
 
 function CampoFecha({
-  etiqueta, fecha, hora, onFecha, onHora, desde, hasta,
+  etiqueta, fecha, hora, onFecha, onHora, desde, hasta, aCoordinarAntesDe,
 }: {
   etiqueta: string;
   fecha?: Date;
@@ -497,14 +544,22 @@ function CampoFecha({
   onHora: (h: string) => void;
   desde: Date;
   hasta?: Date;
+  /** D-60: los días entre `desde` y esta fecha se pueden elegir, pero salen
+   *  por WhatsApp. Van en ámbar para que se lea "esto se puede, pero es por
+   *  otro camino" **antes** de tocarlos, y el cartel no sea una sorpresa. */
+  aCoordinarAntesDe?: Date;
 }) {
+  // Controlado a propósito: sin esto el calendario queda abierto después de
+  // elegir el día, y en la portada eso tapa el cartel que acaba de aparecer.
+  const [abierto, setAbierto] = useState(false);
+
   return (
     <div>
       <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {etiqueta}
       </label>
       <div className="flex gap-2">
-        <Popover>
+        <Popover open={abierto} onOpenChange={setAbierto}>
           <PopoverTrigger asChild>
             <button
               type="button"
@@ -523,8 +578,16 @@ function CampoFecha({
             <Calendar
               mode="single"
               selected={fecha}
-              onSelect={onFecha}
+              onSelect={(d) => { onFecha(d); setAbierto(false); }}
               disabled={hasta ? [{ before: desde }, { after: hasta }] : { before: desde }}
+              modifiers={
+                aCoordinarAntesDe
+                  ? { aCoordinar: { after: addDays(desde, -1), before: aCoordinarAntesDe } }
+                  : undefined
+              }
+              modifiersClassNames={{
+                aCoordinar: "bg-amber-50 text-amber-700 font-medium aria-selected:bg-primary aria-selected:text-primary-foreground",
+              }}
               locale={es}
               initialFocus
             />

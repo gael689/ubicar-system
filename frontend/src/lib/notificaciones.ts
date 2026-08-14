@@ -87,6 +87,6 @@ export const URGENCIA_LABEL: Record<Urgencia, string> = {
 export const URGENCIA_COLOR: Record<string, string> = {
   critica: 'bg-danger text-white',
   alta: 'bg-warning text-white',
-  media: 'bg-primary/10 text-primary',
+  media: 'bg-primary text-white',
   baja: 'bg-muted text-muted-foreground',
 };

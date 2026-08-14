@@ -2,17 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { Users, Briefcase, Snowflake, Cog, Car, BellRing, Clock } from "lucide-react";
+import { Users, Briefcase, Snowflake, Cog, Car, Clock, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api, pesos, textoPlazo, urlFoto } from "@/lib/api";
+import { api, pesos, urlFoto } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { CategoriaDisponible, EscalonDuracion } from "@/lib/types";
 import { AhorroPorDuracion } from "./AhorroPorDuracion";
 import { BuscadorRango, type RangoBusqueda } from "./BuscadorRango";
 import { DialogoSinCupo } from "./DialogoSinCupo";
-import { CartelDerivacion, SEGUIR_WEB_LABEL, type MotivoDerivacion } from "./CartelDerivacion";
+import { CartelDerivacion, SEGUIR_WEB_LABEL } from "./CartelDerivacion";
 import { CartelDerivacionModal } from "./CartelDerivacionModal";
 import { construirMensajeDerivacion } from "@/lib/mensajeDerivacion";
+import {
+  motivoVentanaVenta, detalleVentana, motivoTextoVentana, type MotivoVentana,
+} from "@/lib/ventanaVenta";
 
 interface Props {
   rango: RangoBusqueda;
@@ -54,25 +57,14 @@ export function Paso1Vehiculo({
    * no tiene sentido pedirle disponibilidad al backend para un rango que ya
    * se sabe que va a rechazar.
    */
-  const motivoVentana = useMemo((): MotivoDerivacion | null => {
-    if (!rango.fechaInicio || !rango.fechaFin) return null;
-    const ahora = new Date();
-    const inicio = new Date(`${rango.fechaInicio}T${rango.horaInicio || "10:00"}:00`);
-    const fin = new Date(`${rango.fechaFin}T${rango.horaFin || "10:00"}:00`);
-    const horasHastaRetiro = (inicio.getTime() - ahora.getTime()) / 3_600_000;
-    if (horasHastaRetiro < anticipacionHoras) return "anticipacion";
-    if (horizonteMaximoDias) {
-      const diasHastaRetiro = Math.floor(
-        (new Date(rango.fechaInicio).getTime() - new Date(ahora.toDateString()).getTime()) / 86_400_000,
-      );
-      if (diasHastaRetiro > horizonteMaximoDias) return "horizonte";
-    }
-    if (duracionMaximaDias) {
-      const dias = Math.round((fin.getTime() - inicio.getTime()) / 86_400_000);
-      if (dias > duracionMaximaDias) return "duracion";
-    }
-    return null;
-  }, [rango, anticipacionHoras, horizonteMaximoDias, duracionMaximaDias]);
+  const limitesVentana = useMemo(
+    () => ({ anticipacionHoras, horizonteMaximoDias, duracionMaximaDias }),
+    [anticipacionHoras, horizonteMaximoDias, duracionMaximaDias],
+  );
+  const motivoVentana = useMemo(
+    () => motivoVentanaVenta(rango, limitesVentana),
+    [rango, limitesVentana],
+  );
 
   const buscado = Boolean(rango.fechaInicio && rango.fechaFin && rango.lugarRetiro);
 
@@ -119,7 +111,7 @@ export function Paso1Vehiculo({
     rango.horaInicio, rango.horaFin, edad,
   ]);
 
-  const mensajeVentana = (motivo: MotivoDerivacion) =>
+  const mensajeVentana = (motivo: MotivoVentana) =>
     construirMensajeDerivacion({
       fechaInicio: rango.fechaInicio,
       horaInicio: rango.horaInicio,
@@ -128,12 +120,7 @@ export function Paso1Vehiculo({
       lugarRetiro: rango.lugarRetiro,
       lugarDevolucion: rango.lugarDevolucion,
       edad,
-      motivoTexto:
-        motivo === "anticipacion"
-          ? `Me apareció que las reservas online necesitan ${textoPlazo(anticipacionHoras / 24)} de anticipación.`
-          : motivo === "horizonte"
-          ? `Me apareció que online reservan hasta ${textoPlazo(horizonteMaximoDias ?? 0, true)} adelante.`
-          : `Me apareció que para más de ${textoPlazo(duracionMaximaDias ?? 0)} lo coordinan por WhatsApp.`,
+      motivoTexto: motivoTextoVentana(motivo, limitesVentana),
       preguntaFinal: "¿Me pueden ayudar?",
     });
 
@@ -169,13 +156,7 @@ export function Paso1Vehiculo({
       {buscado && motivoVentana && (
         <CartelDerivacion
           motivo={motivoVentana}
-          detalle={
-            motivoVentana === "anticipacion"
-              ? textoPlazo(anticipacionHoras / 24)
-              : motivoVentana === "horizonte"
-              ? textoPlazo(horizonteMaximoDias ?? 0, true)
-              : textoPlazo(duracionMaximaDias ?? 0)
-          }
+          detalle={detalleVentana(motivoVentana, limitesVentana)}
           mensajeWhatsapp={mensajeVentana(motivoVentana)}
           fechaInicio={rango.fechaInicio}
           fechaFin={rango.fechaFin}
@@ -205,9 +186,12 @@ export function Paso1Vehiculo({
             <h2 className="text-lg font-semibold text-[#1B3F6B]">
               Elegí tu vehículo
             </h2>
+            {/* D-61: nunca un cero. "0 de 6 categorías con disponibilidad"
+                era el titular del callejón sin salida — y encima falso, porque
+                el mostrador puede vender una equivalente. Ahora reparte, y de
+                paso adelanta la distinción antes de mirar una sola tarjeta. */}
             <p className="text-xs text-muted-foreground">
-              {categorias.filter((c) => c.hay_cupo).length} de {categorias.length} categorías
-              con disponibilidad
+              {repartoCategorias(categorias)}
             </p>
           </div>
 
@@ -274,6 +258,32 @@ export function Paso1Vehiculo({
   );
 }
 
+/**
+ * El encabezado de la grilla, en sus tres formas. **Nunca muestra un cero**
+ * (D-61): una categoría sin cupo no es una categoría perdida, es una que
+ * cierra un agente. Las tres frases dicen lo mismo que las tarjetas, para que
+ * la distinción se lea antes de bajar la vista.
+ */
+function repartoCategorias(categorias: CategoriaDisponible[]): string {
+  const online = categorias.filter((c) => c.hay_cupo).length;
+  const total = categorias.length;
+  if (total === 0) return "";
+  if (online === total) {
+    return total === 1
+      ? "Se reserva online, ahora mismo"
+      : `Las ${total} se reservan online, ahora mismo`;
+  }
+  if (online === 0) {
+    return total === 1
+      ? "Esta la coordina un agente en el momento"
+      : `Estas ${total} las coordina un agente en el momento`;
+  }
+  const conAgente = total - online;
+  return `${online} se ${online === 1 ? "reserva" : "reservan"} online · ${conAgente} ${
+    conAgente === 1 ? "la coordina" : "las coordina"
+  } un agente`;
+}
+
 function TarjetaCategoria({
   categoria: c, elegida, onElegir, onElegirConRotacion, onAvisarme, indice,
 }: {
@@ -302,6 +312,11 @@ function TarjetaCategoria({
         "group flex animate-fade-up flex-col overflow-hidden rounded-lg border bg-white opacity-0 shadow-sm transition-all",
         elegida
           ? "border-primary ring-2 ring-primary/25"
+          : !disponible && !ofreceRotacion
+          // D-61: la distinción "se reserva online" vs "la coordina un agente"
+          // es **redundante a propósito** — borde, badge y verbo del botón.
+          // Quien no distingue colores lee el texto igual.
+          ? "border-2 border-amber-500 hover:-translate-y-0.5 hover:shadow-md"
           : "border-border hover:-translate-y-0.5 hover:shadow-md",
         !disponible && "opacity-100",
       )}
@@ -314,10 +329,10 @@ function TarjetaCategoria({
             alt={c.nombre}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className={cn(
-              "object-cover transition-transform duration-500 group-hover:scale-105",
-              !disponible && !ofreceRotacion && "grayscale",
-            )}
+            /* D-61: **sin `grayscale`**. Despintar la foto dice "este auto
+               está muerto", y el auto existe — sólo lo confirma una persona
+               en vez del sitio. */
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
           <div className="grid h-full place-items-center text-muted-foreground">
@@ -334,6 +349,11 @@ function TarjetaCategoria({
         {disponible && c.ultima_unidad && (
           <span className="absolute right-3 top-3 rounded-sm bg-[#1B3F6B] px-2 py-1 text-xs font-semibold text-white shadow">
             Última unidad
+          </span>
+        )}
+        {!disponible && !ofreceRotacion && (
+          <span className="absolute right-3 top-3 flex items-center gap-1 rounded-sm bg-amber-600 px-2 py-1 text-xs font-semibold text-white shadow">
+            <UserRound className="h-3 w-3" /> Con un agente
           </span>
         )}
       </div>
@@ -386,23 +406,30 @@ function TarjetaCategoria({
               </Button>
             </>
           ) : (
-            /* Sin cupo NO es un cartel de "no": es un desvío. Con una sola
-               unidad en varias categorías, esto va a aparecer seguido, y la
-               diferencia entre perder el contacto y recuperarlo está acá. */
+            /* D-61: sin cupo **no** es "no hay", y no se dice que no hay.
+               El precio va con el mismo peso, tamaño y color que el de una
+               categoría libre —el backend lo cotiza siempre, aunque no quede
+               unidad (`disponibilidad_service`: "el precio se cotiza siempre,
+               aunque no haya cupo")— y el botón deriva a un agente.
+
+               El porqué es comercial, no técnico: el stock puede estar
+               desactualizado, y el mostrador sabe qué unidades vuelven y qué
+               se puede reemplazar por una equivalente o un upgrade. Un "sin
+               disponibilidad" mata una venta que todavía estaba viva. */
             <>
-              <p className="text-sm font-medium text-foreground">
-                Sin disponibilidad para estas fechas
-              </p>
-              {c.precio && (
-                <p className="text-xs text-muted-foreground">
-                  Normalmente desde {pesos(c.precio.precio_dia_promedio)} por día
+              {c.precio ? (
+                <PrecioTarjeta precio={c.precio} />
+              ) : (
+                <p className="text-sm font-medium text-[#1B3F6B]">
+                  Te pasamos el precio en el momento
                 </p>
               )}
-              {/* Antes abría WhatsApp y el contacto se perdía si el visitante
-                  no escribía. Ahora la solicitud entra al sistema y el equipo
-                  recibe el aviso en el momento (D-04). */}
-              <Button variant="outline" onClick={onAvisarme} className="mt-3 w-full">
-                <BellRing className="h-4 w-4" /> Avisarme cuando haya
+              <Button
+                variant="outline"
+                onClick={onAvisarme}
+                className="mt-3 w-full border-amber-600 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+              >
+                <UserRound className="h-4 w-4" /> Coordinar con un agente
               </Button>
             </>
           )}

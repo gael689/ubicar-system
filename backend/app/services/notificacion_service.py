@@ -200,6 +200,43 @@ class NotificacionService:
             "fecha_objetivo": reserva.fecha_inicio,
         })
 
+    def avisar_solicitud_contacto(self, solicitud) -> Notificacion | None:
+        """
+        Alguien dejó sus datos para que lo llamemos (D-61).
+
+        **Le prometimos una llamada**, y esa promesa es la razón por la que
+        esto avisa en el acto en vez de esperar al barrido de las 08:00: una
+        solicitud del sábado atendida el lunes es peor que no haber ofrecido
+        el botón. Urgencia alta por lo mismo.
+
+        El motivo va en la descripción porque cambia cómo se atiende: no es lo
+        mismo "quiere para dentro de tres días" que "quiere que se lo llevemos
+        a un campo".
+        """
+        etiquetas = {
+            "fuera_de_ventana": "fecha muy cerca",
+            "sin_cupo": "categoría sin cupo",
+            "otro_lugar": "lugar a coordinar",
+        }
+        motivo = etiquetas.get(solicitud.motivo, solicitud.motivo)
+        cuando = (
+            f" — {solicitud.fecha_inicio.strftime('%d/%m')}"
+            + (f" al {solicitud.fecha_fin.strftime('%d/%m')}" if solicitud.fecha_fin else "")
+            if solicitud.fecha_inicio else ""
+        )
+        return self.generar_una({
+            "tipo": "solicitud_contacto",
+            "titulo": "Piden que los llamemos",
+            "descripcion": (
+                f"{solicitud.nombre} — {solicitud.telefono} — {motivo}{cuando}"
+            ),
+            "urgencia": "alta",
+            "entidad_tipo": "solicitud_contacto",
+            "entidad_id": solicitud.id,
+            "url_destino": "/reservas-web",
+            "fecha_objetivo": solicitud.fecha_inicio,
+        })
+
     def _auto_resolver(self, candidatos: list[dict]) -> int:
         """Si una notificación activa ya no aparece entre los candidatos
         actuales para su (tipo, entidad_tipo, entidad_id) — sin importar la
