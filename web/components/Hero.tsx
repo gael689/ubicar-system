@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,6 @@ import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { api, textoPlazo } from "@/lib/api";
 import type { ConfigPublica } from "@/lib/types";
-import { motivoVentanaVenta } from "@/lib/ventanaVenta";
 import { LUGAR_OTRO } from "@/lib/lugares";
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
@@ -102,36 +101,11 @@ const Hero = () => {
     ? addDays(new Date(), config.horizonte_maximo_dias)
     : undefined;
 
-  const limitesVentana = useMemo(
-    () => ({
-      anticipacionHoras: config?.anticipacion_minima_horas ?? 240,
-      horizonteMaximoDias: config?.horizonte_maximo_dias,
-      duracionMaximaDias: config?.duracion_maxima_dias,
-    }),
-    [config],
-  );
-
-  /**
-   * Derivado, no un `setState` adentro de un efecto: así no parpadea mientras
-   * `/public/config` viaja (sin config es `null` y no se muestra nada) y el
-   * cartel desaparece solo apenas la fecha vuelve a entrar en la ventana.
-   */
-  const motivoVentana = useMemo(
-    () =>
-      config
-        ? motivoVentanaVenta(
-            {
-              fechaInicio: fechaEntrega ? format(fechaEntrega, "yyyy-MM-dd") : null,
-              horaInicio: horaEntrega,
-              fechaFin: fechaDevolucion ? format(fechaDevolucion, "yyyy-MM-dd") : null,
-              horaFin: horaDevolucion,
-            },
-            limitesVentana,
-          )
-        : null,
-    [config, limitesVentana, fechaEntrega, horaEntrega, fechaDevolucion, horaDevolucion],
-  );
-
+  // El Hero **no chequea la ventana de venta** (14/08). Antes calculaba el
+  // motivo para mostrar un aviso ámbar acá mismo; se sacó a pedido de Gael:
+  // que deje avanzar sin decir nada y el mensaje aparezca recién en el paso
+  // siguiente, una sola vez y completo. El calendario sigue pintando esos
+  // días en ámbar como pista, sin texto.
 
   /**
    * Recupera lo que ya venía elegido cuando `/reservar` rebota para acá por
@@ -393,18 +367,6 @@ const Hero = () => {
                   />
                 </div>
 
-                {/* D-61: avisa, **no frena**. El calendario pinta esos días en
-                    ámbar; sin esta línea el color no se explica. El panel
-                    completo —los tres canales y el formulario— vive una sola
-                    vez, en el paso 1: repetirlo acá sería decirle dos veces lo
-                    mismo a alguien que ya lo escuchó. */}
-                {motivoVentana === "anticipacion" && (
-                  <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                    <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    Esas fechas las cierra un agente, no la web. Seguí igual y
-                    te lo resolvemos en el paso siguiente.
-                  </p>
-                )}
 
                 {/* Va acá y no en el paso 3 para que la grilla de precios
                     salga bien la primera vez. Es un desplegable y no un campo
