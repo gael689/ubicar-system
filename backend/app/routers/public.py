@@ -464,7 +464,9 @@ def _datos_contacto(db: Session) -> dict:
     return {
         "whatsapp": cfg.get_str("contacto.whatsapp", "5492914180554"),
         "whatsapp_display": cfg.get_str("contacto.whatsapp_display", "+54 9 291 418-0554"),
-        "telefono": cfg.get_str("contacto.telefono", "+5492923474791"),
+        # Mismo número que el WhatsApp (14/08): quien llama en vez de escribir
+        # tiene que caer en la línea que atiende las reservas.
+        "telefono": cfg.get_str("contacto.telefono", "+5492914180554"),
         "email": cfg.get_str("contacto.email", "ubicar.rent@gmail.com"),
     }
 

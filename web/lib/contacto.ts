@@ -16,8 +16,11 @@
 export const CONTACTO = {
   whatsappNumero: "5492914180554",
   whatsappDisplay: "+54 9 291 418-0554",
-  telefonoNumero: "+5492923474791",
-  telefonoDisplay: "+54 9 2923 47-4791",
+  // Las llamadas van al mismo número que el WhatsApp (14/08). Antes apuntaba
+  // a un teléfono distinto, así que quien no usaba WhatsApp terminaba en otra
+  // línea que no es la que atiende las reservas.
+  telefonoNumero: "+5492914180554",
+  telefonoDisplay: "+54 9 291 418-0554",
   email: "ubicar.rent@gmail.com",
   instagram: "https://www.instagram.com/ubicar_rent/",
 } as const;

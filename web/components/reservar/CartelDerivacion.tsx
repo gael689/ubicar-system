@@ -244,8 +244,8 @@ function copiar(motivo: MotivoDerivacion, detalle?: string) {
     // (disponibilidad y precio).
     case "anticipacion":
       return {
-        titulo: "Para esa fecha te lo arma un agente",
-        cuerpo: `Alquilar con menos de ${detalle ?? "unos días"} de anticipación se puede: lo que no lo hace sola es la web, lo confirma una persona. Escribinos y un agente de Ubicar te dice disponibilidad y precio en el momento — el mensaje ya te va con las fechas que elegiste.`,
+        titulo: "Para esa fecha contactá a un agente",
+        cuerpo: `Alquilar con menos de ${detalle ?? "unos días"} de anticipación es posible, pero lo confirma un agente. Escribinos y buscamos disponibilidad y precio en el momento — el mensaje ya te va con las fechas que elegiste.`,
         botonWhatsapp: "Coordinar por WhatsApp",
       };
     case "horizonte":
