@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Check, Loader2, Car, Wallet, FileSignature, X, AlertTriangle, ArrowUpRight,
+  Check, Loader2, Car, Wallet, FileSignature, X, AlertTriangle, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AccionesContrato } from '@/components/reservas/AccionesContrato';
@@ -380,6 +380,7 @@ function SelectorVehiculo({
   const deLaCategoria = todos.filter(v => v.es_categoria_pedida);
   const otros = todos.filter(v => !v.es_categoria_pedida);
   const hayCategoria = reserva.categoria_id != null;
+  const vehiculoElegido = todos.find(v => v.id === elegido) ?? null;
 
   const confirmar = (vehiculoId: number) => {
     asignar.mutate(
@@ -428,14 +429,39 @@ function SelectorVehiculo({
         atenuado={hayCategoria}
       />
 
+      {/* D-54/checklist 56: se avisa ANTES de confirmar, no sólo se registra
+          después — un downgrade en particular necesita que quien lo asigna
+          se dé cuenta antes de apretar el botón, no leerlo en el historial. */}
+      {vehiculoElegido && !vehiculoElegido.es_categoria_pedida && (
+        vehiculoElegido.es_downgrade ? (
+          <p className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-xs text-foreground">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+            <span>
+              <strong>Esto es un downgrade.</strong> Pidió{' '}
+              {data?.categoria_nombre ?? 'una categoría'} y este auto es{' '}
+              {vehiculoElegido.categoria_nombre ?? 'de una categoría menor'}.
+              Avisale al cliente antes de confirmar.
+            </span>
+          </p>
+        ) : (
+          <p className="flex items-start gap-2 rounded-lg bg-success/10 px-3 py-2 text-xs text-foreground">
+            <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+            <span>
+              <strong>Upgrade a {vehiculoElegido.categoria_nombre ?? 'otra categoría'}, mismo precio</strong> para el cliente.
+            </span>
+          </p>
+        )
+      )}
+
       <Button
         size="sm"
+        variant={vehiculoElegido?.es_downgrade ? 'destructive' : 'default'}
         disabled={elegido === null || asignar.isPending}
         onClick={() => elegido !== null && confirmar(elegido)}
       >
         {asignar.isPending
           ? <><Loader2 className="h-4 w-4 animate-spin" /> Asignando…</>
-          : 'Asignar este vehículo'}
+          : vehiculoElegido?.es_downgrade ? 'Confirmar downgrade' : 'Asignar este vehículo'}
       </Button>
       <p className="text-xs text-muted-foreground">
         Se revalida que siga libre al asignarlo: entre que abriste esta pantalla
@@ -488,10 +514,21 @@ function Grupo({
               </span>
               {!v.es_categoria_pedida && (
                 <span
-                  title={`Es ${v.categoria_nombre ?? 'de otra categoría'}`}
-                  className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground"
+                  title={
+                    v.es_downgrade
+                      ? `Es ${v.categoria_nombre ?? 'de una categoría menor'} — downgrade`
+                      : `Es ${v.categoria_nombre ?? 'de otra categoría'} — upgrade, mismo precio`
+                  }
+                  className={cn(
+                    'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
+                    v.es_downgrade
+                      ? 'bg-danger/15 text-danger'
+                      : 'bg-success/15 text-success',
+                  )}
                 >
-                  <ArrowUpRight className="h-3 w-3" />
+                  {v.es_downgrade
+                    ? <ArrowDownRight className="h-3 w-3" />
+                    : <ArrowUpRight className="h-3 w-3" />}
                   {v.categoria_nombre ?? 'otra'}
                 </span>
               )}

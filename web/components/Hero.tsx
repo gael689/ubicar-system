@@ -17,6 +17,9 @@ import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { api, textoPlazo } from "@/lib/api";
 import type { ConfigPublica } from "@/lib/types";
+import { CartelDerivacionModal } from "@/components/reservar/CartelDerivacionModal";
+import { SEGUIR_WEB_LABEL } from "@/components/reservar/CartelDerivacion";
+import { construirMensajeDerivacion } from "@/lib/mensajeDerivacion";
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, "0");
@@ -63,6 +66,9 @@ const Hero = () => {
   const [edad, setEdad] = useState("");
   const [faltaEdad, setFaltaEdad] = useState(false);
   const [config, setConfig] = useState<ConfigPublica | null>(null);
+  // D-56: "Otro lugar" ya no entra al flujo con "A coordinar: ..." pegado al
+  // lugar — deriva directo, mismo patrón que sin cupo y la ventana de fechas.
+  const [derivarOtroLugar, setDerivarOtroLugar] = useState(false);
 
   // D-56: los lugares y los bordes de la ventana salen de `/public/config`,
   // no de una lista propia — la portada tenía su propia copia con "Bahía
@@ -132,16 +138,18 @@ const Hero = () => {
       return;
     }
 
+    // D-56: un lugar fuera de los tres configurados no entra al flujo de
+    // autoservicio — lo coordina un vendedor. Se pide antes de mostrar el
+    // cartel para que el WhatsApp salga con el pedido completo.
+    if (lugarEntrega === OTRO || (devolverOtroLugar && lugarDevolucion === OTRO)) {
+      setDerivarOtroLugar(true);
+      return;
+    }
+
     intencionDeReserva("hero:buscador");
 
-    // "Otro" no viaja como tal: viaja lo que el cliente escribio, marcado
-    // como pedido para que el mostrador sepa que hay que confirmarlo.
-    const retiro = lugarEntrega === OTRO
-      ? (otroRetiro.trim() ? `A coordinar: ${otroRetiro.trim()}` : "")
-      : lugarEntrega;
-    const devolucion = lugarDevolucion === OTRO
-      ? (otraDevolucion.trim() ? `A coordinar: ${otraDevolucion.trim()}` : "")
-      : lugarDevolucion;
+    const retiro = lugarEntrega;
+    const devolucion = lugarDevolucion;
 
     const params = new URLSearchParams();
     if (retiro) params.set("lugar", retiro);
@@ -293,12 +301,12 @@ const Hero = () => {
                         placeholder="¿Dónde querés retirarlo?"
                         className="h-[46px] w-full rounded-lg border border-border bg-white px-3.5 text-sm text-[#1B3F6B] outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
                       />
-                      {/* Se dice acá y no después: el cliente tiene que saber
-                          que esto es un pedido antes de seguir, no enterarse
-                          cuando ya reservó. */}
+                      {/* D-56: ya no queda como un pedido pendiente dentro de
+                          la reserva — al tocar "Ver vehículos disponibles" va
+                          derecho a WhatsApp con esto ya cargado. */}
                       <p className="mt-1.5 text-xs text-muted-foreground">
-                        Lo coordinamos con vos. <strong>Queda confirmado cuando
-                        Ubicar lo confirma</strong>, puede tener un costo extra.
+                        Este punto lo coordina un vendedor por WhatsApp, puede
+                        tener un costo extra.
                       </p>
                     </div>
                   )}
@@ -446,6 +454,35 @@ const Hero = () => {
           </div>
         </div>
       </div>
+
+      {derivarOtroLugar && (
+        <CartelDerivacionModal
+          motivo="otro_lugar"
+          detalle={lugares.join(" · ")}
+          fechaInicio={fechaEntrega ? format(fechaEntrega, "yyyy-MM-dd") : null}
+          fechaFin={fechaDevolucion ? format(fechaDevolucion, "yyyy-MM-dd") : null}
+          mensajeWhatsapp={construirMensajeDerivacion({
+            fechaInicio: fechaEntrega ? format(fechaEntrega, "yyyy-MM-dd") : null,
+            horaInicio: horaEntrega,
+            fechaFin: fechaDevolucion ? format(fechaDevolucion, "yyyy-MM-dd") : null,
+            horaFin: horaDevolucion,
+            lugarRetiro: lugarEntrega === OTRO ? (otroRetiro.trim() || "A coordinar") : lugarEntrega,
+            lugarDevolucion: devolverOtroLugar
+              ? (lugarDevolucion === OTRO ? (otraDevolucion.trim() || "A coordinar") : lugarDevolucion)
+              : null,
+            edad,
+            motivoTexto: "Me apareció que ese punto de retiro no está entre los que arma la web solo.",
+            preguntaFinal: "¿Lo podemos coordinar?",
+          })}
+          seguirWebLabel={SEGUIR_WEB_LABEL.otro_lugar}
+          onSeguirWeb={() => {
+            if (lugarEntrega === OTRO) setLugarEntrega("");
+            if (lugarDevolucion === OTRO) setLugarDevolucion("");
+            setDerivarOtroLugar(false);
+          }}
+          onCerrar={() => setDerivarOtroLugar(false)}
+        />
+      )}
     </section>
   );
 };

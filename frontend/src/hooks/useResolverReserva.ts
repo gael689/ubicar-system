@@ -25,6 +25,13 @@ export interface VehiculoLibre {
   categoria_nombre: string | null;
   /** Los de otra categoría no se ocultan: un upgrade salva la venta. */
   es_categoria_pedida: boolean;
+  /**
+   * D-54 / checklist 56: `true` cuando la categoría de este vehículo es
+   * INFERIOR a la pedida — hay que avisarlo antes de asignar, no enterarse
+   * después. `false` para la categoría pedida, un upgrade real, o cuando no
+   * hay con qué compararlo (reserva sin categoría, `orden` sin cargar).
+   */
+  es_downgrade: boolean;
 }
 
 export interface VehiculosDisponibles {

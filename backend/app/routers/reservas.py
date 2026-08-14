@@ -417,7 +417,10 @@ def vehiculos_disponibles(
     vehiculos = (
         db.query(Vehiculo).filter(Vehiculo.id.in_(ids)).all() if ids else []
     )
-    nombres = {c.id: c.nombre for c in db.query(Categoria).all()}
+    categorias = db.query(Categoria).all()
+    nombres = {c.id: c.nombre for c in categorias}
+    ordenes = {c.id: c.orden for c in categorias}
+    orden_pedido = ordenes.get(reserva.categoria_id) if reserva.categoria_id else None
 
     items = [
         {
@@ -433,6 +436,17 @@ def vehiculos_disponibles(
             "es_categoria_pedida": (
                 reserva.categoria_id is not None
                 and v.categoria_id == reserva.categoria_id
+            ),
+            # D-54/checklist 56: mismo criterio que
+            # `ReservaService.asignar_vehiculo` — se avisa ANTES de asignar,
+            # no sólo se registra después. `False` cuando no hay con qué
+            # comparar (sin categoría pedida u orden sin cargar), igual que
+            # para la categoría pedida o un upgrade real.
+            "es_downgrade": (
+                orden_pedido is not None
+                and v.categoria_id != reserva.categoria_id
+                and ordenes.get(v.categoria_id) is not None
+                and ordenes[v.categoria_id] < orden_pedido
             ),
         }
         for v in vehiculos
