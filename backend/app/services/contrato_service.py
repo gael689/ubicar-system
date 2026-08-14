@@ -345,7 +345,20 @@ class ContratoService:
         if contratadas and contratadas[0]["franquicia"] is not None:
             franquicia = contratadas[0]["franquicia"]
         else:
-            categoria = r.categoria or (r.vehiculo.categoria if r.vehiculo else None)
+            # D-64: manda la categoría del **vehículo que se entrega**, no la
+            # que el cliente contrató. Si hubo upgrade de Compacto a Pick-up,
+            # el contrato dice la franquicia de la Pick-up.
+            #
+            # El orden estaba al revés y sin ningún test. Lo que lo justifica
+            # es operativo: **el contrato se firma al momento de entregar el
+            # auto**, con upgrade o sin él, así que cuando el cliente firma ya
+            # sabe qué vehículo se lleva y con qué franquicia. No hay sorpresa
+            # posterior, y Ubicar no absorbe una diferencia de riesgo por una
+            # cortesía.
+            #
+            # `r.categoria` queda como respaldo para el único caso en que no
+            # hay auto todavía: la reserva por categoría sin asignar.
+            categoria = (r.vehiculo.categoria if r.vehiculo else None) or r.categoria
             franquicia = (
                 float(categoria.franquicia_base)
                 if categoria is not None and categoria.franquicia_base is not None
