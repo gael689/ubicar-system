@@ -334,6 +334,10 @@ export function FlujoReserva() {
                 seleccion={adicionales}
                 dias={dias}
                 franquiciaBase={categoria?.franquicia_base ?? null}
+                // La base sobre la que se calculan las coberturas por
+                // porcentaje. Sin esto la tarjeta no puede decir cuánto
+                // cuestan en pesos — y decía "Incluido".
+                subtotalVehiculo={cotizacion?.subtotal_vehiculo ?? null}
                 onCambiar={setAdicionales}
               />
             )}

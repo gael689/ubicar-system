@@ -219,6 +219,14 @@ export interface Adicional {
   /** `cobertura` se elige UNA sola; `extra`, las que se quieran. */
   grupo: "cobertura" | "extra";
   precio: number;
+  /**
+   * Las coberturas no tienen precio propio: cuestan un porcentaje del
+   * alquiler, y su `precio` es 0. El backend lo devuelve desde siempre y este
+   * tipo no lo declaraba, así que la web no tenía cómo mostrar el precio real
+   * — y como `precio === 0`, la tarjeta decía **"Incluido"** sobre algo que
+   * cuesta 30% más.
+   */
+  porcentaje_sobre_alquiler: number | null;
   unidad_cobro: "por_dia" | "unico";
   incluido: boolean;
   /** Sólo coberturas: lo que queda a cargo del cliente ante un siniestro. */

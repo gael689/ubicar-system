@@ -12,6 +12,10 @@ interface Props {
   /** D-51/D-59: lo que le queda a cargo del cliente si no elige ninguna
    *  cobertura. `null` si la categoría no tiene franquicia base cargada. */
   franquiciaBase: number | null;
+  /** El alquiler ya con el descuento por duración aplicado — la base sobre la
+   *  que se calculan las coberturas que cuestan un porcentaje. `null` mientras
+   *  la cotización viaja. */
+  subtotalVehiculo: number | null;
   onCambiar: (seleccion: Record<number, number>) => void;
 }
 
@@ -26,7 +30,9 @@ interface Props {
  * el motivo #1 de conflictos post-siniestro, y explicarla acá es lo que
  * convierte la cobertura de un costo en una venta.
  */
-export function Paso2Adicionales({ seleccion, dias, franquiciaBase, onCambiar }: Props) {
+export function Paso2Adicionales({
+  seleccion, dias, franquiciaBase, subtotalVehiculo, onCambiar,
+}: Props) {
   const [items, setItems] = useState<Adicional[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,13 +78,34 @@ export function Paso2Adicionales({ seleccion, dias, franquiciaBase, onCambiar }:
     onCambiar(nuevo);
   };
 
-  const precioTexto = (a: Adicional) =>
-    a.precio === 0
-      ? "Incluido"
-      : `${pesos(a.precio)}${a.unidad_cobro === "por_dia" ? " por día" : ""}`;
+  /** Lo que cuesta una unidad. Una cobertura por porcentaje tiene `precio` en
+   *  0 y su costo real sale del alquiler — antes eso se leía como gratis. */
+  const unitario = (a: Adicional) =>
+    a.porcentaje_sobre_alquiler != null
+      ? ((subtotalVehiculo ?? 0) * a.porcentaje_sobre_alquiler) / 100
+      : a.precio;
 
+  const precioTexto = (a: Adicional) => {
+    // Incluido de verdad: sin precio y sin porcentaje.
+    if (a.porcentaje_sobre_alquiler == null && a.precio === 0) return "Incluido";
+    if (a.porcentaje_sobre_alquiler != null) {
+      const monto = unitario(a);
+      // Mientras la cotización viaja todavía no hay base: se muestra el
+      // porcentaje solo, que ya es información honesta.
+      return monto > 0
+        ? `+${a.porcentaje_sobre_alquiler}% · ${pesos(monto)}`
+        : `+${a.porcentaje_sobre_alquiler}% del alquiler`;
+    }
+    return `${pesos(a.precio)}${a.unidad_cobro === "por_dia" ? " por día" : ""}`;
+  };
+
+  // Un porcentaje **no se multiplica por los días** aunque la unidad diga
+  // `por_dia`: ya se calculó sobre el alquiler entero. Es la misma excepción
+  // que hace el cotizador del backend; si acá no estuviera, la web mostraría
+  // un total distinto del que se cobra.
   const totalItem = (a: Adicional, cant: number) =>
-    a.precio * cant * (a.unidad_cobro === "por_dia" ? dias : 1);
+    unitario(a) * cant
+    * (a.unidad_cobro === "por_dia" && a.porcentaje_sobre_alquiler == null ? dias : 1);
 
   return (
     <div className="space-y-8">

@@ -177,7 +177,7 @@ class ReservaService:
             validar_seleccion_adicionales([
                 AdicionalSolicitado(
                     id=a.id, nombre=a.nombre,
-                    precio_unitario=Decimal(str(a.precio)),
+                    precio_unitario=self._precio_unitario_adicional(a, reserva),
                     unidad_cobro=a.unidad_cobro, cantidad=pedidos[a.id], grupo=a.grupo,
                 )
                 for a in catalogo.values()
@@ -208,24 +208,65 @@ class ReservaService:
             if actual is not None:
                 reserva.adicionales.remove(actual)
             a = catalogo[adicional_id]
+            unitario = self._precio_unitario_adicional(a, reserva)
             reserva.adicionales.append(
                 ReservaAdicional(
                     adicional_id=a.id,
                     cantidad=cantidad,
-                    precio_unitario=Decimal(str(a.precio)),
+                    precio_unitario=unitario,
                     unidad_cobro=a.unidad_cobro,
                     subtotal=self._subtotal_adicional(
-                        Decimal(str(a.precio)), a.unidad_cobro, cantidad, duracion
+                        unitario, a.unidad_cobro, cantidad, duracion,
+                        es_porcentaje=getattr(a, "porcentaje_sobre_alquiler", None) is not None,
                     ),
                 )
             )
 
     @staticmethod
+    def _precio_unitario_adicional(a: Adicional, reserva) -> Decimal:
+        """Lo que cuesta una unidad de este adicional **en esta reserva**.
+
+        Las coberturas no tienen precio propio: cuestan un porcentaje del
+        alquiler (`porcentaje_sobre_alquiler`), y su `precio` es 0. Hasta acá
+        se congelaba ese 0, así que:
+
+          1. el cliente veía "+30%" en la web y lo pagaba en la pasarela
+             —`PagoWebService` sí recalcula bien contra `PrecioService`—, pero
+          2. la línea de la reserva quedaba en $0,
+          3. `total_adicionales` daba 0 y el saldo contaba de menos,
+          4. y el sistema mostraba que el cliente había pagado de más.
+
+        O sea: plata cobrada que no existía como concepto en ningún lado.
+
+        La base es `reserva.precio_total`, que **es sólo el vehículo** — los
+        adicionales van aparte por invariante del modelo (ver
+        `Reserva.total_adicionales`). Es la misma base sobre la que cotiza
+        `PrecioService`, así que los dos números coinciden.
+        """
+        pct = getattr(a, "porcentaje_sobre_alquiler", None)
+        if pct is None:
+            return Decimal(str(a.precio))
+        base = Decimal(str(reserva.precio_total or 0))
+        return (base * Decimal(str(pct)) / Decimal(100)).quantize(Decimal("0.01"))
+
+    @staticmethod
     def _subtotal_adicional(
-        precio_unitario: Decimal, unidad_cobro: str, cantidad: int, duracion_dias: int
+        precio_unitario: Decimal, unidad_cobro: str, cantidad: int, duracion_dias: int,
+        es_porcentaje: bool = False,
     ) -> Decimal:
+        """
+        `es_porcentaje` **no multiplica por los días aunque la unidad de cobro
+        diga `por_dia`**, porque el porcentaje ya se calculó sobre el alquiler
+        entero: multiplicarlo otra vez cobraría un 30% por cada día, o sea
+        120% en un alquiler de cuatro.
+
+        Es exactamente la misma excepción que hace el cotizador
+        (`domain/precios.py`: `if a.unidad_cobro == "por_dia" and not
+        a.es_porcentaje`). Tienen que coincidir: uno es lo que se le muestra
+        y se le cobra al cliente, el otro es lo que queda registrado.
+        """
         multiplicador = Decimal(cantidad)
-        if unidad_cobro == "por_dia":
+        if unidad_cobro == "por_dia" and not es_porcentaje:
             multiplicador *= Decimal(duracion_dias)
         return precio_unitario * multiplicador
 
