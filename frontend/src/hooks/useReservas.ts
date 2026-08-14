@@ -5,6 +5,7 @@ import type {
   Reserva,
   ReservaCreate,
   ReservaUpdate,
+  ReservaConWarnings,
   SolapeWarning,
   PaginatedResponse,
   ApiResponse,
@@ -122,13 +123,22 @@ export function useReservas() {
     []
   );
 
+  /**
+   * Devuelve la reserva **y los avisos**. El backend los manda desde siempre
+   * (`{...reserva, warnings}`) y acá se descartaban: entre ellos viaja el de
+   * D-48, que avisa que se anuló un contrato ya firmado porque se le cambió
+   * el auto a la reserva. O sea que se podía invalidar un contrato firmado y
+   * no enterarse en ninguna pantalla.
+   */
   const updateReserva = useCallback(
-    async (id: number, payload: ReservaUpdate): Promise<Reserva> => {
+    async (id: number, payload: ReservaUpdate): Promise<ReservaConWarnings> => {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await api.patch<ApiResponse<Reserva>>(`/reservas/${id}`, payload);
-        return data.data;
+        const { data } = await api.patch<ApiResponse<Reserva & { warnings?: SolapeWarning[] }>>(
+          `/reservas/${id}`, payload,
+        );
+        return { reserva: data.data, warnings: data.data.warnings ?? [] };
       } catch (err: any) {
         const detail = err?.response?.data?.detail;
         const msg = detail?.message || (typeof detail === 'string' ? detail : 'Error al actualizar');

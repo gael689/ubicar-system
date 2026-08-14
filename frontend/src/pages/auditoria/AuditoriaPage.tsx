@@ -24,6 +24,10 @@ const ACCION_LABEL: Record<string, string> = {
   acreditar: 'Crédito',
   bonificar: 'Bonificó',
   autorizar_descuento: 'Autorizó descuento',
+  asignar_vehiculo: 'Asignó vehículo',
+  reasignar_vehiculo: 'Cambió el vehículo',
+  anular_contrato: 'Anuló contrato',
+  anular_contrato_firmado: 'Anuló un contrato FIRMADO',
 };
 
 const ENTIDAD_LABEL: Record<string, string> = {
@@ -33,20 +37,27 @@ const ENTIDAD_LABEL: Record<string, string> = {
   pago: 'Cobro',
   regla_precio: 'Regla de precio',
   descuento_duracion: 'Descuento por duración',
+  contrato: 'Contrato',
 };
 
 // Rojo para lo que saca plata o borra; verde para lo que entra; neutro para
 // el resto. Colores sólidos, no transparencias: acá el color es información,
 // no decoración.
 const ACCION_COLOR: Record<string, string> = {
-  eliminar: 'bg-red-100 text-red-700',
-  anular: 'bg-red-100 text-red-700',
-  cancelar: 'bg-red-100 text-red-700',
-  bonificar: 'bg-amber-100 text-amber-800',
-  autorizar_descuento: 'bg-amber-100 text-amber-800',
-  dar_de_baja: 'bg-amber-100 text-amber-800',
-  acreditar: 'bg-emerald-100 text-emerald-700',
-  debitar: 'bg-slate-100 text-slate-700',
+  eliminar: 'bg-red-600 text-white',
+  anular: 'bg-red-600 text-white',
+  anular_contrato: 'bg-red-600 text-white',
+  // El más grave de la lista: alguien invalidó un papel que el cliente ya
+  // había firmado. Es la línea que se va a buscar dentro de seis meses.
+  anular_contrato_firmado: 'bg-red-800 text-white',
+  cancelar: 'bg-red-600 text-white',
+  bonificar: 'bg-amber-600 text-white',
+  autorizar_descuento: 'bg-amber-600 text-white',
+  dar_de_baja: 'bg-amber-600 text-white',
+  reasignar_vehiculo: 'bg-amber-600 text-white',
+  acreditar: 'bg-emerald-600 text-white',
+  debitar: 'bg-slate-600 text-white',
+  asignar_vehiculo: 'bg-slate-600 text-white',
 };
 
 function etiqueta(mapa: Record<string, string>, clave: string) {

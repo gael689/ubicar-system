@@ -445,8 +445,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           anticipo_fecha: estadoPago !== 'pendiente' ? anticipoFecha : null,
           anticipo_medio_pago: estadoPago !== 'pendiente' ? anticipoMedioPago : null,
         };
-        const r = await updateReserva(reserva!.id, payload);
-        onSuccess(r, []);
+        // Los avisos se propagan: entre ellos viene el de D-48, que dice que
+        // se anuló un contrato firmado porque se le cambió el auto. Tirarlos
+        // acá era la razón por la que eso podía pasar sin que nadie lo viera.
+        const { reserva: actualizada, warnings } = await updateReserva(reserva!.id, payload);
+        onSuccess(actualizada, warnings);
       } else {
         const payload: ReservaCreate = {
           vehiculo_id: parseInt(vehiculoId),

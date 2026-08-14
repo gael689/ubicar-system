@@ -25,6 +25,7 @@ from app.models.contrato import Contrato, ContratoPlantilla
 from app.models.reserva import Reserva
 from app.models.usuario import Usuario
 from app.models.vehiculo import Vehiculo
+from app.services import auditoria_service
 from app.services.configuracion_service import ConfiguracionService
 
 
@@ -642,19 +643,60 @@ class ContratoService:
         """
         Anula el contrato. **Nunca se borra** — un contrato emitido existió, lo
         haya firmado el cliente o no.
+
+        Dos cosas que faltaban y son la razón de este método hoy:
+
+        1. **Se audita.** `usuario_id` se recibía y no se usaba: anular un
+           contrato —incluso uno firmado— no dejaba rastro en ningún lado.
+        2. **Se revoca el link de firma.** Sin esto el `firma_token` viejo
+           sigue vivo y el cliente, que tiene el link en su WhatsApp, puede
+           entrar y firmar un contrato anulado. Con el token en `None`,
+           `por_token` lo rechaza solo.
         """
         contrato = self.get(contrato_id)
         if contrato.anulado:
             raise BusinessRuleError("contrato_ya_anulado", "El contrato ya está anulado")
 
+        estaba_firmado = bool(contrato.firmado)
+
         contrato.anulado = True
         contrato.motivo_anulacion = motivo
         contrato.activo = False
+        # El link muere con el contrato. `firmado`, `firmado_at` y `firma_key`
+        # **no se tocan**: son el registro histórico de que alguien firmó, y
+        # borrarlos seria reescribir lo que paso.
+        contrato.firma_token = None
+        contrato.firma_token_expira = None
 
         alquiler = self.db.get(Alquiler, contrato.alquiler_id)
         if alquiler:
             alquiler.contrato_firmado = False
         self.db.flush()
+
+        # Acción distinta cuando estaba firmado: es la línea que alguien va a
+        # buscar dentro de seis meses, y tiene que poder filtrarla.
+        auditoria_service.registrar(
+            self.db,
+            usuario_id=usuario_id,
+            accion="anular_contrato_firmado" if estaba_firmado else "anular_contrato",
+            entidad_tipo="contrato",
+            entidad_id=contrato.id,
+            descripcion=(
+                f"Contrato {contrato.numero_formateado} anulado"
+                + (
+                    f" — estaba FIRMADO por {contrato.firmado_por_nombre or 'el cliente'}"
+                    f" el {contrato.firmado_at:%d/%m/%Y}" if estaba_firmado and contrato.firmado_at
+                    else ""
+                )
+                + f". Motivo: {motivo}"
+            ),
+            datos_antes={
+                "firmado": estaba_firmado,
+                "firmado_por": contrato.firmado_por_nombre,
+                "firmado_at": contrato.firmado_at.isoformat() if contrato.firmado_at else None,
+            },
+            datos_despues={"anulado": True, "motivo": motivo},
+        )
         return contrato
 
     # ── Lectura ───────────────────────────────────────────────────────────

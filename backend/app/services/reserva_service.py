@@ -659,6 +659,29 @@ class ReservaService:
         if reserva.estado not in ESTADOS_EDITABLES:
             raise ConflictError(f"estado_invalido|No se puede modificar una reserva en estado '{reserva.estado}'")
 
+        # **Con el alquiler abierto el auto no se cambia acá.**
+        #
+        # `Alquiler` no tiene `vehiculo_id`: lee el de la reserva. Cambiarlo
+        # con el alquiler en curso reescribe retroactivamente qué auto salió, y
+        # deja el kilometraje y el combustible de salida —que son del auto
+        # viejo— colgando del nuevo. El check-in después compararía el
+        # odómetro contra otro vehículo.
+        #
+        # El caso real ("el cliente volvió y se cambió de auto") existe, pero
+        # no es una reasignación: son **dos alquileres**. Cerrar el primero con
+        # su check-in real y abrir el segundo es lo único que deja los km, el
+        # combustible y los daños imputados al auto que corresponde.
+        #
+        # Hasta hoy esto lo tapaba sólo un `disabled` en el formulario del
+        # sistema interno — o sea, no lo tapaba: cualquier otro cliente de la
+        # API podía hacerlo.
+        if vehiculo_id is not None and reserva.alquiler is not None and reserva.vehiculo_id != vehiculo_id:
+            raise ConflictError(
+                "alquiler_en_curso|El vehículo ya se entregó: el kilometraje y el "
+                "combustible de salida son de ese auto. Cerrá el alquiler con el "
+                "check-in y abrí uno nuevo para el otro vehículo."
+            )
+
         # Si es confirmada, no se puede cambiar cliente
         # (vehiculo_id y fechas sí, según D8)
 
@@ -1170,9 +1193,16 @@ class ReservaService:
                 f"reserva en estado '{reserva.estado}'"
             )
         if reserva.alquiler is not None:
+            # "Revertir el checkout" **no existe en el sistema**, así que el
+            # mensaje viejo mandaba a hacer algo imposible. Lo que hay que
+            # hacer son dos alquileres: cerrar éste con su check-in real y
+            # abrir otro para el auto nuevo — es lo único que deja los km y el
+            # combustible imputados al vehículo que corresponde.
             raise BusinessRuleError(
                 "alquiler_en_curso",
-                "El auto ya salió: para cambiarlo hay que revertir el checkout",
+                "El auto ya se entregó. Cerrá el alquiler con el check-in y abrí "
+                "uno nuevo para el otro vehículo: el kilometraje y el combustible "
+                "de salida son de este auto.",
             )
 
         vehiculo = self.db.get(Vehiculo, vehiculo_id)
