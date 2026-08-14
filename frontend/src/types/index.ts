@@ -944,6 +944,8 @@ export interface DiaResumenAnual {
   devoluciones: number;
   alertas: number;
   sin_asignar: number;
+  /** Estado → cuántos ese día. Es lo que pinta el color del cuadradito. */
+  estados: EstadosPorDia;
 }
 
 export interface ResumenAnualResponse {
@@ -1704,6 +1706,11 @@ export interface ResultadoEnvioOferta {
  * puede no haber elegido categoría ni fechas todavía.
  */
 export type MotivoSolicitud = 'fuera_de_ventana' | 'sin_cupo' | 'otro_lugar';
+
+/** Estado → cuántos ese día, en la vista anual. Mismas claves que
+ *  `EventoOcupacion.estado`: estados de reserva y motivos de bloqueo en el
+ *  mismo mapa, para pintar con una sola tabla de colores. */
+export type EstadosPorDia = Record<string, number>;
 export type EstadoSolicitud = 'pendiente' | 'contactado' | 'cerrado';
 
 export interface SolicitudContacto {

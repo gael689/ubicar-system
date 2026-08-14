@@ -144,8 +144,11 @@ function MesMini({
                 'relative aspect-square flex items-center justify-center rounded text-[10px] transition-colors',
                 onSelectDia && 'cursor-pointer hover:brightness-95',
                 celda.className || 'text-muted-foreground',
-                esHoy && !celda.className && 'ring-1 ring-primary text-primary font-bold',
-                esHoy && celda.className && 'ring-2 ring-foreground/50',
+                // Anillos sólidos, sin opacidad: sobre un chip de color, un
+                // borde translúcido se mezcla con el fondo y deja de marcar
+                // el día de hoy, que es justo lo que tiene que saltar.
+                esHoy && !celda.className && 'ring-2 ring-primary text-primary font-bold',
+                esHoy && celda.className && 'ring-2 ring-slate-900',
               )}
             >
               {celda.contenido ?? dia}

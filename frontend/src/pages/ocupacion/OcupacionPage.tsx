@@ -215,7 +215,14 @@ export function OcupacionPage() {
     setViewMode('timeline');
     setCurrentYear(anioSel);
     setCurrentMonth(mesSel);
-    setScrollToDate(`${anioSel}-${String(mesSel + 1).padStart(2, '0')}-01`);
+    // Si el mes elegido es el actual, cae en **hoy** y no en el día 1: en el
+    // mes en curso lo que se quiere ver es lo que está pasando, no el
+    // arranque del mes que ya pasó.
+    const hoy = new Date();
+    const esMesActual = anioSel === hoy.getFullYear() && mesSel === hoy.getMonth();
+    setScrollToDate(
+      esMesActual ? formatDate(hoy) : `${anioSel}-${String(mesSel + 1).padStart(2, '0')}-01`,
+    );
   };
   const onSelectDiaAnual = (fechaISO: string) => {
     setViewMode('timeline');
@@ -387,12 +394,9 @@ export function OcupacionPage() {
         </div>
       </div>
 
-      {/* Leyenda de estados. Sólo en timeline y agenda: la vista anual no
-          pinta por estado sino por densidad de ocupación, y trae su propia
-          leyenda adentro. Mostrar las dos juntas —como pasaba al volverla la
-          vista por defecto— es explicar colores que en esa pantalla no
-          aparecen. */}
-      {viewMode !== 'anual' && (
+      {/* Leyenda de estados — una sola para las tres vistas. La anual pinta
+          con estos mismos colores desde que dejó de pintar por densidad, así
+          que ya no hay dos leyendas compitiendo en la misma pantalla. */}
       <div className="flex items-center gap-5 flex-wrap text-sm px-1">
         {/* Sólo los estados de reserva. Los 5 motivos de bloqueo no van uno
             por uno: se resumen en un único ítem "Bloqueado" al final, con el
@@ -412,7 +416,6 @@ export function OcupacionPage() {
           <span className="text-slate-600 font-medium">Bloqueado</span>
         </div>
       </div>
-      )}
 
       {error && (
         <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>
@@ -959,20 +962,79 @@ function AgendaView({
 // entero de `/ocupacion`: acá no hacen falta los eventos uno por uno, sólo la
 // densidad y los contadores por día.
 
-function colorDensidad(ratio: number): string {
-  if (ratio <= 0) return 'bg-slate-50 text-slate-400';
-  if (ratio < 0.34) return 'bg-primary/20 text-primary';
-  if (ratio < 0.67) return 'bg-primary/50 text-white';
-  return 'bg-primary text-white font-bold';
+/** Qué estado manda cuando un día tiene varios.
+ *
+ *  **Prioridad, no mayoría.** La vista anual es para decidir qué día hay que
+ *  mirar: un día con una vencida entre diez activas te necesita igual. Los
+ *  cinco motivos de bloqueo van juntos, debajo de lo que está en curso y
+ *  arriba de lo que ya terminó. */
+const PRIORIDAD_ANUAL = [
+  'vencida', 'activa', 'confirmada', 'pendiente',
+  'mantenimiento', 'siniestro', 'uso_interno', 'venta', 'otro',
+  'finalizada',
+];
+
+const ES_BLOQUEO_ESTADO = (e: string) =>
+  ['mantenimiento', 'siniestro', 'uso_interno', 'venta', 'otro'].includes(e);
+
+/** Los tokens que sirven en una barra del timeline pero son ruido en un
+ *  cuadradito de 45px: el latido con 40 celdas rojas a la vez marea, y el
+ *  tachado y la opacidad no se leen a ese tamaño. */
+const SOLO_TIMELINE = new Set(['animate-pulse', 'line-through', 'opacity-90', 'border-dashed']);
+
+/**
+ * El color del día en la vista anual, **derivado de la misma tabla que el
+ * timeline**. No hay una segunda paleta: si mañana cambia el azul de
+ * `confirmada` en `ESTADO_COLORS_EVENTO`, cambian las dos vistas juntas.
+ */
+function chipAnual(estado: string): string {
+  const base = ESTADO_COLORS_EVENTO[estado] ?? 'bg-slate-500 border-slate-600 text-white';
+  return base.split(' ').filter(t => !SOLO_TIMELINE.has(t)).join(' ');
 }
 
+/** Sólo el fondo, para los segmentos de la franja inferior. */
+function soloFondo(clases: string): string {
+  return clases.split(' ').filter(t => t.startsWith('bg-')).join(' ');
+}
+
+/** Los estados presentes ese día, del más urgente al menos. */
+function estadosPresentes(d: DiaResumenAnual): string[] {
+  const presentes = Object.entries(d.estados ?? {})
+    .filter(([, n]) => n > 0)
+    .map(([e]) => e);
+  return PRIORIDAD_ANUAL.filter(e => presentes.includes(e));
+}
+
+const PLURAL_ESTADO: Record<string, [string, string]> = {
+  pendiente: ['pendiente', 'pendientes'],
+  confirmada: ['confirmada', 'confirmadas'],
+  activa: ['activa', 'activas'],
+  vencida: ['vencida', 'vencidas'],
+  finalizada: ['finalizada', 'finalizadas'],
+};
+
 function tooltipDia(d: DiaResumenAnual): string {
-  const partes = [`${d.ocupados}/${d.total} ocupados`];
-  if (d.entregas) partes.push(`${d.entregas} entrega${d.entregas === 1 ? '' : 's'}`);
-  if (d.devoluciones) partes.push(`${d.devoluciones} devolución${d.devoluciones === 1 ? '' : 'es'}`);
-  if (d.alertas) partes.push(`${d.alertas} alerta${d.alertas === 1 ? '' : 's'}`);
-  if (d.sin_asignar) partes.push(`${d.sin_asignar} sin asignar`);
-  return partes.join(' · ');
+  const estados = d.estados ?? {};
+  const partes: string[] = [];
+  let bloqueados = 0;
+
+  for (const estado of estadosPresentes(d)) {
+    const n = estados[estado];
+    if (ES_BLOQUEO_ESTADO(estado)) { bloqueados += n; continue; }
+    const [uno, varios] = PLURAL_ESTADO[estado] ?? [estado, estado];
+    partes.push(`${n} ${n === 1 ? uno : varios}`);
+  }
+  if (bloqueados) {
+    partes.push(`${bloqueados} vehículo${bloqueados === 1 ? '' : 's'} bloqueado${bloqueados === 1 ? '' : 's'}`);
+  }
+
+  const segunda: string[] = [];
+  if (d.entregas) segunda.push(`${d.entregas} entrega${d.entregas === 1 ? '' : 's'}`);
+  if (d.devoluciones) segunda.push(`${d.devoluciones} devolución${d.devoluciones === 1 ? '' : 'es'}`);
+  if (d.sin_asignar) segunda.push(`${d.sin_asignar} sin asignar`);
+  if (d.total) segunda.push(`${d.ocupados} de ${d.total} autos ocupados`);
+
+  return [partes.join(' · '), segunda.join(' · ')].filter(Boolean).join('\n');
 }
 
 function VistaAnualOcupacion({
@@ -1000,21 +1062,10 @@ function VistaAnualOcupacion({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded bg-primary" /> Muy ocupado
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded bg-primary/40" /> Ocupación media
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded border-2 border-red-500" /> Con alertas
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Reservas sin asignar
-        </span>
-      </div>
-
+      {/* Sin leyenda propia: la vista anual usa los mismos colores y la misma
+          leyenda de estados que el timeline, que está arriba. Tener dos
+          leyendas distintas en la misma pantalla era lo que hacía que nadie
+          supiera qué significaba cada color. */}
       <CalendarioAnual
         anio={anio}
         onAnioChange={setAnio}
@@ -1022,16 +1073,28 @@ function VistaAnualOcupacion({
         onSelectDia={onSelectDia}
         renderDia={(fechaISO, dia) => {
           const d = porDia.get(fechaISO);
-          if (!d) return null;
-          const ratio = d.total > 0 ? d.ocupados / d.total : 0;
+          const presentes = d ? estadosPresentes(d) : [];
+          // Día sin nada: se devuelve null y la grilla le deja su gris de
+          // siempre. Un tooltip que diga "0 reservas" es peor que ninguno.
+          if (!d || presentes.length === 0) return null;
+
+          const [dominante, ...otros] = presentes;
           return {
-            className: cn(colorDensidad(ratio), d.alertas > 0 && 'ring-2 ring-red-500'),
+            className: cn('border overflow-hidden font-semibold', chipAnual(dominante)),
             title: tooltipDia(d),
             contenido: (
               <>
                 {dia}
-                {d.sin_asignar > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                {/* El fondo dice el estado más urgente; esta franja avisa que
+                    ese día hay además otros. Sin ella, un día con una vencida
+                    sola se vería igual que uno con una vencida entre diez
+                    activas. */}
+                {otros.length > 0 && (
+                  <span className="absolute inset-x-0 bottom-0 flex h-1.5">
+                    {otros.map(e => (
+                      <span key={e} className={cn('flex-1', soloFondo(chipAnual(e)))} />
+                    ))}
+                  </span>
                 )}
               </>
             ),

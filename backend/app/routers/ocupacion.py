@@ -153,6 +153,7 @@ def get_resumen_anual(
     from sqlalchemy import func
 
     from app.domain.enums import EstadoReserva
+    from app.models.bloqueo_vehiculo import BloqueoVehiculo
     from app.models.notificacion import Notificacion
     from app.models.reserva import Reserva
 
@@ -166,14 +167,34 @@ def get_resumen_anual(
         EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value,
         EstadoReserva.ACTIVA.value, EstadoReserva.VENCIDA.value,
     ]
+    # El año se pinta **por estado**, no por densidad: `finalizada` se suma acá
+    # aunque no ocupe, porque la leyenda la promete y un mes pasado sin color
+    # se lee como un mes sin trabajo.
+    #
+    # `cancelada` queda afuera a propósito, y no es una omisión de esta vista:
+    # la consulta que alimenta el timeline (`reserva_repo`) tampoco la trae.
+    # La anual es una pre-vista del timeline — si pintara un día por una
+    # cancelada, al hacer click no habría nada que mirar.
+    ESTADOS_VISIBLES = ESTADOS_OCUPAN + [EstadoReserva.FINALIZADA.value]
     reservas = (
         db.query(Reserva)
         .join(Vehiculo, Vehiculo.id == Reserva.vehiculo_id)
         .filter(
             Vehiculo.activo.is_(True),
-            Reserva.estado.in_(ESTADOS_OCUPAN),
+            Reserva.estado.in_(ESTADOS_VISIBLES),
             Reserva.fecha_inicio <= hasta,
             Reserva.fecha_fin >= desde,
+        )
+        .all()
+    )
+    bloqueos = (
+        db.query(BloqueoVehiculo)
+        .join(Vehiculo, Vehiculo.id == BloqueoVehiculo.vehiculo_id)
+        .filter(
+            Vehiculo.activo.is_(True),
+            BloqueoVehiculo.activo.is_(True),
+            BloqueoVehiculo.fecha_desde <= hasta,
+            BloqueoVehiculo.fecha_hasta >= desde,
         )
         .all()
     )
@@ -208,21 +229,47 @@ def get_resumen_anual(
             "entregas": 0, "devoluciones": 0,
             "alertas": alertas_por_dia.get(d, 0),
             "sin_asignar": 0,
+            # Estado → cuántos ese día. **Mismo vocabulario que
+            # `EventoOcupacion.estado`**: estados de reserva y motivos de
+            # bloqueo en el mismo diccionario, para que el front pinte con una
+            # sola tabla de colores y no aparezca vocabulario nuevo.
+            "estados": {},
         }
         d += un_dia
 
+    def _sumar_estado(dia: date, estado: str) -> None:
+        dias[dia]["estados"][estado] = dias[dia]["estados"].get(estado, 0) + 1
+
     for r in reservas:
+        ocupa = r.estado in ESTADOS_OCUPAN
         cursor = max(r.fecha_inicio, desde)
         # El día de devolución no cuenta como ocupado (mismo criterio que el
-        # resto del sistema: [fecha_inicio, fecha_fin) es el rango que cobra).
+        # resto del sistema: [fecha_inicio, fecha_fin) es el rango que cobra),
+        # pero **sí se pinta**: el timeline dibuja la barra hasta ese día
+        # inclusive, y si acá no coincidiera, un día pintado en el año
+        # llevaría a un timeline vacío.
         limite = min(r.fecha_fin, hasta + un_dia)
         while cursor < limite:
-            dias[cursor]["ocupados"] += 1
+            if ocupa:
+                dias[cursor]["ocupados"] += 1
+            _sumar_estado(cursor, r.estado)
             cursor += un_dia
+        if desde <= r.fecha_fin <= hasta:
+            _sumar_estado(r.fecha_fin, r.estado)
         if desde <= r.fecha_inicio <= hasta:
             dias[r.fecha_inicio]["entregas"] += 1
         if desde <= r.fecha_fin <= hasta:
             dias[r.fecha_fin]["devoluciones"] += 1
+
+    # Un auto en el taller tampoco está disponible. Antes no se contaba y el
+    # "8 de 15 ocupados" del tooltip venía mintiendo por defecto.
+    for b in bloqueos:
+        cursor = max(b.fecha_desde, desde)
+        limite = min(b.fecha_hasta, hasta)
+        while cursor <= limite:
+            dias[cursor]["ocupados"] += 1
+            _sumar_estado(cursor, b.motivo)
+            cursor += un_dia
 
     for r in sin_asignar_reservas:
         cursor = max(r.fecha_inicio, desde)
