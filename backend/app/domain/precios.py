@@ -118,6 +118,12 @@ class AdicionalSolicitado:
     unidad_cobro: str = "por_dia"   # por_dia | unico
     cantidad: int = 1
     grupo: str = "extra"
+    # D-53: coberturas con precio como % del alquiler del vehículo, no un
+    # monto fijo. Cuando viene informado, `PrecioService` ya resolvió
+    # `precio_unitario = subtotal_vehiculo * porcentaje/100` antes de llegar
+    # acá — el dominio sólo lo necesita para no volver a multiplicar por los
+    # días si `unidad_cobro == "por_dia"` viene mal cargado en el adicional.
+    es_porcentaje: bool = False
 
 
 @dataclass(frozen=True)
@@ -298,7 +304,11 @@ def cotizar_adicionales(
             )
         precio = Decimal(str(a.precio_unitario))
         multiplicador = Decimal(a.cantidad)
-        if a.unidad_cobro == "por_dia":
+        # Un adicional por porcentaje ya llega con `precio_unitario` resuelto
+        # como el monto total sobre el alquiler completo (D-53): multiplicar
+        # otra vez por los días lo cobraría al cuadrado, igual que pasaría
+        # con el recargo por edad (ver domain/recargo_edad.py).
+        if a.unidad_cobro == "por_dia" and not a.es_porcentaje:
             multiplicador *= Decimal(duracion_dias)
         subtotal = _redondear(precio * multiplicador)
 

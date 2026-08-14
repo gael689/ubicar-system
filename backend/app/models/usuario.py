@@ -3,6 +3,16 @@ from sqlalchemy import String, Boolean, DateTime, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
+# D-53 (plan de conexión, §4.3 punto 2) — el `auth_sub` del usuario "Sistema"
+# que representa acciones que no cargó una persona (reservas web, solicitudes
+# sin cupo). Antes esos lugares usaban `order_by(Usuario.id).first()`, que
+# funcionaba sólo porque ese primer usuario resultaba ser de prueba — después
+# de una limpieza de datos pasa a ser una persona real, y la auditoría
+# empieza a decir que Franco cargó algo que entró solo por la web a las 3 de
+# la mañana. Nunca es un Clerk `sub` real (esos vienen con el prefijo
+# `user_`), así que no puede colisionar.
+AUTH_SUB_SISTEMA = "sistema:interno"
+
 
 class Usuario(Base):
     __tablename__ = "usuarios"

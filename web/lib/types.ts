@@ -9,6 +9,9 @@
 
 export interface ConfigPublica {
   anticipacion_minima_horas: number;
+  /** D-52 (13/08): nuevo — cuán lejos en el futuro se puede reservar online.
+   *  `0` o ausente = sin tope, aunque el backend siempre lo manda. */
+  horizonte_maximo_dias?: number;
   duracion_maxima_dias: number;
   lugares_retiro: string[];
   hold_minutos: number;
@@ -168,6 +171,13 @@ export interface CategoriaDisponible {
   valijas: number | null;
   transmision: string | null;
   aire_acondicionado: boolean;
+  /**
+   * Lo que le queda a cargo del cliente si no contrata ninguna cobertura
+   * (D-51/D-59). `null` si la categoría no tiene franquicia base cargada.
+   * Es el escenario de referencia contra el que se comparan las coberturas
+   * del paso 2 — hoy es el más caro, no el más barato como antes.
+   */
+  franquicia_base: number | null;
   disponibles: number;
   hay_cupo: boolean;
   ultima_unidad: boolean;

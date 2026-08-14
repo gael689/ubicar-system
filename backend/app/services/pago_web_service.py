@@ -42,7 +42,7 @@ from app.models.hold import Hold
 from app.models.pago import Pago
 from app.models.pago_web import PagoWeb
 from app.models.reserva import Reserva
-from app.models.usuario import Usuario
+from app.models.usuario import AUTH_SUB_SISTEMA, Usuario
 from app.services.configuracion_service import ConfiguracionService
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 from app.services.disponibilidad_service import DisponibilidadService
@@ -155,6 +155,7 @@ class PagoWebService:
         categoria = self.db.get(Categoria, hold.categoria_id)
         if categoria is None or not categoria.activo:
             raise NotFoundError("Categoría", hold.categoria_id)
+        self._validar_edad_minima(fecha_nacimiento, hold.fecha_inicio)
 
         # ¿Este hold ya abrió un checkout? Pasa con el doble clic y con el
         # botón "atrás" del navegador. Si además eligió lo mismo, se le
@@ -376,6 +377,27 @@ class PagoWebService:
 
     # ─── Piezas internas ─────────────────────────────────────────────────────
 
+    def _validar_edad_minima(self, fecha_nacimiento: date | None, fecha_inicio: date) -> None:
+        """
+        D-51 (plan de conexión, 13/08) — revierte D-38. Sin `fecha_nacimiento`
+        no hay nada que validar acá: el paso 3 de la web la pide, pero este
+        service también lo usan caminos que todavía no la tienen (se corrige
+        río abajo si hiciera falta).
+        """
+        if fecha_nacimiento is None:
+            return
+        from app.domain.recargo_edad import calcular_edad
+        from app.services.configuracion_service import ConfiguracionService
+
+        edad = calcular_edad(fecha_nacimiento, fecha_inicio)
+        minima = ConfiguracionService(self.db).get_int("alquiler.edad_minima", 21)
+        if edad < minima:
+            raise BusinessRuleError(
+                "edad_minima",
+                f"Para alquilar online hay que ser mayor de {minima} años. "
+                "Escribinos por WhatsApp y lo vemos con un agente comercial.",
+            )
+
     def _descuento_pago_total(self) -> Decimal:
         return ConfiguracionService(self.db).get_decimal(
             dom.CLAVE_DESCUENTO_PAGO_TOTAL, dom.DESCUENTO_PAGO_TOTAL_DEFAULT
@@ -561,6 +583,7 @@ class PagoWebService:
         categoria = self.db.get(Categoria, hold.categoria_id)
         if categoria is None or not categoria.activo:
             raise NotFoundError("Categoría", hold.categoria_id)
+        self._validar_edad_minima(fecha_nacimiento, hold.fecha_inicio)
 
         cotizacion, categoria_id = PrecioService(self.db).calcular(
             fecha_inicio=hold.fecha_inicio,
@@ -605,7 +628,31 @@ class PagoWebService:
         )
         reserva.estado = EstadoReserva.PENDIENTE_PAGO.value
         reserva.origen = "web"
+        # Sin esto, `avisar_reserva_web` no tiene de dónde sacar el contacto:
+        # `iniciar_checkout` (el camino de Mercado Pago) sí los carga, y este
+        # camino se los había olvidado — el aviso interno mostraba "?" en vez
+        # del nombre y el teléfono de quien acababa de dejar la reserva.
+        reserva.web_contacto_nombre = nombre
+        reserva.web_contacto_email = email
+        reserva.web_contacto_telefono = telefono
         self.db.flush()
+
+        # Plan de conexión (13/08), cierra C-4: por transferencia no hay
+        # webhook, así que **este** es el único momento en que algo puede
+        # avisar que la reserva existe. Antes de esto, el camino de
+        # transferencia —el único que hoy puede cobrar de verdad, sin
+        # credenciales de Mercado Pago— entraba en silencio total: cero
+        # campana, cero mail. Nunca puede tumbar la reserva ya creada.
+        try:
+            from app.services.notificacion_service import NotificacionService
+            NotificacionService(self.db).avisar_reserva_web(reserva)
+        except Exception:
+            logger.exception("[Transferencia] falló el aviso instantáneo de la reserva #%s", reserva.id)
+        try:
+            from app.services.email_reservas import notificar_reserva_transferencia_pendiente
+            notificar_reserva_transferencia_pendiente(self.db, reserva, anticipo)
+        except Exception:
+            logger.exception("[Transferencia] falló el mail de la reserva #%s", reserva.id)
 
         return {
             "reserva_id": reserva.id,
@@ -690,11 +737,15 @@ class PagoWebService:
     def _usuario_sistema(self) -> Usuario:
         """
         Nadie del equipo cargó esta reserva, pero `usuario_id` y `cobrado_por`
-        son obligatorios. Se usa el primer usuario, igual que en
-        `POST /public/solicitudes`. Con Clerk integrado corresponde crear un
-        usuario "Sistema" explícito.
+        son obligatorios. Se busca primero el usuario "Sistema" explícito
+        (D-53, `AUTH_SUB_SISTEMA`) y, si el script de limpieza todavía no lo
+        creó, se cae al primero por id — igual que en `POST /public/solicitudes`
+        — para no romper instalaciones viejas.
         """
-        usuario = self.db.query(Usuario).order_by(Usuario.id).first()
+        usuario = (
+            self.db.query(Usuario).filter(Usuario.auth_sub == AUTH_SUB_SISTEMA).first()
+            or self.db.query(Usuario).order_by(Usuario.id).first()
+        )
         if usuario is None:
             raise BusinessRuleError(
                 "sistema_sin_usuarios",

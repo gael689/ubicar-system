@@ -275,6 +275,24 @@ export const api = {
    * cae en una carpeta que nadie encuentra.
    */
   urlContratoPdf: (token: string) => `${BASE}/public/contratos/${token}/pdf`,
+
+  /**
+   * Plan de conexión (13/08), §3.9 — lo que registra el cartel de derivación
+   * comercial cada vez que aparece. **No es una consulta**: no lleva
+   * contacto, no crea nada que alguien tenga que atender. Es fire-and-forget
+   * a propósito: si esto falla, no puede romper el cartel que lo disparó.
+   */
+  registrarBusquedaSinResultado: (body: {
+    motivo: "sin_cupo" | "anticipacion" | "horizonte" | "duracion" | "otro_lugar";
+    boton_elegido: "whatsapp" | "seguir_web" | "consulta";
+    categoria_id?: number | null;
+    fecha_inicio?: string | null;
+    fecha_fin?: string | null;
+  }) =>
+    request<{ id: number }>("/public/estadisticas/busqueda-sin-resultado", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).catch(() => null),
 };
 
 // ─── Formato ─────────────────────────────────────────────────────────────────
@@ -297,4 +315,19 @@ export function fechaCorta(iso: string): string {
   if (!iso) return "—";
   const [a, m, d] = iso.split("-").map(Number);
   return `${d} ${MESES[m - 1]?.slice(0, 3)} ${a}`;
+}
+
+/**
+ * "10 días" / "4 meses" (si `enMeses` y es múltiplo exacto de 30) / "90
+ * días" — mismo criterio que `_texto_anticipacion` del backend: nadie
+ * procesa "240 horas". Centralizado acá porque lo usan `Paso1Vehiculo` (el
+ * cartel de derivación) y `BuscadorRango` (el aviso bajo el formulario) —
+ * duplicarlo es el tipo de copia que termina desalineada (§7).
+ */
+export function textoPlazo(dias: number, enMeses = false): string {
+  if (enMeses && dias % 30 === 0) {
+    const meses = dias / 30;
+    return `${meses} ${meses === 1 ? "mes" : "meses"}`;
+  }
+  return `${dias} ${dias === 1 ? "día" : "días"}`;
 }

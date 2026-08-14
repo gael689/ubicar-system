@@ -281,12 +281,31 @@ class ReservaRepo:
         fecha_fin: date,
         vehiculo_ids: list[int] | None = None,
     ) -> list[Reserva]:
-        """Query optimizada para el endpoint /ocupacion (calendario)."""
+        """
+        Query para el endpoint /ocupacion (calendario).
+
+        **Plan de conexión (13/08), cierra C-1.** Antes filtraba
+        `Reserva.vehiculo_id.in_(vehiculo_ids)` a secas: un `IN` nunca
+        matchea `NULL`, así que toda reserva por categoría —sin auto
+        asignado todavía— quedaba fuera del calendario sin importar su
+        estado. Con `or_(..., vehiculo_id.is_(None))` esas reservas se traen
+        igual; es el router (`routers/ocupacion.py`) el que las separa en un
+        panel aparte, porque sin auto no hay fila de vehículo donde
+        dibujarlas.
+
+        También suma los tres estados de la reserva web
+        (`pendiente_pago`/`sin_disponibilidad`/`revision_sin_cupo`), que
+        antes quedaban explícitamente afuera. Esto es sólo para **mostrarlas**
+        — esta query no alimenta ningún cálculo de cupo (eso vive aparte, en
+        `DisponibilidadService`), así que ampliar los estados acá no cambia
+        qué se puede vender, sólo qué se ve.
+        """
         q = (
             self.db.query(Reserva)
             .options(
                 joinedload(Reserva.vehiculo),
                 joinedload(Reserva.cliente),
+                joinedload(Reserva.categoria),
                 joinedload(Reserva.alquiler),
             )
             .filter(
@@ -298,9 +317,12 @@ class ReservaRepo:
                     EstadoReserva.ACTIVA.value,
                     EstadoReserva.VENCIDA.value,
                     EstadoReserva.FINALIZADA.value,
+                    EstadoReserva.PENDIENTE_PAGO.value,
+                    EstadoReserva.SIN_DISPONIBILIDAD.value,
+                    EstadoReserva.REVISION_SIN_CUPO.value,
                 ]),
             )
         )
         if vehiculo_ids:
-            q = q.filter(Reserva.vehiculo_id.in_(vehiculo_ids))
+            q = q.filter(or_(Reserva.vehiculo_id.in_(vehiculo_ids), Reserva.vehiculo_id.is_(None)))
         return q.all()

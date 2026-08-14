@@ -314,16 +314,20 @@ def validar_rango_web(
     inicio: datetime,
     fin: datetime,
     ahora: datetime,
-    anticipacion_minima_horas: int = 24,
+    anticipacion_minima_horas: int = 240,
     duracion_maxima_dias: int = 90,
+    horizonte_maximo_dias: int | None = 120,
 ) -> None:
     """
     Reglas del rango para una reserva **pública**, que el mostrador no
     necesita: acá no hay una persona verificando que el pedido tenga sentido.
 
-    `anticipacion_minima_horas` es la decisión #2 de
-    `docs/DECISIONES_RESERVAS_WEB.md` — 24 h es el valor recomendado, pero es
-    un parámetro justamente porque todavía no está confirmado.
+    Los tres topes son D-52 (plan de conexión, 13/08): la web vende de **10
+    días** de anticipación a **4 meses** de horizonte, con la duración máxima
+    sin cambio en 90 días. Viven en `configuracion`
+    (`web.anticipacion_minima_horas`/`web.horizonte_maximo_dias`/
+    `web.duracion_maxima_dias`) y llegan acá como parámetros — el dominio no
+    sabe de dónde salen, sólo los valida.
 
     Levanta ValueError con un mensaje mostrable al cliente.
     """
@@ -335,14 +339,39 @@ def validar_rango_web(
     horas_hasta_retiro = (inicio - ahora).total_seconds() / 3600
     if horas_hasta_retiro < anticipacion_minima_horas:
         raise ValueError(
-            f"Las reservas online necesitan al menos {anticipacion_minima_horas} horas "
-            "de anticipación. Para retirar antes, escribinos por WhatsApp."
+            f"{_texto_anticipacion(anticipacion_minima_horas)} Para retirar antes, "
+            "escribinos por WhatsApp."
         )
+
+    # D-52: el horizonte es nuevo — antes no había tope y se podía reservar
+    # para dentro de dos años. `None` lo apaga (compatibilidad hacia atrás
+    # para quien llame sin este parámetro).
+    if horizonte_maximo_dias is not None:
+        dias_hasta_retiro = (inicio.date() - ahora.date()).days
+        if dias_hasta_retiro > horizonte_maximo_dias:
+            meses = horizonte_maximo_dias // 30
+            plazo = f"{meses} meses" if meses and horizonte_maximo_dias % 30 == 0 else f"{horizonte_maximo_dias} días"
+            raise ValueError(
+                f"Online reservamos hasta {plazo} adelante. Para fechas más lejanas, "
+                "escribinos por WhatsApp."
+            )
 
     if (fin.date() - inicio.date()).days > duracion_maxima_dias:
         raise ValueError(
             f"Para alquileres de más de {duracion_maxima_dias} días, contactanos directamente."
         )
+
+
+def _texto_anticipacion(horas: int) -> str:
+    """
+    "Al menos 240 horas de anticipación" no lo procesa nadie. A partir de 48h
+    se expresa en días —enteros cuando la cuenta es exacta—, que es como una
+    persona piensa el plazo.
+    """
+    if horas <= 48 or horas % 24 != 0:
+        return f"Las reservas online necesitan al menos {horas} horas de anticipación."
+    dias = horas // 24
+    return f"Las reservas online necesitan al menos {dias} días de anticipación."
 
 
 def dias_de_alquiler(inicio: date, fin: date) -> int:

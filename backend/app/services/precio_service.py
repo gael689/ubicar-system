@@ -234,13 +234,20 @@ class PrecioService:
     # ─── Cotización ───────────────────────────────────────────────────────────
 
     def _cargar_adicionales(
-        self, solicitados: list[tuple[int, int]]
+        self, solicitados: list[tuple[int, int]], subtotal_vehiculo: Decimal | None = None
     ) -> list[AdicionalSolicitado]:
         """
         Resuelve los adicionales pedidos como (id, cantidad) contra la tabla,
         tomando el precio vigente. Valida el tope de unidades acá porque el
         dominio no conoce `max_cantidad` — es una regla del catálogo, no del
         cálculo.
+
+        **Los de `porcentaje_sobre_alquiler` (D-53) necesitan `subtotal_vehiculo`
+        para resolver un precio**, y ese número todavía no existe la primera
+        vez que se llama (es la salida de `cotizar()`, no la entrada). Sin
+        `subtotal_vehiculo` quedan en 0 — `calcular()` hace una segunda pasada
+        con el subtotal ya conocido, el mismo patrón que ya usa
+        `/public/cotizar` para comparar el escenario de pago total.
         """
         if not solicitados:
             return []
@@ -263,13 +270,20 @@ class PrecioService:
                     "cantidad_excede_maximo",
                     f"'{a.nombre}' admite hasta {a.max_cantidad} unidad(es) por reserva",
                 )
+            es_porcentaje = a.porcentaje_sobre_alquiler is not None
+            if es_porcentaje:
+                base = subtotal_vehiculo if subtotal_vehiculo is not None else Decimal("0")
+                precio_unitario = base * Decimal(str(a.porcentaje_sobre_alquiler)) / Decimal(100)
+            else:
+                precio_unitario = Decimal(str(a.precio))
             resultado.append(AdicionalSolicitado(
                 id=a.id,
                 nombre=a.nombre,
-                precio_unitario=Decimal(str(a.precio)),
+                precio_unitario=precio_unitario,
                 unidad_cobro=a.unidad_cobro,
                 cantidad=cantidad,
                 grupo=a.grupo,
+                es_porcentaje=es_porcentaje,
             ))
         return resultado
 
@@ -318,27 +332,41 @@ class PrecioService:
         precio_fallback, nombre_fallback = self._precio_banda(
             duracion, categoria_id, vehiculo_id
         )
-
-        cotizacion = cotizar(
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            reglas=reglas,
-            precio_fallback=precio_fallback,
-            descuentos=self._cargar_descuentos(categoria_id),
-            categoria_id=categoria_id,
-            vehiculo_id=vehiculo_id,
-            canal=canal,
-            nombre_fallback=nombre_fallback,
-            adicionales=self._cargar_adicionales(adicionales or []),
-            recargos_edad=self._cargar_recargos_edad(categoria_id),
-            # La edad se mide al retirar el auto, no hoy: quien cumple 25 antes
-            # de viajar ya no es un conductor joven (ver domain/recargo_edad.py).
-            edad_conductor=(
-                calcular_edad(fecha_nacimiento, fecha_inicio)
-                if fecha_nacimiento is not None else edad_conductor
-            ),
-            porcentaje_anticipo=porcentaje_anticipo,
+        edad_efectiva = (
+            calcular_edad(fecha_nacimiento, fecha_inicio)
+            if fecha_nacimiento is not None else edad_conductor
         )
+
+        def _cotizar_con(adicionales_cargados: list[AdicionalSolicitado]) -> Cotizacion:
+            return cotizar(
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                reglas=reglas,
+                precio_fallback=precio_fallback,
+                descuentos=self._cargar_descuentos(categoria_id),
+                categoria_id=categoria_id,
+                vehiculo_id=vehiculo_id,
+                canal=canal,
+                nombre_fallback=nombre_fallback,
+                adicionales=adicionales_cargados,
+                recargos_edad=self._cargar_recargos_edad(categoria_id),
+                edad_conductor=edad_efectiva,
+                porcentaje_anticipo=porcentaje_anticipo,
+            )
+
+        adicionales_cargados = self._cargar_adicionales(adicionales or [])
+        cotizacion = _cotizar_con(adicionales_cargados)
+
+        # D-53: si hay coberturas por porcentaje, se resuelven en una segunda
+        # pasada contra el `subtotal_vehiculo` que recién ahora se conoce —
+        # la primera pasada las dejó en $0 a propósito (ver
+        # `_cargar_adicionales`).
+        if any(a.es_porcentaje for a in adicionales_cargados):
+            adicionales_cargados = self._cargar_adicionales(
+                adicionales or [], subtotal_vehiculo=cotizacion.subtotal_vehiculo,
+            )
+            cotizacion = _cotizar_con(adicionales_cargados)
+
         return cotizacion, categoria_id
 
     # ─── Vista de calendario (pantalla de administración) ─────────────────────

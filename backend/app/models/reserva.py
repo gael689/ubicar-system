@@ -120,7 +120,10 @@ class Reserva(Base):
 
     # ── Relaciones ────────────────────────────────────────────────────────────
     vehiculo: Mapped["Vehiculo"] = relationship("Vehiculo")
-    categoria: Mapped["Categoria"] = relationship("Categoria")
+    categoria: Mapped["Categoria"] = relationship("Categoria", foreign_keys="Reserva.categoria_id")
+    categoria_entregada: Mapped["Categoria | None"] = relationship(
+        "Categoria", foreign_keys="Reserva.categoria_entregada_id"
+    )
     cliente: Mapped["Cliente"] = relationship("Cliente")
     conductor: Mapped["ConductorAdicional"] = relationship("ConductorAdicional")
     usuario: Mapped["Usuario"] = relationship("Usuario", foreign_keys=[usuario_id])
@@ -153,6 +156,18 @@ class Reserva(Base):
     web_contacto_nombre: Mapped[str | None] = mapped_column(String(255), nullable=True)
     web_contacto_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     web_contacto_telefono: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+    # ── Upgrade de categoría (D-54, plan de conexión 13/08) ──────────────────
+    # `categoria_id` es lo que el cliente **pidió**. Cuando se asigna un auto
+    # de otra categoría (`ReservaService.asignar_vehiculo`), `categoria_id`
+    # NO se toca —sigue siendo la pedida, y así se sigue contando el cupo por
+    # categoría igual que siempre—, pero sin esto no quedaba ningún registro
+    # de que hubo una cortesía, ni forma de contestar "¿cuántos upgrades
+    # regalamos este verano?", ni nada que impidiera un downgrade silencioso.
+    categoria_entregada_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categorias.id"), nullable=True
+    )
+    upgrade_motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── Recargo por edad del conductor (D-38, migración 044) ─────────────────
     # Congelado igual que los adicionales: cambiar la tabla de recargos no

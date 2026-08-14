@@ -332,12 +332,22 @@ def list_contratos(
 def get_contrato(
     contrato_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
+    from app.services.notificacion_service import NotificacionService
+
     try:
         contrato = ContratoService(db).get(contrato_id)
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    # Abrir el contrato en el panel es la señal de "alguien lo vio" que cierra
+    # `contrato_firmado_sin_ver` (plan de conexión 13/08, C-3): si no se
+    # resuelve acá, la regla lo sigue reclamando hasta que pasen las 72hs de
+    # su propia ventana.
+    NotificacionService(db).resolver_por_entidad("contrato", contrato.id, current_user.id)
+    db.commit()
+
     return ok(_respuesta(contrato))
 
 

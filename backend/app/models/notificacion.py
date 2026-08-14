@@ -52,6 +52,46 @@ class Notificacion(Base):
     resuelta_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # ── Plan de conexión (13/08) — C-2/C-3 ──────────────────────────────────
+    # Las notificaciones de evento puntual (`NotificacionService.generar_una`,
+    # ej. "reserva web nueva") no salen de ninguna regla del catálogo: no
+    # tienen un candidato con el que `_auto_resolver` pueda compararlas en la
+    # corrida siguiente. Antes de esta columna, eso las hacía "resueltas" en
+    # la primera corrida del motor sin que nadie las viera — el aviso de una
+    # reserva web podía desaparecer antes del lunes. `False` = sólo se
+    # resuelve a mano o cuando la entidad cambia de estado (ver
+    # `NotificacionService.resolver_por_entidad`), nunca por barrido.
+    autoresoluble: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False, default=True)
+
+    # Hora en la que la urgencia subió sola por antigüedad (C-9). `None` si
+    # todavía no escaló. Sirve para no reescalar la misma notificación en
+    # cada corrida del motor.
+    escalada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class NotificacionVista(Base):
+    """
+    Acuse **por usuario** (plan de conexión, 13/08 — C-9).
+
+    Antes, "marcar leída" pisaba `Notificacion.estado` globalmente: que
+    Franco la leyera la escondía también para Martín, aunque nadie hubiera
+    hecho nada al respecto. Esta tabla es al revés — cada quien deja su
+    propia marca, y **la notificación sigue activa para el resto** hasta que
+    la entidad que la generó cambia de estado de verdad (ver
+    `NotificacionService.resolver_por_entidad`), no cuando alguien la mira.
+
+    Un `UNIQUE(notificacion_id, usuario_id)` evita duplicar la marca en cada
+    render; se hace upsert por `visto_at`.
+    """
+    __tablename__ = "notificaciones_vistas"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    notificacion_id: Mapped[int] = mapped_column(
+        ForeignKey("notificaciones.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False, index=True)
+    visto_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
 
 class PreferenciaNotificacion(Base):
     """

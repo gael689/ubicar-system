@@ -244,6 +244,16 @@ class ContratoService:
         """
         lineas = []
         dias = (r.fecha_fin - r.fecha_inicio).days
+        # Plan de conexión (13/08), §3.4: el recargo por edad ya viene
+        # sumado adentro de `precio_total` — sale de la misma cotización que
+        # el precio de lista, no de un cálculo aparte (ver el comentario en
+        # `ReservaService.create` sobre por qué no se le suma una segunda
+        # vez). Antes se imprimía además como concepto propio, "Conductor
+        # joven (19 años)", que le dice al cliente en la cara que le cobran
+        # más por su edad. Mismo criterio que ya rige en la web (D-44,
+        # `ResumenReserva.tsx`): se deja de mostrar como línea separada, sin
+        # tocar el total — el importe sigue auditado en
+        # `reserva.recargo_edad_monto` para quien lo necesite explicar.
         precio = Decimal(str(r.precio_total or 0))
         if precio > 0:
             lineas.append({
@@ -259,14 +269,6 @@ class ContratoService:
                 "cantidad": a.cantidad,
                 "valor_unitario": float(a.precio_unitario),
                 "total": float(a.subtotal),
-            })
-
-        if r.recargo_edad_monto and Decimal(str(r.recargo_edad_monto)) > 0:
-            lineas.append({
-                "concepto": f"{r.recargo_edad_nombre} ({r.recargo_edad_edad} años)",
-                "cantidad": 1,
-                "valor_unitario": float(r.recargo_edad_monto),
-                "total": float(r.recargo_edad_monto),
             })
 
         if r.cargo_late_checkout and Decimal(str(r.cargo_late_checkout)) > 0:
@@ -329,11 +331,25 @@ class ContratoService:
         ]
 
         # La franquicia que rige es la de la cobertura contratada; sin
-        # cobertura, la de configuración (D-C3).
+        # cobertura, la BASE de la categoría (D-53) — no un número global
+        # único, porque el riesgo de una Pick-up no es el de un Compacto.
+        #
+        # **Si no hay base cargada para esa categoría, no se imprime ningún
+        # número.** Antes acá caía a `contrato.franquicia_default` (0 por
+        # default), y el alquiler MÁS BARATO —el que no contrató
+        # cobertura— salía con "FRANQUICIA: $ 0", que se lee como "no pagás
+        # nada" y es exactamente lo contrario de lo que significa. `None` es
+        # la señal correcta: "todavía no cargado", que la campana reclama
+        # (`categoria_sin_franquicia`, ver domain/notificaciones_reglas.py).
         if contratadas and contratadas[0]["franquicia"] is not None:
             franquicia = contratadas[0]["franquicia"]
         else:
-            franquicia = float(self.config.get_decimal("contrato.franquicia_default", Decimal("0")))
+            categoria = r.categoria or (r.vehiculo.categoria if r.vehiculo else None)
+            franquicia = (
+                float(categoria.franquicia_base)
+                if categoria is not None and categoria.franquicia_base is not None
+                else None
+            )
 
         return {
             "contratadas": contratadas,

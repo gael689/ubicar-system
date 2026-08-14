@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, X, RotateCcw, Trash2, Pencil, ShieldCheck, Package } from 'lucide-react';
+import { Plus, X, RotateCcw, Trash2, Pencil, ShieldCheck, Package, ArrowDownWideNarrow } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card } from '@/components/ui/card';
@@ -21,6 +21,7 @@ const FORM_VACIO = {
   unidad_cobro: 'por_dia' as UnidadCobro,
   incluido: false,
   franquicia: '',
+  porcentaje_sobre_alquiler: '',
   max_cantidad: '',
   visible_web: true,
   orden: 0,
@@ -65,6 +66,7 @@ export function AdicionalesPage() {
       unidad_cobro: a.unidad_cobro,
       incluido: a.incluido,
       franquicia: a.franquicia ?? '',
+      porcentaje_sobre_alquiler: a.porcentaje_sobre_alquiler ?? '',
       max_cantidad: a.max_cantidad ? String(a.max_cantidad) : '',
       visible_web: a.visible_web,
       orden: a.orden,
@@ -82,8 +84,12 @@ export function AdicionalesPage() {
       precio: form.precio || '0',
       unidad_cobro: form.unidad_cobro,
       incluido: form.incluido,
-      // La franquicia sólo existe en las coberturas.
+      // La franquicia y el % sobre el alquiler sólo existen en las coberturas.
       franquicia: form.grupo === 'cobertura' && form.franquicia ? form.franquicia : null,
+      porcentaje_sobre_alquiler:
+        form.grupo === 'cobertura' && form.porcentaje_sobre_alquiler
+          ? form.porcentaje_sobre_alquiler
+          : null,
       max_cantidad: form.max_cantidad ? Number(form.max_cantidad) : null,
       visible_web: form.visible_web,
       orden: form.orden,
@@ -209,6 +215,23 @@ export function AdicionalesPage() {
                   />
                 </div>
               )}
+              {form.grupo === 'cobertura' && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">% sobre el alquiler</label>
+                  <input
+                    type="number" min="0" max="100" step="0.01"
+                    value={form.porcentaje_sobre_alquiler}
+                    onChange={e => setForm(f => ({ ...f, porcentaje_sobre_alquiler: e.target.value }))}
+                    className="input-base"
+                    placeholder="Vacío = usa el Precio"
+                  />
+                  {form.porcentaje_sobre_alquiler && Number(form.precio) > 0 && (
+                    <p className="text-[10px] text-amber-600">
+                      Con un % cargado, el campo "Precio" no se cobra — dejalo en 0.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Máx. por reserva</label>
                 <input
@@ -274,6 +297,7 @@ export function AdicionalesPage() {
             onEditar={abrirEdicion}
             onBaja={id => darDeBaja.mutate(id)}
             onReactivar={id => reactivar.mutate(id)}
+            escalera
           />
           <Grupo
             titulo="Extras"
@@ -292,7 +316,7 @@ export function AdicionalesPage() {
 }
 
 function Grupo({
-  titulo, ayuda, icono, items, onNuevo, onEditar, onBaja, onReactivar,
+  titulo, ayuda, icono, items, onNuevo, onEditar, onBaja, onReactivar, escalera,
 }: {
   titulo: string;
   ayuda: string;
@@ -302,6 +326,9 @@ function Grupo({
   onEditar: (a: Adicional) => void;
   onBaja: (id: number) => void;
   onReactivar: (id: number) => void;
+  /** Coberturas: muestra la escalera franquicia↔precio (D-53) además de la
+   *  lista de ABM — el orden se guarda por franquicia, no por `orden`. */
+  escalera?: boolean;
 }) {
   return (
     <Card className="p-5 space-y-4">
@@ -320,6 +347,8 @@ function Grupo({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">{ayuda}</p>
+
+      {escalera && <EscaleraFranquicia items={items} />}
 
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4 text-center">
@@ -388,5 +417,50 @@ function Grupo({
         </div>
       )}
     </Card>
+  );
+}
+
+/**
+ * La escalera franquicia↔precio (D-53, plan §3.8b).
+ *
+ * El backend ya rechaza guardar una cobertura que rompa el orden — acá se ve
+ * el orden **antes** de tocar nada, para que el rechazo del `POST`/`PATCH`
+ * no sea la primera noticia. Ordenada de más franquicia (más barata) a menos
+ * (más cara): así se lee de arriba a abajo como "pagás menos, cubrís más".
+ */
+function EscaleraFranquicia({ items }: { items: Adicional[] }) {
+  const conFranquicia = items
+    .filter(a => a.activo && a.franquicia !== null)
+    .sort((a, b) => Number(b.franquicia) - Number(a.franquicia));
+
+  if (conFranquicia.length < 2) return null;
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-3">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground">
+        <ArrowDownWideNarrow className="h-3.5 w-3.5 text-primary" />
+        Escalera franquicia → precio
+      </div>
+      <div className="space-y-1">
+        {conFranquicia.map(a => (
+          <div key={a.id} className="flex items-center justify-between gap-3 text-xs">
+            <span className="truncate text-foreground">{a.nombre}</span>
+            <span className="flex shrink-0 items-center gap-3 tabular-nums text-muted-foreground">
+              <span>franquicia {formatCurrency(a.franquicia!)}</span>
+              <span className="font-medium text-foreground">
+                {a.porcentaje_sobre_alquiler
+                  ? `${a.porcentaje_sobre_alquiler}% del alquiler`
+                  : Number(a.precio) === 0
+                  ? 'incluida'
+                  : `${formatCurrency(a.precio)}${a.unidad_cobro === 'por_dia' ? '/día' : ''}`}
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        A menor franquicia, mayor precio — si una fila no cumple esto, el sistema no va a dejar guardarla.
+      </p>
+    </div>
   );
 }

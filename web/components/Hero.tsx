@@ -12,30 +12,29 @@ import { intencionDeReserva, contactoIniciado } from "@/lib/analitica";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { api, textoPlazo } from "@/lib/api";
+import type { ConfigPublica } from "@/lib/types";
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, "0");
   return `${h}:${i % 2 === 0 ? "00" : "30"}`;
 });
 
-const LUGARES = [
-  "Paraguay 241 Bahía Blanca",
-  "Alsina 350 Bahía Blanca",
-  "Aeropuerto Comandante Espora Bahía Blanca",
-];
-
 // El valor que dispara el campo libre. No es un lugar: es un pedido.
 const OTRO = "__otro__";
 
 const PASOS = ["Elegí fechas", "Elegí tu vehículo", "Sumá extras", "Reservá"];
 
-// 17 a 80, y un 81 que representa "más de 80": arriba de esa edad ninguna
-// franja de recargo distingue, así que pedir el número exacto no cambia el
-// precio y sí alarga la lista.
-const EDADES = Array.from({ length: 65 }, (_, i) => i + 17);
+// D-53 (13/08): 21 es el mínimo para alquilar (`alquiler.edad_minima`, hoy
+// fijo en 21 vía configuración) — por debajo de eso el backend rechaza la
+// reserva, así que no tiene sentido ofrecerlo en la lista. Sube hasta 80, y
+// un 81 que representa "más de 80": arriba de esa edad ninguna franja de
+// recargo distingue, así que pedir el número exacto no cambia el precio y sí
+// alarga la lista.
+const EDADES = Array.from({ length: 61 }, (_, i) => i + 21);
 
 /**
  * El Hero.
@@ -63,6 +62,21 @@ const Hero = () => {
   const [otraDevolucion, setOtraDevolucion] = useState("");
   const [edad, setEdad] = useState("");
   const [faltaEdad, setFaltaEdad] = useState(false);
+  const [config, setConfig] = useState<ConfigPublica | null>(null);
+
+  // D-56: los lugares y los bordes de la ventana salen de `/public/config`,
+  // no de una lista propia — la portada tenía su propia copia con "Bahía
+  // Blanca" pegado al nombre, desalineada con la del flujo (§7).
+  useEffect(() => {
+    api.config().then(setConfig).catch(() => setConfig(null));
+  }, []);
+  const lugares = config?.lugares_retiro ?? [];
+  const minFecha = config
+    ? new Date(Date.now() + config.anticipacion_minima_horas * 3_600_000)
+    : new Date();
+  const maxFecha = config?.horizonte_maximo_dias
+    ? addDays(new Date(), config.horizonte_maximo_dias)
+    : undefined;
 
   /**
    * Recupera lo que ya venía elegido cuando `/reservar` rebota para acá por
@@ -262,7 +276,7 @@ const Hero = () => {
                       className="h-[52px] w-full cursor-pointer appearance-none truncate rounded-lg border border-border bg-white pl-11 pr-9 text-base font-semibold text-[#1B3F6B] outline-none transition-colors focus:border-primary focus:ring-4 focus:ring-primary/15"
                     >
                       <option value="">Elegí una ubicación</option>
-                      {LUGARES.map((l) => (
+                      {lugares.map((l) => (
                         <option key={l} value={l}>{l}</option>
                       ))}
                       <option value={OTRO}>Otro lugar (a coordinar)</option>
@@ -298,7 +312,8 @@ const Hero = () => {
                     hora={horaEntrega}
                     onFecha={setFechaEntrega}
                     onHora={setHoraEntrega}
-                    desde={new Date()}
+                    desde={minFecha}
+                    hasta={maxFecha}
                   />
                   <CampoFecha
                     etiqueta="Devolución"
@@ -306,7 +321,7 @@ const Hero = () => {
                     hora={horaDevolucion}
                     onFecha={setFechaDevolucion}
                     onHora={setHoraDevolucion}
-                    desde={fechaEntrega ?? new Date()}
+                    desde={fechaEntrega ?? minFecha}
                   />
                 </div>
 
@@ -314,9 +329,9 @@ const Hero = () => {
                     salga bien la primera vez. Es un desplegable y no un campo
                     numérico: no admite un tipeo de más —un "2" en lugar de un
                     "25" cotiza cualquier cosa— y no abre el teclado en el
-                    teléfono. Arranca en 17, que es la edad a la que ya se
-                    puede tener licencia: D-38 no fija un mínimo, así que la
-                    lista tampoco puede inventar uno. */}
+                    teléfono. Arranca en 21 (D-53): por debajo de eso no se
+                    puede alquilar, así que ya no tiene sentido ofrecerlo ni
+                    mostrar el viejo recargo por "conductor joven". */}
                 <div>
                   <label
                     htmlFor="hero-edad"
@@ -371,7 +386,7 @@ const Hero = () => {
                     className="h-[52px] w-full cursor-pointer appearance-none rounded-lg border border-border bg-white px-3.5 text-base font-semibold text-[#1B3F6B] outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
                   >
                     <option value="">Lugar de devolución</option>
-                    {LUGARES.map((l) => (
+                    {lugares.map((l) => (
                       <option key={l} value={l}>{l}</option>
                     ))}
                     <option value={OTRO}>Otro lugar (a coordinar)</option>
@@ -402,10 +417,16 @@ const Hero = () => {
 
                 {/* El plazo se avisa acá, antes de elegir la fecha. Que el
                     formulario te rechace el retiro recién al validar es la
-                    peor forma de enterarse de una regla del negocio. */}
+                    peor forma de enterarse de una regla del negocio.
+                    D-52: el número sale de `/public/config`, no queda
+                    hardcodeado — antes decía "72 horas" fijo aunque la
+                    regla real ya era de 10 días. */}
                 <p className="text-center text-xs text-muted-foreground">
-                  Las reservas online se toman con <strong>72 horas</strong> de
-                  anticipación. Ver los precios no te compromete a nada.
+                  Las reservas online se toman con{" "}
+                  <strong>
+                    {textoPlazo((config?.anticipacion_minima_horas ?? 240) / 24)}
+                  </strong>{" "}
+                  de anticipación. Ver los precios no te compromete a nada.
                 </p>
               </div>
 
@@ -430,7 +451,7 @@ const Hero = () => {
 };
 
 function CampoFecha({
-  etiqueta, fecha, hora, onFecha, onHora, desde,
+  etiqueta, fecha, hora, onFecha, onHora, desde, hasta,
 }: {
   etiqueta: string;
   fecha?: Date;
@@ -438,6 +459,7 @@ function CampoFecha({
   onFecha: (d?: Date) => void;
   onHora: (h: string) => void;
   desde: Date;
+  hasta?: Date;
 }) {
   return (
     <div>
@@ -465,7 +487,7 @@ function CampoFecha({
               mode="single"
               selected={fecha}
               onSelect={onFecha}
-              disabled={{ before: desde }}
+              disabled={hasta ? [{ before: desde }, { after: hasta }] : { before: desde }}
               locale={es}
               initialFocus
             />

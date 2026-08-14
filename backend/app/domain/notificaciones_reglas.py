@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from app.models.alquiler import Alquiler
 from app.models.cliente import Cliente
 from app.models.comprobante import Comprobante
+from app.models.contrato import Contrato
 from app.models.cuenta_corriente import MovimientoCuentaCorriente, CuentaCorriente
 from app.models.documento import Documento
 from app.models.echeq import Echeq
@@ -872,6 +873,176 @@ def reserva_web_sin_atender(db: Session, hoy: date) -> list[dict]:
     ]
 
 
+def reserva_web_sin_asignar(db: Session, hoy: date) -> list[dict]:
+    """
+    Plan de conexión (13/08) — cierra C-1/C-2 como red de seguridad.
+
+    Una reserva web que ya se confirmó (se pagó o se cobró) pero sigue **sin
+    auto puntual**. El aviso instantáneo (`NotificacionService.
+    avisar_reserva_web`) cubre el momento en que entra; esta regla es la que
+    la sigue reclamando todos los días —y cada 30 minutos, con la corrida más
+    frecuente del motor— hasta que alguien la asigna. **Crítica si la entrega
+    es en 48hs o menos**: ahí ya no hay margen para conseguir el auto y emitir
+    el contrato (D-47) antes de que el cliente aparezca.
+    """
+    limite_critica = hoy + timedelta(days=2)
+    reservas = (
+        db.query(Reserva)
+        .filter(
+            Reserva.origen == "web",
+            Reserva.estado == "confirmada",
+            Reserva.vehiculo_id.is_(None),
+        )
+        .all()
+    )
+    return [
+        {
+            "tipo": "reserva_web_sin_asignar",
+            "titulo": "Reserva web confirmada sin auto asignado",
+            "descripcion": (
+                f"Reserva #{r.id} — {r.web_contacto_nombre or _cliente_nombre(r.cliente)} — "
+                f"{r.categoria.nombre if r.categoria else '?'} — "
+                f"entrega {r.fecha_inicio.strftime('%d/%m')}"
+            ),
+            "urgencia": "critica" if r.fecha_inicio <= limite_critica else "alta",
+            "entidad_tipo": "reserva",
+            "entidad_id": r.id,
+            "url_destino": "/ocupacion",
+            "fecha_objetivo": r.fecha_inicio,
+        }
+        for r in reservas
+    ]
+
+
+def reserva_web_esperando_transferencia(db: Session, hoy: date) -> list[dict]:
+    """
+    Plan de conexión (13/08) — cierra C-4.
+
+    Por transferencia no hay webhook: alguien tiene que ver el comprobante y
+    conciliarlo contra el extracto. Sin este aviso, esa reserva vive en
+    `pendiente_pago` sin que nada la reclame — el camino de cobro que hoy
+    funciona de verdad quedaba sin ningún aviso periódico. Se avisa recién
+    pasadas 2 horas: antes de eso es normal que el comprobante todavía no
+    haya llegado por WhatsApp.
+    """
+    limite = datetime.utcnow() - timedelta(hours=2)
+    reservas = (
+        db.query(Reserva)
+        .filter(
+            Reserva.origen == "web",
+            Reserva.estado == "pendiente_pago",
+            Reserva.forma_pago_prevista == "transferencia",
+            Reserva.created_at <= limite,
+        )
+        .all()
+    )
+    return [
+        {
+            "tipo": "reserva_web_esperando_transferencia",
+            "titulo": "Reserva web esperando la transferencia",
+            "descripcion": (
+                f"Reserva #{r.id} — {r.web_contacto_nombre or _cliente_nombre(r.cliente)} — "
+                f"{r.categoria.nombre if r.categoria else '?'} — "
+                f"creada {r.created_at.strftime('%d/%m %H:%M')}"
+                + (f" — {r.web_contacto_telefono}" if r.web_contacto_telefono else "")
+            ),
+            "urgencia": "alta",
+            "entidad_tipo": "reserva",
+            "entidad_id": r.id,
+            "url_destino": "/reservas-web",
+            "fecha_objetivo": r.fecha_inicio,
+        }
+        for r in reservas
+    ]
+
+
+def contrato_firmado_sin_ver(db: Session, hoy: date) -> list[dict]:
+    """
+    Plan de conexión (13/08) — cierra C-3 como red de seguridad.
+
+    El aviso instantáneo de la firma (`_avisar_contrato_firmado`, disparado
+    en segundo plano desde `POST /public/contratos/{token}/firmar`) va
+    envuelto en un `try/except` a propósito: la firma ya está guardada y no
+    puede fallar por un aviso. Pero eso significa que si el aviso se cae —una
+    excepción que no se vio en el log, Resend caído— **nadie se entera nunca**.
+    Esta regla reclama todos los días durante 72hs después de la firma, hasta
+    que alguien la resuelve abriendo el contrato desde el panel (ver
+    `routers/contratos.py::get_contrato`, que llama a
+    `NotificacionService.resolver_por_entidad`).
+    """
+    limite = datetime.utcnow() - timedelta(hours=72)
+    contratos = (
+        db.query(Contrato)
+        .filter(
+            Contrato.firmado.is_(True),
+            Contrato.firmado_at.isnot(None),
+            Contrato.firmado_at >= limite,
+            Contrato.anulado.is_(False),
+        )
+        .all()
+    )
+    return [
+        {
+            "tipo": "contrato_firmado_sin_ver",
+            "titulo": "Contrato firmado por el cliente",
+            "descripcion": (
+                f"{c.numero_formateado} — {c.firmado_por_nombre or '?'} firmó el "
+                f"{c.firmado_at.strftime('%d/%m %H:%M')}"
+            ),
+            "urgencia": "media",
+            "entidad_tipo": "contrato",
+            "entidad_id": c.id,
+            "url_destino": f"/reservas?reserva={c.reserva_id}",
+            "fecha_objetivo": c.firmado_at.date(),
+        }
+        for c in contratos
+    ]
+
+
+def contrato_sin_firmar_entrega_proxima(db: Session, hoy: date) -> list[dict]:
+    """
+    Plan de conexión (13/08) — cierra C-10.
+
+    El catálogo ya cubre las dos puntas: `contrato_no_firmado_entrega_hoy`
+    mira las entregas de **hoy**, `contrato_sin_emitir` mira el auto que **ya
+    salió** sin contrato. Faltaba el medio: un contrato **emitido** —desde
+    D-47, eso puede pasar apenas se asigna el vehículo, antes de la entrega—
+    que sigue sin firmar con la entrega a 3 días o menos, que es cuando
+    todavía hay margen para mandar el link de nuevo o coordinar la firma en
+    el mostrador antes de que el cliente aparezca.
+    """
+    limite = hoy + timedelta(days=3)
+    contratos = (
+        db.query(Contrato)
+        .join(Reserva, Reserva.id == Contrato.reserva_id)
+        .filter(
+            Contrato.anulado.is_(False),
+            Contrato.activo.is_(True),
+            Contrato.firmado.is_(False),
+            Reserva.estado.in_(["pendiente", "confirmada"]),
+            Reserva.fecha_inicio >= hoy,
+            Reserva.fecha_inicio <= limite,
+        )
+        .all()
+    )
+    return [
+        {
+            "tipo": "contrato_sin_firmar_entrega_proxima",
+            "titulo": f"Contrato sin firmar — entrega en {(c.reserva.fecha_inicio - hoy).days} día(s)",
+            "descripcion": (
+                f"{c.numero_formateado} — {_cliente_nombre(c.reserva.cliente)} — "
+                f"entrega {c.reserva.fecha_inicio.strftime('%d/%m')}"
+            ),
+            "urgencia": "alta",
+            "entidad_tipo": "contrato",
+            "entidad_id": c.id,
+            "url_destino": f"/reservas?reserva={c.reserva_id}",
+            "fecha_objetivo": c.reserva.fecha_inicio,
+        }
+        for c in contratos
+    ]
+
+
 # ── Falta completar ──────────────────────────────────────────────────────────
 #
 # Esta familia es distinta al resto del catálogo. Las demás reglas miran
@@ -1019,6 +1190,44 @@ def categoria_sin_precio(db: Session, hoy: date) -> list[dict]:
                 "fecha_objetivo": hoy,
             })
     return avisos
+
+
+def categoria_sin_franquicia(db: Session, hoy: date) -> list[dict]:
+    """
+    Plan de conexión (13/08), D-53: una categoría con flota y sin franquicia
+    base cargada.
+
+    Sin este número, el contrato de un alquiler de esa categoría **no puede
+    imprimir franquicia** (`ContratoService._bloque_coberturas`) — antes
+    caía a un default en $0, que es peor que no mostrar nada: se leía como
+    "no pagás nada ante un siniestro". Avisa hasta que se cargue, igual que
+    `categoria_sin_precio` avisa por la tarifa.
+    """
+    from app.models.categoria import Categoria
+
+    categorias = db.query(Categoria).filter(Categoria.activo == True).all()
+    con_flota = {
+        v.categoria_id
+        for v in db.query(Vehiculo).filter(Vehiculo.activo == True).all()
+        if v.categoria_id
+    }
+    return [
+        {
+            "tipo": "categoria_sin_franquicia",
+            "titulo": f"{c.nombre}: falta la franquicia base",
+            "descripcion": (
+                "Sin franquicia base cargada, el contrato de esta categoría no "
+                "puede imprimirla. Se carga en Flota → Categorías."
+            ),
+            "urgencia": "alta",
+            "entidad_tipo": "categoria",
+            "entidad_id": c.id,
+            "url_destino": "/flota/categorias",
+            "fecha_objetivo": hoy,
+        }
+        for c in categorias
+        if c.id in con_flota and c.franquicia_base is None
+    ]
 
 
 def vehiculo_sin_categoria(db: Session, hoy: date) -> list[dict]:
@@ -1228,8 +1437,13 @@ REGLAS = [
     multa_por_vencer,
     multa_vencida,
     reserva_web_sin_atender,
+    reserva_web_sin_asignar,
+    reserva_web_esperando_transferencia,
+    contrato_firmado_sin_ver,
+    contrato_sin_firmar_entrega_proxima,
     fecha_especial_sin_precio,
     categoria_sin_precio,
+    categoria_sin_franquicia,
     vehiculo_sin_categoria,
     contrato_sin_emitir,
     datos_empresa_sin_cargar,

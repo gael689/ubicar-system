@@ -3,6 +3,14 @@ from sqlalchemy import String, Boolean, DateTime, Date, Enum, Integer, Text, For
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
+# D-53 (plan de conexión, §4.3 punto 1) — el `dni_cuit` reservado del cliente
+# genérico que sostiene las solicitudes sin cupo (`POST /public/solicitudes`)
+# cuando quien pregunta todavía no es cliente. Antes se usaba
+# `order_by(Cliente.id).first()`, que devuelve 503 apenas la base de clientes
+# queda vacía — exactamente lo que pasa después de una limpieza.
+DNI_CLIENTE_GENERICO = "00000000"
+NOMBRE_CLIENTE_GENERICO = "Consultas web"
+
 
 class Cliente(Base):
     __tablename__ = "clientes"

@@ -264,7 +264,11 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
         y -= 3.6 * mm
     for contratada in cob.get("contratadas", []):
         txt = f"Cobertura contratada: {contratada['nombre']}"
-        if contratada.get("franquicia"):
+        # `is not None`, no un chequeo de verdad: la cobertura total contrata
+        # una franquicia de **$0**, y eso es justo lo que hay que imprimir —
+        # un `if contratada.get('franquicia')` se lo comía en silencio y el
+        # cliente que pagó por el $0 no veía la confirmación en el papel.
+        if contratada.get("franquicia") is not None:
             txt += f" — franquicia $ {_money(contratada['franquicia'])}"
         c.drawString(izq, y, txt)
         y -= 3.6 * mm
@@ -280,9 +284,18 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
                          "ya que podrían generarse cargos adicionales.")
     y -= 5.5 * mm
 
+    # Plan de conexión (13/08), §3.2 + D-53: "seguro con franquicia de $X",
+    # no "franquicia a cargo del cliente" — el seguro obligatorio corre
+    # siempre, la franquicia es lo que ese seguro no cubre. Y **nunca se
+    # imprime $0 por default**: sin la base cargada para esta categoría
+    # (`Categoria.franquicia_base`), `cob['franquicia']` viene `None` y acá
+    # se omite la línea entera en vez de mentir un número — la campana ya lo
+    # reclama (`categoria_sin_franquicia`).
+    franquicia_final = cob.get("franquicia")
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(izq, y, f"FRANQUICIA: $ {_money(cob.get('franquicia'))} (responsabilidad del cliente)")
-    y -= 8 * mm
+    if franquicia_final is not None:
+        c.drawString(izq, y, f"SEGURO CON FRANQUICIA DE $ {_money(franquicia_final)}")
+        y -= 8 * mm
 
     # ── Aceptación y firma ────────────────────────────────────────────────
     c.setFont("Helvetica", 7.5)

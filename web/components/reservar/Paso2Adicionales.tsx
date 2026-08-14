@@ -9,6 +9,9 @@ import type { Adicional } from "@/lib/types";
 interface Props {
   seleccion: Record<number, number>;
   dias: number;
+  /** D-51/D-59: lo que le queda a cargo del cliente si no elige ninguna
+   *  cobertura. `null` si la categoría no tiene franquicia base cargada. */
+  franquiciaBase: number | null;
   onCambiar: (seleccion: Record<number, number>) => void;
 }
 
@@ -23,7 +26,7 @@ interface Props {
  * el motivo #1 de conflictos post-siniestro, y explicarla acá es lo que
  * convierte la cobertura de un costo en una venta.
  */
-export function Paso2Adicionales({ seleccion, dias, onCambiar }: Props) {
+export function Paso2Adicionales({ seleccion, dias, franquiciaBase, onCambiar }: Props) {
   const [items, setItems] = useState<Adicional[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +50,16 @@ export function Paso2Adicionales({ seleccion, dias, onCambiar }: Props) {
     const limpio = { ...seleccion };
     coberturas.forEach((c) => delete limpio[c.id]);
     if (!seleccion[id]) limpio[id] = 1; // volver a tocar la elegida la saca
+    onCambiar(limpio);
+  };
+
+  // Ninguna cobertura de la lista está elegida: el cliente queda con la
+  // franquicia base de la categoría, no con $0 (D-51/D-59).
+  const sinCobertura = !coberturas.some((c) => Boolean(seleccion[c.id]));
+
+  const quitarCobertura = () => {
+    const limpio = { ...seleccion };
+    coberturas.forEach((c) => delete limpio[c.id]);
     onCambiar(limpio);
   };
 
@@ -77,6 +90,41 @@ export function Paso2Adicionales({ seleccion, dias, onCambiar }: Props) {
             bajada="Elegí una. Es lo que define cuánto pagás vos si algo pasa."
           />
           <div className="mt-4 grid gap-3">
+            {/* D-51/D-59: la opción implícita de "no elegir nada" ahora se
+                muestra como una tarjeta más, con la franquicia base de la
+                categoría — es el escenario de mayor riesgo, y quedaba
+                invisible cuando antes valía $0. */}
+            {franquiciaBase !== null && (
+              <button
+                type="button"
+                onClick={quitarCobertura}
+                className={cn(
+                  "flex w-full items-start gap-3 rounded-lg border bg-white p-4 text-left transition-all",
+                  sinCobertura
+                    ? "border-primary ring-2 ring-primary/20"
+                    : "border-border hover:border-primary/40 hover:shadow-sm",
+                )}
+              >
+                <span
+                  className={cn(
+                    "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors",
+                    sinCobertura ? "border-primary bg-primary" : "border-muted-foreground/40",
+                  )}
+                >
+                  {sinCobertura && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span className="font-semibold text-[#1B3F6B]">Sin cobertura adicional</span>
+                    <span className="text-sm font-semibold text-foreground">Incluido</span>
+                  </span>
+                  <span className="mt-2 block rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
+                    Si hay un siniestro, tu responsabilidad máxima es de{" "}
+                    <strong className="text-foreground">{pesos(franquiciaBase)}</strong>
+                  </span>
+                </span>
+              </button>
+            )}
             {coberturas.map((c) => {
               const activa = Boolean(seleccion[c.id]);
               return (

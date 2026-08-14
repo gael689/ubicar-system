@@ -1,14 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
-import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle, Ban, Wrench } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle, Ban, Wrench, CalendarRange } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useOcupacion } from '@/hooks/useOcupacion';
+import { useOcupacion, useResumenAnual } from '@/hooks/useOcupacion';
 import { api } from '@/lib/api';
-import type { VehiculoOcupacion, EventoOcupacion, Reserva, ApiResponse } from '@/types';
+import { cn } from '@/lib/utils';
+import { CalendarioAnual } from '@/components/shared/CalendarioAnual';
+import type { VehiculoOcupacion, EventoOcupacion, Reserva, ApiResponse, DiaResumenAnual } from '@/types';
 import { ReservaModal } from '../reservas/ReservaModal';
 import { CheckoutModal } from '../reservas/CheckoutModal';
 import { ReservaInfoModal } from '../reservas/ReservaInfoModal';
+import { PanelPendienteAsignacion } from '@/components/reservas/PanelPendienteAsignacion';
 
 const ESTADO_COLORS_EVENTO: Record<string, string> = {
+  // Plan de conexión (13/08), cierra C-6: `pendiente` sí tiene auto asignado
+  // (viene del mostrador) y caía en el fallback gris, indistinguible de una
+  // `finalizada`. Ámbar y borde punteado: tomada, pero todavía no firme.
+  pendiente: 'bg-amber-400 border-amber-500 border-dashed text-amber-950',
   confirmada: 'bg-blue-500 border-blue-600 text-white',
   activa: 'bg-emerald-500 border-emerald-600 text-white',
   vencida: 'bg-red-600 border-red-700 text-white animate-pulse',
@@ -28,7 +35,7 @@ const ESTADO_COLORS_EVENTO: Record<string, string> = {
 const ES_BLOQUEO = (tipo: string) => tipo === 'bloqueo';
 
 const ESTADOS_RESERVA_LEYENDA = [
-  'confirmada', 'activa', 'vencida', 'finalizada', 'cancelada',
+  'pendiente', 'confirmada', 'activa', 'vencida', 'finalizada', 'cancelada',
 ] as const;
 
 const ESTADO_COLORS_BADGE: Record<string, string> = {
@@ -45,6 +52,7 @@ const ESTADO_COLORS_BADGE: Record<string, string> = {
 };
 
 const ESTADO_ICONS: Record<string, React.ReactNode> = {
+  pendiente: <Clock className="w-3.5 h-3.5" />,
   confirmada: <CheckCircle2 className="w-3.5 h-3.5" />,
   activa: <Car className="w-3.5 h-3.5" />,
   vencida: <AlertCircle className="w-3.5 h-3.5" />,
@@ -104,11 +112,11 @@ function daysBetween(a: Date, b: Date): number {
 const FULL_DAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const MONTH_LABELS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-type ViewMode = 'timeline' | 'agenda';
+// 2.8: 'anual' es una **pre-vista** de 'timeline', no un reemplazo — cae ahí
+// mismo al elegir un mes o un día. El modo por defecto no cambia.
+type ViewMode = 'timeline' | 'agenda' | 'anual';
 
 export function OcupacionPage() {
-  const { loading, error, fetchOcupacion } = useOcupacion();
-
   const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
   const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth());
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -146,21 +154,30 @@ export function OcupacionPage() {
   const rangeEnd = days[days.length - 1];
   const totalDays = days.length;
 
-  const loadData = () => {
-    fetchOcupacion({
-      fecha_inicio: formatDate(addDays(rangeStart, -2)),
-      fecha_fin: formatDate(addDays(rangeEnd, 2)),
-    }).then(result => {
-      setVehiculos(result.vehiculos);
-      setEventos(result.eventos);
-      if (isFirstLoad.current) {
-        isFirstLoad.current = false;
-        setScrollToDate(formatDate(new Date()));
-      }
-    }).catch(() => {});
-  };
+  const { data: ocupacionData, isLoading: loading, error: queryError, refetch } = useOcupacion({
+    fecha_inicio: formatDate(addDays(rangeStart, -2)),
+    fecha_fin: formatDate(addDays(rangeEnd, 2)),
+  });
+  const error = queryError ? 'Error al cargar ocupación' : null;
 
-  useEffect(() => { loadData(); }, [currentYear, currentMonth]);
+  // `vehiculos`/`eventos` siguen siendo estado local y no `ocupacionData`
+  // directo: el drag-and-drop reordena la lista de vehículos optimistamente
+  // (más abajo, `handleDrop`) y necesita poder mutarla sin esperar un
+  // refetch. Se resincronizan solos cada vez que llega una respuesta nueva
+  // —por cambio de mes, por invalidación desde otra pantalla, o por el
+  // refresco automático cada 60s (C-5)—, así que nunca quedan pisados por
+  // mucho tiempo.
+  useEffect(() => {
+    if (!ocupacionData) return;
+    setVehiculos(ocupacionData.vehiculos);
+    setEventos(ocupacionData.eventos);
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      setScrollToDate(formatDate(new Date()));
+    }
+  }, [ocupacionData]);
+
+  const loadData = () => { void refetch(); };
 
   // Scroll to a specific date column in timeline view
   useEffect(() => {
@@ -188,6 +205,20 @@ export function OcupacionPage() {
     setCurrentMonth(d.getMonth());
     setScrollToDate(dateStr);
     if (viewMode === 'agenda') setAgendaDate(d);
+  };
+
+  // 2.8 — desde la pre-vista anual, un mes o un día caen en la vista
+  // timeline de siempre. El estado y el efecto de scroll ya existían para el
+  // botón "Hoy"; acá sólo se llaman.
+  const onSelectMesAnual = (anioSel: number, mesSel: number) => {
+    setViewMode('timeline');
+    setCurrentYear(anioSel);
+    setCurrentMonth(mesSel);
+    setScrollToDate(`${anioSel}-${String(mesSel + 1).padStart(2, '0')}-01`);
+  };
+  const onSelectDiaAnual = (fechaISO: string) => {
+    setViewMode('timeline');
+    jumpToDate(fechaISO);
   };
 
   const nextMonth = () => {
@@ -323,6 +354,13 @@ export function OcupacionPage() {
           title="Vista agenda (mobile)"
         >
           <Calendar className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => setViewMode('anual')}
+          className={`p-2 transition-colors ${viewMode === 'anual' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
+          title="Vista anual — pre-vista del año completo"
+        >
+          <CalendarRange className="w-4 h-4" />
         </button>
       </div>
     </div>
@@ -554,6 +592,16 @@ export function OcupacionPage() {
         </div>
       )}
 
+      {/* VISTA ANUAL (2.8) — pre-vista de los 12 meses, cae en timeline */}
+      {viewMode === 'anual' && (
+        <div className="flex-1 min-h-0 overflow-auto bg-white p-4">
+          <VistaAnualOcupacion
+            onSelectMes={onSelectMesAnual}
+            onSelectDia={onSelectDiaAnual}
+          />
+        </div>
+      )}
+
       {/* AGENDA VIEW (iPhone-style) */}
       {viewMode === 'agenda' && (
         <AgendaView
@@ -567,6 +615,15 @@ export function OcupacionPage() {
           onReservaClick={(id) => setReservaInfoId(id)}
         />
       )}
+
+      {/* "Pendiente de asignación" (2.2) — reservas por categoría, sin auto.
+          No tienen fila donde dibujarse en la grilla de arriba; se resuelven
+          acá mismo, sin cambiar de pantalla (C-1/C-7). Sale del mismo
+          `/ocupacion` que ya se pidió — una sola llamada, una sola verdad. */}
+      <PanelPendienteAsignacion
+        reservas={ocupacionData?.sin_asignar ?? []}
+        onCambio={loadData}
+      />
 
       {/* Modal de Reserva */}
       {showReservaModal && (
@@ -882,6 +939,96 @@ function AgendaView({
           })
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Vista anual (2.8) ────────────────────────────────────────────────────────
+// La pre-vista del año: reusa `CalendarioAnual` —el mismo cuadro de 12 meses
+// que Fechas especiales, que es la vista que le gustó al dueño— con un
+// endpoint propio agregado en SQL (`/ocupacion/resumen-anual`), no un año
+// entero de `/ocupacion`: acá no hacen falta los eventos uno por uno, sólo la
+// densidad y los contadores por día.
+
+function colorDensidad(ratio: number): string {
+  if (ratio <= 0) return 'bg-slate-50 text-slate-400';
+  if (ratio < 0.34) return 'bg-primary/20 text-primary';
+  if (ratio < 0.67) return 'bg-primary/50 text-white';
+  return 'bg-primary text-white font-bold';
+}
+
+function tooltipDia(d: DiaResumenAnual): string {
+  const partes = [`${d.ocupados}/${d.total} ocupados`];
+  if (d.entregas) partes.push(`${d.entregas} entrega${d.entregas === 1 ? '' : 's'}`);
+  if (d.devoluciones) partes.push(`${d.devoluciones} devolución${d.devoluciones === 1 ? '' : 'es'}`);
+  if (d.alertas) partes.push(`${d.alertas} alerta${d.alertas === 1 ? '' : 's'}`);
+  if (d.sin_asignar) partes.push(`${d.sin_asignar} sin asignar`);
+  return partes.join(' · ');
+}
+
+function VistaAnualOcupacion({
+  onSelectMes, onSelectDia,
+}: {
+  onSelectMes: (anio: number, mes: number) => void;
+  onSelectDia: (fechaISO: string) => void;
+}) {
+  const [anio, setAnio] = useState(new Date().getFullYear());
+  const { data, isLoading } = useResumenAnual(anio);
+
+  const porDia = useMemo(() => {
+    const m = new Map<string, DiaResumenAnual>();
+    (data?.dias ?? []).forEach(d => m.set(d.fecha, d));
+    return m;
+  }, [data]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-60">
+        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded bg-primary" /> Muy ocupado
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded bg-primary/40" /> Ocupación media
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded border-2 border-red-500" /> Con alertas
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Reservas sin asignar
+        </span>
+      </div>
+
+      <CalendarioAnual
+        anio={anio}
+        onAnioChange={setAnio}
+        onSelectMes={mes => onSelectMes(anio, mes)}
+        onSelectDia={onSelectDia}
+        renderDia={(fechaISO, dia) => {
+          const d = porDia.get(fechaISO);
+          if (!d) return null;
+          const ratio = d.total > 0 ? d.ocupados / d.total : 0;
+          return {
+            className: cn(colorDensidad(ratio), d.alertas > 0 && 'ring-2 ring-red-500'),
+            title: tooltipDia(d),
+            contenido: (
+              <>
+                {dia}
+                {d.sin_asignar > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                )}
+              </>
+            ),
+          };
+        }}
+      />
     </div>
   );
 }

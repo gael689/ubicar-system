@@ -26,8 +26,6 @@ const CLIENTE_VACIO: DatosCliente = {
   aceptaTerminos: false,
 };
 
-const LUGARES_FALLBACK = ["Paraguay 241", "Alsina 350", "Aeropuerto Comandante Espora"];
-
 /**
  * Los 4 pasos viven en **una sola ruta**, no en cuatro páginas.
  *
@@ -252,7 +250,11 @@ export function FlujoReserva() {
     return true;
   }, [paso, categoria]);
 
-  const lugares = config?.lugares_retiro?.length ? config.lugares_retiro : LUGARES_FALLBACK;
+  // D-56: los lugares salen sólo de `/public/config`, sin fallback local —
+  // un fallback acá terminaría siendo una segunda copia de la regla que un
+  // día se desalinea con `configuracion` (§7). Si el fetch todavía no llegó,
+  // el buscador simplemente no ofrece opciones hasta que llegue.
+  const lugares = config?.lugares_retiro ?? [];
 
   return (
     <div className="min-h-screen bg-muted/30 pb-28 lg:pb-12">
@@ -290,6 +292,8 @@ export function FlujoReserva() {
                 rango={rango}
                 lugares={lugares}
                 anticipacionHoras={config?.anticipacion_minima_horas ?? 24}
+                horizonteMaximoDias={config?.horizonte_maximo_dias}
+                duracionMaximaDias={config?.duracion_maxima_dias}
                 seleccionada={categoria}
                 escalones={config?.escalones_duracion ?? []}
                 edad={edad}
@@ -320,6 +324,7 @@ export function FlujoReserva() {
               <Paso2Adicionales
                 seleccion={adicionales}
                 dias={dias}
+                franquiciaBase={categoria?.franquicia_base ?? null}
                 onCambiar={setAdicionales}
               />
             )}

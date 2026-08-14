@@ -95,20 +95,55 @@ def resumen_bandeja(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    """Contadores para el badge del menú."""
+    """
+    Contadores para el badge del menú.
+
+    **Plan de conexión (13/08), cierra C-8.** Antes `pendientes` sólo sumaba
+    `sin_disponibilidad` + `revision_sin_cupo` — las que están en ESTA
+    bandeja. Pero una reserva web ya `confirmada` sin auto o sin contrato
+    también es trabajo pendiente; la propia pantalla la llama "Cobradas, pero
+    sin terminar" (`ReservasWebPage.tsx`) y hasta ahora **no la contaba nadie**:
+    el único número visible del sistema (la campana) era justo el que se
+    autoborraba (C-2), así que no había ningún contador confiable de "cuánto
+    falta".
+    """
+    from sqlalchemy import exists
+
+    from app.models.contrato import Contrato
+
     conteo = {
         e: db.query(Reserva)
         .filter(Reserva.origen == "web", Reserva.estado == e)
         .count()
         for e in ESTADOS_BANDEJA
     }
+
+    tiene_contrato_vigente = exists().where(
+        Contrato.reserva_id == Reserva.id,
+        Contrato.anulado.is_(False),
+        Contrato.activo.is_(True),
+    )
+    confirmadas_sin_terminar = (
+        db.query(Reserva)
+        .filter(
+            Reserva.origen == "web",
+            Reserva.estado == EstadoReserva.CONFIRMADA.value,
+        )
+        .filter(
+            (Reserva.vehiculo_id.is_(None)) | (~tiene_contrato_vigente)
+        )
+        .count()
+    )
+
     return ok({
         "por_estado": conteo,
+        "confirmadas_sin_terminar": confirmadas_sin_terminar,
         # Lo que realmente requiere que alguien haga algo. `pendiente_pago`
         # no cuenta: está esperando al cliente, no a nosotros.
         "pendientes": (
             conteo[EstadoReserva.SIN_DISPONIBILIDAD.value]
             + conteo[EstadoReserva.REVISION_SIN_CUPO.value]
+            + confirmadas_sin_terminar
         ),
     })
 
@@ -158,6 +193,10 @@ def aceptar(
     reserva.web_resuelta_en = datetime.utcnow()
     if payload.notas:
         reserva.notas = f"{reserva.notas}\n{payload.notas}" if reserva.notas else payload.notas
+
+    from app.services.notificacion_service import NotificacionService
+    NotificacionService(db).resolver_por_entidad("reserva", reserva.id, current_user.id)
+
     db.commit()
     db.refresh(reserva)
     return ok(ReservaResponse.model_validate(reserva), "Reserva confirmada")
@@ -194,6 +233,10 @@ def rechazar(
     reserva.motivo_cancelacion = payload.motivo
     reserva.web_resuelta_por = current_user.id
     reserva.web_resuelta_en = datetime.utcnow()
+
+    from app.services.notificacion_service import NotificacionService
+    NotificacionService(db).resolver_por_entidad("reserva", reserva.id, current_user.id)
+
     db.commit()
     db.refresh(reserva)
 

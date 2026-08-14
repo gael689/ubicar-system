@@ -613,6 +613,11 @@ export interface VehiculoResumen {
 export interface ClienteResumen {
   id: number;
   nombre_completo: string;
+  // Plan de conexión (13/08): el panel "Pendiente de asignación" necesita el
+  // contacto clickeable sin una llamada aparte a /clientes/{id}.
+  dni_cuit?: string | null;
+  telefono?: string | null;
+  email?: string | null;
 }
 
 export interface SolapeWarning {
@@ -910,9 +915,40 @@ export interface EventoOcupacion {
   tiene_alquiler?: boolean;
 }
 
+/** Fecha o temporada que se pinta como banda de fondo en el calendario (C-11). */
+export interface FechaEspecialOcupacion {
+  id: number;
+  nombre: string;
+  fecha_desde: string;
+  fecha_hasta: string;
+  tipo: TipoFechaEspecial;
+  color: ColorFechaEspecial;
+}
+
 export interface OcupacionResponse {
   vehiculos: VehiculoOcupacion[];
   eventos: EventoOcupacion[];
+  /** Reservas por categoría, sin auto asignado — no tienen fila donde
+   * dibujarse en la grilla, así que van al panel "Pendiente de asignación"
+   * (plan de conexión 13/08, C-1/C-7). Es la misma `Reserva` de siempre. */
+  sin_asignar: Reserva[];
+  fechas_especiales: FechaEspecialOcupacion[];
+}
+
+/** Una fila del resumen anual (2.8) — GET /ocupacion/resumen-anual. */
+export interface DiaResumenAnual {
+  fecha: string;
+  ocupados: number;
+  total: number;
+  entregas: number;
+  devoluciones: number;
+  alertas: number;
+  sin_asignar: number;
+}
+
+export interface ResumenAnualResponse {
+  anio: number;
+  dias: DiaResumenAnual[];
 }
 
 // ─── Fechas especiales ───────────────────────────────────────────────────────
@@ -1382,6 +1418,12 @@ export interface Adicional {
   incluido: boolean;
   /** Sólo coberturas: monto a cargo del cliente ante un siniestro. */
   franquicia: string | null;
+  /**
+   * D-53: precio como % del subtotal del alquiler, en vez de un monto fijo.
+   * Sólo coberturas. `null` = esta cobertura cobra con `precio` (monto fijo
+   * o por día), no con porcentaje — las dos formas son excluyentes.
+   */
+  porcentaje_sobre_alquiler: string | null;
   max_cantidad: number | null;
   visible_web: boolean;
   orden: number;
@@ -1398,6 +1440,7 @@ export interface AdicionalCreate {
   unidad_cobro?: UnidadCobro;
   incluido?: boolean;
   franquicia?: string | null;
+  porcentaje_sobre_alquiler?: string | null;
   max_cantidad?: number | null;
   visible_web?: boolean;
   orden?: number;

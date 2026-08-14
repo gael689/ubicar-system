@@ -8,6 +8,7 @@ de la flota en segundos.
 """
 import logging
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import (
@@ -38,15 +39,55 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public", tags=["Público"])
 
-# Decisión #2 de docs/DECISIONES_RESERVAS_WEB.md — todavía sin confirmar por
-# los dueños. Es un parámetro y no una constante enterrada justamente por eso.
-# 72 horas, no 24. Una reserva web dispara trabajo de mostrador antes de que el
-# cliente aparezca —asignar el vehículo, emitir el contrato y esperar la firma
-# (D-47)—, y con un día de plazo eso no entra. Se avisa en el Hero, no sólo al
-# validar: enterarse del plazo recién cuando el formulario te rechaza la fecha
-# es la peor forma de comunicarlo.
-ANTICIPACION_MINIMA_HORAS = 72
-DURACION_MAXIMA_DIAS = 90
+# D-52 (plan de conexión, 13/08) — reemplaza a D-50 (72hs). Son los defaults
+# si `configuracion` no tiene la clave cargada (no debería pasar tras la
+# migración 063, pero un fallback razonable es más seguro que un 500).
+# **Los valores reales viven en `configuracion`** — ver `_ventana_web()` — no
+# acá: son palancas comerciales que Franco va a mover por temporada, y eso no
+# puede requerir un deploy.
+_ANTICIPACION_MINIMA_HORAS_DEFAULT = 240   # 10 días
+_HORIZONTE_MAXIMO_DIAS_DEFAULT = 120       # 4 meses
+_DURACION_MAXIMA_DIAS_DEFAULT = 90         # sin cambio
+
+
+def _ventana_web(db: Session) -> tuple[int, int, int]:
+    """(anticipacion_minima_horas, horizonte_maximo_dias, duracion_maxima_dias),
+    leídos de `configuracion`. Una sola función para los cuatro endpoints que
+    los necesitan — la ventana no puede decir una cosa en `/disponibilidad` y
+    otra en `/config`."""
+    from app.services.configuracion_service import ConfiguracionService
+
+    cfg = ConfiguracionService(db)
+    return (
+        cfg.get_int("web.anticipacion_minima_horas", _ANTICIPACION_MINIMA_HORAS_DEFAULT),
+        cfg.get_int("web.horizonte_maximo_dias", _HORIZONTE_MAXIMO_DIAS_DEFAULT),
+        cfg.get_int("web.duracion_maxima_dias", _DURACION_MAXIMA_DIAS_DEFAULT),
+    )
+
+
+_EDAD_MINIMA_DEFAULT = 21
+
+
+def _validar_edad_minima(db: Session, edad: int | None) -> None:
+    """
+    D-51 (plan de conexión, 13/08) — **revierte D-38**. La web rechaza a un
+    conductor de menos de `alquiler.edad_minima` en vez de sólo recargarle el
+    precio. `edad=None` no valida nada: en los pasos donde todavía no se
+    declaró, no hay nada que rechazar todavía.
+    """
+    if edad is None:
+        return
+    from app.services.configuracion_service import ConfiguracionService
+
+    minima = ConfiguracionService(db).get_int("alquiler.edad_minima", _EDAD_MINIMA_DEFAULT)
+    if edad < minima:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Para alquilar online hay que ser mayor de {minima} años. "
+                "Escribinos por WhatsApp y lo vemos con un agente comercial."
+            ),
+        )
 
 
 @router.get("/disponibilidad", dependencies=[Depends(limite_consultas)])
@@ -55,9 +96,10 @@ def get_disponibilidad(
     fecha_fin: date = Query(..., description="Devolución, ISO YYYY-MM-DD"),
     hora_inicio: time = Query(time(10, 0)),
     hora_fin: time = Query(time(10, 0)),
-    # Los topes son una validación de entrada, no una regla de negocio: D-38
-    # dice que la edad modifica el precio y no rechaza a nadie. Sirven para que
-    # un `edad=-5` no llegue al motor de precios.
+    # `ge=16` es sólo el piso de entrada (que un `edad=-5` no llegue al motor
+    # de precios) — el rechazo real por debajo de los 21 (D-51, revierte
+    # D-38) lo hace `_validar_edad_minima` más abajo, leyendo
+    # `alquiler.edad_minima` de configuración.
     edad: int | None = Query(
         None, ge=16, le=110,
         description="Edad declarada del responsable. Hace que el precio salga con el recargo por edad ya incluido",
@@ -76,15 +118,18 @@ def get_disponibilidad(
     """
     inicio_dt = datetime.combine(fecha_inicio, hora_inicio)
     fin_dt = datetime.combine(fecha_fin, hora_fin)
+    anticipacion, horizonte, duracion_maxima = _ventana_web(db)
     try:
         validar_rango_web(
             inicio_dt, fin_dt, datetime.now(),
-            anticipacion_minima_horas=ANTICIPACION_MINIMA_HORAS,
-            duracion_maxima_dias=DURACION_MAXIMA_DIAS,
+            anticipacion_minima_horas=anticipacion,
+            duracion_maxima_dias=duracion_maxima,
+            horizonte_maximo_dias=horizonte,
         )
     except ValueError as e:
         # 422 con el texto tal cual: está redactado para mostrárselo al cliente.
         raise HTTPException(status_code=422, detail=str(e))
+    _validar_edad_minima(db, edad)
 
     categorias = DisponibilidadService(db).consultar(
         fecha_inicio, hora_inicio, fecha_fin, hora_fin,
@@ -105,6 +150,12 @@ def get_adicionales_publicos(db: Session = Depends(get_db)):
 
     Sólo los marcados `visible_web`: el catálogo interno puede tener ítems que
     no se venden online.
+
+    **Las coberturas van ordenadas por franquicia descendente** (D-53, §3.8b
+    punto 4): primero la que menos baja el riesgo, al final la que más —
+    "pagando más, te llevás menos riesgo" es la lectura que la escalera tiene
+    que comunicar. Antes se ordenaban por `orden`/`nombre`, que no dice nada
+    de eso. Los extras siguen ordenados como antes: no tienen escalera.
     """
     items = (
         db.query(Adicional)
@@ -112,6 +163,14 @@ def get_adicionales_publicos(db: Session = Depends(get_db)):
         .order_by(Adicional.grupo, Adicional.orden, Adicional.nombre)
         .all()
     )
+    coberturas = sorted(
+        (a for a in items if a.grupo == "cobertura"),
+        key=lambda a: a.franquicia if a.franquicia is not None else Decimal("Infinity"),
+        reverse=True,
+    )
+    extras = [a for a in items if a.grupo != "cobertura"]
+    ordenados = coberturas + extras
+
     return ok([
         {
             "id": a.id,
@@ -123,9 +182,10 @@ def get_adicionales_publicos(db: Session = Depends(get_db)):
             "unidad_cobro": a.unidad_cobro,
             "incluido": a.incluido,
             "franquicia": a.franquicia,
+            "porcentaje_sobre_alquiler": a.porcentaje_sobre_alquiler,
             "max_cantidad": a.max_cantidad,
         }
-        for a in items
+        for a in ordenados
     ])
 
 
@@ -205,6 +265,14 @@ def cotizar_publico(payload: CotizarPublicoRequest, db: Session = Depends(get_db
 
     if payload.fecha_fin <= payload.fecha_inicio:
         raise HTTPException(422, "La fecha de fin debe ser posterior a la de inicio")
+
+    # D-51: la edad real (`fecha_nacimiento`) manda sobre la declarada, mismo
+    # criterio que el resto del motor de precios (ver `PrecioService.calcular`).
+    if payload.fecha_nacimiento is not None:
+        from app.domain.recargo_edad import calcular_edad
+        _validar_edad_minima(db, calcular_edad(payload.fecha_nacimiento, payload.fecha_inicio))
+    else:
+        _validar_edad_minima(db, payload.edad)
 
     svc = PrecioService(db)
     elegidos = [(a.adicional_id, a.cantidad) for a in payload.adicionales]
@@ -317,6 +385,8 @@ def get_config_publica(db: Session = Depends(get_db)):
     from app.models.tarifa_calendario import DescuentoDuracion
     from app.services.configuracion_service import ConfiguracionService
 
+    _anticipacion, _horizonte, _duracion_maxima = _ventana_web(db)
+
     # La escalera por duración es información de venta: "llevátelo una semana y
     # ahorrás 15%". Sin exponerla, el cliente sólo descubre el descuento después
     # de cambiar las fechas y ver que el total bajó — que es justo al revés de
@@ -354,16 +424,19 @@ def get_config_publica(db: Session = Depends(get_db)):
                 CLAVE_DESCUENTO_PAGO_TOTAL, DESCUENTO_PAGO_TOTAL_DEFAULT
             )
         ),
-        "anticipacion_minima_horas": ANTICIPACION_MINIMA_HORAS,
-        "duracion_maxima_dias": DURACION_MAXIMA_DIAS,
+        "anticipacion_minima_horas": _anticipacion,
+        "horizonte_maximo_dias": _horizonte,
+        "duracion_maxima_dias": _duracion_maxima,
+        # D-10/D-56 (plan de conexión 13/08): salen de `configuracion`, no
+        # hardcodeados — y es la ÚNICA fuente: el front ya no tiene su propio
+        # fallback duplicado (`LUGARES_FALLBACK` se borró). D-39 sigue
+        # aplicando — sólo Bahía Blanca, CABA se saca del flujo online.
         "lugares_retiro": [
-            "Paraguay 241",
-            "Alsina 350",
-            "Aeropuerto Comandante Espora",
-            # D-39: sólo Bahía Blanca por ahora. "Juan Francisco Seguí 3607"
-            # es Capital Federal y se saca del flujo online — vender dos
-            # ciudades sin resolver si la flota es la misma prometería un auto
-            # que está a 700 km. Se retoma con D-39b.
+            lugar.strip()
+            for lugar in ConfiguracionService(db).get_str(
+                "web.lugares_retiro", "Paraguay 241,Alsina 350,Aeropuerto Comandante Espora"
+            ).split(",")
+            if lugar.strip()
         ],
         "hold_minutos": HOLD_MINUTOS_DEFAULT,
         # Cobro por transferencia. Los datos salen de `configuracion` y no del
@@ -418,11 +491,13 @@ def crear_hold(payload: HoldCreateRequest, db: Session = Depends(get_db)):
     """
     inicio_dt = datetime.combine(payload.fecha_inicio, payload.hora_inicio)
     fin_dt = datetime.combine(payload.fecha_fin, payload.hora_fin)
+    anticipacion, horizonte, duracion_maxima = _ventana_web(db)
     try:
         validar_rango_web(
             inicio_dt, fin_dt, datetime.now(),
-            anticipacion_minima_horas=ANTICIPACION_MINIMA_HORAS,
-            duracion_maxima_dias=DURACION_MAXIMA_DIAS,
+            anticipacion_minima_horas=anticipacion,
+            duracion_maxima_dias=duracion_maxima,
+            horizonte_maximo_dias=horizonte,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -539,11 +614,13 @@ def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Dep
 
     inicio_dt = datetime.combine(payload.fecha_inicio, payload.hora_inicio)
     fin_dt = datetime.combine(payload.fecha_fin, payload.hora_fin)
+    anticipacion, horizonte, duracion_maxima = _ventana_web(db)
     try:
         validar_rango_web(
             inicio_dt, fin_dt, datetime.now(),
-            anticipacion_minima_horas=ANTICIPACION_MINIMA_HORAS,
-            duracion_maxima_dias=DURACION_MAXIMA_DIAS,
+            anticipacion_minima_horas=anticipacion,
+            duracion_maxima_dias=duracion_maxima,
+            horizonte_maximo_dias=horizonte,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -556,11 +633,20 @@ def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Dep
     # solicitud no tiene ninguno de los dos: no hay cliente todavía y no la
     # cargó un operador. Se usan los registros de sistema, y el contacto real
     # vive en los campos `web_contacto_*`.
-    from app.models.cliente import Cliente
-    from app.models.usuario import Usuario
+    from app.models.cliente import NOMBRE_CLIENTE_GENERICO, Cliente
+    from app.models.usuario import AUTH_SUB_SISTEMA, Usuario
 
-    usuario_sistema = db.query(Usuario).order_by(Usuario.id).first()
-    cliente_generico = db.query(Cliente).order_by(Cliente.id).first()
+    # D-53 (§4.3): se busca primero el registro "de sistema" explícito, y se
+    # cae al más viejo por id si el script de limpieza todavía no lo creó —
+    # mismo criterio que `PagoWebService._usuario_sistema`.
+    usuario_sistema = (
+        db.query(Usuario).filter(Usuario.auth_sub == AUTH_SUB_SISTEMA).first()
+        or db.query(Usuario).order_by(Usuario.id).first()
+    )
+    cliente_generico = (
+        db.query(Cliente).filter(Cliente.nombre_completo == NOMBRE_CLIENTE_GENERICO).first()
+        or db.query(Cliente).order_by(Cliente.id).first()
+    )
     if usuario_sistema is None or cliente_generico is None:
         raise HTTPException(
             status_code=503,
@@ -591,6 +677,14 @@ def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Dep
     # Aviso en el acto: esperar al barrido de las 08:00 significa que una
     # solicitud del sábado a la tarde queda sin respuesta hasta el lunes.
     NotificacionService(db).avisar_reserva_web(reserva)
+    # Plan de conexión (13/08), punto 1.4: antes esto avisaba sólo por
+    # campana. Un contacto sin cupo es una venta a recuperar — tiene que
+    # salir el mail igual que los otros dos caminos de reserva web.
+    try:
+        from app.services.email_reservas import avisar_al_equipo_solicitud_sin_cupo
+        avisar_al_equipo_solicitud_sin_cupo(db, reserva)
+    except Exception:
+        logger.exception("[Solicitudes] falló el mail de la solicitud sin cupo #%s", reserva.id)
     db.commit()
 
     return ok(
@@ -1082,3 +1176,53 @@ def _extraer_payment_id(cuerpo: dict, query: dict) -> str | None:
     if query.get("type") == "payment" and query.get("data.id"):
         return str(query["data.id"])
     return None
+
+
+# ─── Demanda insatisfecha (§3.9) ─────────────────────────────────────────────
+
+MotivoBusquedaSinResultado = Literal[
+    "sin_cupo", "anticipacion", "horizonte", "duracion", "otro_lugar",
+]
+BotonElegido = Literal["whatsapp", "seguir_web", "consulta"]
+
+
+class BusquedaSinResultadoRequest(BaseModel):
+    """
+    Lo que el cartel de derivación comercial (§3.9) registra cada vez que
+    aparece — **no** es una consulta, no lleva contacto. Ver
+    `models/busqueda_sin_resultado.py`.
+    """
+    motivo: MotivoBusquedaSinResultado
+    boton_elegido: BotonElegido
+    categoria_id: int | None = None
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+
+
+@router.post("/estadisticas/busqueda-sin-resultado", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(limite_consultas)])
+def registrar_busqueda_sin_resultado(
+    payload: BusquedaSinResultadoRequest, db: Session = Depends(get_db),
+):
+    """
+    Plan de conexión (13/08), §3.9 — la mitad de D-04 que sobrevive al
+    cartel: sin esto, la demanda insatisfecha sólo se mediría para la
+    minoría que completa el formulario de contacto, que ahora es la tercera
+    opción y no la única.
+
+    Sin autenticación, como el resto de `/public`, y **sin devolver nada que
+    el cliente necesite**: es fire-and-forget desde el navegador, y si falla
+    no tiene que romper el cartel que lo disparó.
+    """
+    from app.models.busqueda_sin_resultado import BusquedaSinResultado
+
+    registro = BusquedaSinResultado(
+        categoria_id=payload.categoria_id,
+        fecha_inicio=payload.fecha_inicio,
+        fecha_fin=payload.fecha_fin,
+        motivo=payload.motivo,
+        boton_elegido=payload.boton_elegido,
+    )
+    db.add(registro)
+    db.commit()
+    return ok({"id": registro.id}, "Registrado")

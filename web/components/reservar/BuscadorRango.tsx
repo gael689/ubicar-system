@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { MapPin, ChevronDown, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
+import { textoPlazo } from "@/lib/api";
 
 export const HORAS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, "0");
@@ -28,6 +29,11 @@ interface Props {
   valor: RangoBusqueda;
   lugares: string[];
   anticipacionHoras: number;
+  /** D-52: los mismos bordes que valida el backend, ahora también en el
+   *  propio calendario — antes sólo se avisaban después de elegir una fecha
+   *  inválida (checklist §3.1, puntos 30/31). `undefined` = sin tope. */
+  horizonteMaximoDias?: number;
+  duracionMaximaDias?: number;
   onBuscar: (rango: RangoBusqueda) => void;
   compacto?: boolean;
 }
@@ -44,7 +50,8 @@ const desdeIso = (s: string) => (s ? new Date(`${s}T00:00:00`) : undefined);
  * que importa es la grilla de autos, no el formulario.
  */
 export function BuscadorRango({
-  valor, lugares, anticipacionHoras, onBuscar, compacto = false,
+  valor, lugares, anticipacionHoras, horizonteMaximoDias, duracionMaximaDias,
+  onBuscar, compacto = false,
 }: Props) {
   const idRetiro = useId();
   const idDevolucion = useId();
@@ -54,6 +61,15 @@ export function BuscadorRango({
     valor.lugarDevolucion !== "" && valor.lugarDevolucion !== valor.lugarRetiro,
   );
   const [error, setError] = useState<string | null>(null);
+
+  // Los mismos tres bordes que valida `/public/disponibilidad` (D-52),
+  // ahora también deshabilitados en el propio calendario: antes se
+  // enteraban recién al tocar "ver vehículos" y toparse con el error.
+  const minRetiro = new Date(Date.now() + anticipacionHoras * 3_600_000);
+  const maxRetiro = horizonteMaximoDias ? addDays(new Date(), horizonteMaximoDias) : undefined;
+  const inicioElegido = desdeIso(form.fechaInicio);
+  const maxDevolucion =
+    duracionMaximaDias && inicioElegido ? addDays(inicioElegido, duracionMaximaDias) : undefined;
 
   const set = <K extends keyof RangoBusqueda>(k: K, v: RangoBusqueda[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -121,7 +137,8 @@ export function BuscadorRango({
           hora={form.horaInicio}
           onFecha={(v) => set("fechaInicio", v)}
           onHora={(v) => set("horaInicio", v)}
-          desde={new Date()}
+          desde={minRetiro}
+          hasta={maxRetiro}
         />
         <CampoFechaHora
           className="lg:col-span-2"
@@ -130,7 +147,8 @@ export function BuscadorRango({
           hora={form.horaFin}
           onFecha={(v) => set("fechaFin", v)}
           onHora={(v) => set("horaFin", v)}
-          desde={desdeIso(form.fechaInicio) ?? new Date()}
+          desde={inicioElegido ?? minRetiro}
+          hasta={maxDevolucion}
         />
       </div>
 
@@ -172,7 +190,12 @@ export function BuscadorRango({
         <span>
           Los lugares y horarios de retiro y devolución están sujetos a
           disponibilidad. Te confirmamos el punto exacto al reservar. Las
-          reservas online se toman con {anticipacionHoras} horas de anticipación.
+          reservas online se toman con {textoPlazo(anticipacionHoras / 24)} de
+          anticipación
+          {horizonteMaximoDias
+            ? ` y hasta ${textoPlazo(horizonteMaximoDias, true)} adelante`
+            : ""}
+          .
         </span>
       </p>
 
@@ -186,7 +209,7 @@ export function BuscadorRango({
 }
 
 function CampoFechaHora({
-  etiqueta, fecha, hora, onFecha, onHora, desde, className,
+  etiqueta, fecha, hora, onFecha, onHora, desde, hasta, className,
 }: {
   etiqueta: string;
   fecha: string;
@@ -194,6 +217,8 @@ function CampoFechaHora({
   onFecha: (v: string) => void;
   onHora: (v: string) => void;
   desde: Date;
+  /** Tope superior — horizonte de venta o duración máxima. Sin tope si se omite. */
+  hasta?: Date;
   className?: string;
 }) {
   const seleccionada = desdeIso(fecha);
@@ -222,7 +247,7 @@ function CampoFechaHora({
               mode="single"
               selected={seleccionada}
               onSelect={(d) => d && onFecha(iso(d))}
-              disabled={{ before: desde }}
+              disabled={hasta ? [{ before: desde }, { after: hasta }] : { before: desde }}
               locale={es}
               initialFocus
             />

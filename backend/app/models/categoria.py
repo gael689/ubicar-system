@@ -1,5 +1,6 @@
 from datetime import datetime
-from sqlalchemy import String, Text, Boolean, DateTime, Integer
+from decimal import Decimal
+from sqlalchemy import String, Text, Boolean, DateTime, Integer, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -42,6 +43,13 @@ class Categoria(Base):
     ejemplo_modelos: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Permite sacar una categoría de la web sin darla de baja del sistema.
     visible_web: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Plan de conexión (13/08), D-53: la franquicia con el seguro obligatorio
+    # solo, sin cobertura extra — la más alta de la escalera, y distinta por
+    # categoría porque el riesgo de una Pick-up no es el de un Compacto.
+    # `NULL` = todavía sin cargar; el contrato no imprime franquicia hasta
+    # que esto tenga un valor (nunca "$0", que se lee como "no pagás nada").
+    franquicia_base: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

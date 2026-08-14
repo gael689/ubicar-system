@@ -145,6 +145,141 @@ def confirmar_al_cliente(db: Session, reserva, pago_web) -> bool:
     return bool(registro is not None and registro.estado == "enviado")
 
 
+def _html_equipo_transferencia(reserva, anticipo) -> str:
+    """
+    Igual que `_html_equipo`, pero sin `PagoWeb`: acá no hay pasarela, y el
+    monto sale del dataclass `Anticipo` que ya calculó el service. La
+    diferencia de fondo con el mail de Mercado Pago es la última línea: acá
+    no hay nada acreditado, hay que ir a mirar el extracto.
+    """
+    categoria = reserva.categoria.nombre if reserva.categoria else "—"
+    cuerpo = f"""
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px">
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Contacto</td>
+        <td>{reserva.web_contacto_nombre or "—"} — {reserva.web_contacto_telefono or "—"}
+            — {reserva.web_contacto_email or "—"}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Categoría</td><td>{categoria}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Retiro</td>
+        <td>{reserva.fecha_inicio.strftime('%d/%m/%Y')} {reserva.hora_inicio.strftime('%H:%M')}
+            — {reserva.lugar_entrega}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Devolución</td>
+        <td>{reserva.fecha_fin.strftime('%d/%m/%Y')} {reserva.hora_fin.strftime('%H:%M')}
+            — {reserva.lugar_devolucion}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">A transferir</td>
+        <td>{pesos(anticipo.monto_a_cobrar)} ({anticipo.porcentaje}%)</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Saldo al retirar</td>
+        <td>{pesos(anticipo.saldo)}</td></tr>
+  </table>
+  <p style="font-size:13px;color:#666;margin-top:16px">
+    <strong>Todavía no hay plata acreditada.</strong> El cliente va a mandar el
+    comprobante por WhatsApp — cuando lo veas en el extracto, registrá el cobro
+    desde la reserva para confirmarla. No se confirma sola: por transferencia
+    no hay aviso automático.
+  </p>
+"""
+    return layout(f"Reserva #{reserva.id} — esperando transferencia", cuerpo)
+
+
+def avisar_al_equipo_transferencia(db: Session, reserva, anticipo) -> int:
+    """El aviso interno del camino de transferencia. Devuelve cuántos envíos
+    salieron bien."""
+    from app.services.email_service import EmailService
+
+    destinos = destinatarios_equipo(db)
+    if not destinos:
+        logger.info("[Email] sin destinatarios para el aviso de reserva por transferencia")
+        return 0
+
+    asunto = f"Reserva por transferencia — {reserva.web_contacto_nombre or 'sin nombre'} (#{reserva.id})"
+    html = _html_equipo_transferencia(reserva, anticipo)
+
+    svc = EmailService(db)
+    enviados = 0
+    for destino in destinos:
+        registro = svc.registrar_y_enviar(
+            tipo="reserva_web_transferencia_equipo",
+            destinatario=destino,
+            asunto=asunto,
+            html=html,
+            entidad_tipo="reserva",
+            entidad_id=reserva.id,
+        )
+        if registro is not None and registro.estado == "enviado":
+            enviados += 1
+    return enviados
+
+
+def notificar_reserva_transferencia_pendiente(db: Session, reserva, anticipo) -> dict:
+    """
+    El aviso equivalente a `notificar_reserva_pagada`, para el único camino
+    de cobro que hoy funciona de verdad (C-4, plan de conexión 13/08).
+
+    No hay comprobante que mandarle al cliente todavía —no pagó, dejó una
+    reserva pendiente—: el CBU y el WhatsApp para el comprobante ya se los
+    dio la respuesta del endpoint. Este mail es sólo para el equipo.
+
+    **Nunca levanta.** Igual que el de Mercado Pago: la reserva ya está
+    creada y un mail que falla no puede tumbarla.
+    """
+    resultado = {"equipo": 0}
+    try:
+        resultado["equipo"] = avisar_al_equipo_transferencia(db, reserva, anticipo)
+    except Exception:
+        logger.exception(
+            "[Email] falló el aviso al equipo de la reserva por transferencia #%s", reserva.id
+        )
+    return resultado
+
+
+def avisar_al_equipo_solicitud_sin_cupo(db: Session, reserva) -> int:
+    """
+    Plan de conexión (13/08), punto 1.4: `crear_solicitud_sin_cupo` avisaba
+    por campana pero no por mail. Es una venta a recuperar —alguien pidió una
+    categoría agotada y dejó sus datos igual—, y hasta ahora dependía de que
+    alguien tuviera la campana abierta en el momento exacto.
+    """
+    from app.services.email_service import EmailService
+
+    destinos = destinatarios_equipo(db)
+    if not destinos:
+        logger.info("[Email] sin destinatarios para la solicitud sin cupo #%s", reserva.id)
+        return 0
+
+    categoria = reserva.categoria.nombre if reserva.categoria else "—"
+    cuerpo = f"""
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px">
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Contacto</td>
+        <td>{reserva.web_contacto_nombre or "—"} — {reserva.web_contacto_telefono or "—"}
+            — {reserva.web_contacto_email or "—"}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Categoría pedida</td><td>{categoria}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">Fechas</td>
+        <td>{reserva.fecha_inicio.strftime('%d/%m/%Y')} al {reserva.fecha_fin.strftime('%d/%m/%Y')}</td></tr>
+  </table>
+  <p style="font-size:13px;color:#666;margin-top:16px">
+    No hay cupo de esa categoría para esas fechas. Ofrecele otra categoría,
+    otras fechas, o avisale cuando se libere — desde la bandeja de reservas
+    web.
+  </p>
+"""
+    html = layout(f"Solicitud sin cupo #{reserva.id}", cuerpo)
+    asunto = f"Sin disponibilidad — {reserva.web_contacto_nombre or 'sin nombre'} (#{reserva.id})"
+
+    svc = EmailService(db)
+    enviados = 0
+    for destino in destinos:
+        registro = svc.registrar_y_enviar(
+            tipo="reserva_web_sin_cupo_equipo",
+            destinatario=destino,
+            asunto=asunto,
+            html=html,
+            entidad_tipo="reserva",
+            entidad_id=reserva.id,
+        )
+        if registro is not None and registro.estado == "enviado":
+            enviados += 1
+    return enviados
+
+
 def notificar_reserva_pagada(db: Session, reserva, pago_web) -> dict:
     """
     Los dos envíos juntos, tolerante a fallas.

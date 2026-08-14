@@ -54,6 +54,21 @@ class VehiculoResumen(BaseModel):
 class ClienteResumen(BaseModel):
     id: int
     nombre_completo: str
+    # Plan de conexión (13/08): el panel "Pendiente de asignación" (2.2)
+    # necesita el contacto clickeable sin una segunda llamada a
+    # `/clientes/{id}` — es la misma información que ya trae `FilaReservaWeb`
+    # de los campos `web_contacto_*`, pero para el caso normal en que el
+    # cliente ya existe en la base (mostrador, o una reserva web que
+    # reutilizó un cliente existente por DNI).
+    dni_cuit: str | None = None
+    telefono: str | None = None
+    email: str | None = None
+    model_config = {"from_attributes": True}
+
+
+class CategoriaResumen(BaseModel):
+    id: int
+    nombre: str
     model_config = {"from_attributes": True}
 
 
@@ -224,6 +239,7 @@ class ReservaResponse(BaseModel):
     # Relaciones expandidas
     vehiculo: VehiculoResumen | None = None
     cliente: ClienteResumen | None = None
+    categoria: CategoriaResumen | None = None
     conductor: ConductorResumen | None = None
     alquiler_id: int | None = None
     alquiler_estado: str | None = None
@@ -239,6 +255,10 @@ class ReservaResponse(BaseModel):
     web_contacto_nombre: str | None = None
     web_contacto_email: str | None = None
     web_contacto_telefono: str | None = None
+    # D-54: la categoría real entregada, cuando difiere de la pedida.
+    categoria_entregada_id: int | None = None
+    categoria_entregada: CategoriaResumen | None = None
+    upgrade_motivo: str | None = None
     model_config = {"from_attributes": True}
 
 

@@ -31,6 +31,10 @@ class AdicionalCreate(_AdicionalValidaciones):
     unidad_cobro: UnidadCobro = "por_dia"
     incluido: bool = False
     franquicia: Decimal | None = Field(default=None, ge=0)
+    # D-53: coberturas que se cobran como % del alquiler del vehículo, no un
+    # monto fijo — "30% más" tiene sentido en cualquier categoría; un monto
+    # fijo no. Cuando está cargado, reemplaza a `precio`/`unidad_cobro`.
+    porcentaje_sobre_alquiler: Decimal | None = Field(default=None, ge=0, le=100)
     max_cantidad: int | None = Field(default=None, ge=1)
     visible_web: bool = True
     orden: int = 0
@@ -58,6 +62,7 @@ class AdicionalUpdate(_AdicionalValidaciones):
     unidad_cobro: UnidadCobro | None = None
     incluido: bool | None = None
     franquicia: Decimal | None = Field(default=None, ge=0)
+    porcentaje_sobre_alquiler: Decimal | None = Field(default=None, ge=0, le=100)
     max_cantidad: int | None = Field(default=None, ge=1)
     visible_web: bool | None = None
     orden: int | None = None
@@ -74,6 +79,7 @@ class AdicionalResponse(BaseModel):
     unidad_cobro: UnidadCobro
     incluido: bool
     franquicia: Decimal | None
+    porcentaje_sobre_alquiler: Decimal | None = None
     max_cantidad: int | None
     visible_web: bool
     orden: int

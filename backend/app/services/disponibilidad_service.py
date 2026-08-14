@@ -354,6 +354,13 @@ class DisponibilidadService:
                 "valijas": cat.valijas,
                 "transmision": cat.transmision,
                 "aire_acondicionado": cat.aire_acondicionado,
+                # D-51/D-59: lo que le queda al cliente si no contrata ninguna
+                # cobertura — hoy es el escenario de **mayor** riesgo, no $0
+                # como antes. La web lo muestra en el paso de adicionales para
+                # que "no elegir nada" se vea como lo que es.
+                "franquicia_base": (
+                    float(cat.franquicia_base) if cat.franquicia_base is not None else None
+                ),
                 "disponibles": cupo.disponibles,
                 "hay_cupo": cupo.hay_cupo and precio is not None,
                 "ultima_unidad": cupo.ultima_unidad,

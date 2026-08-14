@@ -15,17 +15,25 @@ puntual de un echeq rechazado).
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import case, extract, func
+from sqlalchemy import case, exists, extract, func
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.exceptions import NotFoundError
 from app.domain.notificaciones_reglas import evaluar_todas
-from app.models.notificacion import Notificacion, PreferenciaNotificacion
+from app.models.notificacion import Notificacion, NotificacionVista, PreferenciaNotificacion
 
 ESTADOS_ACTIVOS = ("pendiente", "enviada", "pospuesta")
+
+# Tipos de aviso instantáneo (`generar_una`, no catalogados) que escalan solos
+# si nadie resuelve la reserva o el contrato que los generó. Es el C-9: "avisos
+# hasta que alguien vea esta reserva". No es horario hábil de verdad —eso es un
+# módulo aparte que no existe hoy—, es horas de reloj, documentado como
+# simplificación consciente.
+TIPOS_ESCALABLES = ("reserva_web_nueva", "reserva_web_sin_asignar", "reserva_web_esperando_transferencia")
+HORAS_PARA_ESCALAR = 4
 
 # Orden de la cola: lo urgente primero, y recién después lo reciente.
 #
@@ -95,7 +103,15 @@ class NotificacionService:
     def generar_una(self, candidato: dict) -> Notificacion | None:
         """Crea una notificación puntual fuera del ciclo del motor — para
         eventos instantáneos que no deben esperar a la corrida de las 08:00
-        (ej: echeq rechazado al registrarlo). Idempotente por clave_dedupe."""
+        (ej: echeq rechazado al registrarlo). Idempotente por clave_dedupe.
+
+        **`autoresoluble=False`** (plan de conexión 13/08, cierra C-2/C-3):
+        estas notificaciones no salen de ninguna regla del catálogo, así que
+        `_auto_resolver` nunca las va a encontrar entre los candidatos de una
+        corrida — y antes de esta columna eso las marcaba "resueltas" en el
+        primer barrido, aunque nadie las hubiera atendido. Se resuelven a
+        mano o cuando la entidad cambia de estado (`resolver_por_entidad`).
+        """
         clave = _clave_dedupe(candidato)
         existe = self.db.query(Notificacion).filter(Notificacion.clave_dedupe == clave).first()
         if existe:
@@ -111,10 +127,40 @@ class NotificacionService:
             fecha_objetivo=candidato["fecha_objetivo"],
             clave_dedupe=clave,
             estado="pendiente",
+            autoresoluble=False,
         )
         self.db.add(notif)
         self.db.flush()
         return notif
+
+    def resolver_por_entidad(
+        self, entidad_tipo: str, entidad_id: int, resuelta_por: int | None = None
+    ) -> int:
+        """
+        Resuelve todas las notificaciones activas de una entidad puntual —
+        el disparador real para las `autoresoluble=False` (C-2/C-3): esas no
+        las toca `_auto_resolver`, así que necesitan que quien cambia el
+        estado de la reserva o el contrato avise que ya no hace falta el
+        aviso. Se llama, por ejemplo, al asignar el vehículo de una reserva
+        web o al rechazarla.
+        """
+        activas = (
+            self.db.query(Notificacion)
+            .filter(
+                Notificacion.entidad_tipo == entidad_tipo,
+                Notificacion.entidad_id == entidad_id,
+                Notificacion.estado.in_(ESTADOS_ACTIVOS),
+            )
+            .all()
+        )
+        ahora = datetime.utcnow()
+        for n in activas:
+            n.estado = "resuelta"
+            n.resuelta_at = ahora
+            n.resuelta_por = resuelta_por
+        if activas:
+            self.db.flush()
+        return len(activas)
 
     def avisar_reserva_web(self, reserva) -> Notificacion | None:
         """
@@ -159,13 +205,25 @@ class NotificacionService:
         actuales para su (tipo, entidad_tipo, entidad_id) — sin importar la
         fecha_objetivo, que puede haber cambiado de umbral — la condición que
         la generó desapareció (se cobró el echeq, se hizo el checkin, etc.):
-        pasa a resuelta sola."""
+        pasa a resuelta sola.
+
+        **Sólo mira `autoresoluble=True`** (plan de conexión 13/08, C-2/C-3).
+        Las de evento puntual (`generar_una`) nunca van a aparecer entre los
+        candidatos de ninguna corrida —no salen de ninguna regla del
+        catálogo—, así que barrerlas acá era el bug: se resolvían solas en la
+        primera corrida sin que nadie las hubiera visto. Esas se resuelven a
+        mano o vía `resolver_por_entidad`.
+        """
         activas_por_entidad: dict[tuple, set] = {}
         for c in candidatos:
             key = (c["tipo"], c["entidad_tipo"], c["entidad_id"])
             activas_por_entidad.setdefault(key, set()).add(_clave_dedupe(c))
 
-        pendientes = self.db.query(Notificacion).filter(Notificacion.estado.in_(ESTADOS_ACTIVOS)).all()
+        pendientes = (
+            self.db.query(Notificacion)
+            .filter(Notificacion.estado.in_(ESTADOS_ACTIVOS), Notificacion.autoresoluble.is_(True))
+            .all()
+        )
         resueltas = 0
         for n in pendientes:
             key = (n.tipo, n.entidad_tipo, n.entidad_id)
@@ -175,6 +233,36 @@ class NotificacionService:
                 resueltas += 1
         return resueltas
 
+    def escalar_urgencias(self, ahora: datetime | None = None) -> int:
+        """
+        C-9: una alerta que nadie atiende sube de urgencia sola.
+
+        Sólo `TIPOS_ESCALABLES`, sólo de `alta` a `critica`, y sólo una vez
+        (`escalada_en` evita reescalar en cada corrida). El pedido era "un
+        cartel y avisos hasta que alguien vea esta reserva" — sin esto, una
+        reserva web sin asignar se queda en `alta` para siempre, con la misma
+        prioridad visual el primer minuto que a las tres semanas.
+        """
+        ahora = ahora or datetime.utcnow()
+        limite = ahora - timedelta(hours=HORAS_PARA_ESCALAR)
+        candidatas = (
+            self.db.query(Notificacion)
+            .filter(
+                Notificacion.tipo.in_(TIPOS_ESCALABLES),
+                Notificacion.urgencia == "alta",
+                Notificacion.estado.in_(ESTADOS_ACTIVOS),
+                Notificacion.escalada_en.is_(None),
+                Notificacion.created_at <= limite,
+            )
+            .all()
+        )
+        for n in candidatas:
+            n.urgencia = "critica"
+            n.escalada_en = ahora
+        if candidatas:
+            self.db.flush()
+        return len(candidatas)
+
     # ── Consulta ─────────────────────────────────────────────────────────
 
     def list_activas(
@@ -182,6 +270,7 @@ class NotificacionService:
         urgencia: str | None = None,
         tipo: str | None = None,
         entidad_tipo: str | None = None,
+        usuario_id: int | None = None,
     ) -> list[Notificacion]:
         """
         Las notificaciones activas, **ordenadas por urgencia y no por fecha**.
@@ -194,6 +283,12 @@ class NotificacionService:
 
         `urgencia` y `tipo` aceptan varios valores separados por coma, para
         poder mirar "sólo críticas y altas" o una familia entera de una.
+
+        **`usuario_id` saca las que ese usuario ya marcó vistas** (C-9): es el
+        acuse por usuario, no un `estado` global — que Franco la marque no la
+        esconde para Martín, sólo para Franco. Sin `usuario_id` (llamadas
+        internas, digest) devuelve todo lo activo, sin filtrar por lectura de
+        nadie.
         """
         ahora = datetime.utcnow()
 
@@ -204,6 +299,12 @@ class NotificacionService:
                 q = q.filter(Notificacion.tipo.in_(_lista(tipo)))
             if entidad_tipo:
                 q = q.filter(Notificacion.entidad_tipo.in_(_lista(entidad_tipo)))
+            if usuario_id is not None:
+                vista = exists().where(
+                    NotificacionVista.notificacion_id == Notificacion.id,
+                    NotificacionVista.usuario_id == usuario_id,
+                )
+                q = q.filter(~vista)
             return q.order_by(PESO_URGENCIA, Notificacion.created_at.desc())
 
         items = filtrar(
@@ -265,10 +366,30 @@ class NotificacionService:
 
     # ── Acciones (D-19 style: transición explícita, no edición libre) ──────
 
-    def marcar_leida(self, id: int) -> Notificacion:
+    def marcar_leida(self, id: int, usuario_id: int) -> Notificacion:
+        """
+        Acuse **de este usuario**, no un cambio de estado global (C-9).
+
+        Antes esto pisaba `Notificacion.estado = 'leida'`: que uno la leyera
+        la escondía para todos, aunque nadie hubiera hecho nada con la
+        reserva o el contrato que la generó. Ahora inserta la marca en
+        `notificaciones_vistas` y listo — la notificación sigue activa para
+        cualquier otro usuario, y para éste vuelve a aparecer si se descarta
+        la marca o si el motor la regenera con una `clave_dedupe` nueva.
+
+        `leida_at` se sigue completando la primera vez, a título informativo
+        (para el historial y el digest), pero ya no decide si algo se ve.
+        """
         n = self.get(id)
-        n.estado = "leida"
-        n.leida_at = datetime.utcnow()
+        ya_vista = (
+            self.db.query(NotificacionVista)
+            .filter(NotificacionVista.notificacion_id == id, NotificacionVista.usuario_id == usuario_id)
+            .first()
+        )
+        if ya_vista is None:
+            self.db.add(NotificacionVista(notificacion_id=id, usuario_id=usuario_id))
+        if n.leida_at is None:
+            n.leida_at = datetime.utcnow()
         self.db.flush()
         return n
 

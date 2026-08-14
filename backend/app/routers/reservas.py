@@ -61,6 +61,11 @@ class AsignarVehiculoRequest(BaseModel):
     # Asignar y confirmar son lo mismo cuando la plata ya está: se deja
     # explícito para que la pantalla decida según lo que falte.
     confirmar: bool = False
+    # D-54: opcional — si no se manda, el service arma un motivo genérico
+    # ("Upgrade a categoría superior, mismo precio"). Sirve para que quien
+    # asigna deje una nota puntual ("cliente frecuente", "el compacto se
+    # rompió") en vez de perder el porqué de la cortesía.
+    upgrade_motivo: str | None = None
 
 
 def _parse_conflicto(exc: ConflictError) -> dict:
@@ -502,6 +507,7 @@ def asignar_vehiculo(
             vehiculo_id=payload.vehiculo_id,
             usuario_id=current_user.id,
             confirmar=payload.confirmar,
+            upgrade_motivo=payload.upgrade_motivo,
         )
         db.commit()
     except ConflictError as e:

@@ -155,7 +155,10 @@ class TestValidarRangoWeb:
         validar_rango_web(inicio, fin, self.AHORA, **kw)
 
     def test_rango_valido(self):
-        self._validar(datetime(2026, 9, 5, 10, 0), datetime(2026, 9, 8, 10, 0))
+        # D-52 (13/08): el default de anticipación pasó a 10 días (240h).
+        # Estas fechas están a más de 10 días de AHORA (2026-09-01) a
+        # propósito, para no confundir "rango válido" con "anticipación".
+        self._validar(datetime(2026, 9, 15, 10, 0), datetime(2026, 9, 18, 10, 0))
 
     def test_fin_antes_del_inicio(self):
         with pytest.raises(ValueError, match="posterior"):
@@ -178,8 +181,27 @@ class TestValidarRangoWeb:
         )
 
     def test_duracion_maxima(self):
+        # Retiro a más de 10 días (anticipación) y a menos de 4 meses
+        # (horizonte), para aislar el chequeo de duración de los otros dos.
         with pytest.raises(ValueError, match="contactanos"):
-            self._validar(datetime(2026, 9, 5), datetime(2027, 9, 5))
+            self._validar(datetime(2026, 9, 15), datetime(2026, 12, 25))
+
+    def test_horizonte_maximo(self):
+        # D-52: nuevo — antes no había tope y se podía reservar para dentro
+        # de dos años.
+        with pytest.raises(ValueError, match="4 meses"):
+            self._validar(datetime(2027, 3, 1), datetime(2027, 3, 5))
+
+    def test_horizonte_desactivado_con_none(self):
+        # Compatibilidad: quien no pase el parámetro no queda con un tope
+        # sorpresa.
+        self._validar(
+            datetime(2028, 3, 1), datetime(2028, 3, 5), horizonte_maximo_dias=None,
+        )
+
+    def test_mensaje_anticipacion_en_dias_no_en_horas(self):
+        with pytest.raises(ValueError, match=r"10 días de anticipación"):
+            self._validar(datetime(2026, 9, 5, 10, 0), datetime(2026, 9, 8, 10, 0))
 
 
 class TestHelpers:

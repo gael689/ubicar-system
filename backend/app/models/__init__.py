@@ -25,14 +25,16 @@ from app.models.hold import Hold
 from app.models.categoria import Categoria
 from app.models.comprobante import Comprobante
 from app.models.configuracion import Configuracion
-from app.models.notificacion import Notificacion
+from app.models.notificacion import Notificacion, NotificacionVista
 from app.models.email_enviado import EmailEnviado
 from app.models.recibo import Recibo
 from app.models.pago_web import PagoWeb
 from app.models.auditoria import Auditoria
+from app.models.busqueda_sin_resultado import BusquedaSinResultado
 
 __all__ = [
-    "Categoria", "Comprobante", "Configuracion", "Notificacion", "EmailEnviado", "Recibo",
+    "Categoria", "Comprobante", "Configuracion", "Notificacion", "NotificacionVista", "EmailEnviado", "Recibo",
+    "BusquedaSinResultado",
     "Hold", "PagoWeb", "Auditoria",
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",
     "Tarifa", "Reserva", "Alquiler", "Contrato", "Pago",

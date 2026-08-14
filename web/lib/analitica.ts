@@ -343,3 +343,28 @@ export function contactoIniciado(origen: string): void {
 export function intencionDeReserva(origen: string): void {
   aGoogle("select_promotion", { promotion_name: origen, destino: "/reservar" });
 }
+
+// ─── Derivación comercial (§3.9) ─────────────────────────────────────────────
+
+/**
+ * El cartel único que reemplaza los cuatro comportamientos distintos que
+ * había para "la web no puede vender esto" (plan de conexión, 13/08). Se
+ * manda cuando la persona toca alguno de los tres caminos —WhatsApp, seguir
+ * en la web, o dejar consulta—, nunca al aparecer solo: es la señal de qué
+ * camino se usa, no de cuántas veces se mostró el cartel.
+ */
+export function derivacionComercial(d: {
+  motivo: "sin_cupo" | "anticipacion" | "horizonte" | "duracion" | "otro_lugar";
+  boton: "whatsapp" | "seguir_web" | "consulta";
+  categoria?: string;
+}): void {
+  aGoogle("generate_lead", {
+    tipo: "derivacion_comercial",
+    motivo: d.motivo,
+    boton: d.boton,
+    categoria: d.categoria,
+  });
+  if (d.boton === "whatsapp") {
+    aMeta("Lead", { content_category: `derivacion_${d.motivo}` });
+  }
+}

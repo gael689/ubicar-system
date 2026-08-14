@@ -35,17 +35,21 @@ def list_notificaciones(
     tipo: str | None = Query(None, description="Una o varias separadas por coma"),
     entidad_tipo: str | None = Query(None, description="reserva, vehiculo, cliente, echeq…"),
     service: NotificacionService = Depends(_service),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     """
-    Notificaciones activas, **las urgentes primero**.
+    Notificaciones activas, **las urgentes primero**, y sin las que este
+    usuario ya marcó vistas (acuse por usuario — C-9: que uno la lea no la
+    esconde para los demás).
 
     `urgencia` y `tipo` admiten varios valores separados por coma
     (`?urgencia=critica,alta`). Los contadores `criticas`/`urgentes` se
     calculan sobre lo filtrado, así que el número del badge siempre coincide
     con lo que se ve en la lista.
     """
-    items = service.list_activas(urgencia=urgencia, tipo=tipo, entidad_tipo=entidad_tipo)
+    items = service.list_activas(
+        urgencia=urgencia, tipo=tipo, entidad_tipo=entidad_tipo, usuario_id=current_user.id,
+    )
     criticas = sum(1 for i in items if i.urgencia == "critica")
     urgentes = sum(1 for i in items if i.urgencia in ("critica", "alta"))
     return ok(NotificacionesListResponse(
@@ -144,9 +148,9 @@ def marcar_leida(
     id: int,
     db: Session = Depends(get_db),
     service: NotificacionService = Depends(_service),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
-    n = service.marcar_leida(id)
+    n = service.marcar_leida(id, current_user.id)
     db.commit()
     return ok(NotificacionResponse.model_validate(n).model_dump(), "Notificación marcada como leída")
 

@@ -1120,6 +1120,13 @@ class ReservaService:
                 monto=monto,
             )
 
+        # Confirmar la reserva por transferencia es lo que cierra
+        # "esperando la transferencia" (C-4): si no se resuelve acá, la regla
+        # del catálogo la sigue reclamando cada corrida del motor.
+        if confirmar and reserva.estado == EstadoReserva.CONFIRMADA.value:
+            from app.services.notificacion_service import NotificacionService
+            NotificacionService(self.db).resolver_por_entidad("reserva", reserva.id, usuario_id)
+
         self.db.refresh(reserva)
         return reserva
 
@@ -1129,6 +1136,7 @@ class ReservaService:
         vehiculo_id: int,
         usuario_id: int,
         confirmar: bool = False,
+        upgrade_motivo: str | None = None,
     ) -> Reserva:
         """
         Le pone un auto concreto a una reserva que no lo tiene (o le cambia el
@@ -1145,6 +1153,14 @@ class ReservaService:
         La disponibilidad se revalida contra el auto elegido en este momento y
         no se confía en la lista que se vio al abrir la pantalla: entre listar
         y asignar pueden pasar horas.
+
+        **D-54 (plan de conexión 13/08):** si el auto es de otra categoría que
+        la pedida, queda registrado en `categoria_entregada_id` —
+        `categoria_id` sigue siendo la pedida, el cupo se sigue contando
+        igual— y en `upgrade_motivo`. Es lo único que permite después
+        contestar "¿cuántos upgrades regalamos este verano?", y lo que deja
+        una marca si en algún momento se entregó una categoría **peor** que la
+        pedida en vez de mejor.
         """
         reserva = self.get(reserva_id)
 
@@ -1174,8 +1190,38 @@ class ReservaService:
             excluir_reserva_id=reserva.id,
         )
 
+        # D-54: ¿la categoría del auto entregado difiere de la pedida? Se
+        # compara contra `categoria_id` —la pedida, nunca se toca— y no
+        # contra el vehículo anterior: lo que importa es qué prometió la
+        # reserva, no qué auto tenía puesto un minuto antes.
+        es_otra_categoria = (
+            reserva.categoria_id is not None
+            and vehiculo.categoria_id is not None
+            and vehiculo.categoria_id != reserva.categoria_id
+        )
+        if es_otra_categoria:
+            categoria_pedida = self.db.get(Categoria, reserva.categoria_id)
+            es_downgrade = (
+                categoria_pedida is not None
+                and vehiculo.categoria is not None
+                and vehiculo.categoria.orden < categoria_pedida.orden
+            )
+            motivo_final = upgrade_motivo or (
+                "Downgrade: se entregó una categoría inferior a la pedida — revisar"
+                if es_downgrade else
+                "Upgrade a categoría superior, mismo precio (D-54)"
+            )
+
         with self.db.begin_nested():
             reserva.vehiculo_id = vehiculo_id
+            if es_otra_categoria:
+                reserva.categoria_entregada_id = vehiculo.categoria_id
+                reserva.upgrade_motivo = motivo_final
+            elif reserva.categoria_entregada_id is not None:
+                # Volvió a asignarse un auto de la categoría pedida: la
+                # cortesía ya no aplica, no puede quedar la marca vieja.
+                reserva.categoria_entregada_id = None
+                reserva.upgrade_motivo = None
             if confirmar and reserva.estado != EstadoReserva.CONFIRMADA.value:
                 reserva.estado = EstadoReserva.CONFIRMADA.value
                 if reserva.origen == "web":
@@ -1195,6 +1241,14 @@ class ReservaService:
                 datos_antes={"vehiculo_id": anterior, "estado": estado_antes},
                 datos_despues={"vehiculo_id": vehiculo_id, "estado": reserva.estado},
             )
+
+        # Asignar el auto es lo que resuelve "reserva web sin asignar" (C-1):
+        # sin esto, la notificación instantánea (`avisar_reserva_web`,
+        # autoresoluble=False) queda activa para siempre aunque ya se haya
+        # resuelto, y la regla del catálogo homónima la sigue reclamando cada
+        # corrida del motor hasta la próxima medianoche.
+        from app.services.notificacion_service import NotificacionService
+        NotificacionService(self.db).resolver_por_entidad("reserva", reserva.id, usuario_id)
 
         self.db.refresh(reserva)
         return reserva

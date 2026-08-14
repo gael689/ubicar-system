@@ -19,6 +19,7 @@ estás preparando una reunión, no necesitás nada de lo que sigue.
 | Documento | Para qué |
 |---|---|
 | **`DECISIONES.md`** | **La fuente de verdad.** Toda decisión de producto, con su porqué. Si algo del sistema no se entiende, la respuesta suele estar acá |
+| **`PLAN_CONEXION_Y_LIMPIEZA.md`** | **El plan de trabajo vigente (13/08).** Los doce cortes por los que una reserva web o una firma no llegan al sistema, los ocho pedidos de Franco mapeados a código, y la limpieza de datos previa a publicar |
 | **`CIERRE_2026-08-11.md`** | Lo último que se hizo, qué quedó desplegado y qué falta para el deploy final |
 | **`para-la-reunion/PENDIENTES.md`** | Qué falta y qué depende de los dueños, por urgencia |
 

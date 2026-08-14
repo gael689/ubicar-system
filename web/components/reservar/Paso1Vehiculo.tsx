@@ -1,20 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Users, Briefcase, Snowflake, Cog, Car, BellRing, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api, pesos, urlFoto } from "@/lib/api";
+import { api, pesos, textoPlazo, urlFoto } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { CategoriaDisponible, EscalonDuracion } from "@/lib/types";
 import { AhorroPorDuracion } from "./AhorroPorDuracion";
 import { BuscadorRango, type RangoBusqueda } from "./BuscadorRango";
 import { DialogoSinCupo } from "./DialogoSinCupo";
+import { CartelDerivacion, SEGUIR_WEB_LABEL, type MotivoDerivacion } from "./CartelDerivacion";
+import { CartelDerivacionModal } from "./CartelDerivacionModal";
+import { construirMensajeDerivacion } from "@/lib/mensajeDerivacion";
 
 interface Props {
   rango: RangoBusqueda;
   lugares: string[];
   anticipacionHoras: number;
+  /** D-52: 0 = sin tope. Junto con `anticipacionHoras` son los tres bordes
+   *  de la ventana de venta online — antes sólo se respetaba el primero. */
+  horizonteMaximoDias?: number;
+  duracionMaximaDias?: number;
   seleccionada: CategoriaDisponible | null;
   escalones?: EscalonDuracion[];
   /** La declarada en el Hero. El precio de las tarjetas sale con el recargo
@@ -29,13 +36,43 @@ interface Props {
 }
 
 export function Paso1Vehiculo({
-  rango, lugares, anticipacionHoras, seleccionada, escalones = [],
-  edad, onCambiarRango, onEstirarDuracion, onElegir, onElegirConRotacion,
+  rango, lugares, anticipacionHoras, horizonteMaximoDias, duracionMaximaDias,
+  seleccionada, escalones = [], edad, onCambiarRango, onEstirarDuracion,
+  onElegir, onElegirConRotacion,
 }: Props) {
   const [categorias, setCategorias] = useState<CategoriaDisponible[] | null>(null);
   const [sinCupo, setSinCupo] = useState<CategoriaDisponible | null>(null);
+  const [formularioSinCupo, setFormularioSinCupo] = useState<CategoriaDisponible | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Plan de conexión (13/08), §3.1 + §3.9: los tres bordes de la ventana se
+   * chequean **en el navegador**, con los mismos números que valida el
+   * servidor — no se descubre al fallar un fetch. Cuando el rango elegido
+   * cae afuera, el cartel de derivación reemplaza directamente a la grilla:
+   * no tiene sentido pedirle disponibilidad al backend para un rango que ya
+   * se sabe que va a rechazar.
+   */
+  const motivoVentana = useMemo((): MotivoDerivacion | null => {
+    if (!rango.fechaInicio || !rango.fechaFin) return null;
+    const ahora = new Date();
+    const inicio = new Date(`${rango.fechaInicio}T${rango.horaInicio || "10:00"}:00`);
+    const fin = new Date(`${rango.fechaFin}T${rango.horaFin || "10:00"}:00`);
+    const horasHastaRetiro = (inicio.getTime() - ahora.getTime()) / 3_600_000;
+    if (horasHastaRetiro < anticipacionHoras) return "anticipacion";
+    if (horizonteMaximoDias) {
+      const diasHastaRetiro = Math.floor(
+        (new Date(rango.fechaInicio).getTime() - new Date(ahora.toDateString()).getTime()) / 86_400_000,
+      );
+      if (diasHastaRetiro > horizonteMaximoDias) return "horizonte";
+    }
+    if (duracionMaximaDias) {
+      const dias = Math.round((fin.getTime() - inicio.getTime()) / 86_400_000);
+      if (dias > duracionMaximaDias) return "duracion";
+    }
+    return null;
+  }, [rango, anticipacionHoras, horizonteMaximoDias, duracionMaximaDias]);
 
   const buscado = Boolean(rango.fechaInicio && rango.fechaFin && rango.lugarRetiro);
 
@@ -53,7 +90,13 @@ export function Paso1Vehiculo({
       : 0;
 
   useEffect(() => {
-    if (!buscado) return;
+    // Rango fuera de la ventana: no tiene sentido pedirle disponibilidad al
+    // backend para algo que ya se sabe que va a rechazar (§3.1 + §3.9). El
+    // cartel de derivación reemplaza a la grilla más abajo.
+    if (!buscado || motivoVentana) {
+      setCategorias(null);
+      return;
+    }
     let cancelado = false;
     setCargando(true);
     setError(null);
@@ -72,9 +115,27 @@ export function Paso1Vehiculo({
 
     return () => { cancelado = true; };
   }, [
-    buscado, rango.fechaInicio, rango.fechaFin, rango.horaInicio, rango.horaFin,
-    edad,
+    buscado, motivoVentana, rango.fechaInicio, rango.fechaFin,
+    rango.horaInicio, rango.horaFin, edad,
   ]);
+
+  const mensajeVentana = (motivo: MotivoDerivacion) =>
+    construirMensajeDerivacion({
+      fechaInicio: rango.fechaInicio,
+      horaInicio: rango.horaInicio,
+      fechaFin: rango.fechaFin,
+      horaFin: rango.horaFin,
+      lugarRetiro: rango.lugarRetiro,
+      lugarDevolucion: rango.lugarDevolucion,
+      edad,
+      motivoTexto:
+        motivo === "anticipacion"
+          ? `Me apareció que las reservas online necesitan ${textoPlazo(anticipacionHoras / 24)} de anticipación.`
+          : motivo === "horizonte"
+          ? `Me apareció que online reservan hasta ${textoPlazo(horizonteMaximoDias ?? 0, true)} adelante.`
+          : `Me apareció que para más de ${textoPlazo(duracionMaximaDias ?? 0)} lo coordinan por WhatsApp.`,
+      preguntaFinal: "¿Me pueden ayudar?",
+    });
 
   return (
     <div className="space-y-6">
@@ -82,6 +143,8 @@ export function Paso1Vehiculo({
         valor={rango}
         lugares={lugares}
         anticipacionHoras={anticipacionHoras}
+        horizonteMaximoDias={horizonteMaximoDias}
+        duracionMaximaDias={duracionMaximaDias}
         onBuscar={onCambiarRango}
         compacto={buscado}
       />
@@ -100,7 +163,35 @@ export function Paso1Vehiculo({
         </p>
       )}
 
-      {error && (
+      {/* §3.1 + §3.9: rango fuera de la ventana de venta online. Reemplaza a
+          la grilla entera — no tiene sentido mostrar "elegí tu vehículo"
+          para un rango que ya se sabe que no se puede vender. */}
+      {buscado && motivoVentana && (
+        <CartelDerivacion
+          motivo={motivoVentana}
+          detalle={
+            motivoVentana === "anticipacion"
+              ? textoPlazo(anticipacionHoras / 24)
+              : motivoVentana === "horizonte"
+              ? textoPlazo(horizonteMaximoDias ?? 0, true)
+              : textoPlazo(duracionMaximaDias ?? 0)
+          }
+          mensajeWhatsapp={mensajeVentana(motivoVentana)}
+          fechaInicio={rango.fechaInicio}
+          fechaFin={rango.fechaFin}
+          seguirWebLabel={SEGUIR_WEB_LABEL[motivoVentana]}
+          onSeguirWeb={() => {
+            // "Elegir otras fechas" / "acortar el alquiler": el buscador ya
+            // está arriba, abierto — sólo hace falta que quede visible y sin
+            // el cartel tapándolo.
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        />
+      )}
+
+      {/* Errores de verdad (red caída, 500) — no la ventana, que ya se
+          resuelve arriba antes de llegar a pedirle nada al backend. */}
+      {error && !motivoVentana && (
         <div className="rounded-lg bg-destructive px-4 py-3 text-sm text-destructive-foreground">
           {error}
         </div>
@@ -140,11 +231,43 @@ export function Paso1Vehiculo({
         </>
       )}
 
+      {/* §3.9: "Avisarme cuando haya" abre el cartel de derivación —
+          WhatsApp primero, "ver los que sí hay" como segundo camino— y no
+          directo el formulario. `DialogoSinCupo` sigue existiendo, ahora
+          como tercera opción ("Dejanos tus datos"), reachable desde el link
+          del cartel. No se retira nada: D-04 sigue midiendo demanda
+          insatisfecha para quien lo completa. */}
       {sinCupo && (
-        <DialogoSinCupo
-          categoria={sinCupo}
-          rango={rango}
+        <CartelDerivacionModal
+          motivo="sin_cupo"
+          categoriaId={sinCupo.categoria_id}
+          categoriaNombre={sinCupo.nombre}
+          fechaInicio={rango.fechaInicio}
+          fechaFin={rango.fechaFin}
+          mensajeWhatsapp={construirMensajeDerivacion({
+            categoria: sinCupo.nombre,
+            fechaInicio: rango.fechaInicio,
+            horaInicio: rango.horaInicio,
+            fechaFin: rango.fechaFin,
+            horaFin: rango.horaFin,
+            lugarRetiro: rango.lugarRetiro,
+            lugarDevolucion: rango.lugarDevolucion,
+            edad,
+            motivoTexto: "Me apareció que esa categoría está completa para esas fechas.",
+            preguntaFinal: "¿Tienen ese vehículo o alguno similar?",
+          })}
+          seguirWebLabel={SEGUIR_WEB_LABEL.sin_cupo}
+          onSeguirWeb={() => setSinCupo(null)}
+          onDejarConsulta={() => { setFormularioSinCupo(sinCupo); setSinCupo(null); }}
           onCerrar={() => setSinCupo(null)}
+        />
+      )}
+
+      {formularioSinCupo && (
+        <DialogoSinCupo
+          categoria={formularioSinCupo}
+          rango={rango}
+          onCerrar={() => setFormularioSinCupo(null)}
         />
       )}
     </div>

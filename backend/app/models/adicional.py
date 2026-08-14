@@ -60,6 +60,14 @@ class Adicional(Base):
     # y no una frase perdida dentro de `descripcion`.
     franquicia: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
+    # Plan de conexión (13/08), D-53: las coberturas que bajan la franquicia
+    # se cobran como **porcentaje del alquiler del vehículo**, no como un
+    # monto fijo por día — "un 30% más" no tiene el mismo sentido en un
+    # Compacto de 3 días que en una Pick-up de 20. Cuando está cargado,
+    # reemplaza a `precio`/`unidad_cobro` para esta línea; `PrecioService` lo
+    # resuelve contra `subtotal_vehiculo` una vez que ese número existe.
+    porcentaje_sobre_alquiler: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+
     # Tope de unidades por reserva (2 sillas de bebé, 1 GPS). NULL = sin tope.
     max_cantidad: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
