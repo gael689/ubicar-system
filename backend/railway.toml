@@ -28,9 +28,14 @@
 #   MERCADOPAGO_ACCESS_TOKEN      APP_USR-...  <-- el interruptor: sin token,
 #                                                  la web cobra por transferencia
 #   MERCADOPAGO_SANDBOX           false
-#   BACKEND_PUBLIC_URL            https://api.ubicar-rent.com.ar
+#   BACKEND_PUBLIC_URL            https://ubicar-system-production.up.railway.app
 #                                 <-- el notification_url del webhook. Tiene que
-#                                     coincidir con lo cargado en el panel de MP
+#                                     coincidir con lo cargado en el panel de MP.
+#                                     OJO: va la URL de Railway, NO
+#                                     api.ubicar-rent.com.ar — ese subdominio
+#                                     todavia no esta conectado (verificado el
+#                                     14/08: no resuelve). El dia que se
+#                                     conecte, se cambia aca Y en el panel de MP
 #   WEB_URL                       https://ubicar-rent.com.ar
 #                                 <-- CRITICO y facil de olvidar: de aca salen
 #                                     las back_urls de la preferencia, y su

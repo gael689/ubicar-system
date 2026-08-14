@@ -246,6 +246,27 @@ bundle.
 
 ### 5.1 Mercado Pago — el cobro online
 
+> ### ⚠️ DESACTUALIZADO — esto ya está construido (revisado el 14/08)
+>
+> Todo lo que la tabla de abajo lista como "por construir" **existe y está en
+> producción**: `app/adapters/pagos/mercadopago.py` (preferencia + Checkout Pro
+> + refunds), `PagoWebService` (webhook idempotente, revalidación de cupo,
+> comparación de monto) y el endpoint
+> `POST /api/v1/public/webhooks/mercadopago`. El estimado de 4-5 días **ya no
+> aplica**.
+>
+> Lo único que falta son **las credenciales y la configuración del webhook**:
+> el paso a paso está en `docs/para-la-reunion/PASO_A_PASO_MERCADOPAGO.md`.
+>
+> Dos matices sobre el estado real, para no sobrevender:
+> - El paso 4 de la web **hoy no termina en WhatsApp ni en
+>   `POST /public/solicitudes`**: cobra por **transferencia bancaria**, con los
+>   datos de FINAR ya cargados (`/api/v1/public/config` → `transferencia`).
+> - Los tests cubren sólo las funciones puras
+>   (`tests/domain/test_pagos_web.py`). **No hay test del endpoint del webhook
+>   ni del adaptador de MP**: eso se ejercita por primera vez con un pago de
+>   prueba real.
+
 Es lo único que separa al flujo web de vender de verdad. Los pasos 1 a 3 ya
 están; el 4 hoy termina en `POST /public/solicitudes`, que registra la
 solicitud sin cobrar y **dispara un aviso instantáneo** en la campana del

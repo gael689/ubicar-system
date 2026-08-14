@@ -160,6 +160,14 @@ MERCADOPAGO_ACCESS_TOKEN=APP_USR-...
 MERCADOPAGO_SANDBOX=false
 # El notification_url que viaja en cada preferencia. Tiene que ser el MISMO
 # que se carga en el panel de Mercado Pago: si se cambia uno solo, se rompe.
+#
+# ⚠️ HOY VA LA URL DE RAILWAY, NO ESTA. Verificado el 14/08:
+# `api.ubicar-rent.com.ar` todavía NO está conectado — no resuelve. Si se
+# copia este valor tal cual, el notification_url de cada preferencia apunta a
+# un host muerto. Usar mientras tanto:
+#   BACKEND_PUBLIC_URL=https://ubicar-system-production.up.railway.app
+# Y el día que se conecte el subdominio, cambiarlo ACÁ **y en el panel de
+# Mercado Pago** al mismo tiempo.
 BACKEND_PUBLIC_URL=https://api.ubicar-rent.com.ar
 # CRÍTICO y el más fácil de olvidar: de acá salen las URLs de retorno de la
 # preferencia, y su default es localhost:3200. Mercado Pago RECHAZA una

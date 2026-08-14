@@ -1149,7 +1149,15 @@ def _avisar_contrato_firmado(db: Session, contrato) -> None:
     notificar_contrato_firmado(db, contrato)
 
 
-@router.post("/webhooks/mercadopago")
+# Con límite: es el único endpoint público que **hace una llamada saliente a
+# la API de Mercado Pago por cada request**, así que sin tope era un
+# amplificador gratis para consumirnos la cuota desde afuera.
+#
+# Se usa `limite_consultas` (60/min) y no `limite_solicitudes` (5 cada 5 min):
+# los avisos legítimos llegan en ráfaga cuando entran varios pagos juntos, y
+# frenarlos convertiría el arreglo en el problema. Sesenta por minuto desde una
+# misma IP ya es abuso — con ese volumen de cobros habría otras cosas que mirar.
+@router.post("/webhooks/mercadopago", dependencies=[Depends(limite_consultas)])
 async def webhook_mercadopago(request: Request, db: Session = Depends(get_db)):
     """
     Notificación de Mercado Pago. **Es la fuente de verdad del cobro.**
