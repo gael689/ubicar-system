@@ -71,16 +71,90 @@ def _wrap(texto: str, fuente: str, tam: float, ancho: float) -> list[str]:
     return lineas
 
 
+def _fila_repartida(
+    c: canvas.Canvas, x: float, y: float, ancho: float, partes: list[str],
+    fuente: str = "Helvetica", tam: float = 6.5, interlinea: float = 3.2 * mm,
+) -> float:
+    """Dibuja varios segmentos en una fila, repartidos a lo ancho — **o los
+    apila si no entran**. Devuelve la `y` de la última línea usada.
+
+    Existe porque el pie del contrato se estaba pisando: los tres segmentos se
+    dibujaban con `drawString` a la izquierda, `drawCentredString` en
+    `ancho/2` y `drawRightString` a la derecha, **los tres en la misma `y` y
+    ninguno declarando un ancho**. El centrado se calcula contra la página
+    entera, no contra el hueco que dejó el de la izquierda; cuando el
+    domicilio del locador creció con los datos fiscales reales, la cola de
+    "…Provincia de Buenos Aires" se metió encima del teléfono. ReportLab no
+    tiene noción de colisión: simplemente imprime uno sobre otro.
+
+    La corrección no es correr coordenadas unos milímetros. Es que el ancho
+    pase a ser un dato del layout y no una suposición: cualquier valor que
+    carguen mañana desde Configuración o entra repartido, o se apila, pero
+    **nunca se superpone**.
+    """
+    partes = [p for p in partes if p]
+    if not partes:
+        return y
+
+    c.setFont(fuente, tam)
+    anchos = [stringWidth(p, fuente, tam) for p in partes]
+    separacion_minima = 6 * mm
+
+    if len(partes) == 1:
+        c.drawString(x, y, partes[0])
+        return y
+
+    if sum(anchos) + separacion_minima * (len(partes) - 1) <= ancho:
+        # Entran: se reparte el sobrante en huecos iguales. El del medio se
+        # ancla al hueco real, no al centro de la página — que es lo que
+        # producía el choque.
+        hueco = (ancho - sum(anchos)) / (len(partes) - 1)
+        cursor = x
+        for texto, w in zip(partes, anchos):
+            c.drawString(cursor, y, texto)
+            cursor += w + hueco
+        return y
+
+    # No entran: se apilan, cada uno cortado al ancho disponible.
+    for texto in partes:
+        for linea in _wrap(texto, fuente, tam, ancho):
+            c.drawString(x, y, linea)
+            y -= interlinea
+    return y + interlinea
+
+
 # ─── Anverso ─────────────────────────────────────────────────────────────────
 
-def _campo(c: canvas.Canvas, x: float, y: float, etiqueta: str, valor, tam: float = 7.5) -> float:
+def _campo(
+    c: canvas.Canvas, x: float, y: float, etiqueta: str, valor,
+    tam: float = 7.5, ancho: float | None = None,
+) -> float:
+    """Una fila "etiqueta / valor". Devuelve la `y` de la fila siguiente.
+
+    `ancho` es el de la columna. Sin él, el valor se dibujaba sin ningún
+    límite y con un lugar de retiro largo —"Aeropuerto Comandante Espora"—
+    ya estaba invadiendo la columna de la derecha. El corte prefiere una
+    línea de más antes que texto encima de texto.
+    """
     c.setFont("Helvetica", tam - 1)
     c.setFillColor(_GRIS)
     c.drawString(x, y, etiqueta)
+
     c.setFont("Helvetica-Bold", tam)
     c.setFillColor(_TINTA)
-    c.drawString(x + 32 * mm, y, str(valor if valor not in (None, "") else "—"))
-    return y - 4.2 * mm
+    texto = str(valor if valor not in (None, "") else "—")
+    x_valor = x + 32 * mm
+
+    if ancho is None:
+        c.drawString(x_valor, y, texto)
+        return y - 4.2 * mm
+
+    disponible = ancho - 32 * mm
+    lineas = _wrap(texto, "Helvetica-Bold", tam, disponible) or [texto]
+    for linea in lineas:
+        c.drawString(x_valor, y, linea)
+        y -= 4.2 * mm
+    return y
 
 
 def _titulo_bloque(c: canvas.Canvas, x: float, y: float, ancho: float, texto: str) -> float:
@@ -140,30 +214,32 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
     vehiculo = snap.get("vehiculo", {})
 
     y_izq = _titulo_bloque(c, izq, y, col, "Datos del alquiler")
+    # Estas dos son las que traen el lugar de retiro completo — el valor más
+    # largo del bloque, y el que ya se estaba metiendo en la columna derecha.
     y_izq = _campo(c, izq, y_izq, "Check Out",
                    f"{_fecha(servicio.get('check_out_fecha'))} {servicio.get('check_out_hora') or ''} "
-                   f"{servicio.get('check_out_lugar') or ''}".strip())
+                   f"{servicio.get('check_out_lugar') or ''}".strip(), ancho=col)
     y_izq = _campo(c, izq, y_izq, "Check In",
                    f"{_fecha(servicio.get('check_in_fecha'))} {servicio.get('check_in_hora') or ''} "
-                   f"{servicio.get('check_in_lugar') or ''}".strip())
+                   f"{servicio.get('check_in_lugar') or ''}".strip(), ancho=col)
     # Un contrato emitido antes de la entrega todavía no tiene km ni
     # combustible de salida. Se imprime una línea para completar a mano, no
     # "None km": el papel se firma en el mostrador y ese dato se anota ahí.
     _km = servicio.get("check_out_km")
     _comb = servicio.get("check_out_combustible")
-    y_izq = _campo(c, izq, y_izq, "Kilometraje", f"{_km} km" if _km is not None else "______________")
+    y_izq = _campo(c, izq, y_izq, "Kilometraje", f"{_km} km" if _km is not None else "______________", ancho=col)
     y_izq = _campo(
         c, izq, y_izq, "Combustible salida",
-        f"{_comb} %" if _comb is not None else "______________",
+        f"{_comb} %" if _comb is not None else "______________", ancho=col,
     )
-    y_izq = _campo(c, izq, y_izq, "Vehículo", vehiculo.get("descripcion") or "—")
+    y_izq = _campo(c, izq, y_izq, "Vehículo", vehiculo.get("descripcion") or "—", ancho=col)
 
     y_der = _titulo_bloque(c, der, y, col, "Datos administrativos")
-    y_der = _campo(c, der, y_der, "Número de cliente", (snap.get("cliente") or {}).get("id"))
-    y_der = _campo(c, der, y_der, "Patente", vehiculo.get("patente"))
-    y_der = _campo(c, der, y_der, "Número Interno", vehiculo.get("interno"))
-    y_der = _campo(c, der, y_der, "Número de Reserva", snap.get("reserva_id"))
-    y_der = _campo(c, der, y_der, "Categoría", vehiculo.get("categoria"))
+    y_der = _campo(c, der, y_der, "Número de cliente", (snap.get("cliente") or {}).get("id"), ancho=col)
+    y_der = _campo(c, der, y_der, "Patente", vehiculo.get("patente"), ancho=col)
+    y_der = _campo(c, der, y_der, "Número Interno", vehiculo.get("interno"), ancho=col)
+    y_der = _campo(c, der, y_der, "Número de Reserva", snap.get("reserva_id"), ancho=col)
+    y_der = _campo(c, der, y_der, "Categoría", vehiculo.get("categoria"), ancho=col)
 
     y = min(y_izq, y_der) - 2 * mm
 
@@ -186,19 +262,19 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
             c.drawString(izq, y_izq, linea)
             y_izq -= 3.6 * mm
     y_izq -= 1 * mm
-    y_izq = _campo(c, izq, y_izq, "DNI / CUIT", cli.get("dni_cuit"))
-    y_izq = _campo(c, izq, y_izq, "Empresa", cli.get("empresa"))
-    y_izq = _campo(c, izq, y_izq, "Segundo Conductor", cond.get("nombre"))
+    y_izq = _campo(c, izq, y_izq, "DNI / CUIT", cli.get("dni_cuit"), ancho=col)
+    y_izq = _campo(c, izq, y_izq, "Empresa", cli.get("empresa"), ancho=col)
+    y_izq = _campo(c, izq, y_izq, "Segundo Conductor", cond.get("nombre"), ancho=col)
 
     y_der = _titulo_bloque(c, der, y, col, "Registro y condiciones")
     registro = ", ".join(x for x in [
         cli.get("licencia_numero"), _fecha(cli.get("licencia_vencimiento")),
         cli.get("licencia_pais"), cli.get("licencia_categoria"),
     ] if x and x != "—")
-    y_der = _campo(c, der, y_der, "Registro de Conductor", registro)
+    y_der = _campo(c, der, y_der, "Registro de Conductor", registro, ancho=col)
     if cond.get("nombre"):
-        y_der = _campo(c, der, y_der, "Doc. 2° conductor", cond.get("dni"))
-        y_der = _campo(c, der, y_der, "Dom. 2° conductor", cond.get("domicilio"))
+        y_der = _campo(c, der, y_der, "Doc. 2° conductor", cond.get("dni"), ancho=col)
+        y_der = _campo(c, der, y_der, "Dom. 2° conductor", cond.get("domicilio"), ancho=col)
 
     y = min(y_izq, y_der) - 2 * mm
 
@@ -345,7 +421,6 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
     c.setFillColor(_TINTA)
     c.drawString(_MARGEN, pie_y, emp.get("razon_social") or emp.get("locador_nombre") or "UBICAR RENT")
 
-    c.setFont("Helvetica", 6.5)
     c.setFillColor(_GRIS)
     izquierda = " · ".join(x for x in [emp.get("domicilio"), emp.get("localidad")] if x)
     centro = " · ".join(x for x in [emp.get("telefonos"), emp.get("email")] if x)
@@ -355,16 +430,21 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
             f"II.BB: {emp['ingresos_brutos']}" if emp.get("ingresos_brutos") else "",
         ] if x
     )
-    c.drawString(_MARGEN, pie_y - 4 * mm, izquierda)
-    c.drawCentredString(ancho / 2, pie_y - 4 * mm, centro)
-    c.drawRightString(ancho - _MARGEN, pie_y - 4 * mm, fiscal)
+    # Repartidos con el ancho útil declarado. Antes eran tres `draw*` sueltos
+    # en la misma `y` y el domicilio real terminaba encima del teléfono.
+    ultima_y = _fila_repartida(
+        c, _MARGEN, pie_y - 4 * mm, ancho - 2 * _MARGEN, [izquierda, centro, fiscal],
+    )
 
     # D-C1 pendiente: mientras no haya CUIT, el papel lo dice. Es lo que evita
     # que el placeholder se vuelva permanente por olvido.
+    #
+    # Va debajo de la última línea que realmente se dibujó, no a una distancia
+    # fija del pie: si los datos se apilaron, una posición fija caería encima.
     if not emp.get("cuit"):
         c.setFillColor(HexColor("#B00020"))
         c.setFont("Helvetica-Bold", 6.5)
-        c.drawString(_MARGEN, pie_y - 8 * mm,
+        c.drawString(_MARGEN, ultima_y - 4 * mm,
                      "DOCUMENTO PROVISORIO — faltan cargar los datos fiscales del locador.")
 
     return firma_y

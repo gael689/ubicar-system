@@ -36,22 +36,28 @@ recargo por edad y resumen final— funciona de punta a punta.
 exactamente **cuatro datos**. Mientras falten, **cada contrato que se emita
 sale con la leyenda "DOCUMENTO PROVISORIO"** impresa.
 
-> ### ⚠️ Actualizado el 11/08 — de los cuatro, **falta uno solo**
+> ### ✅ Actualizado el 14/08 — **están los cuatro. No falta ninguno.**
 >
 > D-C1 se cerró el 09/08: el locador es **FINAR GRUPO FINANCIERO S.R.L.**, CUIT
 > 30-71756601-3, Paraguay 241 Piso 9 Dpto A, Bahía Blanca. Salió de la constancia
 > de ARCA. **Los contratos ya no salen marcados "PROVISORIO".**
 >
-> **Lo único que falta es Ingresos Brutos**, y no está en esa constancia porque
-> es un impuesto **provincial**: lo emite ARBA. Como se opera sólo en Bahía
-> Blanca (D-39), alcanza con el número provincial — no hace falta Convenio
-> Multilateral. **Se lo pide la contadora.**
+> **Ingresos Brutos también está**, y era la fuente de la confusión: FINAR es
+> contribuyente **directo** de la Provincia de Buenos Aires (no Convenio
+> Multilateral), así que su número de inscripción **es el propio CUIT**. Está
+> cargado desde la migración 059, con la constancia de ARBA del 03/09/2024
+> (transacción 10855047, distrito Bahía Blanca). **No hay que pedirle nada a la
+> contadora.**
+>
+> ⚠️ En el pie del contrato se ve el mismo número en "CUIT" y en "II.BB". **Es
+> correcto, no es un error de copiado** — borrarlo dejaría todos los contratos
+> nuevos sin el dato.
 
-| Falta | Ejemplo de lo que necesitamos |
+| Dato | Estado |
 |---|---|
 | ~~Razón social~~ | ✅ FINAR GRUPO FINANCIERO S.R.L. |
 | ~~CUIT~~ | ✅ 30-71756601-3 |
-| **Ingresos Brutos** | 🔴 Número de inscripción en **ARBA** |
+| ~~Ingresos Brutos~~ | ✅ 30-71756601-3 (es el CUIT — contribuyente directo de PBA) |
 | ~~Domicilio fiscal~~ | ✅ Paraguay 241, Piso 9, Dpto. A, Bahía Blanca |
 
 > Ya están cargados: nombre del locador, localidad, jurisdicción, teléfonos y
@@ -204,7 +210,7 @@ las categorías sin tarifa, y los dos grupos sin autos asignados.
 
 | | Qué | Bloquea |
 |---|---|---|
-| 1 | **Razón social, CUIT, Ingresos Brutos y domicilio fiscal** | Los contratos salen "provisorios" |
+| 1 | ~~Razón social, CUIT, Ingresos Brutos y domicilio fiscal~~ | ✅ **Cerrado el 14/08** — están los cuatro, ver §1 |
 | 2 | **Los precios reales** — la **tarifa** de cada categoría primero, después las fechas especiales | Vender de verdad, por cualquier canal |
 | 3 | **Credenciales de Mercado Pago** | Cobrar online |
 | 4 | **Acceso al DNS del dominio** | Que los clientes reciban mails |

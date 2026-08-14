@@ -506,7 +506,7 @@ Actualizado el **2026-07-28**. Ordenadas por urgencia.
 
 | # | Decisión | Bloquea | Urgencia |
 |---|---|---|---|
-| **D-C1b** | **Ingresos Brutos de FINAR** — es el último dato fiscal que falta. Lo emite **ARBA**; no figura en la constancia de ARCA, que es nacional. Se lo pide la contadora | Un dato menos en el pie del contrato. Ya no lo marca como provisorio | 🟠 Pronto |
+| **D-C1b** ✅ | **Ingresos Brutos de FINAR — cerrado, y el número es el propio CUIT** | **No faltaba nada.** FINAR es contribuyente **directo** de la Provincia de Buenos Aires, no de Convenio Multilateral, así que su número de inscripción en Ingresos Brutos **es el CUIT**: `30-71756601-3`. Constancia de ARBA del 03/09/2024, transacción 10855047, distrito Bahía Blanca (007), alta 01/11/2022, régimen mensual. Ya está cargado en `configuracion` por la migración 059. **Se deja escrito acá porque el pie del contrato muestra el mismo número en CUIT y en II.BB y eso parece un error de copiado — no lo es, y borrarlo dejaría todos los contratos nuevos sin el dato** |
 | D-18 | **¿La devolución es a la hora que se carga, o siempre a la misma hora del retiro?** | El arreglo del cálculo de excedente — es un P0 | 🔴 Ya |
 | D-19 | **Umbral de día completo** por atraso: ¿bajar de 12 a 6 horas? | Cargo por excedente | 🔴 Ya |
 | **D-C3** | **Monto de la franquicia** — valor único para web, reserva y sistema. Los dueños lo cargan; falta entender cómo lo manejan hoy | Bloque de franquicia del contrato y de la web | 🟠 Fase 4 |
@@ -543,7 +543,7 @@ vuelva a ser la fuente de verdad.
 
 | # | Decisión | Detalle |
 |---|---|---|
-| **D-C1** ✅ | **El locador es FINAR GRUPO FINANCIERO S.R.L.** | Ubicar Rent es el nombre comercial, no una persona jurídica. CUIT 30-71756601-3, Paraguay 241 Piso 9 Dpto A, Bahía Blanca. Se agregó `empresa.nombre_comercial` para que el papel diga las dos cosas sin mentir ninguna. **Falta sólo Ingresos Brutos** |
+| **D-C1** ✅ | **El locador es FINAR GRUPO FINANCIERO S.R.L.** | Ubicar Rent es el nombre comercial, no una persona jurídica. CUIT 30-71756601-3, Paraguay 241 Piso 9 Dpto A, Bahía Blanca. Se agregó `empresa.nombre_comercial` para que el papel diga las dos cosas sin mentir ninguna. **Cerrado del todo**: Ingresos Brutos también está — es el propio CUIT, ver D-C1b |
 | **D-43** ✅ | **El precio es un número y una escalera** | Una tarifa diaria por categoría, y el largo se descuenta con porcentajes: 1-2 días sin descuento, 3-6 −10%, 7-15 −15%, 16 o más −30%. Se corrigieron los dos huecos de lo pedido (el día 15 quedaba sin banda; el día 31 volvía al 100%) |
 | **D-C6** ✅ | **El contrato se firma por link** | Tres caminos que terminan en la misma fila: link (el principal), papel con escaneo adjunto, y firma en pantalla. Se guarda **el texto completo de lo aceptado**, no un booleano: `acepto = true` no prueba nada el día que los términos cambien |
 
