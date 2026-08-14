@@ -49,6 +49,11 @@ export function FlujoReserva() {
     horaInicio: params.get("hora_desde") ?? "10:00",
     fechaFin: params.get("hasta") ?? "",
     horaFin: params.get("hora_hasta") ?? "10:00",
+    // D-61: el texto libre de "Otro lugar". Viaja en su propio parámetro para
+    // que el paso 1 pueda derivar con el pedido completo — antes moría en el
+    // Hero, porque el modal frenaba ahí y nunca se navegaba.
+    lugarRetiroOtro: params.get("retiro_otro") ?? undefined,
+    lugarDevolucionOtro: params.get("devolucion_otro") ?? undefined,
   }));
 
   const [categoria, setCategoria] = useState<CategoriaDisponible | null>(null);

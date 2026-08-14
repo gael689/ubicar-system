@@ -6,10 +6,10 @@ import { Users, Briefcase, Snowflake, Cog, Car, Clock, UserRound } from "lucide-
 import { Button } from "@/components/ui/button";
 import { api, pesos, urlFoto } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { CategoriaDisponible, EscalonDuracion } from "@/lib/types";
+import type { CategoriaDisponible, EscalonDuracion, MotivoSolicitud } from "@/lib/types";
 import { AhorroPorDuracion } from "./AhorroPorDuracion";
 import { BuscadorRango, type RangoBusqueda } from "./BuscadorRango";
-import { DialogoSinCupo } from "./DialogoSinCupo";
+import { DialogoContactame } from "./DialogoContactame";
 import { CartelDerivacion, SEGUIR_WEB_LABEL } from "./CartelDerivacion";
 import { CartelDerivacionModal } from "./CartelDerivacionModal";
 import { construirMensajeDerivacion } from "@/lib/mensajeDerivacion";
@@ -45,7 +45,15 @@ export function Paso1Vehiculo({
 }: Props) {
   const [categorias, setCategorias] = useState<CategoriaDisponible[] | null>(null);
   const [sinCupo, setSinCupo] = useState<CategoriaDisponible | null>(null);
-  const [formularioSinCupo, setFormularioSinCupo] = useState<CategoriaDisponible | null>(null);
+  // D-61: qué motivo abre el formulario de "que me llamen". Es un motivo y no
+  // una categoría porque dos de los tres casos no tienen categoría elegida.
+  const [formularioContacto, setFormularioContacto] = useState<MotivoSolicitud | null>(null);
+  const [categoriaFormulario, setCategoriaFormulario] = useState<CategoriaDisponible | null>(null);
+
+  /** Lo que la persona tipeó en "Otro lugar", si eligió esa opción. Viaja
+   *  desde el Hero por su propio parámetro de URL — **nunca pegado adentro
+   *  de `lugarRetiro`**, que es lo que D-56 tuvo que sacar. */
+  const lugarLibre = (rango.lugarRetiroOtro || rango.lugarDevolucionOtro || "").trim();
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,7 +93,9 @@ export function Paso1Vehiculo({
     // Rango fuera de la ventana: no tiene sentido pedirle disponibilidad al
     // backend para algo que ya se sabe que va a rechazar (§3.1 + §3.9). El
     // cartel de derivación reemplaza a la grilla más abajo.
-    if (!buscado || motivoVentana) {
+    // D-61: `lugarLibre` se suma por el mismo motivo — un retiro fuera de los
+    // puntos habituales no lo cierra la web, así que no hay grilla que mostrar.
+    if (!buscado || motivoVentana || lugarLibre) {
       setCategorias(null);
       return;
     }
@@ -107,7 +117,7 @@ export function Paso1Vehiculo({
 
     return () => { cancelado = true; };
   }, [
-    buscado, motivoVentana, rango.fechaInicio, rango.fechaFin,
+    buscado, motivoVentana, lugarLibre, rango.fechaInicio, rango.fechaFin,
     rango.horaInicio, rango.horaFin, edad,
   ]);
 
@@ -124,6 +134,21 @@ export function Paso1Vehiculo({
       preguntaFinal: "¿Me pueden ayudar?",
     });
 
+  const mensajeOtroLugar = () =>
+    construirMensajeDerivacion({
+      fechaInicio: rango.fechaInicio,
+      horaInicio: rango.horaInicio,
+      fechaFin: rango.fechaFin,
+      horaFin: rango.horaFin,
+      // El texto libre va como lugar de retiro **sólo dentro del mensaje de
+      // WhatsApp**, que es texto para una persona. En la reserva nunca entra.
+      lugarRetiro: lugarLibre || rango.lugarRetiro,
+      lugarDevolucion: rango.lugarDevolucion,
+      edad,
+      motivoTexto: "Me apareció que ese punto de retiro no está entre los que arma la web solo.",
+      preguntaFinal: "¿Lo podemos coordinar?",
+    });
+
   return (
     <div className="space-y-6">
       <BuscadorRango
@@ -136,7 +161,10 @@ export function Paso1Vehiculo({
         compacto={buscado}
       />
 
-      {buscado && (
+      {/* D-61: no cuando se está derivando. Ofrecer "3 días más y el precio
+          baja 15%" arriba de un panel que dice que la web no puede cerrar
+          esta reserva es prometer un descuento que no se puede tomar acá. */}
+      {buscado && !motivoVentana && !lugarLibre && (
         <AhorroPorDuracion
           escalones={escalones}
           dias={dias}
@@ -155,6 +183,7 @@ export function Paso1Vehiculo({
           para un rango que ya se sabe que no se puede vender. */}
       {buscado && motivoVentana && (
         <CartelDerivacion
+          resaltado
           motivo={motivoVentana}
           detalle={detalleVentana(motivoVentana, limitesVentana)}
           mensajeWhatsapp={mensajeVentana(motivoVentana)}
@@ -167,6 +196,29 @@ export function Paso1Vehiculo({
             // el cartel tapándolo.
             window.scrollTo({ top: 0, behavior: "smooth" });
           }}
+          // D-61: la segunda salida. Antes este camino no existía para la
+          // ventana de fechas, porque el endpoint viejo la rechazaba con 422.
+          onDejarConsulta={() => setFormularioContacto("fuera_de_ventana")}
+        />
+      )}
+
+      {/* D-61 — lugar "Otro". Antes esto frenaba en el Hero con un modal y no
+          dejaba avanzar. Ahora llega hasta acá y sale por las mismas dos
+          salidas. No muestra autos: el lugar es lo que hay que coordinar, y
+          mostrar precios de un retiro que todavía no está confirmado sería
+          prometer algo que la web no puede cerrar. */}
+      {buscado && !motivoVentana && lugarLibre && (
+        <CartelDerivacion
+          resaltado
+          motivo="otro_lugar"
+          detalle={lugares.join(" · ")}
+          resumen={`Anotamos: «${lugarLibre}»`}
+          mensajeWhatsapp={mensajeOtroLugar()}
+          fechaInicio={rango.fechaInicio}
+          fechaFin={rango.fechaFin}
+          seguirWebLabel={SEGUIR_WEB_LABEL.otro_lugar}
+          onSeguirWeb={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          onDejarConsulta={() => setFormularioContacto("otro_lugar")}
         />
       )}
 
@@ -242,16 +294,39 @@ export function Paso1Vehiculo({
           })}
           seguirWebLabel={SEGUIR_WEB_LABEL.sin_cupo}
           onSeguirWeb={() => setSinCupo(null)}
-          onDejarConsulta={() => { setFormularioSinCupo(sinCupo); setSinCupo(null); }}
+          onDejarConsulta={() => {
+            setCategoriaFormulario(sinCupo);
+            setFormularioContacto("sin_cupo");
+            setSinCupo(null);
+          }}
           onCerrar={() => setSinCupo(null)}
         />
       )}
 
-      {formularioSinCupo && (
-        <DialogoSinCupo
-          categoria={formularioSinCupo}
-          rango={rango}
-          onCerrar={() => setFormularioSinCupo(null)}
+      {/* D-61: un solo formulario para los tres casos. Antes era
+          `DialogoSinCupo`, que exigía categoría y le pegaba al endpoint que
+          valida la ventana — o sea que no servía para dos de los tres. */}
+      {formularioContacto && (
+        <DialogoContactame
+          motivo={formularioContacto}
+          categoriaId={categoriaFormulario?.categoria_id}
+          categoriaNombre={categoriaFormulario?.nombre}
+          fechaInicio={rango.fechaInicio}
+          horaInicio={rango.horaInicio}
+          fechaFin={rango.fechaFin}
+          horaFin={rango.horaFin}
+          lugarRetiro={rango.lugarRetiro}
+          lugarDevolucion={rango.lugarDevolucion}
+          lugarTextoLibre={lugarLibre || undefined}
+          edad={edad}
+          mensajeWhatsapp={
+            formularioContacto === "otro_lugar"
+              ? mensajeOtroLugar()
+              : motivoVentana
+              ? mensajeVentana(motivoVentana)
+              : undefined
+          }
+          onCerrar={() => { setFormularioContacto(null); setCategoriaFormulario(null); }}
         />
       )}
     </div>

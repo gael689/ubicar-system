@@ -263,8 +263,8 @@ function copiar(motivo: MotivoDerivacion, detalle?: string) {
     case "otro_lugar":
       return {
         titulo: "Ese punto lo coordinamos con vos",
-        cuerpo: `Entregamos en ${detalle ?? "nuestros puntos habituales"}. Para otro lugar, seguimos por WhatsApp y un agente lo coordina.`,
-        botonWhatsapp: "Sí, seguir por WhatsApp",
+        cuerpo: `Entregamos siempre en ${detalle ?? "nuestros puntos habituales"}. Fuera de esos lo arreglamos igual — lo confirma un agente y puede tener un costo extra.`,
+        botonWhatsapp: "Coordinar por WhatsApp",
       };
   }
 }

@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { addDays, format, startOfDay } from "date-fns";
+import { nombreLugar } from "@/lib/lugares";
 import { es } from "date-fns/locale";
 import { MapPin, ChevronDown, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,18 @@ export interface RangoBusqueda {
   horaInicio: string;
   fechaFin: string;
   horaFin: string;
+  /**
+   * D-61: lo que la persona tipeó al elegir "Otro lugar" en el Hero.
+   *
+   * **Campo aparte y no pegado adentro de `lugarRetiro`.** Meterlo ahí
+   * (`"A coordinar: Camino La Carrindanga"`) es exactamente lo que D-56 tuvo
+   * que sacar, porque desde `lugarRetiro` se filtraba solo a
+   * `reservas.lugar_entrega` y quedaba como si fuera un punto real de la
+   * empresa. Separado, se puede mostrar y mandar por WhatsApp sin que llegue
+   * nunca a ser el lugar de una reserva.
+   */
+  lugarRetiroOtro?: string;
+  lugarDevolucionOtro?: string;
 }
 
 interface Props {
@@ -96,7 +109,10 @@ export function BuscadorRango({
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-white px-4 py-3 shadow-sm">
         <div className="min-w-0 text-sm">
-          <p className="truncate font-semibold text-[#1B3F6B]">{valor.lugarRetiro}</p>
+          {/* Nunca el centinela: `__otro__` llegó a verse en pantalla. */}
+          <p className="truncate font-semibold text-[#1B3F6B]">
+            {nombreLugar(valor.lugarRetiro, valor.lugarRetiroOtro)}
+          </p>
           <p className="text-muted-foreground">
             {valor.fechaInicio && format(desdeIso(valor.fechaInicio)!, "d MMM", { locale: es })}{" "}
             {valor.horaInicio} → {valor.fechaFin && format(desdeIso(valor.fechaFin)!, "d MMM", { locale: es })}{" "}

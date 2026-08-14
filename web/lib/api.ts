@@ -17,6 +17,7 @@ import type {
   ContratoParaFirmar,
   Cotizacion,
   Hold,
+  MotivoSolicitud,
   ReservaPorTransferencia,
   RespuestaDisponibilidad,
 } from "./types";
@@ -158,6 +159,38 @@ export const api = {
     notas?: string;
   }) =>
     request<{ reserva_id: number; categoria: string }>("/public/solicitudes", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /**
+   * "Quiero que me contacten ustedes" (D-61).
+   *
+   * Reemplaza a `crearSolicitud` para los tres casos del panel de derivación.
+   * La diferencia que importa: **este endpoint no valida la ventana de venta**,
+   * así que funciona para alguien que pide con menos de 10 días — que es
+   * exactamente el caso donde el viejo devolvía 422.
+   *
+   * Casi todo es opcional porque quien deja el teléfono puede no haber
+   * elegido categoría ni fechas todavía.
+   */
+  crearSolicitudContacto: (body: {
+    motivo: MotivoSolicitud;
+    nombre: string;
+    telefono: string;
+    email?: string;
+    categoria_id?: number;
+    fecha_inicio?: string;
+    fecha_fin?: string;
+    hora_inicio?: string;
+    hora_fin?: string;
+    lugar_retiro?: string;
+    lugar_devolucion?: string;
+    lugar_texto_libre?: string;
+    edad_declarada?: number;
+    notas?: string;
+  }) =>
+    request<{ id: number }>("/public/contacto", {
       method: "POST",
       body: JSON.stringify(body),
     }),

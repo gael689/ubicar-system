@@ -2,6 +2,7 @@
 
 import { CalendarDays, MapPin, Car } from "lucide-react";
 import { pesos, fechaCorta } from "@/lib/api";
+import { nombreLugar } from "@/lib/lugares";
 import type { Cotizacion } from "@/lib/types";
 import type { RangoBusqueda } from "./BuscadorRango";
 
@@ -34,7 +35,13 @@ export function ResumenReserva({ rango, categoriaNombre, cotizacion, cargando }:
       <h2 className="font-semibold text-[#1B3F6B]">Tu reserva</h2>
 
       <dl className="mt-4 space-y-3 text-sm">
-        <Dato icono={MapPin} titulo="Retiro" valor={rango.lugarRetiro || "—"} />
+        {/* `nombreLugar`: el centinela `__otro__` no se muestra nunca — llegó
+            a verse acá, donde tenía que decir el punto que la persona pidió. */}
+        <Dato
+          icono={MapPin}
+          titulo="Retiro"
+          valor={nombreLugar(rango.lugarRetiro, rango.lugarRetiroOtro) || "—"}
+        />
         {rango.lugarDevolucion && rango.lugarDevolucion !== rango.lugarRetiro && (
           <Dato icono={MapPin} titulo="Devolución" valor={rango.lugarDevolucion} />
         )}

@@ -311,6 +311,27 @@ export function solicitudSinCupo(c: DatosCategoria): void {
   });
 }
 
+/**
+ * Alguien dejó sus datos para que lo llamemos (D-61).
+ *
+ * **Sí manda `Lead`**, a diferencia de `derivacionComercial`: acá la persona
+ * entregó su teléfono, que es la definición de un lead. Generaliza a
+ * `solicitudSinCupo`, que sólo contemplaba el caso de la categoría agotada y
+ * exigía una categoría que los otros dos motivos no tienen.
+ */
+export function solicitudContacto(d: { motivo: string; categoria?: string }): void {
+  aGoogle("generate_lead", {
+    tipo: d.motivo,
+    categoria: d.categoria,
+    currency: MONEDA,
+  });
+  aMeta("Lead", {
+    content_name: d.categoria ?? d.motivo,
+    content_category: d.motivo,
+    currency: MONEDA,
+  });
+}
+
 // ─── Contacto ────────────────────────────────────────────────────────────────
 
 /**

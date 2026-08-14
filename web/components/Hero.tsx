@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { api, textoPlazo } from "@/lib/api";
 import type { ConfigPublica } from "@/lib/types";
 import { motivoVentanaVenta } from "@/lib/ventanaVenta";
+import { LUGAR_OTRO } from "@/lib/lugares";
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, "0");
@@ -25,7 +26,10 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
 });
 
 // El valor que dispara el campo libre. No es un lugar: es un pedido.
-const OTRO = "__otro__";
+// Vive en `@/lib/lugares` desde D-61, porque el flujo y el buscador también
+// lo necesitan — tenerlo suelto acá era el primer paso a tres copias
+// desalineadas, que es lo que D-56 tuvo que arreglar con los lugares.
+const OTRO = LUGAR_OTRO;
 
 const PASOS = ["Elegí fechas", "Elegí tu vehículo", "Sumá extras", "Reservá"];
 

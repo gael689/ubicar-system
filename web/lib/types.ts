@@ -344,3 +344,14 @@ export interface DatosCliente {
   razonSocial: string;
   aceptaTerminos: boolean;
 }
+
+/**
+ * Por qué la web no pudo cerrar la venta sola y derivó a un agente (D-61).
+ *
+ * Son los tres casos del panel de derivación. Ojo: **no coinciden uno a uno**
+ * con `MotivoDerivacion` del cartel, que distingue `anticipacion`,
+ * `horizonte` y `duracion` — los tres colapsan acá en `fuera_de_ventana`,
+ * porque para el mostrador son la misma conversación: la fecha no la cierra
+ * la web.
+ */
+export type MotivoSolicitud = "fuera_de_ventana" | "sin_cupo" | "otro_lugar";
