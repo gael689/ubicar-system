@@ -1035,8 +1035,35 @@ class ReservaService:
             for v in resultado.conflictos_advertencia
         ]
 
+        anterior = reserva.vehiculo_id
+
         with self.db.begin_nested():
             self.reserva_repo.update(reserva, vehiculo_id=nuevo_vehiculo_id)
+
+            # **Esto no existía.** Cambiar el auto por D4 no dejaba ni una
+            # línea de auditoría: la pantalla de Auditoría mapea la acción
+            # `reasignar_vehiculo` desde hace meses y nunca la escribió nadie.
+            # Sin esto, la única forma de saber que a una reserva le cambiaron
+            # el auto era acordarse.
+            auditoria_service.registrar(
+                self.db,
+                usuario_id=usuario_id,
+                accion="reasignar_vehiculo",
+                entidad_tipo="reserva",
+                entidad_id=reserva.id,
+                descripcion=(
+                    f"Reasignó la reserva #{reserva.id} a {nuevo_vehiculo.patente} "
+                    f"(D4: el vehículo anterior se dio de baja)"
+                ),
+                datos_antes={"vehiculo_id": anterior},
+                datos_despues={"vehiculo_id": nuevo_vehiculo_id},
+            )
+
+        # D-48, igual que en `asignar_vehiculo` y en `update`. Faltaba también
+        # acá: se reasignaba por baja del vehículo y el contrato seguía
+        # nombrando un auto que ya no existe en la flota.
+        if anterior != nuevo_vehiculo_id:
+            warnings.extend(self._avisar_contrato_por_reasignacion(reserva, usuario_id))
 
         self.db.refresh(reserva)
         return reserva, warnings
@@ -1052,6 +1079,11 @@ class ReservaService:
     # webhook. El cliente manda el comprobante por WhatsApp y alguien concilia
     # contra el extracto. Los dos pasos que faltan son cobrar y asignar, y
     # están acá para que el operador no tenga que saber en qué orden van.
+
+    # Centinela para `asignar_vehiculo`: hace falta distinguir "no me importa
+    # qué auto tiene" de "esperaba que no tuviera ninguno", y `None` es un
+    # valor legítimo de los dos lados.
+    SIN_CHEQUEO = object()
 
     # Los estados en los que todavía se puede cobrar una seña o mover el auto:
     # antes del checkout. Después el dinero entra como `Pago` del alquiler y
@@ -1201,7 +1233,8 @@ class ReservaService:
         usuario_id: int,
         confirmar: bool = False,
         upgrade_motivo: str | None = None,
-    ) -> Reserva:
+        vehiculo_esperado=SIN_CHEQUEO,
+    ) -> tuple[Reserva, list[dict]]:
         """
         Le pone un auto concreto a una reserva que no lo tiene (o le cambia el
         que tenía).
@@ -1227,6 +1260,23 @@ class ReservaService:
         pedida en vez de mejor.
         """
         reserva = self.get(reserva_id)
+
+        # Concurrencia optimista. Son hasta tres personas usando el sistema a
+        # la vez y el aviso de reservas pendientes le aparece a todas: dos
+        # pueden abrir la misma y asignarle autos distintos. El segundo pisaba
+        # al primero en silencio, y quedaba un auto comprometido que el
+        # calendario ya no mostraba reservado.
+        #
+        # No hace falta un lock ni saber quién la tiene abierta: alcanza con
+        # que quien asigna diga qué creía que había. Si no coincide, perdió.
+        if (
+            vehiculo_esperado is not self.SIN_CHEQUEO
+            and reserva.vehiculo_id != vehiculo_esperado
+        ):
+            raise ConflictError(
+                "reasignado_por_otro|Alguien más le asignó un auto a esta "
+                "reserva mientras la tenías abierta. Recargá para ver cuál."
+            )
 
         if reserva.estado not in self.ESTADOS_RESOLUBLES:
             raise ConflictError(
@@ -1321,8 +1371,19 @@ class ReservaService:
         from app.services.notificacion_service import NotificacionService
         NotificacionService(self.db).resolver_por_entidad("reserva", reserva.id, usuario_id)
 
+        # D-48. **Esto faltaba acá y estaba sólo en `update()`.** Cambiar el
+        # auto por esta vía dejaba el contrato nombrando la patente vieja, y
+        # un contrato firmado que nombra otro vehículo no sirve para lo único
+        # que importa en un reclamo: identificar qué auto se entregó.
+        #
+        # Sólo cuando el auto **cambia**. En la primera asignación no hay
+        # contrato que tocar: sin auto no se podía emitir (D-47).
+        warnings: list[dict] = []
+        if anterior is not None and anterior != vehiculo_id:
+            warnings.extend(self._avisar_contrato_por_reasignacion(reserva, usuario_id))
+
         self.db.refresh(reserva)
-        return reserva
+        return reserva, warnings
 
     # ── Helpers privados ──────────────────────────────────────────────────────
 

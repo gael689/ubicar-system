@@ -9,7 +9,6 @@ import type { VehiculoOcupacion, EventoOcupacion, Reserva, ApiResponse, DiaResum
 import { ReservaModal } from '../reservas/ReservaModal';
 import { CheckoutModal } from '../reservas/CheckoutModal';
 import { ReservaInfoModal } from '../reservas/ReservaInfoModal';
-import { PanelPendienteAsignacion } from '@/components/reservas/PanelPendienteAsignacion';
 
 const ESTADO_COLORS_EVENTO: Record<string, string> = {
   // Plan de conexión (13/08), cierra C-6: `pendiente` sí tiene auto asignado
@@ -628,14 +627,13 @@ export function OcupacionPage() {
         />
       )}
 
-      {/* "Pendiente de asignación" (2.2) — reservas por categoría, sin auto.
-          No tienen fila donde dibujarse en la grilla de arriba; se resuelven
-          acá mismo, sin cambiar de pantalla (C-1/C-7). Sale del mismo
-          `/ocupacion` que ya se pidió — una sola llamada, una sola verdad. */}
-      <PanelPendienteAsignacion
-        reservas={ocupacionData?.sin_asignar ?? []}
-        onCambio={loadData}
-      />
+      {/* "Pendiente de asignación" (2.2) vivía acá. Lo reemplaza
+          `AvisoReservasPendientes`, que está en el layout y por lo tanto en
+          **todas** las pantallas.
+          Esta versión sólo mostraba lo que caía en el rango de fechas que el
+          calendario tenía a la vista: una reserva para marzo no aparecía en
+          ningún lado si estabas mirando agosto. Dejar las dos era tener dos
+          listas que un día iban a decir cosas distintas sobre lo mismo. */}
 
       {/* Modal de Reserva */}
       {showReservaModal && (

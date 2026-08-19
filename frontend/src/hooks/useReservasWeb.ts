@@ -36,19 +36,13 @@ export function useResumenReservasWeb() {
   });
 }
 
-/** Aceptar es asignar un auto concreto: una categoría no se puede entregar. */
-export function useAceptarReservaWeb() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, vehiculo_id, notas }: { id: number; vehiculo_id: number; notas?: string }) =>
-      api.post<{ data: Reserva }>(`/reservas-web/${id}/aceptar`, { vehiculo_id, notas }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [KEY] });
-      qc.invalidateQueries({ queryKey: ['reservas'] });
-      qc.invalidateQueries({ queryKey: ['ocupacion'] });
-    },
-  });
-}
+// Acá había un `useAceptarReservaWeb` que pegaba a `POST
+// /reservas-web/{id}/aceptar`. **No lo llamaba nadie** y el endpoint asignaba
+// el auto a mano, sin lock, sin la lógica de upgrade de D-54, sin auditoría y
+// sin tocar el contrato. Los dos se borraron el 19/08.
+//
+// Asignar va por `useAsignarVehiculo` (hooks/useResolverReserva), que es el
+// único camino con esa lógica.
 
 export function useRechazarReservaWeb() {
   const qc = useQueryClient();
@@ -59,5 +53,31 @@ export function useRechazarReservaWeb() {
       qc.invalidateQueries({ queryKey: [KEY] });
       qc.invalidateQueries({ queryKey: ['reservas'] });
     },
+  });
+}
+
+/**
+ * Lo que requiere que alguien haga algo, sin ventana de fechas.
+ *
+ * Alimenta el aviso permanente del layout. Es una lista y no un contador
+ * porque el aviso muestra **cuál** es la más urgente sin que haya que
+ * abrirlo: "2 reservas sin auto" no dice nada, "Gael González, sedán, sale el
+ * 3" sí.
+ *
+ * `refetchInterval` de 30 s y no de 60 como el resto: acá el costo de
+ * enterarse tarde es un auto comprometido que nadie asignó, y el de enterarse
+ * de más es una consulta que devuelve una lista de tres filas.
+ */
+export function useReservasPendientes() {
+  return useQuery({
+    queryKey: ['reservas-web', 'pendientes'],
+    queryFn: async () => {
+      const res = await api.get<{ data: Reserva[] }>('/reservas-web/pendientes');
+      return res.data.data;
+    },
+    refetchInterval: 30_000,
+    // Que vuelva del navegador a la pestaña sea suficiente para actualizarlo:
+    // el caso típico es dejar el sistema abierto y volver un rato después.
+    refetchOnWindowFocus: true,
   });
 }

@@ -58,6 +58,11 @@ class RegistrarCobroRequest(BaseModel):
 
 class AsignarVehiculoRequest(BaseModel):
     vehiculo_id: int
+    # Concurrencia optimista: qué auto creía la pantalla que tenía la reserva.
+    # **Si no se manda, no se chequea nada** — se distingue por
+    # `model_fields_set`, porque `null` es un valor legítimo ("no tenía auto")
+    # y no se puede usar como "no lo mandé".
+    vehiculo_actual: int | None = None
     # Asignar y confirmar son lo mismo cuando la plata ya está: se deja
     # explícito para que la pantalla decida según lo que falte.
     confirmar: bool = False
@@ -513,15 +518,26 @@ def asignar_vehiculo(
     D-47: es el paso que habilita el contrato — hasta que no hay un auto no
     hay nada que firmar. La respuesta incluye `puede_emitir_contrato` para que
     la pantalla lo ofrezca ahí mismo en vez de mandar a otra.
+
+    **Es el único camino para ponerle un auto a una reserva.** Había otros dos
+    —`POST /reservas-web/{id}/aceptar`, borrado el 19/08, y `reasignar` (D4,
+    para el vehículo dado de baja)— y las tres implementaciones habían
+    derivado: sólo ésta toma el lock del auto, registra el upgrade de D-54 y
+    deja auditoría.
     """
     svc = ReservaService(db)
     try:
-        reserva = svc.asignar_vehiculo(
+        reserva, warnings = svc.asignar_vehiculo(
             reserva_id=reserva_id,
             vehiculo_id=payload.vehiculo_id,
             usuario_id=current_user.id,
             confirmar=payload.confirmar,
             upgrade_motivo=payload.upgrade_motivo,
+            vehiculo_esperado=(
+                payload.vehiculo_actual
+                if "vehiculo_actual" in payload.model_fields_set
+                else ReservaService.SIN_CHEQUEO
+            ),
         )
         db.commit()
     except ConflictError as e:
@@ -539,6 +555,10 @@ def asignar_vehiculo(
             # pasa a "sin_emitir", que es lo que la pantalla usa para ofrecer
             # el botón sin tener que replicar la regla.
             "puede_emitir_contrato": reserva.contrato_estado == "sin_emitir",
+            # D-48: si al cambiar el auto se anuló un contrato firmado, el
+            # operador tiene que enterarse **ahora** y no cuando el cliente
+            # llega con un papel que nombra otra patente.
+            "warnings": warnings,
         },
         "Vehículo asignado",
     )

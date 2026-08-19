@@ -97,15 +97,41 @@ export function useRegistrarCobro() {
   });
 }
 
+/** Aviso que devuelve el backend cuando la asignación tuvo consecuencias. */
+export interface AvisoAsignacion {
+  tipo: 'contrato_a_regenerar' | 'contrato_anulado_por_reasignacion';
+  contrato_id: number;
+  mensaje: string;
+}
+
+/**
+ * **El único camino para ponerle un auto a una reserva.**
+ *
+ * Había otros dos y las tres implementaciones habían derivado: sólo ésta toma
+ * el lock del vehículo, registra el upgrade/downgrade de D-54, deja auditoría
+ * y resuelve el contrato viejo. `POST /reservas-web/{id}/aceptar` se borró el
+ * 19/08 por eso.
+ *
+ * `vehiculo_actual` es concurrencia optimista: **si no se manda, no se
+ * chequea nada**, así que mandarlo siempre desde las pantallas que muestran
+ * un auto ya asignado.
+ */
 export function useAsignarVehiculo() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (
-      { id, vehiculo_id, confirmar }: { id: number; vehiculo_id: number; confirmar?: boolean },
+      { id, vehiculo_id, confirmar, vehiculo_actual }: {
+        id: number; vehiculo_id: number; confirmar?: boolean;
+        vehiculo_actual?: number | null;
+      },
     ) => {
-      const { data } = await api.post<{ data: Reserva & { puede_emitir_contrato: boolean } }>(
-        `/reservas/${id}/asignar-vehiculo`, { vehiculo_id, confirmar },
-      );
+      const body: Record<string, unknown> = { vehiculo_id, confirmar };
+      // Sólo va si el llamador lo pasó: `null` significa "esperaba que no
+      // tuviera auto", que es distinto de "no lo chequees".
+      if (vehiculo_actual !== undefined) body.vehiculo_actual = vehiculo_actual;
+      const { data } = await api.post<{
+        data: Reserva & { puede_emitir_contrato: boolean; warnings?: AvisoAsignacion[] };
+      }>(`/reservas/${id}/asignar-vehiculo`, body);
       return data.data;
     },
     onSuccess: () => invalidarTodo(qc),
@@ -122,4 +148,8 @@ function invalidarTodo(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['reservas-web'] });
   qc.invalidateQueries({ queryKey: ['ocupacion'] });
   qc.invalidateQueries({ queryKey: ['pagos'] });
+  // La campana también: `resolver_por_entidad` da por resuelta la
+  // notificación de la reserva web, y sin esto el badge seguía contándola
+  // hasta el siguiente poll de 60 s.
+  qc.invalidateQueries({ queryKey: ['notificaciones'] });
 }

@@ -390,9 +390,23 @@ function SelectorVehiculo({
         // plata sigue sin estar y confirmarla ocuparía el auto por una venta
         // que puede no cerrarse nunca.
         confirmar: reserva.estado !== 'pendiente_pago',
+        // Concurrencia optimista: qué auto tenía cuando se abrió esta
+        // pantalla. Son hasta tres personas trabajando y el aviso de
+        // pendientes les aparece a todas; sin esto, el segundo que asigna
+        // pisa al primero en silencio y queda un auto comprometido que el
+        // calendario ya no muestra ocupado.
+        vehiculo_actual: reserva.vehiculo_id ?? null,
       },
       {
-        onSuccess: r => { onListo(r); toast.success('Vehículo asignado.'); },
+        onSuccess: r => {
+          onListo(r);
+          // D-48: si el cambio de auto anuló un contrato firmado, hay que
+          // enterarse ahora — no cuando el cliente llega con un papel que
+          // nombra otra patente.
+          const avisos = r.warnings ?? [];
+          if (avisos.length) avisos.forEach(w => toast.warning(w.mensaje, { duration: 12_000 }));
+          else toast.success('Vehículo asignado.');
+        },
         onError: e => toast.error(extractError(e, 'Ese auto no quedó libre')),
       },
     );
