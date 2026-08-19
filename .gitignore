@@ -73,3 +73,52 @@ web/out/
 # Skills instaladas por `npx skills add` — son dependencias de herramientas,
 # no codigo del proyecto. Se reinstalan con un comando.
 .agents/
+
+# ─── Limpieza del 19/08/2026 ─────────────────────────────────────────────────
+#
+# Todo lo de abajo estaba versionado y no tenia por que estarlo. Los archivos
+# siguen en el disco: se saco del indice con `git rm --cached`, no se borro
+# nada.
+
+# Skills de Claude Code (Clerk, MCP, skill-creator...). Son 185 archivos de
+# documentacion de terceros que entraron con un `git add -A`. No son codigo del
+# proyecto y se reinstalan solas. `.claude/settings.json` SI se versiona: esa
+# es configuracion del proyecto.
+.claude/skills/
+.claude/settings.local.json
+
+# Salida de build del cotizador. `dist/` ya estaba ignorado, pero esta carpeta
+# no se llama `dist` y se colo con 10 MB de imagenes adentro. Se regenera con
+# `npm run build:cotizador`; el deploy no la usa (Vercel construye `dist`).
+frontend/dist-cotizador/
+
+# Archivos subidos en desarrollo. `backend/storage_local/` ya estaba ignorado
+# desde hace meses, pero .gitignore no des-trackea lo que ya estaba adentro:
+# los 8 archivos siguieron versionados igual. Esta es la copia de la raiz, que
+# nunca estuvo ignorada.
+storage_local/
+
+# La base SQLite de desarrollo. Es data, y ademas cambia en cada corrida.
+backend/ubicar.db
+*.sqlite
+*.sqlite3
+
+# Imagenes que quedaron sueltas en la raiz de `web/`: 12,7 MB y **ninguna
+# referencia en el codigo**. Las que el sitio sirve de verdad viven en
+# `web/public/img/`.
+web/hero*.png
+
+# Entregables y capturas que caen en la raiz del repo: PDFs de la empresa,
+# capturas de WhatsApp, imagenes de paso. Nada de la raiz se sirve ni se
+# importa. El `/` inicial ancla el patron a la raiz y no toca `web/public/`
+# ni `backend/app/assets/`.
+/*.pdf
+/*.png
+/*.jpg
+/*.jpeg
+/mails.md
+
+# Documentacion del proyecto y material para el cliente. Vive en el disco y se
+# comparte a mano; el repo queda con el codigo y nada mas.
+docs/
+frontend/VERCEL.md
