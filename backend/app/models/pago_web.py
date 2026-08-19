@@ -95,5 +95,14 @@ class PagoWeb(Base):
     )
     procesado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Hasta cuándo Mercado Pago acepta que se pague esta preferencia (UTC).
+    #
+    # Se guarda además de mandarse a MP porque hace falta para decidir si la
+    # preferencia se puede **reusar**: el cliente que aprieta "Darme más
+    # tiempo" extiende el hold, pero una preferencia ya emitida no se extiende.
+    # Sin esto se le devolvería una preferencia muerta y el pago fallaría en la
+    # pantalla de Mercado Pago, con el hold todavía vigente.
+    vence_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     reserva: Mapped["Reserva"] = relationship("Reserva")
     pago: Mapped["Pago"] = relationship("Pago")

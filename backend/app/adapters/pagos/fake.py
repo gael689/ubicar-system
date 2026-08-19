@@ -20,7 +20,12 @@ import itertools
 from decimal import Decimal
 from typing import Any
 
-from app.adapters.pagos.interface import PagoExterno, PreferenciaCreada
+from app.adapters.pagos.interface import (
+    Pagador,
+    PagoExterno,
+    PreferenciaCreada,
+    ReglasCobro,
+)
 
 
 class PasarelaFake:
@@ -38,11 +43,12 @@ class PasarelaFake:
         titulo: str,
         monto: Decimal,
         referencia_externa: str,
-        email_comprador: str | None,
+        pagador: Pagador,
         url_exito: str,
         url_pendiente: str,
         url_error: str,
         url_webhook: str,
+        reglas: ReglasCobro = ReglasCobro(),
     ) -> PreferenciaCreada:
         numero = next(self._secuencia)
         preference_id = f"fake-pref-{numero}"
@@ -50,7 +56,9 @@ class PasarelaFake:
             "titulo": titulo,
             "monto": Decimal(monto),
             "referencia_externa": referencia_externa,
-            "email": email_comprador,
+            "email": pagador.email,
+            "pagador": pagador,
+            "reglas": reglas,
             "url_webhook": url_webhook,
         }
         # El pago queda listo de antemano: así el test puede disparar el

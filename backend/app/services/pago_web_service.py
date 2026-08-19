@@ -32,7 +32,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.pagos import get_pasarela
-from app.adapters.pagos.interface import IPasarelaPago, PagoExterno
+from app.adapters.pagos.interface import (
+    IPasarelaPago,
+    Pagador,
+    PagoExterno,
+    ReglasCobro,
+)
 from app.core.exceptions import BusinessRuleError, NotFoundError
 from app.domain import pagos_web as dom
 from app.domain.enums import EstadoReserva
@@ -170,6 +175,9 @@ class PagoWebService:
             en_curso is not None
             and en_curso.porcentaje_anticipo == porcentaje_anticipo
             and en_curso.init_point
+            # Y que la preferencia siga siendo pagable: si el cliente apretó
+            # "Darme más tiempo", el hold se extendió pero la preferencia no.
+            and dom.preferencia_sigue_viva(en_curso.vence_en)
         ):
             return self._respuesta_checkout(en_curso)
 
@@ -215,7 +223,11 @@ class PagoWebService:
         # Crear una segunda dejaría una huérfana en `pendiente_pago`.
         if en_curso is not None:
             en_curso.estado = "rechazado"
-            en_curso.detalle = "Reemplazado: el cliente cambió el porcentaje de anticipo"
+            en_curso.detalle = (
+                "Reemplazado: el cliente cambió el porcentaje de anticipo"
+                if en_curso.porcentaje_anticipo != porcentaje_anticipo
+                else "Reemplazado: la preferencia anterior había vencido"
+            )
             reserva = self.db.get(Reserva, en_curso.reserva_id)
         else:
             reserva = None
@@ -254,15 +266,32 @@ class PagoWebService:
         self.db.flush()
 
         pasarela_web = (url_base_web or "").rstrip("/")
+        nombre_pila, apellido = dom.partir_nombre(nombre)
+        vence_en = dom.vencimiento_preferencia(hold.expira_en)
         preferencia = self.pasarela.crear_preferencia(
             titulo=f"Reserva {categoria.nombre} — Ubicar Rent",
             monto=anticipo.monto_a_cobrar,
             referencia_externa=dom.referencia_externa(reserva.id),
-            email_comprador=email,
+            pagador=Pagador(
+                email=email,
+                nombre=nombre_pila,
+                apellido=apellido,
+                telefono=telefono,
+                dni=dni,
+            ),
             url_exito=f"{pasarela_web}/reservar/listo?status=approved",
             url_pendiente=f"{pasarela_web}/reservar/listo?status=pending",
             url_error=f"{pasarela_web}/reservar/listo?status=failure",
             url_webhook=url_webhook or "",
+            reglas=ReglasCobro(
+                cuotas_maximas=self._cuotas_maximas(),
+                # El efectivo se excluye siempre: se acredita a los tres días
+                # y el hold dura veinte minutos. Ver `_payment_methods` en el
+                # adaptador.
+                excluir_efectivo=True,
+                vence_en=vence_en,
+                descriptor=dom.DESCRIPTOR_TARJETA,
+            ),
         )
 
         pago_web = PagoWeb(
@@ -275,6 +304,7 @@ class PagoWebService:
             total_reserva=anticipo.total_lista,
             descuento_pago_total=anticipo.descuento,
             estado="iniciado",
+            vence_en=vence_en,
         )
         self.db.add(pago_web)
         self.db.flush()
@@ -401,6 +431,11 @@ class PagoWebService:
     def _descuento_pago_total(self) -> Decimal:
         return ConfiguracionService(self.db).get_decimal(
             dom.CLAVE_DESCUENTO_PAGO_TOTAL, dom.DESCUENTO_PAGO_TOTAL_DEFAULT
+        )
+
+    def _cuotas_maximas(self) -> int:
+        return ConfiguracionService(self.db).get_int(
+            dom.CLAVE_CUOTAS_MAXIMAS, dom.CUOTAS_MAXIMAS_DEFAULT
         )
 
     def _buscar_pago_web(self, externo: PagoExterno) -> PagoWeb | None:

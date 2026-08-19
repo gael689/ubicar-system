@@ -71,9 +71,22 @@ class Settings(BaseSettings):
     # devolverla, porque una pasarela simulada confirmaría reservas sin cobrar.
     pagos_provider: str = "fake"
     mercadopago_access_token: str = ""
-    mercadopago_public_key: str = ""
+    # **No hay `mercadopago_public_key` y no es un olvido.** Con Checkout Pro
+    # el navegador nunca habla con Mercado Pago: se lo redirige al
+    # `init_point`. La public key sólo hace falta si en algún momento se pasa a
+    # Checkout Bricks o al botón embebido. Estuvo declarada y sin usar desde la
+    # migración 051.
+    #
     # Con credenciales de prueba, Checkout Pro se abre en `sandbox_init_point`.
+    # El esquema nuevo de usuarios de prueba de MP usa `init_point` igual que
+    # producción (verificado el 19/08 contra la API), así que esto puede quedar
+    # en `false` incluso probando.
     mercadopago_sandbox: bool = True
+    # Clave secreta del webhook, la que muestra el panel de MP al configurar
+    # las notificaciones. **Es distinta por ambiente**: la de prueba no sirve
+    # en producción. Vacía = no se valida la firma; ver `domain/webhook_mp.py`
+    # para por qué eso no es un agujero.
+    mercadopago_webhook_secret: str = ""
     # URL pública del backend. La necesita el `notification_url` de la
     # preferencia: Mercado Pago tiene que poder alcanzarnos desde afuera, así
     # que en local esto va con un túnel (ngrok) y no con localhost.

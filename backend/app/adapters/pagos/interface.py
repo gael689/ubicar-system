@@ -11,6 +11,7 @@ monto que no coincide).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -41,6 +42,41 @@ class PagoExterno:
     crudo: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class Pagador:
+    """
+    Quién paga, tal como lo pide Mercado Pago.
+
+    Antes viajaba sólo el email. Los demás campos no son decorativos: MP los
+    usa para decidir si aprueba la operación, y una tarjeta legítima que llega
+    sin nombre ni documento tiene más chances de salir rechazada. Todos los
+    datos ya los tenemos —el paso 4 de la web los pide para la reserva—, así
+    que no cargarlos era regalar aprobaciones.
+    """
+
+    email: str | None = None
+    nombre: str | None = None
+    apellido: str | None = None
+    telefono: str | None = None
+    dni: str | None = None
+
+
+@dataclass(frozen=True)
+class ReglasCobro:
+    """
+    Las restricciones del cobro, que salen del negocio y no de la pasarela.
+
+    `vence_en` es la que más importa: sin ella la preferencia vive para
+    siempre y alguien puede pagar al día siguiente un auto cuyo hold venció
+    hace horas. Ver `MercadoPagoPasarela.crear_preferencia`.
+    """
+
+    cuotas_maximas: int | None = None   # None o <=0: lo que MP ofrezca por defecto
+    excluir_efectivo: bool = True
+    vence_en: datetime | None = None    # UTC, sin tzinfo (como el resto del sistema)
+    descriptor: str | None = None       # lo que ve el cliente en el resumen de la tarjeta
+
+
 class IPasarelaPago(Protocol):
     def crear_preferencia(
         self,
@@ -48,11 +84,12 @@ class IPasarelaPago(Protocol):
         titulo: str,
         monto: Decimal,
         referencia_externa: str,
-        email_comprador: str | None,
+        pagador: Pagador,
         url_exito: str,
         url_pendiente: str,
         url_error: str,
         url_webhook: str,
+        reglas: ReglasCobro = ReglasCobro(),
     ) -> PreferenciaCreada: ...
 
     def obtener_pago(self, payment_id: str) -> PagoExterno: ...

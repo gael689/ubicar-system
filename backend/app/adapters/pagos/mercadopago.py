@@ -12,9 +12,11 @@ from decimal import Decimal
 from typing import Any
 
 from app.adapters.pagos.interface import (
+    Pagador,
     PagoExterno,
     PasarelaNoConfigurada,
     PreferenciaCreada,
+    ReglasCobro,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,11 +42,12 @@ class MercadoPagoPasarela:
         titulo: str,
         monto: Decimal,
         referencia_externa: str,
-        email_comprador: str | None,
+        pagador: Pagador,
         url_exito: str,
         url_pendiente: str,
         url_error: str,
         url_webhook: str,
+        reglas: ReglasCobro = ReglasCobro(),
     ) -> PreferenciaCreada:
         datos: dict[str, Any] = {
             "items": [{
@@ -63,13 +66,34 @@ class MercadoPagoPasarela:
                 "failure": url_error,
             },
             "auto_return": "approved",
-            # Una sola cuota de crédito no; que el cliente elija. Pero el
-            # cobro en cuotas lo absorbe la empresa, así que esto queda como
-            # está hasta que Franco y Martín decidan si lo quieren limitar.
+            # `binary_mode` sigue en False a propósito: en True, MP rechaza de
+            # entrada todo lo que quedaría "en revisión", y ahí se pierden
+            # pagos buenos. El estado `in_process` ya está contemplado en
+            # `domain/pagos_web.resolver`, así que no necesitamos evitarlo.
             "binary_mode": False,
         }
-        if email_comprador:
-            datos["payer"] = {"email": email_comprador}
+
+        pagos = self._payment_methods(reglas)
+        if pagos:
+            datos["payment_methods"] = pagos
+
+        datos_pagador = self._payer(pagador)
+        if datos_pagador:
+            datos["payer"] = datos_pagador
+
+        if reglas.vence_en is not None:
+            # Una preferencia sin vencimiento se puede pagar al día siguiente,
+            # cuando el hold ya venció y el auto se alquiló. El pago entraría
+            # igual y caería en `revision_sin_cupo` para que lo resuelva una
+            # persona. Con esto, Mercado Pago lo frena antes de cobrarlo.
+            datos["expires"] = True
+            datos["expiration_date_to"] = _iso_utc(reglas.vence_en)
+
+        if reglas.descriptor:
+            # Lo que aparece en el resumen de la tarjeta. Sin esto sale el
+            # nombre de la cuenta de MP, que el cliente no reconoce — y un
+            # cargo que no se reconoce termina en un contracargo.
+            datos["statement_descriptor"] = reglas.descriptor
 
         respuesta = self._sdk().preference().create(datos)
         cuerpo = respuesta.get("response", {})
@@ -84,6 +108,52 @@ class MercadoPagoPasarela:
         ) or cuerpo.get("init_point")
 
         return PreferenciaCreada(preference_id=cuerpo["id"], init_point=init_point)
+
+    @staticmethod
+    def _payment_methods(reglas: ReglasCobro) -> dict[str, Any]:
+        """
+        Qué medios se aceptan y en cuántas cuotas.
+
+        **El efectivo se excluye y no es una preferencia comercial.** Rapipago
+        y Pago Fácil (`ticket`) y los cajeros (`atm`) se acreditan dos o tres
+        días después. El hold dura veinte minutos: para cuando la plata llega,
+        el auto ya se liberó y se alquiló. El cliente pagó por algo que no
+        tiene, y del otro lado queda una devolución a mano.
+
+        Si alguna vez se decide aceptarlos, no alcanza con sacar esto: hay que
+        resolver antes cómo se sostiene el cupo tres días.
+        """
+        pagos: dict[str, Any] = {}
+        if reglas.excluir_efectivo:
+            pagos["excluded_payment_types"] = [{"id": "ticket"}, {"id": "atm"}]
+        if reglas.cuotas_maximas and reglas.cuotas_maximas > 0:
+            # Las cuotas las paga el vendedor: cuantas más, menos queda de cada
+            # reserva. Por eso el tope sale de `configuracion` y lo mueven los
+            # dueños, sin deploy.
+            pagos["installments"] = reglas.cuotas_maximas
+        return pagos
+
+    @staticmethod
+    def _payer(pagador: Pagador) -> dict[str, Any]:
+        """
+        Los datos del que paga, sin campos vacíos.
+
+        Se omite lo que no tenemos en vez de mandarlo en blanco: un
+        `identification` con número vacío es peor que no mandarlo — MP lo toma
+        como documento inválido.
+        """
+        datos: dict[str, Any] = {}
+        if pagador.email:
+            datos["email"] = pagador.email
+        if pagador.nombre:
+            datos["name"] = pagador.nombre
+        if pagador.apellido:
+            datos["surname"] = pagador.apellido
+        if pagador.dni:
+            datos["identification"] = {"type": "DNI", "number": pagador.dni}
+        if pagador.telefono:
+            datos["phone"] = {"number": pagador.telefono}
+        return datos
 
     def obtener_pago(self, payment_id: str) -> PagoExterno:
         """
@@ -125,3 +195,14 @@ class MercadoPagoPasarela:
         if respuesta.get("status") not in (200, 201):
             raise RuntimeError(f"Mercado Pago rechazó la devolución: {cuerpo}")
         return cuerpo
+
+
+def _iso_utc(momento) -> str:
+    """
+    La fecha como la quiere Mercado Pago: ISO 8601 **con offset**.
+
+    Los timestamps del sistema son UTC sin `tzinfo`, así que el offset se
+    escribe explícito. Sin él MP rechaza la preferencia entera, y el síntoma
+    es un botón de pagar que falla antes de llegar al checkout.
+    """
+    return momento.strftime("%Y-%m-%dT%H:%M:%S.000+00:00")

@@ -1167,9 +1167,12 @@ async def webhook_mercadopago(request: Request, db: Session = Depends(get_db)):
     no se pudo resolver queda marcado como `revision` y salta una alerta, que
     es una forma mucho mejor de enterarse.
 
-    No hace falta autenticar el request: el cuerpo sólo trae un id, y el pago
-    se vuelve a leer contra la API con nuestras credenciales. Alguien que
-    invente un `payment_id` no consigue nada.
+    **La firma no es lo que sostiene la seguridad de esto.** El cuerpo sólo
+    trae un id, y el pago se vuelve a leer contra la API con nuestras
+    credenciales: alguien que invente un `payment_id` no consigue nada. La
+    validación de `x-signature` está para que no nos hagan consultar la API de
+    Mercado Pago a discreción, y por eso **se salta sola si no hay secreto
+    cargado** — ver `domain/webhook_mp.py`.
     """
     from app.services.pago_web_service import PagoWebService
 
@@ -1178,11 +1181,38 @@ async def webhook_mercadopago(request: Request, db: Session = Depends(get_db)):
     except Exception:
         cuerpo = {}
 
-    payment_id = _extraer_payment_id(cuerpo, dict(request.query_params))
+    query = dict(request.query_params)
+    payment_id = _extraer_payment_id(cuerpo, query)
     if not payment_id:
         # Mercado Pago manda también notificaciones de otros temas (merchant
         # orders, por ejemplo). No son un error: simplemente no nos interesan.
         return ok({"resultado": "ignorado"}, "Notificación sin pago asociado")
+
+    if not _firma_valida(request, query, payment_id):
+        # 401 y no 200, que es la única excepción a la regla de "siempre 200".
+        #
+        # El riesgo real acá no es el aviso falso —no puede confirmar nada— es
+        # **que el secreto esté mal cargado y estemos rechazando avisos
+        # legítimos**. Con 200 eso sería invisible: el panel de Mercado Pago
+        # seguiría en verde mientras ninguna reserva se confirma. Con 401 el
+        # panel marca el webhook en rojo, que es la única señal que existe.
+        # Se loguea el header y el manifiesto —no el secreto— porque con eso
+        # se diagnostica sin necesidad de que entre otro pago: si el
+        # manifiesto es el esperado y aun así no coincide, el secreto es de
+        # otro ambiente; si el manifiesto está raro, cambió el formato.
+        from app.domain.webhook_mp import manifiesto, parsear_x_signature
+
+        firma = request.headers.get("x-signature")
+        ts, _ = parsear_x_signature(firma)
+        logger.error(
+            "[MercadoPago] firma inválida para payment_id=%s — si esto se repite, "
+            "revisá MERCADOPAGO_WEBHOOK_SECRET contra el panel (el de prueba y el "
+            "de producción son distintos). x-signature=%r manifiesto=%r",
+            payment_id, firma,
+            manifiesto(query.get("data.id") or payment_id,
+                       request.headers.get("x-request-id") or "", ts or ""),
+        )
+        raise HTTPException(status_code=401, detail="Firma inválida")
 
     try:
         resultado = PagoWebService(db).procesar_webhook(payment_id)
@@ -1192,6 +1222,24 @@ async def webhook_mercadopago(request: Request, db: Session = Depends(get_db)):
         return ok({"resultado": "error_registrado"}, "Recibido")
 
     return ok(resultado, "Recibido")
+
+
+def _firma_valida(request: Request, query: dict, payment_id: str) -> bool:
+    """
+    Chequea el header `x-signature` contra el secreto del panel.
+
+    **El `data.id` que Mercado Pago firma es el del query string**, no el del
+    cuerpo. Cuando no viene por la URL —pasa según el tipo de aviso— se cae al
+    que se extrajo del cuerpo, que es el mismo número.
+    """
+    from app.domain.webhook_mp import firma_valida
+
+    return firma_valida(
+        secreto=settings.mercadopago_webhook_secret,
+        x_signature=request.headers.get("x-signature"),
+        x_request_id=request.headers.get("x-request-id"),
+        data_id=query.get("data.id") or payment_id,
+    )
 
 
 def _extraer_payment_id(cuerpo: dict, query: dict) -> str | None:

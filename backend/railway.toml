@@ -28,6 +28,21 @@
 #   MERCADOPAGO_ACCESS_TOKEN      APP_USR-...  <-- el interruptor: sin token,
 #                                                  la web cobra por transferencia
 #   MERCADOPAGO_SANDBOX           false
+#                                 <-- false SIEMPRE, incluso con credenciales
+#                                     de prueba. Solo sirve para abrir
+#                                     `sandbox_init_point`, que es el flujo
+#                                     viejo; el esquema nuevo de usuarios de
+#                                     prueba usa `init_point` igual que
+#                                     produccion (verificado el 19/08 contra
+#                                     la API real)
+#   MERCADOPAGO_WEBHOOK_SECRET    (panel de MP > Webhooks)  <-- OPCIONAL
+#                                 <-- vacia: no se valida la firma y el
+#                                     webhook funciona igual. Hay una POR
+#                                     AMBIENTE: cargar la de prueba en
+#                                     produccion rechaza TODOS los avisos y
+#                                     ninguna reserva se confirma. El sintoma
+#                                     es el webhook en rojo en el panel de MP
+#                                     y `firma invalida` en estos logs
 #   BACKEND_PUBLIC_URL            https://ubicar-system-production.up.railway.app
 #                                 <-- el notification_url del webhook. Tiene que
 #                                     coincidir con lo cargado en el panel de MP.

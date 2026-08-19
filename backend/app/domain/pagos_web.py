@@ -13,6 +13,7 @@ Mercado Pago sin una cuenta. Separadas así, se testean hoy.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 # ─── D-30: cuánto adelanta el cliente ────────────────────────────────────────
@@ -25,6 +26,35 @@ PORCENTAJE_MINIMO = 30
 # puede requerir un deploy.
 CLAVE_DESCUENTO_PAGO_TOTAL = "web.descuento_pago_total_pct"
 DESCUENTO_PAGO_TOTAL_DEFAULT = Decimal("0")
+
+# ─── Cómo se arma la preferencia de Mercado Pago ─────────────────────────────
+
+# Tope de cuotas. Las cuotas las paga el vendedor, así que es una palanca
+# comercial y no técnica: se mueve desde Configuración, sin deploy. Seis es un
+# default prudente hasta que Franco y Martín definan el suyo.
+CLAVE_CUOTAS_MAXIMAS = "web.mp_cuotas_maximas"
+CUOTAS_MAXIMAS_DEFAULT = 6
+
+# Lo que ve el cliente en el resumen de la tarjeta. Un cargo que no se
+# reconoce termina en un contracargo, y un contracargo cuesta más que la venta.
+DESCRIPTOR_TARJETA = "UBICAR RENT"
+
+# Cuánto sobrevive la preferencia al hold.
+#
+# La preferencia tiene que morir, o alguien paga mañana un auto cuyo hold
+# venció hoy. Pero no puede morir **exactamente** con el hold: el cliente que
+# apretó "pagar" en el minuto 19 está tipeando la tarjeta cuando se vence, y
+# ese pago —que iba a entrar— se cae en la cara del cliente.
+#
+# Diez minutos es lo que tarda una persona en completar el formulario de MP.
+# Un pago que llegue en esa ventana ya no tiene hold, así que el webhook lo
+# manda a `revision_sin_cupo` y lo resuelve una persona: eso es correcto, y es
+# muchísimo mejor que perder la venta.
+MARGEN_PAGO_EN_CURSO = timedelta(minutes=10)
+
+# Vida mínima que le tiene que quedar a una preferencia para reusarla en vez de
+# emitir una nueva. Ver `preferencia_sigue_viva`.
+MARGEN_REUSO = timedelta(minutes=2)
 
 CENTAVO = Decimal("0.01")
 
@@ -249,3 +279,53 @@ def reserva_de_referencia(referencia: str | None) -> int | None:
         return int(referencia.rsplit("-", 1)[1])
     except (ValueError, IndexError):
         return None
+
+
+def vencimiento_preferencia(hold_expira_en: datetime | None) -> datetime | None:
+    """Hasta cuándo Mercado Pago acepta que se pague. Ver `MARGEN_PAGO_EN_CURSO`."""
+    if hold_expira_en is None:
+        return None
+    return hold_expira_en + MARGEN_PAGO_EN_CURSO
+
+
+def preferencia_sigue_viva(vence_en: datetime | None, ahora: datetime | None = None) -> bool:
+    """
+    ¿Vale la pena devolverle al cliente la preferencia que ya tenía?
+
+    Existe por el botón **"Darme más tiempo"** (`ContadorHold`): extender el
+    hold alarga el cupo, pero **no alarga una preferencia ya emitida**. Sin
+    este chequeo se le devolvía la vieja, Mercado Pago la rechazaba por
+    vencida, y el cliente veía fallar el pago con el auto todavía reservado a
+    su nombre.
+
+    `None` cuenta como viva: son las preferencias emitidas antes de que
+    empezaran a vencer (migración 071), y ésas efectivamente no vencen.
+
+    El margen es para no entregar una preferencia que muere mientras el
+    cliente todavía está leyendo la pantalla de Mercado Pago.
+    """
+    if vence_en is None:
+        return True
+    return vence_en - MARGEN_REUSO > (ahora or datetime.utcnow())
+
+
+def partir_nombre(nombre: str | None) -> tuple[str, str]:
+    """
+    El nombre completo partido en nombre y apellido, como lo pide Mercado Pago.
+
+    La web pide **un solo campo** —"Nombre y apellido"— porque pedir dos
+    espanta gente en un formulario de compra. MP quiere `name` y `surname`
+    separados y los usa para el scoring de la operación.
+
+    Se corta en el **primer** espacio y todo lo demás es apellido: "Juan Carlos
+    Pérez" da ("Juan", "Carlos Pérez"). Es una heurística y a veces se
+    equivoca; equivocarse acá no rompe nada —MP no valida el nombre contra la
+    tarjeta— y mandar los dos campos aprueba más que mandar ninguno.
+    """
+    limpio = (nombre or "").strip()
+    if not limpio:
+        return "", ""
+    partes = limpio.split(None, 1)
+    if len(partes) == 1:
+        return partes[0], ""
+    return partes[0], partes[1].strip()
