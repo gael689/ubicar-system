@@ -9,7 +9,12 @@ cambia el manifiesto, este test se cae.
 """
 import pytest
 
-from app.domain.webhook_mp import firma_valida, manifiesto, parsear_x_signature
+from app.domain.webhook_mp import (
+    firma_valida,
+    lleva_firma,
+    manifiesto,
+    parsear_x_signature,
+)
 
 SECRETO = "bd1d9c3c7fa8b46611f221ce6fe95b2df74e3e2ff7e7c16a2986c4a355ea20c5"
 TS = "1755600000"
@@ -137,3 +142,55 @@ def test_el_header_tolera_claves_de_mas():
 
 def test_un_header_vacio_no_rompe():
     assert parsear_x_signature(None) == (None, None)
+
+
+# ─── El formato viejo, que Mercado Pago no firma ─────────────────────────────
+#
+# Descubierto el 19/08/2026 con el primer pago real: por cada pago llegan dos
+# avisos y sólo uno se puede verificar. Los datos de acá son los del aviso
+# legacy real que el endpoint rechazó con 401.
+
+# Firma real de un aviso `topic=payment` del pago 174642477530, con el secreto
+# de producción cargado. No coincide con ningún manifiesto: está acá para dejar
+# constancia de que se intentó y de con qué.
+LEGACY_TS = "1787166825"
+LEGACY_V1 = "6ff405b17b81eb221cf5a86792dcd69c5d8b1dddd464e5d7b4a927afbf83b089"
+LEGACY_REQUEST_ID = "717663fe-46e7-4226-bbde-225838aa8f12"
+LEGACY_PAYMENT_ID = "174642477530"
+
+
+def test_el_formato_nuevo_se_valida():
+    assert lleva_firma({"type": "payment", "data": {"id": "1"}}, {}) is True
+
+
+def test_el_formato_nuevo_por_query_tambien():
+    assert lleva_firma({}, {"type": "payment", "data.id": "1"}) is True
+
+
+def test_el_formato_viejo_no_se_valida():
+    """
+    `topic=payment` es el aviso IPN. Trae `x-signature` pero Mercado Pago no lo
+    firma con el secreto del webhook, así que validarlo significaba devolverle
+    401 a un aviso legítimo — y que Mercado Pago reintentara durante horas
+    marcando el webhook en rojo.
+    """
+    cuerpo = {"topic": "payment", "resource": f"https://api.mercadolibre.com/v1/payments/{LEGACY_PAYMENT_ID}"}
+    assert lleva_firma(cuerpo, {"topic": "payment", "id": LEGACY_PAYMENT_ID}) is False
+
+
+def test_la_merchant_order_tampoco():
+    assert lleva_firma({"topic": "merchant_order"}, {"topic": "merchant_order", "id": "9"}) is False
+
+
+def test_la_firma_real_del_aviso_viejo_efectivamente_no_valida():
+    """
+    Deja constancia de por qué existe `lleva_firma`. Si algún día Mercado Pago
+    empieza a firmar el formato viejo con este secreto, este test se cae y hay
+    que revisar la decisión.
+    """
+    assert firma_valida(
+        secreto=SECRETO,
+        x_signature=f"ts={LEGACY_TS},v1={LEGACY_V1}",
+        x_request_id=LEGACY_REQUEST_ID,
+        data_id=LEGACY_PAYMENT_ID,
+    ) is False

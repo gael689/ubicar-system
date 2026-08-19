@@ -28,6 +28,8 @@ tarde si se descubren solos:
 No se valida la antigüedad del `ts`. Mercado Pago reintenta durante horas y
 firma cada reintento; poner una tolerancia sólo agrega una forma nueva de
 descartar un pago legítimo.
+
+**Y hay un formato que no se puede validar.** Ver `lleva_firma`.
 """
 from __future__ import annotations
 
@@ -81,3 +83,36 @@ def firma_valida(
     # `compare_digest` y no `==`: comparar hexa carácter a carácter filtra por
     # tiempo cuánto prefijo acertó quien lo intenta.
     return hmac.compare_digest(esperado, v1)
+
+
+def lleva_firma(cuerpo: dict, query: dict) -> bool:
+    """
+    ¿Este aviso se puede validar contra el secreto?
+
+    **Sólo el formato nuevo.** Por cada pago, Mercado Pago manda **dos avisos**
+    —a veces tres, contando la `merchant_order`— y no todos vienen firmados
+    igual:
+
+        ?data.id=123&type=payment     el de Webhooks. Firmado, verificable
+        ?id=123&topic=payment         el viejo (IPN). Trae `x-signature`, pero
+                                      **no se puede recalcular**
+
+    Esto no sale de la documentación: se descubrió el 19/08/2026 con el primer
+    pago real. El aviso viejo llegaba con un `x-signature` de aspecto normal y
+    la validación lo rechazaba, así que el endpoint devolvía 401 a un aviso
+    legítimo de Mercado Pago. Se tomaron las tres firmas del log y se probaron
+    doce variantes del manifiesto —con el id del pago, con el de la merchant
+    order, sin id, sin request-id, sin el punto y coma final, en otro orden— y
+    **ninguna coincide**. Mercado Pago manda el header pero no lo firma con el
+    secreto del webhook.
+
+    El costo de no darse cuenta es alto y silencioso: Mercado Pago reintenta el
+    aviso rechazado durante horas y marca el webhook **en rojo en el panel**,
+    que es justamente la señal que se eligió como confiable para diagnosticar.
+
+    Dejar pasar el formato viejo sin validar no abre nada: el monto y el estado
+    se releen contra la API con nuestro token, así que un aviso inventado no
+    confirma ninguna reserva. Es exactamente la protección que el endpoint
+    tenía antes de que existiera la firma.
+    """
+    return cuerpo.get("type") == "payment" or query.get("type") == "payment"

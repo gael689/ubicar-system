@@ -1188,7 +1188,7 @@ async def webhook_mercadopago(request: Request, db: Session = Depends(get_db)):
         # orders, por ejemplo). No son un error: simplemente no nos interesan.
         return ok({"resultado": "ignorado"}, "Notificación sin pago asociado")
 
-    if not _firma_valida(request, query, payment_id):
+    if not _firma_valida(request, cuerpo, query, payment_id):
         # 401 y no 200, que es la única excepción a la regla de "siempre 200".
         #
         # El riesgo real acá no es el aviso falso —no puede confirmar nada— es
@@ -1207,7 +1207,8 @@ async def webhook_mercadopago(request: Request, db: Session = Depends(get_db)):
         logger.error(
             "[MercadoPago] firma inválida para payment_id=%s — si esto se repite, "
             "revisá MERCADOPAGO_WEBHOOK_SECRET contra el panel (el de prueba y el "
-            "de producción son distintos). x-signature=%r manifiesto=%r",
+            "de producción son distintos). Sólo se valida el formato nuevo "
+            "(type=payment). x-signature=%r manifiesto=%r",
             payment_id, firma,
             manifiesto(query.get("data.id") or payment_id,
                        request.headers.get("x-request-id") or "", ts or ""),
@@ -1224,15 +1225,22 @@ async def webhook_mercadopago(request: Request, db: Session = Depends(get_db)):
     return ok(resultado, "Recibido")
 
 
-def _firma_valida(request: Request, query: dict, payment_id: str) -> bool:
+def _firma_valida(request: Request, cuerpo: dict, query: dict, payment_id: str) -> bool:
     """
     Chequea el header `x-signature` contra el secreto del panel.
 
     **El `data.id` que Mercado Pago firma es el del query string**, no el del
     cuerpo. Cuando no viene por la URL —pasa según el tipo de aviso— se cae al
     que se extrajo del cuerpo, que es el mismo número.
+
+    Los avisos del formato viejo (`topic=payment`) **no se validan**: Mercado
+    Pago los manda con `x-signature` pero no los firma con este secreto, así
+    que rechazarlos era rechazar avisos legítimos. Ver `lleva_firma`.
     """
-    from app.domain.webhook_mp import firma_valida
+    from app.domain.webhook_mp import firma_valida, lleva_firma
+
+    if not lleva_firma(cuerpo, query):
+        return True
 
     return firma_valida(
         secreto=settings.mercadopago_webhook_secret,
