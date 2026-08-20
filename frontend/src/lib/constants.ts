@@ -309,11 +309,15 @@ export const MEDIO_PAGO_RECIBO_LABEL: Record<string, string> = {
 // ─── Navegación ──────────────────────────────────────────────────────────────
 
 export const NAV_ITEMS = [
-  { path: '/ocupacion', label: 'Ocupación', icon: 'LayoutDashboard' },
-  { path: '/flota', label: 'Flota', icon: 'Car' },
+  // Los cinco primeros son la barra inferior de celular (`Sidebar.tsx`).
+  // En el celular se usa el sistema parado en el mostrador: Contratos salio
+  // porque es una accion que arranca desde una reserva, no un destino.
+  { path: '/ocupacion', label: 'Hoy', icon: 'LayoutDashboard' },
   { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
-  { path: '/contratos', label: 'Contratos', icon: 'FileText' },
+  { path: '/flota', label: 'Flota', icon: 'Car' },
   { path: '/clientes', label: 'Clientes', icon: 'Users' },
+  { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
+  { path: '/contratos', label: 'Contratos', icon: 'FileText' },
   { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
   { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
   { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
@@ -339,12 +343,21 @@ export const NAV_GROUPS: NavGroup[] = [
     { path: '/ocupacion', label: 'Ocupación', icon: 'LayoutDashboard' },
   ] },
   { label: 'Reservas', icon: 'ClipboardList', principal: true, items: [
+    // "Reservas web" salio del menu: es el mismo listado con el filtro de
+    // canal en "Web". Tener una entrada aparte era lo que hacia que una reserva
+    // web confirmada desapareciera de la vista al salir de esa bandeja. La ruta
+    // sigue existiendo porque hay links a ella.
     { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
-    { path: '/reservas-web', label: 'Reservas web', icon: 'Globe' },
     { path: '/contratos', label: 'Contratos', icon: 'FileText' },
   ] },
   { label: 'Flota', icon: 'Car', principal: true, items: [
     { path: '/flota', label: 'Vehículos', icon: 'Car' },
+    // **Entra al menú.** Era la única pantalla con contenido propio que no
+    // figuraba en ningún lado: se llegaba sólo por un botón dentro de Flota.
+    // Y es donde se cargan los precios base y las franquicias — o sea, a donde
+    // apuntan dos de los avisos del sistema ("falta el precio real", "falta la
+    // franquicia"), que mandaban a una pantalla invisible.
+    { path: '/flota/categorias', label: 'Categorías y precios base', icon: 'Package' },
     { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
   ] },
   { label: 'Clientes', icon: 'Users', principal: true, items: [
@@ -378,6 +391,10 @@ export const NAV_GROUPS: NavGroup[] = [
   ] },
   { label: 'Fechas especiales', icon: 'CalendarDays', items: [
     { path: '/fechas-especiales', label: 'Fechas especiales', icon: 'CalendarDays' },
+  ] },
+  { label: 'Canal web', icon: 'Globe', items: [
+    { path: '/canal-web', label: 'Cómo vende el sitio', icon: 'Globe' },
+    { path: '/reservas-web', label: 'Bandeja de la web', icon: 'ClipboardList' },
   ] },
   { label: 'Configuración', icon: 'Settings', items: [
     { path: '/configuracion', label: 'Configuración', icon: 'Settings' },

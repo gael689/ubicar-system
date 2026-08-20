@@ -66,6 +66,11 @@ export default function App() {
         <Route path="/reportes" element={<AppLayout title="Reportes"><ReportesPage /></AppLayout>} />
         <Route path="/notificaciones" element={<AppLayout title="Notificaciones"><NotificacionesPage /></AppLayout>} />
         <Route path="/configuracion" element={<AppLayout title="Configuración"><ConfiguracionPage /></AppLayout>} />
+        {/* Misma pantalla, otro corte: sólo los parámetros del sitio. Separarlos
+            no es cosmético — la ventana de venta, el cupo y los datos bancarios
+            se tocan pensando en el canal online, y estaban perdidos entre el
+            CUIT de la empresa y los plazos del excedente. */}
+        <Route path="/canal-web" element={<AppLayout title="Canal web"><ConfiguracionPage soloCanalWeb /></AppLayout>} />
         <Route path="/fechas-especiales" element={<AppLayout title="Fechas especiales"><FechasEspecialesPage /></AppLayout>} />
         {/* **Una sola pantalla de precios.** Antes había una por canal, porque
             un intento previo de unificarlas dejó un interruptor que sólo

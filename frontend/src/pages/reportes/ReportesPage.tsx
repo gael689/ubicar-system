@@ -4,8 +4,11 @@ import {
   Tooltip, Legend, ResponsiveContainer, Cell,
 } from 'recharts';
 import { Download, RefreshCw } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import api from '@/lib/api';
+import { Card } from '@/components/ui/card';
 import { useReporteIngresos, useReporteFlota } from '@/hooks/useReportes';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 
 const COLORES = ['#407EC9', '#8BB8E8', '#34d399', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -259,7 +262,7 @@ function ReporteFlota() {
 }
 
 export function ReportesPage() {
-  const [tab, setTab] = useState<'ingresos' | 'flota'>('ingresos');
+  const [tab, setTab] = useState<'ingresos' | 'flota' | 'demanda'>('ingresos');
 
   return (
     <div className="flex flex-col h-full">
@@ -268,13 +271,116 @@ export function ReportesPage() {
         <div className="flex gap-1 ml-4">
           <TabBtn active={tab === 'ingresos'} onClick={() => setTab('ingresos')}>Ingresos</TabBtn>
           <TabBtn active={tab === 'flota'} onClick={() => setTab('flota')}>Flota</TabBtn>
+          <TabBtn active={tab === 'demanda'} onClick={() => setTab('demanda')}>Demanda no atendida</TabBtn>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
         {tab === 'ingresos' && <ReporteIngresos />}
         {tab === 'flota' && <ReporteFlota />}
+        {tab === 'demanda' && <ReporteDemanda />}
       </div>
     </div>
+  );
+}
+
+
+/**
+ * Lo que el sitio no pudo vender.
+ *
+ * Cada vez que alguien busca y el sitio no puede cerrar —no hay cupo, la fecha
+ * cae fuera de la ventana de venta, quiere otro lugar de retiro— aparece el
+ * cartel que deriva a WhatsApp y esa búsqueda queda registrada. **La mayoría de
+ * esa gente no completa ningún formulario**, así que sin esto el negocio sólo
+ * ve la minoría que sí lo hace.
+ *
+ * Son dos preguntas distintas y por eso hay dos tablas: por categoría, qué auto
+ * conviene comprar; por motivo, si lo que falta es flota o si son las propias
+ * reglas de la ventana las que están dejando ventas afuera.
+ */
+function ReporteDemanda() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['reportes', 'demanda-no-atendida'],
+    queryFn: async () => {
+      const { data } = await api.get('/reportes/demanda-no-atendida');
+      return data.data as {
+        desde: string; hasta: string; total: number;
+        por_categoria: { categoria: string; consultas: number }[];
+        por_motivo: { motivo: string; label: string; consultas: number }[];
+      };
+    },
+  });
+
+  if (isLoading) return <Card className="p-6 text-sm text-muted-foreground">Cargando…</Card>;
+  if (!data) return null;
+
+  if (data.total === 0) {
+    return (
+      <Card className="p-8 text-center">
+        <p className="text-sm font-medium text-foreground">Nadie se fue sin poder reservar</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Entre el {formatDate(data.desde)} y el {formatDate(data.hasta)} no hubo búsquedas que el
+          sitio no pudiera resolver. También puede ser que todavía no haya tráfico suficiente.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <p className="text-sm text-foreground">
+          <strong>{data.total}</strong> búsqueda{data.total !== 1 ? 's' : ''} que el sitio no pudo
+          cerrar, entre el {formatDate(data.desde)} y el {formatDate(data.hasta)}.
+        </p>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <TablaDemanda
+          titulo="Por categoría"
+          ayuda="Qué auto conviene comprar."
+          filas={data.por_categoria.map(f => ({ label: f.categoria, n: f.consultas }))}
+          total={data.total}
+        />
+        <TablaDemanda
+          titulo="Por qué no se pudo"
+          ayuda="Si falta flota, o si son las reglas de la ventana de venta las que frenan."
+          filas={data.por_motivo.map(f => ({ label: f.label, n: f.consultas }))}
+          total={data.total}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TablaDemanda({
+  titulo, ayuda, filas, total,
+}: {
+  titulo: string; ayuda: string;
+  filas: { label: string; n: number }[]; total: number;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <div className="border-b border-border px-4 py-3">
+        <h3 className="text-sm font-semibold text-foreground">{titulo}</h3>
+        <p className="text-xs text-muted-foreground">{ayuda}</p>
+      </div>
+      <ul className="divide-y divide-border">
+        {filas.map(f => (
+          <li key={f.label} className="flex items-center gap-3 px-4 py-2">
+            <span className="min-w-0 flex-1 truncate text-sm text-foreground">{f.label}</span>
+            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${total ? (f.n / total) * 100 : 0}%` }}
+              />
+            </div>
+            <span className="w-8 text-right text-sm font-semibold tabular-nums text-foreground">
+              {f.n}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

@@ -11,23 +11,41 @@ import { extractError, formatDate } from '@/lib/utils';
 import type { ConfiguracionItem } from '@/types';
 
 const CATEGORIA_LABEL: Record<string, string> = {
+  'Control de 24hs': 'Control de 24 horas (excedente)',
   control_24hs: 'Control de 24 horas (excedente)',
 };
 
-export function ConfiguracionPage() {
+/**
+ * El grupo que agrupa todo lo del sitio público.
+ *
+ * Se muestra en su propia pantalla ("Canal web") y **no** en Configuración
+ * general: la ventana de venta, el cupo, los lugares de retiro, los datos
+ * bancarios y el tope de cuotas son decisiones del canal online, y mezclarlas
+ * con el CUIT de la empresa y los plazos del excedente hacía una lista plana
+ * de 37 parámetros donde no se encontraba nada.
+ */
+const GRUPO_CANAL_WEB = 'Reservas web';
+
+export function ConfiguracionPage({ soloCanalWeb = false }: { soloCanalWeb?: boolean }) {
   const { data: items, isLoading } = useConfiguracion();
 
-  const grupos = (items ?? []).reduce<Record<string, ConfiguracionItem[]>>((acc, item) => {
-    if (!acc[item.categoria]) acc[item.categoria] = [];
-    acc[item.categoria].push(item);
-    return acc;
-  }, {});
+  const grupos = (items ?? [])
+    .filter(item =>
+      soloCanalWeb ? item.categoria === GRUPO_CANAL_WEB : item.categoria !== GRUPO_CANAL_WEB
+    )
+    .reduce<Record<string, ConfiguracionItem[]>>((acc, item) => {
+      if (!acc[item.categoria]) acc[item.categoria] = [];
+      acc[item.categoria].push(item);
+      return acc;
+    }, {});
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="Configuración"
-        description="Parámetros de negocio editables sin tocar código. Los cambios aplican al instante para todo cálculo posterior."
+        title={soloCanalWeb ? 'Canal web' : 'Configuración'}
+        description={soloCanalWeb
+          ? 'Todo lo que decide cómo vende el sitio: la ventana de fechas que se puede reservar, cuánto dura el cupo apartado, los lugares de retiro, el anticipo y los datos para transferencia.'
+          : 'Parámetros de negocio editables sin tocar código. Los cambios aplican al instante para todo cálculo posterior. Lo del sitio público está aparte, en Canal web.'}
       />
 
       {isLoading ? (
