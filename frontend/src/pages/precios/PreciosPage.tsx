@@ -30,21 +30,15 @@ function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Todo lo que cambia entre las dos pantallas, en un solo lugar. */
+/** Qué se está mirando en la grilla, según el canal elegido. */
 const POR_CANAL = {
   mostrador: {
-    titulo: 'Precios de mostrador',
-    descripcion:
-      'Lo que se cobra cuando el cliente reserva por teléfono, por WhatsApp o en el local. ' +
-      'Marcá un rango sobre el calendario y poné el precio ahí mismo.',
-    otro: { label: 'Ver precios de la web', path: '/precios/web' },
+    etiqueta: 'Mostrador',
+    ayuda: 'Lo que se cobra cuando el cliente reserva por teléfono, por WhatsApp o en el local.',
   },
   web: {
-    titulo: 'Precios de la web',
-    descripcion:
-      'Lo que ve y paga un cliente que reserva solo desde ubicar-rent.com.ar. ' +
-      'Marcá un rango sobre el calendario y poné el precio ahí mismo.',
-    otro: { label: 'Ver precios de mostrador', path: '/precios/mostrador' },
+    etiqueta: 'Web',
+    ayuda: 'Lo que ve y paga un cliente que reserva solo desde ubicar-rent.com.ar.',
   },
 } as const;
 
@@ -69,7 +63,22 @@ const POR_CANAL = {
  * el canal lo define en qué pantalla estás parado, y no hay forma de
  * confundirse.
  */
-export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
+export function PreciosPage({ canalInicial = 'mostrador' }: { canalInicial?: Canal }) {
+  /**
+   * Qué canal se está **previsualizando** en la grilla.
+   *
+   * Es una sola pantalla, no una por canal. La separación anterior existía por
+   * un motivo real —un interruptor que sólo cambiaba la vista mientras el alta
+   * seguía creando en "los dos canales", así que cargabas un precio pensando en
+   * la web y le tocabas el precio al mostrador— y eso se resuelve donde estaba
+   * el problema: **el canal es ahora una elección explícita en el formulario**,
+   * con las tres opciones a la vista, y la tabla de reglas muestra los dos
+   * canales juntos con su columna.
+   *
+   * Este estado sólo decide qué precios pinta el calendario y cuál viene
+   * preseleccionado al cargar.
+   */
+  const [canal, setCanal] = useState<Canal>(canalInicial);
   const hoy = new Date();
   const [anio, setAnio] = useState(hoy.getFullYear());
   const [mes, setMes] = useState(hoy.getMonth());
@@ -126,17 +135,44 @@ export function PreciosPage({ canal }: { canal: 'web' | 'mostrador' }) {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title={cfg.titulo}
-        description={cfg.descripcion}
+        title="Precios"
+        description="Marcá un rango sobre el calendario y poné el precio ahí mismo. Abajo quedan todas las reglas, de los dos canales."
         actions={
-          <Link to={cfg.otro.path}>
+          <Link to="/precios/simulador">
             <Button variant="outline" size="sm">
-              {canal === 'web' ? <Store className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
-              {cfg.otro.label}
+              <Calculator className="h-4 w-4" />
+              Simulador
             </Button>
           </Link>
         }
       />
+
+      {/* Qué canal se está mirando. **Sólo cambia lo que pinta el calendario**
+          y qué canal viene preseleccionado al cargar un precio: la tabla de
+          reglas de abajo muestra siempre los dos. Dice "Viendo" y no es un
+          filtro disfrazado, que es lo que hacía que antes se cargara en el
+          canal equivocado. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-xs font-medium text-muted-foreground">Viendo precios de</span>
+        <div className="flex overflow-hidden rounded-lg border border-border">
+          {(['mostrador', 'web'] as const).map(c => (
+            <button
+              key={c}
+              onClick={() => setCanal(c)}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors',
+                canal === c
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-accent',
+              )}
+            >
+              {c === 'web' ? <Globe className="h-3.5 w-3.5" /> : <Store className="h-3.5 w-3.5" />}
+              {POR_CANAL[c].etiqueta}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground">{cfg.ayuda}</span>
+      </div>
 
       <ComoSeArmaElPrecio />
 

@@ -365,8 +365,10 @@ export const NAV_GROUPS: NavGroup[] = [
   { label: 'Precios', icon: 'CalendarRange', items: [
     // Dos entradas, no una con interruptor: cargar un precio pensando en la
     // web y cambiarle el precio al mostrador es el error que esto evita.
-    { path: '/precios/mostrador', label: 'Precios de mostrador', icon: 'Store' },
-    { path: '/precios/web', label: 'Precios de la web', icon: 'Globe' },
+    // Una sola entrada. Eran dos —una por canal— y eso hacía que las reglas de
+    // web y de mostrador no se pudieran ver juntas nunca: cargabas una promo en
+    // una pantalla, te olvidabas de la otra, y nada lo señalaba.
+    { path: '/precios', label: 'Calendario de precios', icon: 'CalendarRange' },
     // El simulador estaba escondido abajo de todo dentro de la pantalla de
     // precios, así que casi nadie sabía que existía — y es lo único que
     // contesta "¿mi promo le está ganando a la tarifa del auto?" sin tener que

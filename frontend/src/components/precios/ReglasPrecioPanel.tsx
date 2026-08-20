@@ -55,15 +55,37 @@ function formVacio(canal: CanalTarifa) {
 }
 
 interface Props {
-  /** El canal de esta pantalla. La lista, el alta y la edición trabajan sobre él. */
+  /**
+   * El canal que se está previsualizando arriba, en la grilla. Sirve como
+   * **default del alta**, no como filtro: la tabla muestra las reglas de los
+   * dos canales.
+   *
+   * Antes esta lista se filtraba por canal y había una pantalla por canal. El
+   * problema no era el filtro sino lo que escondía: cargabas una promo en
+   * mostrador, no la cargabas en web, y no había ningún lugar donde eso se
+   * notara. Ahora las dos se ven juntas, con una columna que dice a cuál
+   * aplica cada una.
+   */
   canal: 'web' | 'mostrador';
 }
 
+const CANAL_LABEL: Record<string, string> = {
+  ambos: 'Los dos',
+  web: 'Web',
+  mostrador: 'Mostrador',
+};
+
+const CANAL_COLOR: Record<string, string> = {
+  ambos: 'bg-slate-100 text-slate-700 border-slate-200',
+  web: 'bg-sky-100 text-sky-800 border-sky-200',
+  mostrador: 'bg-violet-100 text-violet-800 border-violet-200',
+};
+
 export function ReglasPrecioPanel({ canal }: Props) {
   const [verInactivas, setVerInactivas] = useState(false);
+  // Sin `canal`: **todas** las reglas, de los dos canales. Es la tabla única.
   const { data: reglas = [], isLoading } = useReglasPrecio({
     incluir_inactivas: verInactivas,
-    canal,
   });
   const { data: categorias = [] } = useCategorias();
   const { data: fechasEspeciales = [] } = useFechasEspeciales();
@@ -77,7 +99,6 @@ export function ReglasPrecioPanel({ canal }: Props) {
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState(() => formVacio(canal));
 
-  const otroCanal = canal === 'web' ? 'mostrador' : 'web';
 
   function abrirNueva() {
     setForm(formVacio(canal));
@@ -168,7 +189,7 @@ export function ReglasPrecioPanel({ canal }: Props) {
         <div className="flex items-center gap-2">
           <Tag className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold text-foreground">
-            Reglas de precio {canal === 'web' ? 'de la web' : 'del mostrador'}
+            Reglas de precio
           </h3>
           {reglas.length > 0 && (
             <span className="inline-flex items-center rounded-full bg-primary/10 text-primary border border-primary/30 px-2 py-0.5 text-xs font-semibold">
@@ -198,11 +219,13 @@ export function ReglasPrecioPanel({ canal }: Props) {
         expresar: una regla de toda la flota, de un vehículo puntual, o con mínimo de días.
       </p>
       <p className="text-xs text-muted-foreground">
-        Acá sólo se ve y se carga lo de <strong>{canal}</strong>. Las reglas marcadas
+        Están <strong>las de los dos canales</strong>, con una columna que dice a cuál aplica cada
+        una. Tenerlas juntas es lo que permite ver que una promo se cargó en un canal y no en el
+        otro — antes eso no se notaba desde ningún lado. Una regla marcada
         <span className="mx-1 rounded border border-border px-1.5 py-0.5 text-[10px]">
-          los dos canales
+          los dos
         </span>
-        aparecen también en {otroCanal}: si las editás, cambia el precio de los dos.
+        cambia el precio de web y de mostrador a la vez.
       </p>
 
       {showForm && (
@@ -373,16 +396,23 @@ export function ReglasPrecioPanel({ canal }: Props) {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {/* Dos opciones, no tres: en esta pantalla "el otro canal solo" no
-                es una elección válida — para eso se va a la otra pantalla. */}
+            {/* **Las tres opciones, explícitas.** Con una sola pantalla el
+                canal ya no lo define dónde estás parado, así que tiene que
+                elegirse acá y verse. Este es justo el campo que causó el
+                problema la vez anterior: el canal cambiaba la vista pero el
+                alta seguía creando en "los dos", así que cargar un precio
+                pensando en la web le tocaba el precio al mostrador. Ahora
+                arranca en el canal que estás previsualizando y se puede
+                cambiar a cualquiera de los tres. */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">¿Dónde aplica?</label>
               <select
-                value={form.canal === 'ambos' ? 'ambos' : canal}
+                value={form.canal}
                 onChange={e => setForm(f => ({ ...f, canal: e.target.value as CanalTarifa }))}
                 className="input-base"
               >
-                <option value={canal}>Sólo {canal}</option>
+                <option value="mostrador">Sólo mostrador</option>
+                <option value="web">Sólo web</option>
                 <option value="ambos">Los dos canales</option>
               </select>
             </div>
@@ -512,14 +542,16 @@ export function ReglasPrecioPanel({ canal }: Props) {
                       {r.etiqueta_promo}
                     </span>
                   )}
-                  {/* La marca importante es la contraria a la de antes: acá
-                      todas las reglas son de este canal, y lo que hay que
-                      señalar es cuál además toca el otro. */}
-                  {r.canal === 'ambos' && (
-                    <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      los dos canales
-                    </span>
-                  )}
+                  {/* El canal, **siempre visible y para las tres opciones**.
+                      Con la tabla mostrando los dos canales juntos, marcar sólo
+                      las de "ambos" dejaría a las otras sin decir a cuál
+                      pertenecen. */}
+                  <span className={cn(
+                    'shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium',
+                    CANAL_COLOR[r.canal] ?? CANAL_COLOR.ambos,
+                  )}>
+                    {CANAL_LABEL[r.canal] ?? r.canal}
+                  </span>
                   {!r.activo && (
                     <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">
                       DADA DE BAJA
