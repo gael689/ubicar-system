@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, extract
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from app.models.reserva import Reserva
 from app.models.alquiler import Alquiler
 from app.models.pago import Pago
 from app.models.gasto import Gasto
+from app.models.categoria import Categoria
 from app.models.cliente import Cliente
 
 router = APIRouter(prefix="/reportes", tags=["Reportes"])
@@ -272,3 +273,83 @@ def reporte_flota(
 
     resultado.sort(key=lambda x: x["ocupacion_porcentaje"], reverse=True)
     return ok(resultado)
+
+
+MOTIVO_LABEL = {
+    "sin_cupo": "No había unidades",
+    "anticipacion": "Pidió con muy poca anticipación",
+    "horizonte": "Pidió para muy adelante",
+    "duracion": "Alquiler más largo del máximo",
+    "otro_lugar": "Quería otro lugar de retiro",
+    "sin_franquicia": "Categoría sin franquicia cargada",
+}
+
+
+@router.get("/demanda-no-atendida")
+def demanda_no_atendida(
+    desde: date | None = Query(None, description="YYYY-MM-DD"),
+    hasta: date | None = Query(None, description="YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Qué pidió la gente en el sitio y no se le pudo vender.
+
+    **Es el único dato que mide lo que se pierde.** Cada vez que el sitio no
+    puede cerrar una reserva —no hay cupo, la fecha está fuera de la ventana de
+    venta, el lugar no es uno de los tres— aparece el cartel que deriva a
+    WhatsApp, y esa búsqueda queda registrada. La mayoría de esa gente no
+    completa ningún formulario, así que sin esta tabla el negocio sólo vería la
+    minoría que sí lo hace.
+
+    Contesta dos preguntas distintas y por eso agrupa por dos ejes:
+
+    - **Por categoría**: qué auto conviene comprar. Es literalmente para lo que
+      D-04 pidió medir esto.
+    - **Por motivo**: si lo que falta es flota o si son las propias reglas de la
+      ventana de venta las que están dejando ventas afuera. Un pico en
+      `anticipacion` no se arregla comprando autos: se arregla bajando los diez
+      días.
+
+    Sin rango, mira los últimos 90 días: es lo que hace que el número signifique
+    algo para decidir hoy, en vez de arrastrar el histórico entero.
+    """
+    from app.models.busqueda_sin_resultado import BusquedaSinResultado
+
+    hasta_efectivo = hasta or date.today()
+    desde_efectivo = desde or (hasta_efectivo - timedelta(days=90))
+
+    filas = (
+        db.query(BusquedaSinResultado)
+        .filter(
+            func.date(BusquedaSinResultado.created_at) >= desde_efectivo,
+            func.date(BusquedaSinResultado.created_at) <= hasta_efectivo,
+        )
+        .all()
+    )
+
+    categorias = {c.id: c.nombre for c in db.query(Categoria).all()}
+
+    por_categoria: dict[str, int] = {}
+    por_motivo: dict[str, int] = {}
+    for f in filas:
+        # `None` es una búsqueda que ni siquiera llegó a elegir categoría —
+        # típico de las que se caen por fecha. Se cuenta aparte para no
+        # inflar ninguna categoría real.
+        nombre = categorias.get(f.categoria_id) if f.categoria_id else "Sin categoría elegida"
+        por_categoria[nombre] = por_categoria.get(nombre, 0) + 1
+        por_motivo[f.motivo] = por_motivo.get(f.motivo, 0) + 1
+
+    return ok({
+        "desde": desde_efectivo.isoformat(),
+        "hasta": hasta_efectivo.isoformat(),
+        "total": len(filas),
+        "por_categoria": [
+            {"categoria": k, "consultas": v}
+            for k, v in sorted(por_categoria.items(), key=lambda x: -x[1])
+        ],
+        "por_motivo": [
+            {"motivo": k, "label": MOTIVO_LABEL.get(k, k), "consultas": v}
+            for k, v in sorted(por_motivo.items(), key=lambda x: -x[1])
+        ],
+    })

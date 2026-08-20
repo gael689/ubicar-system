@@ -378,6 +378,18 @@ export function OcupacionPage() {
   const [reservaArrastrada, setReservaArrastrada] = useState<number | null>(null);
   const [asignarA, setAsignarA] = useState<{ reserva: Reserva; vehiculoId: number } | null>(null);
 
+  /**
+   * Abre el panel de asignación para una reserva sin auto.
+   *
+   * Sin vehículo preseleccionado: el panel ya lista los disponibles separando
+   * los de la categoría pedida, valida la fecha en el momento y avisa si es
+   * upgrade o downgrade. Es el mismo y único camino de asignación del sistema.
+   */
+  const abrirAsignacion = (reservaId: number) => {
+    const reserva = sinAsignar.find(r => r.id === reservaId);
+    if (reserva) setAsignarA({ reserva, vehiculoId: 0 });
+  };
+
   const soltarEnVehiculo = (vehiculoId: number) => {
     if (reservaArrastrada == null) return;
     const reserva = sinAsignar.find(r => r.id === reservaArrastrada);
@@ -730,7 +742,7 @@ export function OcupacionPage() {
                       vacía permanente sería ruido, pero no verlas es
                       sobreventa. */}
                   {eventosSinAsignar.length > 0 && (
-                    <tr className="bg-amber-50/60">
+                    <tr className="bg-amber-50">
                       <td className="px-3 py-1 sticky left-0 bg-amber-50 z-20 border-r border-amber-200 shadow-[1px_0_0_0_#fde68a] align-middle h-[60px]">
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
@@ -771,10 +783,10 @@ export function OcupacionPage() {
                                     e.dataTransfer.setData('text/plain', `reserva:${ev.id}`);
                                   }}
                                   onDragEnd={() => setReservaArrastrada(null)}
-                                  className="absolute inset-y-1 rounded-md border border-dashed border-amber-500 bg-amber-200/70 text-amber-950 shadow-sm cursor-grab active:cursor-grabbing transition-all z-10 overflow-hidden hover:brightness-105"
+                                  className="absolute inset-y-1 rounded-md border border-dashed border-amber-500 bg-amber-200 text-amber-950 shadow-sm cursor-grab active:cursor-grabbing transition-all z-10 overflow-hidden hover:brightness-105"
                                   style={{ left: `calc(${leftPercent}% + 1px)`, width: `calc(${widthPercent}% - 2px)`, minWidth: 0, height: '52px' }}
                                 >
-                                  <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full">
+                                  <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full gap-0.5">
                                     <div className="font-bold text-[11px] truncate flex items-center gap-1 leading-tight">
                                       <Car className="w-3.5 h-3.5 shrink-0" />
                                       <span className="truncate flex-1">{ev.cliente_nombre}</span>
@@ -785,6 +797,16 @@ export function OcupacionPage() {
                                         {ev.notas}
                                       </div>
                                     )}
+                                    {/* El botón, a la vista. Que la acción esté
+                                        sólo en el click del bloque o en el
+                                        arrastre la vuelve invisible: hay que
+                                        saber que está. */}
+                                    <button
+                                      onClick={e => { e.stopPropagation(); abrirAsignacion(ev.id); }}
+                                      className="self-start rounded bg-amber-600 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-white hover:bg-amber-700"
+                                    >
+                                      Asignar auto
+                                    </button>
                                   </div>
                                 </div>
                               );
@@ -800,25 +822,32 @@ export function OcupacionPage() {
                       agrupado está activo: con `agrupar` en false la grilla es
                       la lista plana de siempre. */}
                   {agrupar && grupo.nombre && (
-                    <tr className="bg-slate-100/80">
+                    <tr className="bg-sky-100">
                       <td
                         colSpan={days.length + 1}
-                        className="sticky left-0 z-20 px-3 py-1 bg-slate-100/95 border-y border-slate-200"
+                        className="px-0 py-1 bg-sky-100 border-y border-sky-200"
                       >
-                        <button
-                          onClick={() => setGruposCerrados(prev => {
-                            const s = new Set(prev);
-                            s.has(grupo.id) ? s.delete(grupo.id) : s.add(grupo.id);
-                            return s;
-                          })}
-                          className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-600 hover:text-slate-900"
-                        >
-                          <ChevronRight className={`w-3.5 h-3.5 transition-transform ${!gruposCerrados.has(grupo.id) ? 'rotate-90' : ''}`} />
-                          {grupo.nombre}
-                          <span className="font-medium text-slate-500">
-                            · {grupo.vehiculos.length} unidad{grupo.vehiculos.length !== 1 ? 'es' : ''}
-                          </span>
-                        </button>
+                        {/* **Pegado a la izquierda.** La celda abarca los 120
+                            días, así que sin esto el nombre de la categoría se
+                            va de pantalla apenas scrolleás a la derecha y la
+                            fila queda como una franja celeste sin decir de qué
+                            grupo es. */}
+                        <div className="sticky left-0 z-30 w-fit bg-sky-100 pl-3 pr-4">
+                          <button
+                            onClick={() => setGruposCerrados(prev => {
+                              const s = new Set(prev);
+                              s.has(grupo.id) ? s.delete(grupo.id) : s.add(grupo.id);
+                              return s;
+                            })}
+                            className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-sky-900 hover:text-sky-950"
+                          >
+                            <ChevronRight className={`w-3.5 h-3.5 transition-transform ${!gruposCerrados.has(grupo.id) ? 'rotate-90' : ''}`} />
+                            {grupo.nombre}
+                            <span className="font-medium text-sky-700">
+                              · {grupo.vehiculos.length} unidad{grupo.vehiculos.length !== 1 ? 'es' : ''}
+                            </span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )}
