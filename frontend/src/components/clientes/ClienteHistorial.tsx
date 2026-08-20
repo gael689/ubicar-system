@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Car, Flag, XCircle } from 'lucide-react';
+import { CheckCircle2, Car, Flag, XCircle, FileText } from 'lucide-react';
 import { useReservas } from '@/hooks/useReservas';
+import { usePresupuestosDeCliente } from '@/hooks/usePresupuestos';
 import { Reserva } from '@/types';
 import { Card } from '@/components/ui/card';
 import { formatDate } from '@/lib/utils';
@@ -53,17 +54,21 @@ export function ClienteHistorial({ clienteId }: Props) {
 
   if (fetched && reservas.length === 0) {
     return (
-      <Card>
-        <EmptyState
-          icon={Car}
-          title="Sin historial"
-          description="Este cliente aún no tiene reservas ni alquileres registrados."
-        />
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <EmptyState
+            icon={Car}
+            title="Sin historial"
+            description="Este cliente aún no tiene reservas ni alquileres registrados."
+          />
+        </Card>
+        <CotizacionesDelCliente clienteId={clienteId} />
+      </div>
     );
   }
 
   return (
+    <div className="space-y-4">
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm text-left">
@@ -109,6 +114,59 @@ export function ClienteHistorial({ clienteId }: Props) {
                 </td>
                 <td className="px-4 py-3 text-right font-medium text-foreground">
                   {r.precio_total ? `$${Number(r.precio_total).toLocaleString()}` : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+    <CotizacionesDelCliente clienteId={clienteId} />
+    </div>
+  );
+}
+
+/**
+ * Las cotizaciones que se le hicieron a este cliente.
+ *
+ * **Antes no se guardaban.** El cotizador generaba el PDF y no dejaba rastro,
+ * así que "¿qué le habíamos cotizado?" no se podía contestar desde el sistema.
+ * Ahora quedan registradas y aparecen acá, al lado de sus reservas: una
+ * cotización es el paso previo a una reserva, y es el mismo historial
+ * comercial.
+ */
+function CotizacionesDelCliente({ clienteId }: { clienteId: number }) {
+  const { data: presupuestos } = usePresupuestosDeCliente(clienteId);
+  if (!presupuestos || presupuestos.length === 0) return null;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="border-b border-border px-4 py-3">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          Cotizaciones ({presupuestos.length})
+        </h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm text-left">
+          <thead className="border-b border-border bg-muted/50 text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3 font-medium">Fecha</th>
+              <th className="px-4 py-3 font-medium">Período</th>
+              <th className="px-4 py-3 font-medium">Detalle</th>
+              <th className="px-4 py-3 text-right font-medium">Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {presupuestos.map(p => (
+              <tr key={p.id} className="transition-colors hover:bg-muted/50">
+                <td className="px-4 py-3 text-muted-foreground">{formatDate(p.created_at.slice(0, 10))}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {formatDate(p.fecha_inicio)} → {formatDate(p.fecha_fin)}
+                </td>
+                <td className="px-4 py-3 text-xs text-muted-foreground">{p.notas ?? '—'}</td>
+                <td className="px-4 py-3 text-right font-medium text-foreground">
+                  ${Number(p.total).toLocaleString('es-AR')}
                 </td>
               </tr>
             ))}

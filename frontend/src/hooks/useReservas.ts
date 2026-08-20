@@ -190,11 +190,21 @@ export function useReservas() {
   );
 
   const reasignarReserva = useCallback(
-    async (id: number, vehiculo_id_nuevo: number): Promise<{ reserva: Reserva; warnings: SolapeWarning[] }> => {
+    async (
+      id: number,
+      vehiculo_id_nuevo: number,
+      // D-65: corregir el precio en el mismo paso. Sin esto, cambiar de auto
+      // obliga a elegir entre entregar el que hay o respetar lo pactado.
+      // El motivo lo exige el backend sólo si el precio cambia.
+      precio?: { precio_total: number; precio_motivo?: string },
+    ): Promise<{ reserva: Reserva; warnings: SolapeWarning[] }> => {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await api.post<ApiResponse<any>>(`/reservas/${id}/reasignar`, { vehiculo_id_nuevo });
+        const { data } = await api.post<ApiResponse<any>>(`/reservas/${id}/reasignar`, {
+          vehiculo_id_nuevo,
+          ...(precio ?? {}),
+        });
         const { warnings, ...rest } = data.data;
         return { reserva: rest as Reserva, warnings: warnings ?? [] };
       } catch (err: any) {

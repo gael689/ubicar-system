@@ -37,9 +37,6 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.core.exceptions import BusinessRuleError
-from app.domain.recargo_edad import (
-    RecargoAplicado, RecargoEdadInfo, calcular_recargo, seleccionar_recargo,
-)
 
 
 CENTAVO = Decimal("0.01")
@@ -156,6 +153,26 @@ class DiaCotizado:
     es_promocional: bool = False
     precio_referencia: Decimal | None = None
     etiqueta_promo: str | None = None
+    # **Por qué ganó esta regla y no otra.** El `origen` decía de dónde salió
+    # el precio, pero no cuál fue el criterio del desempate — y cuando dos
+    # reglas compiten por el mismo día, esa es justamente la pregunta: la
+    # única forma de saberlo era hacer una reserva de prueba.
+    #
+    # `None` cuando no hubo competencia: una sola candidata, o el precio salió
+    # de la banda. Ver `MOTIVO_*` y `resolver_regla_dia`.
+    motivo: str | None = None
+    # Cuántas reglas se disputaban el día. 1 = ganó por ser la única.
+    candidatas: int = 0
+
+
+# Los cuatro criterios de desempate, en el orden en que se aplican. Son los
+# mismos que la clave de `max()` de `resolver_regla_dia`: si esa tupla cambia,
+# esto tiene que cambiar con ella.
+MOTIVO_UNICA = "unica"
+MOTIVO_PRIORIDAD = "prioridad"
+MOTIVO_ESPECIFICIDAD = "especificidad"
+MOTIVO_RANGO = "rango_mas_corto"
+MOTIVO_RECIENTE = "mas_reciente"
 
 
 @dataclass(frozen=True)
@@ -173,9 +190,6 @@ class Cotizacion:
     total_adicionales: Decimal = Decimal("0")
     descuento_id: int | None = None
     descuento_nombre: str | None = None
-    # Recargo por edad del conductor (D-38). Va aparte de los adicionales
-    # porque no es algo que el cliente elija.
-    recargo_edad: RecargoAplicado | None = None
     # Total a precio de lista: lo que costaría sin ninguna promo. Sirve para
     # el "antes $X, ahora $Y" de la web. Igual al subtotal si no hubo promos.
     total_referencia: Decimal | None = None
@@ -276,6 +290,53 @@ def resolver_regla_dia(
     )
 
 
+def explicar_regla_dia(
+    dia: date,
+    reglas: list[ReglaPrecio],
+    duracion_dias: int,
+    categoria_id: int | None = None,
+    vehiculo_id: int | None = None,
+    canal: str = "mostrador",
+) -> tuple[ReglaPrecio | None, str | None, int]:
+    """
+    Lo mismo que `resolver_regla_dia`, pero además **dice por qué ganó**.
+
+    Devuelve `(regla, motivo, cuántas competían)`.
+
+    El motivo se deduce comparando la ganadora contra la segunda: se recorre la
+    clave de desempate en orden y se informa **el primer criterio que las
+    separó**. Si ganó por prioridad, decir además que es más específica sería
+    ruido — la prioridad ya la había definido.
+
+    Existe aparte de `resolver_regla_dia` para no cargar el camino caliente del
+    cálculo con trabajo que sólo le sirve al simulador: cotizar una reserva no
+    necesita saber por qué, sólo cuánto.
+    """
+    candidatas = [
+        r for r in reglas
+        if regla_aplica(r, dia, duracion_dias, categoria_id, vehiculo_id, canal)
+    ]
+    if not candidatas:
+        return None, None, 0
+
+    clave = lambda r: (r.prioridad, r.especificidad, -r.amplitud_dias, r.id)
+    ordenadas = sorted(candidatas, key=clave, reverse=True)
+    ganadora = ordenadas[0]
+    if len(ordenadas) == 1:
+        return ganadora, MOTIVO_UNICA, 1
+
+    segunda = ordenadas[1]
+    if ganadora.prioridad != segunda.prioridad:
+        motivo = MOTIVO_PRIORIDAD
+    elif ganadora.especificidad != segunda.especificidad:
+        motivo = MOTIVO_ESPECIFICIDAD
+    elif ganadora.amplitud_dias != segunda.amplitud_dias:
+        motivo = MOTIVO_RANGO
+    else:
+        motivo = MOTIVO_RECIENTE
+    return ganadora, motivo, len(candidatas)
+
+
 def cotizar_adicionales(
     adicionales: list[AdicionalSolicitado],
     duracion_dias: int,
@@ -306,8 +367,7 @@ def cotizar_adicionales(
         multiplicador = Decimal(a.cantidad)
         # Un adicional por porcentaje ya llega con `precio_unitario` resuelto
         # como el monto total sobre el alquiler completo (D-53): multiplicar
-        # otra vez por los días lo cobraría al cuadrado, igual que pasaría
-        # con el recargo por edad (ver domain/recargo_edad.py).
+        # otra vez por los días lo cobraría al cuadrado.
         if a.unidad_cobro == "por_dia" and not a.es_porcentaje:
             multiplicador *= Decimal(duracion_dias)
         subtotal = _redondear(precio * multiplicador)
@@ -402,8 +462,6 @@ def cotizar(
     canal: str = "mostrador",
     nombre_fallback: str = "Tarifa por duración",
     adicionales: list[AdicionalSolicitado] | None = None,
-    recargos_edad: list[RecargoEdadInfo] | None = None,
-    edad_conductor: int | None = None,
     porcentaje_anticipo: int | None = None,
 ) -> Cotizacion:
     """
@@ -443,7 +501,10 @@ def cotizar(
 
     for offset in range(duracion_dias):
         dia = fecha_inicio + timedelta(days=offset)
-        regla = resolver_regla_dia(
+        # Se usa la versión que además explica el desempate: el costo extra es
+        # ordenar las candidatas del día, y a cambio el desglose puede decir
+        # **por qué** ganó cada regla en vez de sólo cuál.
+        regla, motivo, n_candidatas = explicar_regla_dia(
             dia, reglas, duracion_dias, categoria_id, vehiculo_id, canal
         )
 
@@ -463,6 +524,8 @@ def cotizar(
                 es_promocional=regla.es_promocional,
                 precio_referencia=precio_ref,
                 etiqueta_promo=regla.etiqueta_promo if regla.es_promocional else None,
+                motivo=motivo,
+                candidatas=n_candidatas,
             ))
             referencia += precio_ref if precio_ref is not None else precio
             if regla.es_promocional and regla.etiqueta_promo and regla.etiqueta_promo not in promociones:
@@ -498,19 +561,12 @@ def cotizar(
     descuento_monto = _redondear(subtotal * porcentaje / Decimal("100"))
     subtotal_vehiculo = _redondear(subtotal - descuento_monto)
 
-    # Recargo por edad: después del descuento por duración y antes de los
-    # adicionales (ver domain/recargo_edad.py). Sin edad no se puede saber si
-    # corresponde, así que simplemente no se aplica ninguno.
-    recargo_aplicado = None
-    if edad_conductor is not None and recargos_edad:
-        recargo_aplicado = calcular_recargo(
-            seleccionar_recargo(edad_conductor, recargos_edad, categoria_id),
-            edad_conductor,
-            subtotal_vehiculo,
-            duracion_dias,
-        )
-    monto_recargo = recargo_aplicado.monto if recargo_aplicado else Decimal("0")
-
+    # **Acá iba el recargo por franja etaria (D-38).** Se retiró: la edad ya no
+    # modifica el precio, sólo decide si se puede alquilar por la web
+    # (`alquiler.edad_minima`, D-51). El orden del pipeline queda:
+    #
+    #     días → subtotal → descuento por duración → subtotal_vehiculo
+    #                                              → adicionales aparte
     # Los adicionales se suman DESPUÉS del descuento por duración (plan §7.2).
     solicitados = adicionales or []
     validar_seleccion_adicionales(solicitados)
@@ -518,7 +574,7 @@ def cotizar(
         solicitados, duracion_dias
     )
 
-    total = _redondear(subtotal_vehiculo + monto_recargo + total_adicionales)
+    total = _redondear(subtotal_vehiculo + total_adicionales)
 
     return Cotizacion(
         dias=dias,
@@ -534,5 +590,4 @@ def cotizar(
         descuento_nombre=descuento.nombre if descuento else None,
         total_referencia=_redondear(referencia),
         promociones=promociones,
-        recargo_edad=recargo_aplicado,
     )

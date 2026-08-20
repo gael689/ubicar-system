@@ -75,7 +75,7 @@ export function ResumenReserva({ rango, categoriaNombre, cotizacion, cargando }:
               contrato y la caja lo necesitan. */}
           <Linea
             etiqueta={`Alquiler · ${cotizacion.duracion_dias} ${cotizacion.duracion_dias === 1 ? "día" : "días"}`}
-            valor={pesos(cotizacion.subtotal + (cotizacion.recargo_edad?.monto ?? 0))}
+            valor={pesos(cotizacion.subtotal)}
           />
 
           {/* El descuento por duración. Se muestra cuando **efectivamente se

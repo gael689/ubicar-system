@@ -13,6 +13,7 @@ import { CheckoutModal } from './CheckoutModal';
 import { CheckinModal } from './CheckinModal';
 import { ExtenderModal } from './ExtenderModal';
 import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
+import { BadgeCanal } from '@/components/reservas/BadgeCanal';
 
 interface Props {
   reservaId: number;
@@ -139,11 +140,15 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
         {/* Header */}
         <div className="px-6 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-background z-10">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-mono text-muted-foreground">#{reserva.id}</span>
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold uppercase border ${ESTADO_RESERVA_COLOR[reserva.estado]}`}>
                 {ESTADO_RESERVA_LABEL[reserva.estado]}
               </span>
+              {/* De dónde vino y quién la cargó. Este modal no lo decía en
+                  ningún lado, así que una reserva web confirmada se veía
+                  exactamente igual que una de mostrador. */}
+              <BadgeCanal origen={reserva.origen} creadoPor={reserva.usuario_nombre} />
             </div>
             <h2 className="text-base font-semibold text-foreground mt-1">
               Detalle de reserva

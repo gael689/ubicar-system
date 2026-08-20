@@ -55,6 +55,8 @@ class TarifaInfo:
     monto: Decimal
     vehiculo_id: int | None  # None = no es específica de un vehículo
     categoria_id: int | None = None  # None = no es de categoría (ver D-08)
+    # `ambos` | `web` | `mostrador` (migración 074). Ver `_elegir_de_tipo`.
+    canal: str = "ambos"
 
 
 @dataclass(frozen=True)
@@ -112,38 +114,77 @@ def seleccionar_tipo_tarifa(dias: int) -> TipoTarifa:
         return TipoTarifa.MENSUAL
 
 
+def _mejor(candidatas: list[TarifaInfo], canal: str) -> TarifaInfo | None:
+    """
+    De un grupo de tarifas del mismo alcance, la que rige en este canal.
+
+    **La tarifa del canal pedido le gana a la de `ambos`, y si no hay, se usa
+    la de `ambos`.** Esa caída es lo que hace seguro tener canal acá: cargar un
+    precio sólo para web no deja al mostrador sin precio ni al revés. Sin ella,
+    olvidarse de cargar un canal sería un "no se puede cotizar" — que es
+    exactamente la falla que hay que evitar en el fallback del motor.
+
+    A igualdad de canal gana la de id más alto, o sea la cargada más
+    recientemente. Igual que en el resto del sistema, el desempate nunca es al
+    azar.
+    """
+    if not candidatas:
+        return None
+    del_canal = [t for t in candidatas if t.canal == canal]
+    if del_canal:
+        return max(del_canal, key=lambda t: t.id)
+    ambos = [t for t in candidatas if t.canal == "ambos"]
+    if ambos:
+        return max(ambos, key=lambda t: t.id)
+    return None
+
+
 def _elegir_de_tipo(
     tipo: TipoTarifa,
     tarifas: list[TarifaInfo],
     categoria_id: int | None,
+    canal: str = "ambos",
+    vehiculo_id: int | None = None,
 ) -> TarifaInfo | None:
     """
     La tarifa de una banda concreta, aplicando la prioridad de D-08:
-    vehículo puntual > categoría > general. A igualdad, la más reciente.
+    vehículo puntual > categoría > general. Dentro de cada nivel, el canal
+    decide (ver `_mejor`), y a igualdad gana la más reciente.
+
+    **Sobre `vehiculo_id`:** antes esta función tomaba *cualquier* tarifa con
+    `vehiculo_id is not None`, sin compararla con el vehículo pedido. Funcionaba
+    sólo porque el SQL de arriba ya venía filtrado por vehículo; cualquier
+    llamador que pasara una lista sin pre-filtrar cotizaba con la tarifa de otro
+    auto, en silencio. Ahora se compara acá cuando se informa el vehículo, y el
+    comportamiento viejo se conserva cuando no se informa.
     """
-    especificas = [t for t in tarifas if t.vehiculo_id is not None and t.tipo == tipo]
-    if especificas:
-        return max(especificas, key=lambda t: t.id)
+    if vehiculo_id is not None:
+        especificas = [t for t in tarifas if t.vehiculo_id == vehiculo_id and t.tipo == tipo]
+    else:
+        especificas = [t for t in tarifas if t.vehiculo_id is not None and t.tipo == tipo]
+    elegida = _mejor(especificas, canal)
+    if elegida:
+        return elegida
 
     if categoria_id is not None:
         de_categoria = [t for t in tarifas if t.categoria_id == categoria_id and t.tipo == tipo]
-        if de_categoria:
-            return max(de_categoria, key=lambda t: t.id)
+        elegida = _mejor(de_categoria, canal)
+        if elegida:
+            return elegida
 
     generales = [
         t for t in tarifas
         if t.vehiculo_id is None and t.categoria_id is None and t.tipo == tipo
     ]
-    if generales:
-        return max(generales, key=lambda t: t.id)
-
-    return None
+    return _mejor(generales, canal)
 
 
 def seleccionar_tarifa(
     duracion_dias: int,
     tarifas: list[TarifaInfo],
     categoria_id: int | None = None,
+    canal: str = "ambos",
+    vehiculo_id: int | None = None,
 ) -> TarifaInfo:
     """
     La tarifa de la banda que corresponde a la duración total.
@@ -152,7 +193,7 @@ def seleccionar_tarifa(
     pero **el precio no sale de acá**: ver `cotizar_por_bandas`.
     """
     tipo = seleccionar_tipo_tarifa(duracion_dias)
-    elegida = _elegir_de_tipo(tipo, tarifas, categoria_id)
+    elegida = _elegir_de_tipo(tipo, tarifas, categoria_id, canal, vehiculo_id)
     if elegida is None:
         raise BusinessRuleError(
             "tarifa_no_encontrada",
@@ -183,6 +224,8 @@ def cotizar_por_bandas(
     duracion_dias: int,
     tarifas: list[TarifaInfo],
     categoria_id: int | None = None,
+    canal: str = "ambos",
+    vehiculo_id: int | None = None,
 ) -> CotizacionPorBandas:
     """
     Descompone el alquiler en bloques y lo cotiza (D-35).
@@ -211,7 +254,7 @@ def cotizar_por_bandas(
     for tipo, tamanio in BLOQUES:
         if restantes < tamanio:
             continue
-        tarifa = _elegir_de_tipo(tipo, tarifas, categoria_id)
+        tarifa = _elegir_de_tipo(tipo, tarifas, categoria_id, canal, vehiculo_id)
         if tarifa is None:
             continue
         cantidad = restantes // tamanio
@@ -254,6 +297,8 @@ def calcular_precio_total(
     duracion_dias: int,
     tarifas: list[TarifaInfo],
     categoria_id: int | None = None,
+    canal: str = "ambos",
+    vehiculo_id: int | None = None,
 ) -> Decimal:
     """Atajo de `cotizar_por_bandas` cuando sólo interesa el total."""
-    return cotizar_por_bandas(duracion_dias, tarifas, categoria_id).total
+    return cotizar_por_bandas(duracion_dias, tarifas, categoria_id, canal, vehiculo_id).total

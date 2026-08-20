@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle, Ban, Wrench, CalendarRange } from 'lucide-react';
+import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
+import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle, Ban, Wrench, CalendarRange, Globe, CreditCard } from 'lucide-react';
+import { ESTADO_RESERVA_LABEL } from '@/lib/constants';
+import { useCategorias } from '@/hooks/useCategorias';
+import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { useQuery } from '@tanstack/react-query';
 import { useOcupacion, useResumenAnual } from '@/hooks/useOcupacion';
 import { api } from '@/lib/api';
@@ -14,12 +17,26 @@ const ESTADO_COLORS_EVENTO: Record<string, string> = {
   // Plan de conexión (13/08), cierra C-6: `pendiente` sí tiene auto asignado
   // (viene del mostrador) y caía en el fallback gris, indistinguible de una
   // `finalizada`. Ámbar y borde punteado: tomada, pero todavía no firme.
-  pendiente: 'bg-amber-400 border-amber-500 border-dashed text-amber-950',
+  // **Contorneada, sin relleno sólido.** Una reserva pendiente todavía no
+  // ocupa el auto (regla 2.3: sólo ocupan confirmada, activa, vencida y
+  // bloqueo), así que pintarla como las que sí ocupan hace que la grilla
+  // mienta: una celda parece tomada estando libre. Con el relleno tenue se
+  // sigue viendo que hay algo en el aire, que es la información verdadera.
+  pendiente: 'bg-amber-100 border-amber-500 border-dashed text-amber-900',
   confirmada: 'bg-blue-500 border-blue-600 text-white',
   activa: 'bg-emerald-500 border-emerald-600 text-white',
   vencida: 'bg-red-600 border-red-700 text-white animate-pulse',
   finalizada: 'bg-slate-500 border-slate-600 text-white',
   cancelada: 'bg-red-500 border-red-600 text-white line-through opacity-90',
+  // Reserva web esperando el pago. **Llegaba desde el backend y no tenía
+  // color**: caía en el fallback gris, idéntica a una `finalizada`. Y no es lo
+  // mismo: acá hay alguien pagando esas fechas ahora mismo.
+  //
+  // Contorneada y tenue a propósito — **no ocupa calendario** (el cupo lo
+  // sostiene el hold, no la reserva), así que pintarla sólida haría que la
+  // grilla mienta: una celda parecería tomada estando libre. Pero tampoco
+  // puede ser invisible, o el mostrador vende encima de una venta en curso.
+  pendiente_pago: 'bg-violet-100 border-violet-400 border-dashed text-violet-900',
   // Bloqueos: el `estado` que llega es el motivo. Se pintan con rayado
   // diagonal para que a simple vista no se confundan con una reserva — el
   // auto no está alquilado, está fuera de circulación.
@@ -33,11 +50,47 @@ const ESTADO_COLORS_EVENTO: Record<string, string> = {
 /** Los bloqueos ocupan el vehículo pero no son una reserva: no tienen ficha. */
 const ES_BLOQUEO = (tipo: string) => tipo === 'bloqueo';
 
+/**
+ * Estados que el backend manda y el calendario **no dibuja**.
+ *
+ * `sin_disponibilidad` es una solicitud de alguien que pidió fechas sin cupo, y
+ * `revision_sin_cupo` es un pago que entró cuando el cupo ya no estaba.
+ * Ninguna de las dos tiene auto asignado ni ocupa el calendario: su lugar es la
+ * bandeja de pendientes, no una barra sobre una fila de vehículo.
+ *
+ * Hasta ahora llegaban y se pintaban **grises, iguales a una `finalizada`**,
+ * sobre una fila que no les corresponde. Se filtran acá y no en el backend
+ * porque la misma consulta alimenta el panel de reservas sin asignar, que sí
+ * las necesita.
+ */
+const ESTADO_FUERA_DEL_CALENDARIO = new Set(['sin_disponibilidad', 'revision_sin_cupo']);
+
+/**
+ * Id de la fila "Por asignar". Negativo a propósito: ningún vehículo real
+ * puede tenerlo, así que las reservas sin auto pueden pasar por el mismo
+ * cálculo de posición que las demás sin riesgo de caer en una fila ajena.
+ */
+const FILA_SIN_ASIGNAR = -1;
+
+/**
+ * Los estados que la leyenda declara.
+ *
+ * **`cancelada` salió, y no es una omisión.** La consulta del calendario nunca
+ * la trae (`reserva_repo.find_para_ocupacion`), así que la leyenda prometía un
+ * color que la grilla no puede producir: alguien que buscaba el rojo tachado no
+ * lo iba a encontrar nunca. El estilo se conserva en la tabla de arriba por si
+ * algún día se decide mostrarlas.
+ *
+ * **`pendiente_pago` entró**: llegaba desde el backend, se pintaba gris sin
+ * entrada en la leyenda, y nadie podía saber qué era esa barra.
+ */
 const ESTADOS_RESERVA_LEYENDA = [
-  'pendiente', 'confirmada', 'activa', 'vencida', 'finalizada', 'cancelada',
+  'pendiente', 'pendiente_pago', 'confirmada', 'activa', 'vencida', 'finalizada',
 ] as const;
 
 const ESTADO_COLORS_BADGE: Record<string, string> = {
+  pendiente: 'bg-amber-100 text-amber-800',
+  pendiente_pago: 'bg-violet-100 text-violet-800',
   confirmada: 'bg-blue-100 text-blue-800',
   activa: 'bg-emerald-100 text-emerald-800',
   vencida: 'bg-red-100 text-red-800',
@@ -52,6 +105,7 @@ const ESTADO_COLORS_BADGE: Record<string, string> = {
 
 const ESTADO_ICONS: Record<string, React.ReactNode> = {
   pendiente: <Clock className="w-3.5 h-3.5" />,
+  pendiente_pago: <CreditCard className="w-3.5 h-3.5" />,
   confirmada: <CheckCircle2 className="w-3.5 h-3.5" />,
   activa: <Car className="w-3.5 h-3.5" />,
   vencida: <AlertCircle className="w-3.5 h-3.5" />,
@@ -88,6 +142,27 @@ function AsyncCheckoutModal({
   if (!reserva) return null;
 
   return <CheckoutModal reserva={reserva} onClose={onClose} onSuccess={onSuccess} defaultTime={defaultTime} defaultDate={defaultDate} />;
+}
+
+/**
+ * Lo que se lee al pasar el mouse por un bloque del calendario.
+ *
+ * Hasta ahora **sólo los bloqueos tenían tooltip**: una reserva no tenía
+ * ninguno, así que todo lo que no entraba en 52px de alto simplemente no se
+ * podía saber sin abrirla. Y el canal —de dónde vino y quién la cargó— no
+ * estaba en ningún lado del calendario.
+ */
+function tooltipEvento(ev: EventoOcupacion): string {
+  if (ES_BLOQUEO(ev.tipo)) {
+    return `${ev.cliente_nombre}${ev.notas ? ` — ${ev.notas}` : ''}`;
+  }
+  const lineas = [ev.cliente_nombre];
+  lineas.push(ev.origen === 'web' ? 'Reservó por el sitio web' : 'Cargada en el mostrador');
+  if (ev.creado_por && ev.origen !== 'web') lineas.push(`Por ${ev.creado_por}`);
+  if (ev.lugar_entrega) lineas.push(`Entrega: ${ev.lugar_entrega} ${ev.hora_inicio.slice(0, 5)}`);
+  if (ev.lugar_devolucion) lineas.push(`Devolución: ${ev.lugar_devolucion} ${ev.hora_fin.slice(0, 5)}`);
+  if (ev.notas) lineas.push(ev.notas);
+  return lineas.join('\n');
 }
 
 function addDays(date: Date, days: number): Date {
@@ -127,6 +202,26 @@ export function OcupacionPage() {
 
   const [vehiculos, setVehiculos] = useState<VehiculoOcupacion[]>([]);
   const [eventos, setEventos] = useState<EventoOcupacion[]>([]);
+  /**
+   * Reservas confirmadas **sin auto asignado**.
+   *
+   * El backend las viene mandando desde el plan de conexión (13/08) y el
+   * calendario **las tiraba**: sólo leía `vehiculos` y `eventos`. Como no
+   * tienen `vehiculo_id` no hay fila donde dibujarlas, así que no se veían en
+   * ningún lado — y sin embargo **ya descuentan cupo**. Eso es sobreventa
+   * visual: mirás la grilla, ves un auto libre, y en realidad está vendido.
+   */
+  const [sinAsignar, setSinAsignar] = useState<Reserva[]>([]);
+
+  // ── Filtros y agrupado (agregados, apagables) ────────────────────────────
+  // Los tres son de vista: filtran o reordenan lo que se dibuja, sin tocar la
+  // consulta ni el cálculo de cupo. Si se apagan, el calendario vuelve a ser
+  // exactamente el de antes.
+  const [filtroCategoria, setFiltroCategoria] = useState('');
+  const [filtroCanal, setFiltroCanal] = useState<'todas' | 'web' | 'mostrador'>('todas');
+  const [agrupar, setAgrupar] = useState(true);
+  const [gruposCerrados, setGruposCerrados] = useState<Set<number | string>>(new Set());
+  const { data: categoriasData } = useCategorias();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [scrollToDate, setScrollToDate] = useState<string | null>(null);
@@ -170,7 +265,8 @@ export function OcupacionPage() {
   useEffect(() => {
     if (!ocupacionData) return;
     setVehiculos(ocupacionData.vehiculos);
-    setEventos(ocupacionData.eventos);
+    setEventos(ocupacionData.eventos.filter(e => !ESTADO_FUERA_DEL_CALENDARIO.has(e.estado)));
+    setSinAsignar(ocupacionData.sin_asignar ?? []);
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
       setScrollToDate(formatDate(new Date()));
@@ -270,8 +366,107 @@ export function OcupacionPage() {
 
   const getEventsForVehicleDay = (vehiculoId: number, day: Date): EventoOcupacion[] => {
     const dayStr = formatDate(day);
-    return eventos.filter(e => e.vehiculo_id === vehiculoId && e.fecha_inicio <= dayStr && e.fecha_fin >= dayStr);
+    return eventosVisibles.filter(e => e.vehiculo_id === vehiculoId && e.fecha_inicio <= dayStr && e.fecha_fin >= dayStr);
   };
+
+  // ── Asignar arrastrando desde "Por asignar" ──────────────────────────────
+  // Es la única interacción nueva del calendario. Por debajo **no inventa un
+  // camino**: abre el panel de asignación que ya existe, con el auto
+  // preseleccionado. Ese panel es el que valida disponibilidad, avisa si es
+  // upgrade o downgrade y dispara la emisión del contrato (D-47); duplicar esa
+  // lógica en un drag sería tener dos formas de asignar que después divergen.
+  const [reservaArrastrada, setReservaArrastrada] = useState<number | null>(null);
+  const [asignarA, setAsignarA] = useState<{ reserva: Reserva; vehiculoId: number } | null>(null);
+
+  const soltarEnVehiculo = (vehiculoId: number) => {
+    if (reservaArrastrada == null) return;
+    const reserva = sinAsignar.find(r => r.id === reservaArrastrada);
+    setReservaArrastrada(null);
+    if (reserva) setAsignarA({ reserva, vehiculoId });
+  };
+
+  /**
+   * Las reservas sin auto, con la forma de un evento para poder dibujarlas con
+   * la misma maquinaria que el resto.
+   *
+   * `vehiculo_id: FILA_SIN_ASIGNAR` es un centinela: no existe ningún vehículo
+   * con id negativo, así que nunca colisiona con una fila real y a la vez
+   * permite reusar `getEventSpan` sin tocarlo.
+   */
+  const eventosSinAsignar: EventoOcupacion[] = useMemo(
+    () => sinAsignar.map(r => ({
+      id: r.id,
+      vehiculo_id: FILA_SIN_ASIGNAR,
+      tipo: 'reserva' as const,
+      estado: r.estado,
+      fecha_inicio: r.fecha_inicio,
+      hora_inicio: r.hora_inicio,
+      fecha_fin: r.fecha_fin,
+      hora_fin: r.hora_fin,
+      // Una solicitud web sin cupo puede no tener cliente todavía (D-04).
+      cliente_nombre: r.cliente?.nombre_completo ?? r.web_contacto_nombre ?? 'Sin cliente',
+      lugar_entrega: r.lugar_entrega,
+      lugar_devolucion: r.lugar_devolucion,
+      notas: r.categoria?.nombre ? `${r.categoria.nombre} — sin auto asignado` : null,
+      origen: r.origen,
+      creado_por: r.usuario_nombre ?? '',
+    })),
+    [sinAsignar],
+  );
+
+  /**
+   * Las filas que se dibujan, después de aplicar el filtro de categoría.
+   *
+   * El filtro es **de vista**: no cambia la consulta ni el cupo. Un auto
+   * escondido sigue ocupado; simplemente no se está mirando.
+   */
+  const vehiculosVisibles = useMemo(
+    () => (filtroCategoria
+      ? vehiculos.filter(v => String(v.categoria_id ?? '') === filtroCategoria)
+      : vehiculos),
+    [vehiculos, filtroCategoria],
+  );
+
+  /**
+   * Los eventos que se dibujan, después del filtro de canal.
+   *
+   * Los **bloqueos nunca se filtran por canal**: no vienen de ningún canal, y
+   * esconderlos al mirar "web" haría que un auto en el taller parezca libre —
+   * exactamente la clase de mentira que el calendario no puede permitirse.
+   */
+  const eventosVisibles = useMemo(
+    () => (filtroCanal === 'todas'
+      ? eventos
+      : eventos.filter(e => ES_BLOQUEO(e.tipo) || e.origen === filtroCanal)),
+    [eventos, filtroCanal],
+  );
+
+  /**
+   * Las filas agrupadas por categoría.
+   *
+   * **El orden manual de la flota se conserva dentro de cada grupo**: el
+   * drag & drop sigue funcionando igual, sólo que no se puede cruzar de
+   * categoría. `vehiculos` ya viene en el orden persistido, y agrupar sin
+   * reordenar dentro del grupo es lo que lo respeta.
+   *
+   * Los autos sin categoría van al final, juntos y visibles: son un problema
+   * de carga (el aviso `vehiculo_sin_categoria` los reclama) y esconderlos los
+   * sacaría del calendario.
+   */
+  const gruposDeFilas = useMemo(() => {
+    if (!agrupar) return [{ id: 'todos' as const, nombre: '', vehiculos: vehiculosVisibles }];
+    const orden = (categoriasData ?? []).map(c => ({ id: c.id as number | string, nombre: c.nombre }));
+    const grupos = orden
+      .map(c => ({ ...c, vehiculos: vehiculosVisibles.filter(v => v.categoria_id === c.id) }))
+      .filter(g => g.vehiculos.length > 0);
+    const sinCategoria = vehiculosVisibles.filter(
+      v => !v.categoria_id || !(categoriasData ?? []).some(c => c.id === v.categoria_id)
+    );
+    if (sinCategoria.length) {
+      grupos.push({ id: 'sin-categoria', nombre: 'Sin categoría', vehiculos: sinCategoria });
+    }
+    return grupos;
+  }, [agrupar, vehiculosVisibles, categoriasData]);
 
   const getEventSpan = (evento: EventoOcupacion, day: Date, vehiculoEvents: EventoOcupacion[]) => {
     const startDate = parseDate(evento.fecha_inicio);
@@ -405,7 +600,11 @@ export function OcupacionPage() {
             <div className={`flex items-center justify-center w-5 h-5 rounded border ${ESTADO_COLORS_EVENTO[estado]}`}>
               {ESTADO_ICONS[estado]}
             </div>
-            <span className="text-slate-600 font-medium capitalize">{estado}</span>
+            {/* Con la etiqueta y no con el nombre crudo del estado: sin esto
+                `pendiente_pago` se leía "Pendiente_pago". */}
+            <span className="text-slate-600 font-medium">
+              {ESTADO_RESERVA_LABEL[estado] ?? estado}
+            </span>
           </div>
         ))}
         <div className="flex items-center gap-2">
@@ -413,6 +612,56 @@ export function OcupacionPage() {
             <Ban className="w-3.5 h-3.5" />
           </div>
           <span className="text-slate-600 font-medium">Bloqueado</span>
+        </div>
+
+        {/* Filtros. Van con la leyenda porque son de la misma familia: la
+            leyenda dice qué significan los colores, esto dice qué se muestra.
+            **Sólo filtran lo que se ve** — no tocan la consulta ni el cupo. */}
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          <select
+            value={filtroCategoria}
+            onChange={e => setFiltroCategoria(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 shadow-sm"
+            title="Mostrar sólo los autos de una categoría"
+          >
+            <option value="">Todas las categorías</option>
+            {(categoriasData ?? []).map(c => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
+          </select>
+
+          {/* Apagar el agrupado devuelve la lista plana por patente, que es
+              como estaba antes. El agregado es reversible desde la pantalla. */}
+          <button
+            onClick={() => setAgrupar(v => !v)}
+            className={`rounded-lg border px-2.5 py-1 text-xs font-medium shadow-sm transition-colors ${
+              agrupar
+                ? 'border-primary/25 bg-primary/10 text-primary'
+                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+            }`}
+            title={agrupar ? 'Ver la flota como lista, ordenada por patente' : 'Agrupar las filas por categoría'}
+          >
+            {agrupar ? 'Por categoría' : 'Lista'}
+          </button>
+
+          <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+            {([
+              { v: 'todas', label: 'Todas' },
+              { v: 'web', label: 'Web' },
+              { v: 'mostrador', label: 'Mostrador' },
+            ] as const).map(o => (
+              <button
+                key={o.v}
+                onClick={() => setFiltroCanal(o.v)}
+                className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+                  filtroCanal === o.v ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+                title="Mostrar sólo las reservas de este canal"
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -475,9 +724,107 @@ export function OcupacionPage() {
                     </td>
                   </tr>
                 ) : (
-                  vehiculos.map(vehiculo => {
+                  <>
+                  {/* Reservas ya vendidas a las que todavía no se les asignó
+                      auto. Van arriba de todo y sólo si hay alguna: una fila
+                      vacía permanente sería ruido, pero no verlas es
+                      sobreventa. */}
+                  {eventosSinAsignar.length > 0 && (
+                    <tr className="bg-amber-50/60">
+                      <td className="px-3 py-1 sticky left-0 bg-amber-50 z-20 border-r border-amber-200 shadow-[1px_0_0_0_#fde68a] align-middle h-[60px]">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-bold text-amber-900 text-[13px] uppercase tracking-wide truncate">
+                              Por asignar
+                            </span>
+                            <span className="text-amber-800 font-semibold text-[10.5px] truncate">
+                              {eventosSinAsignar.length} reserva{eventosSinAsignar.length !== 1 ? 's' : ''} sin auto
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      {days.map((day, dayIdx) => {
+                        const dayStr = formatDate(day);
+                        const delDia = eventosSinAsignar.filter(
+                          e => e.fecha_inicio <= dayStr && e.fecha_fin >= dayStr
+                        );
+                        const aDibujar = delDia.filter(
+                          e => getEventSpan(e, day, eventosSinAsignar).isStart
+                        );
+                        return (
+                          <td
+                            key={dayIdx}
+                            className="relative border-r border-amber-200/70 h-[60px] p-0"
+                            style={{ minWidth: '180px', width: '180px' }}
+                          >
+                            {aDibujar.map(ev => {
+                              const { leftPercent, widthPercent } = getEventSpan(ev, day, eventosSinAsignar);
+                              return (
+                                <div
+                                  key={`sin-${ev.id}`}
+                                  onClick={() => setReservaInfoId(ev.id)}
+                                  title={`${tooltipEvento(ev)}\n\nArrastrala a un auto para asignárselo.`}
+                                  draggable
+                                  onDragStart={e => {
+                                    setReservaArrastrada(ev.id);
+                                    e.dataTransfer.setData('text/plain', `reserva:${ev.id}`);
+                                  }}
+                                  onDragEnd={() => setReservaArrastrada(null)}
+                                  className="absolute inset-y-1 rounded-md border border-dashed border-amber-500 bg-amber-200/70 text-amber-950 shadow-sm cursor-grab active:cursor-grabbing transition-all z-10 overflow-hidden hover:brightness-105"
+                                  style={{ left: `calc(${leftPercent}% + 1px)`, width: `calc(${widthPercent}% - 2px)`, minWidth: 0, height: '52px' }}
+                                >
+                                  <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full">
+                                    <div className="font-bold text-[11px] truncate flex items-center gap-1 leading-tight">
+                                      <Car className="w-3.5 h-3.5 shrink-0" />
+                                      <span className="truncate flex-1">{ev.cliente_nombre}</span>
+                                      {ev.origen === 'web' && <Globe className="h-3 w-3 shrink-0 opacity-90" />}
+                                    </div>
+                                    {ev.notas && (
+                                      <div className="text-[9px] truncate opacity-80 leading-tight pl-1">
+                                        {ev.notas}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  {gruposDeFilas.map(grupo => (
+                  <Fragment key={grupo.id}>
+                  {/* Encabezado de categoría, plegable. Sólo aparece si el
+                      agrupado está activo: con `agrupar` en false la grilla es
+                      la lista plana de siempre. */}
+                  {agrupar && grupo.nombre && (
+                    <tr className="bg-slate-100/80">
+                      <td
+                        colSpan={days.length + 1}
+                        className="sticky left-0 z-20 px-3 py-1 bg-slate-100/95 border-y border-slate-200"
+                      >
+                        <button
+                          onClick={() => setGruposCerrados(prev => {
+                            const s = new Set(prev);
+                            s.has(grupo.id) ? s.delete(grupo.id) : s.add(grupo.id);
+                            return s;
+                          })}
+                          className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-600 hover:text-slate-900"
+                        >
+                          <ChevronRight className={`w-3.5 h-3.5 transition-transform ${!gruposCerrados.has(grupo.id) ? 'rotate-90' : ''}`} />
+                          {grupo.nombre}
+                          <span className="font-medium text-slate-500">
+                            · {grupo.vehiculos.length} unidad{grupo.vehiculos.length !== 1 ? 'es' : ''}
+                          </span>
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {!gruposCerrados.has(grupo.id) && grupo.vehiculos.map(vehiculo => {
                     const processedEvents = new Set<number>();
-                    const vehiculoEvents = eventos.filter(ev => ev.vehiculo_id === vehiculo.id);
+                    const vehiculoEvents = eventosVisibles.filter(ev => ev.vehiculo_id === vehiculo.id);
                     return (
                       <tr
                         key={vehiculo.id}
@@ -485,7 +832,24 @@ export function OcupacionPage() {
                         draggable
                         onDragStart={e => handleDragStart(e, vehiculo.id)}
                         onDragOver={handleDragOver}
-                        onDrop={e => handleDrop(e, vehiculo.id)}
+                        onDrop={e => {
+                          // Dos cosas se pueden soltar en una fila: otro auto
+                          // (reordenar la flota, lo de siempre) o una reserva
+                          // sin asignar. Se distinguen por cuál se está
+                          // arrastrando, no por el payload, para no cambiar el
+                          // comportamiento existente.
+                          if (reservaArrastrada != null) {
+                            e.preventDefault();
+                            soltarEnVehiculo(vehiculo.id);
+                            return;
+                          }
+                          handleDrop(e, vehiculo.id);
+                        }}
+                        // Resalta las filas donde se puede soltar la reserva.
+                        // Sólo las de la categoría pedida se sugieren; el resto
+                        // acepta igual, porque asignar de otra categoría es un
+                        // upgrade legítimo y el panel lo avisa.
+                        style={reservaArrastrada != null ? { outline: '2px dashed rgba(245,158,11,.45)', outlineOffset: '-2px' } : undefined}
                       >
                         <td className="px-3 py-1 sticky left-0 bg-white group-hover:bg-slate-50/80 z-20 border-r border-slate-200 shadow-[1px_0_0_0_#e2e8f0] align-middle h-[60px] cursor-grab active:cursor-grabbing">
                           <div className="flex items-center gap-2">
@@ -536,7 +900,13 @@ export function OcupacionPage() {
                                         e.stopPropagation();
                                         if (!esBloqueo) setReservaInfoId(ev.id);
                                       }}
-                                      title={esBloqueo ? `${ev.cliente_nombre}${ev.notas ? ` — ${ev.notas}` : ''}` : undefined}
+                                      // Las reservas no tenían tooltip: sólo lo
+                                      // tenían los bloqueos. Ahora las dos lo
+                                      // llevan, y en la reserva dice de dónde
+                                      // vino y quién la cargó — que es
+                                      // justamente lo que no se podía saber
+                                      // mirando el calendario.
+                                      title={tooltipEvento(ev)}
                                       className={`absolute inset-y-1 rounded-md border shadow-sm transition-all z-10 overflow-hidden hover:brightness-110 ${
                                         esBloqueo ? 'cursor-default' : 'cursor-pointer'
                                       } ${colorClass}`}
@@ -560,6 +930,12 @@ export function OcupacionPage() {
                                           <span className="truncate drop-shadow-sm flex-1">
                                             {ev.notas || ev.cliente_nombre}
                                           </span>
+                                          {/* El canal, como ícono y nunca como
+                                              color: el color ya lo tiene tomado
+                                              el estado, que tiene su leyenda. */}
+                                          {!esBloqueo && ev.origen === 'web' && (
+                                            <Globe className="h-3 w-3 shrink-0 opacity-90" />
+                                          )}
                                         </div>
                                         {ev.notas && (
                                           <div className="text-[9px] truncate opacity-80 leading-tight pl-1">
@@ -595,7 +971,10 @@ export function OcupacionPage() {
                         })}
                       </tr>
                     );
-                  })
+                  })}
+                  </Fragment>
+                  ))}
+                  </>
                 )}
               </tbody>
             </table>
@@ -728,6 +1107,17 @@ export function OcupacionPage() {
           reservaId={reservaInfoId}
           onClose={() => setReservaInfoId(null)}
           onActionComplete={() => loadData()}
+        />
+      )}
+
+      {/* Soltar una reserva sobre un auto abre el panel de asignación de
+          siempre. El arrastre es un atajo para llegar acá, no una segunda
+          forma de asignar. */}
+      {asignarA && (
+        <PanelResolverReserva
+          reserva={asignarA.reserva}
+          onClose={() => setAsignarA(null)}
+          onCambio={() => loadData()}
         />
       )}
     </div>

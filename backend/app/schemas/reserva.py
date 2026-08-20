@@ -158,6 +158,12 @@ class ReservaUpdate(BaseModel):
 
 class ReasignarRequest(BaseModel):
     vehiculo_id_nuevo: int
+    # D-65: corregir el precio en el mismo paso. Si no se manda, el precio
+    # queda como estaba — reasignar sin tocar la plata sigue siendo lo normal.
+    precio_total: Decimal | None = Field(default=None, ge=0)
+    # Obligatorio sólo si el precio cambia; lo valida el service, que es quien
+    # conoce el precio anterior.
+    precio_motivo: str | None = None
 
 
 class CancelarReservaRequest(BaseModel):
@@ -259,6 +265,13 @@ class ReservaResponse(BaseModel):
     categoria_entregada_id: int | None = None
     categoria_entregada: CategoriaResumen | None = None
     upgrade_motivo: str | None = None
+
+    # Quién la cargó, resuelto a nombre (Fase 1 de la reestructuración).
+    # `usuario_id` ya viajaba y el front nunca lo leía, porque un número de
+    # usuario no le sirve a nadie en pantalla. Sale de la property
+    # `Reserva.usuario_nombre`, mismo patrón que `alquiler_id` y
+    # `contrato_estado`.
+    usuario_nombre: str | None = None
     model_config = {"from_attributes": True}
 
 

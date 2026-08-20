@@ -307,6 +307,10 @@ class ReservaRepo:
                 joinedload(Reserva.cliente),
                 joinedload(Reserva.categoria),
                 joinedload(Reserva.alquiler),
+                # El calendario muestra quién cargó la reserva (canal visible,
+                # Fase 1). Sin este joinedload sería una consulta por fila:
+                # el timeline trae 120 días de eventos de golpe.
+                joinedload(Reserva.usuario),
             )
             .filter(
                 Reserva.fecha_inicio < fecha_fin,

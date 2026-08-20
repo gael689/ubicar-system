@@ -367,8 +367,12 @@ export const NAV_GROUPS: NavGroup[] = [
     // web y cambiarle el precio al mostrador es el error que esto evita.
     { path: '/precios/mostrador', label: 'Precios de mostrador', icon: 'Store' },
     { path: '/precios/web', label: 'Precios de la web', icon: 'Globe' },
+    // El simulador estaba escondido abajo de todo dentro de la pantalla de
+    // precios, así que casi nadie sabía que existía — y es lo único que
+    // contesta "¿mi promo le está ganando a la tarifa del auto?" sin tener que
+    // crear una reserva de prueba.
+    { path: '/precios/simulador', label: 'Simulador', icon: 'Calculator' },
     { path: '/adicionales', label: 'Adicionales', icon: 'Package' },
-    { path: '/recargos-edad', label: 'Recargos por edad', icon: 'CalendarClock' },
   ] },
   { label: 'Fechas especiales', icon: 'CalendarDays', items: [
     { path: '/fechas-especiales', label: 'Fechas especiales', icon: 'CalendarDays' },

@@ -574,7 +574,13 @@ def reasignar_reserva(
     """D4: Reasigna una reserva a otro vehículo."""
     svc = ReservaService(db)
     try:
-        reserva, warnings = svc.reasignar(reserva_id, payload.vehiculo_id_nuevo, current_user.id)
+        reserva, warnings = svc.reasignar(
+            reserva_id,
+            payload.vehiculo_id_nuevo,
+            current_user.id,
+            precio_total=payload.precio_total,
+            precio_motivo=payload.precio_motivo,
+        )
         db.commit()
     except ConflictError as e:
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))

@@ -192,8 +192,8 @@ class CalcularPrecioRequest(BaseModel):
     vehiculo_id: int | None = None
     canal: Canal = "mostrador"
     adicionales: list[AdicionalSolicitadoRequest] = Field(default_factory=list)
-    # Necesaria para el recargo por franja etaria (D-38). No valida nada: sin
-    # ella simplemente no se aplica ningún recargo, y la cotización sale igual.
+    # Ya no cambia el precio (se retiró el recargo por franja etaria, D-38).
+    # Se conserva porque quien llama la usa para validar la edad mínima (D-51).
     fecha_nacimiento: date | None = None
 
     @model_validator(mode="after")
@@ -215,14 +215,12 @@ class DiaCotizadoResponse(BaseModel):
     precio_referencia: Decimal | None = None
     etiqueta_promo: str | None = None
 
-
-class RecargoEdadCotizadoResponse(BaseModel):
-    """Recargo por edad aplicado (D-38). Va aparte de los adicionales porque
-    no es algo que el cliente eligió."""
-    id: int
-    nombre: str
-    edad: int
-    monto: Decimal
+    # Con qué criterio ganó la regla de este día, cuando hubo más de una
+    # candidata: `unica` · `prioridad` · `especificidad` · `rango_mas_corto` ·
+    # `mas_reciente`. Es lo que hace que el simulador pueda explicar el precio
+    # en vez de sólo mostrarlo. `None` si el precio salió de la banda.
+    motivo: str | None = None
+    candidatas: int = 0
 
 
 class CotizacionResponse(BaseModel):
@@ -235,7 +233,6 @@ class CotizacionResponse(BaseModel):
     subtotal_vehiculo: Decimal
     adicionales: list[AdicionalCotizadoResponse]
     total_adicionales: Decimal
-    recargo_edad: RecargoEdadCotizadoResponse | None = None
     total: Decimal
     precio_dia_promedio: Decimal
     total_referencia: Decimal | None

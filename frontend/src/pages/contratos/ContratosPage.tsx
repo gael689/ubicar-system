@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
+import { BadgeCanal } from '@/components/reservas/BadgeCanal';
 import { useListaReservas } from '@/hooks/useReservas';
 import { formatDate } from '@/lib/utils';
 import type { Reserva } from '@/types';
@@ -108,7 +109,16 @@ export function ContratosPage() {
               {reservas.map(r => (
                 <tr key={r.id} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
                   <td className="px-3 py-2 font-medium">#{r.id}</td>
-                  <td className="px-3 py-2">{r.cliente?.nombre_completo ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    {/* Una solicitud web puede no tener cliente todavía. */}
+                    {r.cliente?.nombre_completo ?? r.web_contacto_nombre ?? '—'}
+                    <BadgeCanal
+                      origen={r.origen}
+                      creadoPor={r.usuario_nombre}
+                      size="sm"
+                      className="mt-0.5"
+                    />
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground">
                     {r.vehiculo ? `${r.vehiculo.marca} ${r.vehiculo.modelo}` : 'Por categoría'}
                     {r.vehiculo?.patente && (

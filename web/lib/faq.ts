@@ -89,8 +89,8 @@ export const FAQ: GrupoFaq[] = [
         id: "edad",
         pregunta: "¿Hay una edad mínima para alquilar?",
         respuesta: [
-          "No exigimos una edad mínima. Según la edad del conductor puede corresponder un recargo sobre la tarifa.",
-          "Ese recargo se calcula y se muestra durante la reserva, antes de que confirmes nada: nunca aparece después. Por eso te pedimos la fecha de nacimiento al reservar.",
+          "Sí: el conductor tiene que tener 21 años cumplidos al momento de retirar el vehículo.",
+          "No hay recargos por edad: la tarifa es la misma para todos los conductores habilitados. Te pedimos la fecha de nacimiento al reservar para verificar ese requisito.",
         ],
       },
       {

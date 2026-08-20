@@ -90,8 +90,8 @@ export const TERMINOS: SeccionLegal[] = [
     id: "edad",
     titulo: "6. Edad del conductor",
     parrafos: [
-      "No exigimos una edad mínima para alquilar. Según la edad del conductor puede corresponder un recargo sobre la tarifa, que se calcula y se muestra durante la reserva antes de que confirmes: nunca aparece después.",
-      "Por eso te pedimos la fecha de nacimiento al reservar. Sin ese dato no podemos cotizarte correctamente.",
+      "El conductor debe tener 21 años cumplidos al momento de retirar el vehículo. No aplicamos recargos por edad: la tarifa es la misma para todos los conductores habilitados.",
+      "Por eso te pedimos la fecha de nacimiento al reservar. Sin ese dato no podemos verificar el requisito.",
     ],
   },
   {

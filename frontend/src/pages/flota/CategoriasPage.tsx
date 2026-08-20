@@ -7,7 +7,8 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ComoSeArmaElPrecio } from '@/components/precios/ComoSeArmaElPrecio';
 import { EscaleraDuracion } from '@/components/precios/EscaleraDuracion';
-import { useCategorias, useTarifasCategoria, useCreateTarifaCategoria } from '@/hooks/useCategorias';
+import { toast } from 'sonner';
+import { useCategorias, useTarifasCategoria, useCreateTarifaCategoria, useUpdateCategoria } from '@/hooks/useCategorias';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { TarifaCreate } from '@/hooks/useTarifas';
 import type { Categoria } from '@/types';
@@ -61,6 +62,101 @@ export function CategoriasPage() {
   );
 }
 
+/**
+ * Cargar y corregir la franquicia base de una categoría.
+ *
+ * **Hasta ahora esto no se podía hacer desde ninguna pantalla.** La columna
+ * existe desde la migración 064, el sitio público se la muestra al cliente al
+ * elegir cobertura, el contrato la imprime — y para cambiarla había que
+ * escribir una migración. La notificación `categoria_sin_franquicia` mandaba a
+ * esta misma pantalla, donde no había dónde cargarla.
+ *
+ * Es la franquicia **con el seguro obligatorio solo**: la más alta. Cada
+ * cobertura contratada la baja, y esa escalera se administra en Adicionales.
+ */
+function FranquiciaCategoria({ categoria }: { categoria: Categoria }) {
+  const actualizar = useUpdateCategoria();
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(categoria.franquicia_base?.toString() ?? '');
+
+  const guardar = (e: React.FormEvent) => {
+    e.preventDefault();
+    const n = Number(valor);
+    if (!Number.isFinite(n) || n < 0) {
+      toast.error('La franquicia tiene que ser un número mayor o igual a cero.');
+      return;
+    }
+    actualizar.mutate(
+      { id: categoria.id, body: { franquicia_base: n } },
+      { onSuccess: () => setEditando(false) },
+    );
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Franquicia base
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            Lo máximo que paga el cliente ante un siniestro, sin cobertura extra.
+            Es lo que se imprime en el contrato.
+          </p>
+        </div>
+        {!editando && (
+          <div className="flex items-center gap-2">
+            {categoria.franquicia_base != null ? (
+              <span className="text-sm font-bold text-foreground">
+                {formatCurrency(categoria.franquicia_base)}
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-amber-700">Sin cargar</span>
+            )}
+            <Button size="sm" variant="outline" onClick={() => setEditando(true)}>
+              {categoria.franquicia_base != null ? 'Cambiar' : 'Cargar'}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {editando && (
+        <form onSubmit={guardar} className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            step={1000}
+            value={valor}
+            onChange={e => setValor(e.target.value)}
+            placeholder="1500000"
+            autoFocus
+            className="w-40 rounded-md border border-input bg-background px-2 py-1 text-sm"
+          />
+          <Button size="sm" type="submit" disabled={actualizar.isPending}>
+            {actualizar.isPending ? 'Guardando…' : 'Guardar'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            onClick={() => { setValor(categoria.franquicia_base?.toString() ?? ''); setEditando(false); }}
+          >
+            Cancelar
+          </Button>
+        </form>
+      )}
+
+      {categoria.franquicia_base == null && !editando && (
+        // No es un detalle cosmético: sin franquicia el PDF **omite la línea
+        // entera**, y el clausulado que el cliente firma la menciona igual.
+        <p className="mt-1.5 text-[11px] font-medium text-amber-700">
+          Sin este valor, el contrato de esta categoría sale sin franquicia declarada.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CategoriaCard({ categoria }: { categoria: Categoria }) {
   const [expanded, setExpanded] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -90,12 +186,23 @@ function CategoriaCard({ categoria }: { categoria: Categoria }) {
         <div className="text-left">
           <span className="text-sm font-semibold text-foreground">{categoria.nombre}</span>
           <span className="text-xs text-muted-foreground ml-2 font-mono">{categoria.codigo}</span>
+          {/* La franquicia, a la vista sin abrir: es el dato que el contrato
+              imprime y que hasta ahora no se veía en ninguna pantalla. */}
+          {categoria.franquicia_base != null ? (
+            <span className="ml-2 text-xs text-muted-foreground">
+              · Franquicia {formatCurrency(categoria.franquicia_base)}
+            </span>
+          ) : (
+            <span className="ml-2 text-xs font-medium text-amber-700">· Sin franquicia</span>
+          )}
         </div>
         {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
       </button>
 
       {expanded && (
         <div className="px-5 pb-5 space-y-3 border-t border-border pt-4">
+          <FranquiciaCategoria categoria={categoria} />
+
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tarifas de esta categoría</p>
             <Button size="sm" variant="outline" onClick={() => setFormOpen(v => !v)}>

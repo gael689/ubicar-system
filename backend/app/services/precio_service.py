@@ -32,9 +32,8 @@ from app.domain.tarifas import (
     calcular_duracion_dias,
     cotizar_por_bandas,
 )
-from app.domain.recargo_edad import RecargoEdadInfo, calcular_edad
+from app.domain.edades import calcular_edad
 from app.models.adicional import Adicional
-from app.models.recargo_edad import RecargoEdad
 from app.models.categoria import Categoria
 from app.models.fecha_especial import FechaEspecial
 from app.models.tarifa import Tarifa
@@ -151,7 +150,8 @@ class PrecioService:
     # ─── Tarifa por banda: el piso ────────────────────────────────────────────
 
     def _precio_banda(
-        self, duracion_dias: int, categoria_id: int | None, vehiculo_id: int | None
+        self, duracion_dias: int, categoria_id: int | None, vehiculo_id: int | None,
+        canal: str = "ambos",
     ) -> tuple[Decimal | list[Decimal] | None, str]:
         """
         Precio por día de la tarifa por banda (`domain/tarifas.py`), usado para
@@ -185,11 +185,14 @@ class PrecioService:
                 monto=Decimal(str(t.monto)),
                 vehiculo_id=t.vehiculo_id,
                 categoria_id=t.categoria_id,
+                canal=t.canal,
             )
             for t in q.all()
         ]
         try:
-            cot = cotizar_por_bandas(duracion_dias, tarifas_info, categoria_id)
+            cot = cotizar_por_bandas(
+                duracion_dias, tarifas_info, categoria_id, canal, vehiculo_id
+            )
         except BusinessRuleError:
             return None, "Sin tarifa configurada"
 
@@ -202,36 +205,6 @@ class PrecioService:
                 f"{b.cantidad}×{b.tipo.value}" for b in cot.bloques
             )
         return cot.precios_por_dia, nombre
-
-    def _cargar_recargos_edad(self, categoria_id: int | None) -> list[RecargoEdadInfo]:
-        """
-        Franjas de recargo por edad vigentes (D-38). Trae las generales más las
-        de la categoría cotizada — el dominio se encarga de elegir.
-        """
-        q = self.db.query(RecargoEdad).filter(RecargoEdad.activo.is_(True))
-        if categoria_id is not None:
-            q = q.filter(
-                (RecargoEdad.categoria_id == categoria_id)
-                | (RecargoEdad.categoria_id.is_(None))
-            )
-        else:
-            q = q.filter(RecargoEdad.categoria_id.is_(None))
-
-        return [
-            RecargoEdadInfo(
-                id=r.id,
-                nombre=r.nombre,
-                edad_desde=r.edad_desde,
-                edad_hasta=r.edad_hasta,
-                monto=Decimal(str(r.monto)) if r.monto is not None else None,
-                porcentaje=Decimal(str(r.porcentaje)) if r.porcentaje is not None else None,
-                unidad_cobro=r.unidad_cobro,
-                categoria_id=r.categoria_id,
-            )
-            for r in q.all()
-        ]
-
-    # ─── Cotización ───────────────────────────────────────────────────────────
 
     def _cargar_adicionales(
         self, solicitados: list[tuple[int, int]], subtotal_vehiculo: Decimal | None = None
@@ -330,12 +303,11 @@ class PrecioService:
         duracion = calcular_duracion_dias(fecha_inicio, fecha_fin)
         reglas = self._cargar_reglas(fecha_inicio, fecha_fin, categoria_id, vehiculo_id)
         precio_fallback, nombre_fallback = self._precio_banda(
-            duracion, categoria_id, vehiculo_id
+            duracion, categoria_id, vehiculo_id, canal
         )
-        edad_efectiva = (
-            calcular_edad(fecha_nacimiento, fecha_inicio)
-            if fecha_nacimiento is not None else edad_conductor
-        )
+        # La edad ya no entra al cálculo (se retiró el recargo por franja
+        # etaria, D-38). Se sigue recibiendo `fecha_nacimiento` porque quien
+        # llama la usa para validar la edad mínima (D-51), que es otra cosa.
 
         def _cotizar_con(adicionales_cargados: list[AdicionalSolicitado]) -> Cotizacion:
             return cotizar(
@@ -349,8 +321,6 @@ class PrecioService:
                 canal=canal,
                 nombre_fallback=nombre_fallback,
                 adicionales=adicionales_cargados,
-                recargos_edad=self._cargar_recargos_edad(categoria_id),
-                edad_conductor=edad_efectiva,
                 porcentaje_anticipo=porcentaje_anticipo,
             )
 
@@ -399,7 +369,7 @@ class PrecioService:
         for cat in categorias:
             reglas = self._cargar_reglas(desde, hasta, categoria_id=cat.id)
             precios_banda, nombre_banda = self._precio_banda(
-                duracion_referencia, cat.id, None
+                duracion_referencia, cat.id, None, canal
             )
             # La grilla muestra "cuánto sale UN día", así que con duración 1 el
             # desglose por bloques tiene un solo elemento.

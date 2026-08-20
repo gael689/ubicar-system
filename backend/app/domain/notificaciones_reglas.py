@@ -182,6 +182,57 @@ def contrato_no_firmado_entrega_hoy(db: Session, hoy: date) -> list[dict]:
     ]
 
 
+def contrato_sin_firmar_auto_afuera(db: Session, hoy: date) -> list[dict]:
+    """
+    El auto ya salió, el contrato está emitido y **sigue sin firma**.
+
+    **Era el agujero de este catálogo.** Las tres reglas de contrato que había
+    dejaban de avisar justo cuando el riesgo es máximo:
+
+    - `contrato_no_firmado` mira `checkout_fecha == hoy`: avisa **el día de la
+      entrega y nunca más**. Un auto entregado el lunes sin firma deja de
+      avisarse el martes.
+    - `contrato_sin_firmar_entrega_proxima` filtra `fecha_inicio >= hoy`: sólo
+      mira lo que **todavía no salió**.
+    - `contrato_sin_emitir` sólo aplica si no hay ningún contrato.
+
+    O sea que el caso peor —auto en la calle, sin papel firmado, y ya pasó el
+    día— no lo cubría ninguna. Y es exactamente el que importa cuando hay un
+    siniestro o un reclamo: la firma es lo que hace oponible el clausulado.
+
+    La urgencia escala con los días afuera: uno es un olvido, cinco es un
+    problema.
+    """
+    alquileres = (
+        db.query(Alquiler)
+        .join(Reserva, Reserva.id == Alquiler.reserva_id)
+        .filter(
+            Alquiler.checkout_fecha < hoy,
+            Alquiler.checkin_fecha.is_(None),
+            Alquiler.contrato_firmado.is_(False),
+        )
+        .all()
+    )
+    avisos = []
+    for a in alquileres:
+        dias = (hoy - a.checkout_fecha).days
+        avisos.append({
+            "tipo": "contrato_sin_firmar_auto_afuera",
+            "titulo": "Auto afuera sin contrato firmado",
+            "descripcion": (
+                f"Alquiler #{a.id} — {_vehiculo_desc(a.reserva.vehiculo)} — "
+                f"{_cliente_nombre(a.reserva.cliente)} salió hace {dias} día"
+                f"{'s' if dias != 1 else ''} y el contrato sigue sin firma"
+            ),
+            "urgencia": "critica" if dias >= 3 else "alta",
+            "entidad_tipo": "alquiler",
+            "entidad_id": a.id,
+            "url_destino": "/contratos",
+            "fecha_objetivo": a.checkout_fecha,
+        })
+    return avisos
+
+
 def reserva_pendiente_24hs(db: Session, hoy: date) -> list[dict]:
     limite = datetime.utcnow() - timedelta(hours=24)
     reservas = db.query(Reserva).filter(Reserva.estado == "pendiente", Reserva.created_at < limite).all()
@@ -1441,6 +1492,7 @@ REGLAS = [
     reserva_web_esperando_transferencia,
     contrato_firmado_sin_ver,
     contrato_sin_firmar_entrega_proxima,
+    contrato_sin_firmar_auto_afuera,
     fecha_especial_sin_precio,
     categoria_sin_precio,
     categoria_sin_franquicia,

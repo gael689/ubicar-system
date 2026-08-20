@@ -266,7 +266,6 @@ export interface Cotizacion {
   subtotal_vehiculo: number;
   adicionales: AdicionalCotizado[];
   total_adicionales: number;
-  recargo_edad: { id: number; nombre: string; edad: number; monto: number } | null;
   /** El total del escenario pedido: con descuento por duración si se mandó
    *  `porcentaje_anticipo: 100`, y de lista en cualquier otro caso. */
   total: number;

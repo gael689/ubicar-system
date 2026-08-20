@@ -416,7 +416,7 @@ class PagoWebService:
         """
         if fecha_nacimiento is None:
             return
-        from app.domain.recargo_edad import calcular_edad
+        from app.domain.edades import calcular_edad
         from app.services.configuracion_service import ConfiguracionService
 
         edad = calcular_edad(fecha_nacimiento, fecha_inicio)

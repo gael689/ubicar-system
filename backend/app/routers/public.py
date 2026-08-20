@@ -102,7 +102,7 @@ def get_disponibilidad(
     # `alquiler.edad_minima` de configuración.
     edad: int | None = Query(
         None, ge=16, le=110,
-        description="Edad declarada del responsable. Hace que el precio salga con el recargo por edad ya incluido",
+        description="Edad declarada del responsable. Se usa para validar la edad mínima (D-51); no cambia el precio",
     ),
     db: Session = Depends(get_db),
 ):
@@ -269,7 +269,7 @@ def cotizar_publico(payload: CotizarPublicoRequest, db: Session = Depends(get_db
     # D-51: la edad real (`fecha_nacimiento`) manda sobre la declarada, mismo
     # criterio que el resto del motor de precios (ver `PrecioService.calcular`).
     if payload.fecha_nacimiento is not None:
-        from app.domain.recargo_edad import calcular_edad
+        from app.domain.edades import calcular_edad
         _validar_edad_minima(db, calcular_edad(payload.fecha_nacimiento, payload.fecha_inicio))
     else:
         _validar_edad_minima(db, payload.edad)
@@ -359,9 +359,6 @@ def cotizar_publico(payload: CotizarPublicoRequest, db: Session = Depends(get_db
         "subtotal_vehiculo": cotizacion.subtotal_vehiculo,
         "adicionales": [a.__dict__ for a in cotizacion.adicionales],
         "total_adicionales": cotizacion.total_adicionales,
-        "recargo_edad": (
-            cotizacion.recargo_edad.__dict__ if cotizacion.recargo_edad else None
-        ),
         "total": cotizacion.total,
         "precio_dia_promedio": cotizacion.precio_dia_promedio,
         "total_referencia": cotizacion.total_referencia,

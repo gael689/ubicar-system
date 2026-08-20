@@ -169,23 +169,24 @@ class Reserva(Base):
     )
     upgrade_motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # ── Recargo por edad del conductor (D-38, migración 044) ─────────────────
-    # Congelado igual que los adicionales: cambiar la tabla de recargos no
-    # puede reescribir lo que ya se pactó. Se guarda también la edad con la
-    # que se cotizó, sin la cual el importe no se puede explicar meses
-    # después, cuando el conductor ya cumplió años.
-    recargo_edad_id: Mapped[int | None] = mapped_column(
-        ForeignKey("recargos_edad.id"), nullable=True
-    )
-    recargo_edad_nombre: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    recargo_edad_monto: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), server_default="0", nullable=False, default=0
-    )
-    recargo_edad_edad: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
     @property
     def alquiler_id(self) -> int | None:
         return self.alquiler.id if self.alquiler else None
+
+    @property
+    def usuario_nombre(self) -> str | None:
+        """
+        Quién cargó la reserva, para mostrarlo al lado del canal.
+
+        `usuario_id` existe desde siempre y el frontend nunca lo leyó: un
+        número de usuario no le dice nada a nadie en pantalla. Se resuelve acá
+        —mismo patrón que `alquiler_id` y `contrato_estado`— para que ningún
+        listado tenga que traerse la tabla de usuarios por su cuenta.
+
+        En una reserva web esto vale "Sistema", que es cierto pero inútil: ahí
+        la pantalla muestra "Sitio web", que es la información que importa.
+        """
+        return self.usuario.nombre if self.usuario else None
 
     @property
     def total_adicionales(self) -> Decimal:

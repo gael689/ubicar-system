@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Sidebar, MobileNav } from './Sidebar';
 import { Header } from './Header';
 import { GlobalSearch } from './GlobalSearch';
-import { AvisoReservasPendientes } from '@/components/reservas/AvisoReservasPendientes';
 
 interface AppLayoutProps {
   title: string;
@@ -37,12 +36,13 @@ export function AppLayout({ title, children, fullBleed = false }: AppLayoutProps
           {children}
         </main>
 
-        {/* Va acá y no adentro de una pantalla: una reserva web pagada entra
-            confirmada **pero sin auto**, y sin auto no tiene fila donde
-            dibujarse en el calendario. Estaba sólo al pie de Ocupación y
-            colapsada, así que desde cualquier otra pantalla era invisible.
-            Fuera del `<main>` para que no scrollee con el contenido. */}
-        <AvisoReservasPendientes />
+        {/* El aviso de reservas pendientes **salió de acá**.
+            Vivía en el layout, o sea en todas las pantallas, porque una reserva
+            web pagada entra confirmada pero sin auto y no tenía dónde verse.
+            Ahora tiene dos lugares propios: la sección Pendientes de la
+            pantalla de inicio, y la fila "Por asignar" del calendario. Dejarlo
+            además acá sería la misma información en tres lugares, que es
+            justamente el problema que esta reestructuración viene a sacar. */}
       </div>
 
       {/* Mobile bottom nav */}

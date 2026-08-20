@@ -18,7 +18,7 @@ from app.routers import (
     cotizador, reportes, public, tarifas, ocupacion, tarjetas, multas,
     servicios, notificaciones, cuentas_corrientes, recibos, categorias,
     comprobantes, configuracion, busqueda, danios, fechas_especiales,
-    precios, adicionales, bloqueos, recargos_edad, reservas_web, auditoria,
+    precios, adicionales, bloqueos, reservas_web, auditoria,
     emails, solicitudes_contacto,
 )
 
@@ -275,7 +275,6 @@ app.include_router(danios.router, prefix=API_PREFIX)
 app.include_router(fechas_especiales.router, prefix=API_PREFIX)
 app.include_router(precios.router, prefix=API_PREFIX)
 app.include_router(adicionales.router, prefix=API_PREFIX)
-app.include_router(recargos_edad.router, prefix=API_PREFIX)
 app.include_router(reservas_web.router, prefix=API_PREFIX)
 app.include_router(solicitudes_contacto.router, prefix=API_PREFIX)
 app.include_router(bloqueos.router, prefix=API_PREFIX)

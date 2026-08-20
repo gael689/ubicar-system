@@ -1,5 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import api from '@/lib/api';
 import { FileDown, RefreshCw, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { CotizacionPreview3 } from '@/components/cotizador/CotizacionPreview3';
 import { SelectorCliente } from '@/components/cotizador/SelectorCliente';
+import { CotizacionesHuerfanas } from '@/components/cotizador/CotizacionesHuerfanas';
 import { exportCotizacionPDF } from '@/lib/pdfExport';
 import type { CotizacionData, CategoriaVehiculo, ModalidadItem, ModoCotizacion, ItemCotizacion, UnidadNombre } from '@/types/cotizacion';
 import { UNIDADES_CAMIONETA, UNIDADES_VEHICULO, UNIDADES_UTILITARIO } from '@/types/cotizacion';
@@ -159,6 +162,7 @@ export function CotizadorPage() {
   const [notas,        setNotas]       = useState('');
   // Id del cliente al que queda asociada la cotizacion. `null` = suelta.
   const [clienteId,    setClienteId]   = useState<number | null>(null);
+  const qc = useQueryClient();
   const [modo,         setModo]        = useState<ModoCotizacion>('categoria');
   const [formItems,    setFormItems]   = useState<FormItem[]>(() => [makeFormItem('categoria')]);
   const [exporting,    setExporting]   = useState(false);
@@ -236,10 +240,51 @@ export function CotizadorPage() {
       const result = await exportCotizacionPDF('cotizacion-preview', filename);
       if (result === 'shared') toast.success('PDF listo para compartir');
       else if (result === 'downloaded') toast.success('PDF descargado correctamente');
+
+      // **Recién ahora la cotización queda registrada.** La tabla
+      // `presupuestos` y sus endpoints existían desde siempre y esta pantalla
+      // nunca los llamaba: el cotizador generaba el PDF y no dejaba ningún
+      // rastro, así que "¿qué le habíamos cotizado?" no se podía contestar.
+      //
+      // Se guarda **después** de que el PDF salió bien: si falla el PDF no hay
+      // nada que registrar. Y si falla el guardado, el PDF ya está en la mano
+      // del usuario — por eso el error se avisa pero no se presenta como que
+      // falló la cotización.
+      void guardarCotizacion();
     } catch {
       toast.error('Error al generar el PDF. Intentá de nuevo.');
     } finally {
       setExporting(false);
+    }
+  };
+
+  /**
+   * Deja registro de lo cotizado.
+   *
+   * Si no hay cliente elegido queda **huérfana** (`cliente_id: null`, que el
+   * modelo admite desde siempre): se cotizó a alguien que todavía no es
+   * cliente. Se le puede asignar dueño más adelante desde la lista de
+   * huérfanas, y ahí pasa a su historial.
+   */
+  const guardarCotizacion = async () => {
+    const primero = data.items.find(it => it.precio_total > 0);
+    if (!primero) return;
+    const totalCotizado = data.items.reduce((acc, it) => acc + (it.precio_total || 0), 0);
+    const dias = primero.dias > 0 ? primero.dias : 1;
+    try {
+      await api.post('/cotizador/presupuestos', {
+        cliente_id: clienteId,
+        fecha_inicio: primero.fecha_desde || new Date().toISOString().split('T')[0],
+        fecha_fin: primero.fecha_hasta || new Date().toISOString().split('T')[0],
+        // El presupuesto guarda un unitario y el cotizador arma varios ítems:
+        // se registra el total repartido, que es el número que el cliente vio.
+        tarifa_unitaria: totalCotizado / dias,
+        descuento: 0,
+        notas: `${empresa || 'Sin empresa'} — ${data.items.length} ítem(s). Cotización ${numero}.`,
+      });
+      qc.invalidateQueries({ queryKey: ['presupuestos'] });
+    } catch {
+      toast.warning('El PDF salió, pero la cotización no se pudo registrar.');
     }
   };
 
@@ -281,6 +326,10 @@ export function CotizadorPage() {
               </Field>
             </div>
           </section>
+
+          {/* Cotizaciones guardadas que quedaron sin dueño. Sólo se ve si hay
+              alguna: es una bandeja, no una sección fija. */}
+          <CotizacionesHuerfanas />
 
           {/* ── Empresa cliente ─────────────────────────────────────── */}
           <section>

@@ -396,6 +396,19 @@ export interface Categoria {
   orden: number;
   activo: boolean;
   created_at: string;
+  /**
+   * Techo de responsabilidad del cliente ante un siniestro, con el seguro
+   * obligatorio solo. Es la más alta de la escalera: cada cobertura contratada
+   * la baja.
+   *
+   * `null` = todavía sin cargar, y **no es lo mismo que cero**: el contrato
+   * omite la línea entera cuando falta, porque "$0" se lee como "no pagás
+   * nada".
+   *
+   * No confundir con la GARANTÍA de la reserva, que es plata que se retiene y
+   * se devuelve. Son cosas distintas y el sistema no las relaciona.
+   */
+  franquicia_base: number | null;
 }
 
 export interface CategoriaCreate {
@@ -403,12 +416,14 @@ export interface CategoriaCreate {
   nombre: string;
   descripcion?: string | null;
   orden?: number;
+  franquicia_base?: number | null;
 }
 
 export interface CategoriaUpdate {
   nombre?: string;
   descripcion?: string | null;
   orden?: number;
+  franquicia_base?: number | null;
 }
 
 // ─── Tarifa ──────────────────────────────────────────────────────────────────
@@ -660,6 +675,12 @@ export interface Reserva {
   estado: EstadoReserva;
   usuario_id: number;
   created_at: string;
+  /**
+   * Quién cargó la reserva, ya resuelto a nombre por el backend.
+   * `null` en las de la web, donde el autor es el usuario "Sistema" y lo que
+   * corresponde mostrar es "Sitio web".
+   */
+  usuario_nombre?: string | null;
   // Reservas web (migración 047)
   origen?: 'mostrador' | 'web';
   web_resuelta_por?: number | null;
@@ -718,7 +739,18 @@ export interface Reserva {
 }
 
 export interface ReservaCreate {
-  vehiculo_id: number;
+  /**
+   * El auto puntual. **Opcional**: se puede reservar sólo por categoría y
+   * asignar el vehículo después, igual que hace la web.
+   *
+   * El modelo lo soporta desde la migración 042 y el backend valida el
+   * invariante (al menos uno de los dos). Lo que faltaba era que el mostrador
+   * pudiera ejercerlo: elegir el auto sigue siendo el camino normal, pero ya no
+   * es obligatorio.
+   */
+  vehiculo_id?: number | null;
+  /** La categoría pedida. Obligatoria si no se elige un auto puntual. */
+  categoria_id?: number | null;
   cliente_id: number;
   adicionales?: AdicionalSolicitado[];
   conductor_id?: number | null;
@@ -895,6 +927,9 @@ export interface VehiculoOcupacion {
   modelo: string;
   estado: EstadoVehiculo;
   activo: boolean;
+  /** Para agrupar las filas del calendario y filtrar por gama. */
+  categoria_id: number | null;
+  categoria_nombre: string | null;
 }
 
 export interface EventoOcupacion {
@@ -913,6 +948,13 @@ export interface EventoOcupacion {
   precio_total?: number | null;
   notas?: string | null;
   tiene_alquiler?: boolean;
+  /**
+   * De dónde vino. Los bloqueos llegan como `'mostrador'`: no tienen canal, y
+   * es lo correcto para algo que carga una persona.
+   */
+  origen?: 'mostrador' | 'web';
+  /** Nombre de quien la cargó. Vacío en bloqueos y en lo que entró por la web. */
+  creado_por?: string;
 }
 
 /** Fecha o temporada que se pinta como banda de fondo en el calendario (C-11). */
@@ -1312,6 +1354,16 @@ export interface DiaCotizado {
   es_promocional: boolean;
   precio_referencia: string | null;
   etiqueta_promo: string | null;
+  /**
+   * Con qué criterio ganó la regla de este día, cuando competía con otras:
+   * `unica` · `prioridad` · `especificidad` · `rango_mas_corto` ·
+   * `mas_reciente`. `null` si el precio salió de la tarifa por banda.
+   *
+   * Es lo que permite explicar el precio en vez de sólo mostrarlo.
+   */
+  motivo: string | null;
+  /** Cuántas reglas se disputaban el día. 1 = ganó por ser la única. */
+  candidatas: number;
 }
 
 export interface Cotizacion {
@@ -1608,35 +1660,6 @@ export interface ContratoPreparado {
 
 // ─── Recargos por edad (D-38) ────────────────────────────────────────────────
 
-export interface RecargoEdad {
-  id: number;
-  nombre: string;
-  descripcion: string | null;
-  edad_desde: number;
-  /** null = "de esta edad en adelante". */
-  edad_hasta: number | null;
-  /** Se carga monto O porcentaje, nunca los dos. */
-  monto: string | null;
-  porcentaje: string | null;
-  unidad_cobro: UnidadCobro;
-  /** null = aplica a todas las categorías. */
-  categoria_id: number | null;
-  activo: boolean;
-  created_at: string;
-}
-
-export interface RecargoEdadCreate {
-  nombre: string;
-  descripcion?: string | null;
-  edad_desde: number;
-  edad_hasta?: number | null;
-  monto?: number | null;
-  porcentaje?: number | null;
-  unidad_cobro: UnidadCobro;
-  categoria_id?: number | null;
-}
-
-export type RecargoEdadUpdate = Partial<RecargoEdadCreate> & { activo?: boolean };
 
 
 // ─── Emails (registro de envíos por Resend) ──────────────────────────────────

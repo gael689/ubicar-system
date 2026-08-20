@@ -289,15 +289,14 @@ class ReservaService:
         self, cliente_id: int, conductor_id: int | None
     ) -> date | None:
         """
-        La fecha de nacimiento de quien va a manejar (D-38).
+        La fecha de nacimiento de quien va a manejar.
 
         **La edad que cuenta es la del conductor efectivo**: si la reserva
-        designa un conductor adicional, es él quien maneja, y el riesgo (y por
-        lo tanto el recargo) es el suyo, no el del titular que paga.
+        designa un conductor adicional, es él quien maneja, así que la edad
+        relevante es la suya y no la del titular que paga.
 
-        Sin fecha de nacimiento cargada no se aplica ningún recargo. Es
-        deliberado: se prefiere no cobrar un recargo antes que inventarlo, y
-        el dato faltante se ve en la ficha del cliente.
+        Ya no cambia el precio —se retiró el recargo por franja etaria
+        (D-38)—, pero sigue haciendo falta para la edad mínima (D-51).
         """
         if conductor_id is not None:
             conductor = self.db.get(ConductorAdicional, conductor_id)
@@ -540,10 +539,7 @@ class ReservaService:
         # edad usada, porque el importe no se puede explicar meses después
         # cuando el conductor ya cumplió años.
         # El recargo sale de la MISMA cotización que el precio de lista, no de
-        # un segundo cálculo. Antes se recalculaba acá sobre `precio_total`,
-        # que ya venía cotizado por el motor —con el recargo adentro—, así que
-        # un recargo porcentual se aplicaba sobre una base que ya lo incluía.
-        recargo = cotizacion_lista.recargo_edad if cotizacion_lista else None
+        # un segundo cálculo.
 
         # 6. Crear reserva (ya CONFIRMADA directamente)
         with self.db.begin_nested():
@@ -586,10 +582,6 @@ class ReservaService:
                 anticipo_monto=anticipo_monto,
                 anticipo_fecha=anticipo_fecha,
                 anticipo_medio_pago=anticipo_medio_pago,
-                recargo_edad_id=recargo.id if recargo else None,
-                recargo_edad_nombre=recargo.nombre if recargo else None,
-                recargo_edad_monto=recargo.monto if recargo else Decimal("0"),
-                recargo_edad_edad=recargo.edad if recargo else None,
                 estado=EstadoReserva.CONFIRMADA.value,
                 usuario_id=usuario_id,
             )
@@ -1005,11 +997,27 @@ class ReservaService:
         """Dry-run: lista reservas que se verían afectadas por inactivar el vehículo."""
         return self.reserva_repo.find_activas_para_vehiculo(vehiculo_id)
 
-    def reasignar(self, reserva_id: int, nuevo_vehiculo_id: int, usuario_id: int) -> tuple[Reserva, list[dict]]:
+    def reasignar(
+        self,
+        reserva_id: int,
+        nuevo_vehiculo_id: int,
+        usuario_id: int,
+        precio_total: Decimal | None = None,
+        precio_motivo: str | None = None,
+    ) -> tuple[Reserva, list[dict]]:
         """
         Reasigna una reserva a otro vehículo (D4).
         Solo para reservas pendientes o confirmadas.
         Re-verifica solapamientos en el vehículo destino.
+
+        **`precio_total` corrige el precio en el mismo paso (D-65).** Sin esto,
+        cambiar de auto obligaba a elegir entre entregar el vehículo que hay o
+        respetar el precio pactado: si el reemplazo es de otra categoría, una de
+        las dos cosas se rompe.
+
+        Sigue el mismo criterio que el resto de la plata del sistema (regla
+        1.7): si el precio nuevo difiere del que había, **el motivo es
+        obligatorio** y queda auditado. No es un campo libre sin rastro.
         """
         reserva = self.get(reserva_id)
         if reserva.estado not in (EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value):
@@ -1036,9 +1044,30 @@ class ReservaService:
         ]
 
         anterior = reserva.vehiculo_id
+        precio_anterior = reserva.precio_total
+
+        cambia_precio = (
+            precio_total is not None
+            and precio_anterior is not None
+            and Decimal(str(precio_total)) != Decimal(str(precio_anterior))
+        )
+        if cambia_precio and not (precio_motivo or "").strip():
+            raise BusinessRuleError(
+                "motivo_requerido",
+                "Cambiar el precio al reasignar exige un motivo.",
+            )
 
         with self.db.begin_nested():
-            self.reserva_repo.update(reserva, vehiculo_id=nuevo_vehiculo_id)
+            campos = {"vehiculo_id": nuevo_vehiculo_id}
+            if precio_total is not None:
+                campos["precio_total"] = precio_total
+                if cambia_precio:
+                    # Mismo lugar donde vive el motivo de un descuento manual:
+                    # es la misma decisión —alguien se apartó del precio— y
+                    # tenerla en dos campos distintos partiría el reporte.
+                    campos["descuento_motivo"] = precio_motivo.strip()
+                    campos["descuento_autorizado_por"] = usuario_id
+            self.reserva_repo.update(reserva, **campos)
 
             # **Esto no existía.** Cambiar el auto por D4 no dejaba ni una
             # línea de auditoría: la pantalla de Auditoría mapea la acción
@@ -1055,8 +1084,15 @@ class ReservaService:
                     f"Reasignó la reserva #{reserva.id} a {nuevo_vehiculo.patente} "
                     f"(D4: el vehículo anterior se dio de baja)"
                 ),
-                datos_antes={"vehiculo_id": anterior},
-                datos_despues={"vehiculo_id": nuevo_vehiculo_id},
+                datos_antes={
+                    "vehiculo_id": anterior,
+                    "precio_total": str(precio_anterior) if precio_anterior is not None else None,
+                },
+                datos_despues={
+                    "vehiculo_id": nuevo_vehiculo_id,
+                    "precio_total": str(precio_total) if precio_total is not None else None,
+                    "motivo_precio": precio_motivo if cambia_precio else None,
+                },
             )
 
         # D-48, igual que en `asignar_vehiculo` y en `update`. Faltaba también

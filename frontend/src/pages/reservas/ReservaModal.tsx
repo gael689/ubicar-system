@@ -6,6 +6,8 @@ import { useVehiculos } from '@/hooks/useVehiculos';
 import { useClientes, useConductores } from '@/hooks/useClientes';
 import { useAdicionales } from '@/hooks/useAdicionales';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
+import { useConfiguracion } from '@/hooks/useConfiguracion';
+import { useCategorias } from '@/hooks/useCategorias';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 import type { Adicional, Reserva, ReservaCreate, ReservaUpdate, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
@@ -25,7 +27,19 @@ const GARANTIA_TIPOS = [
   { value: 'transferencia', label: 'Transferencia' },
 ];
 
-const LUGARES_PREDEFINIDOS = ['Paraguay 241', 'Alsina 350', 'Aeropuerto Comandante Espora', 'Juan Francisco Seguí 3607'];
+/**
+ * Último recurso si `web.lugares_retiro` no responde.
+ *
+ * **Antes esta lista era la fuente de verdad del mostrador, y tenía cuatro
+ * valores**: los tres reales más `Juan Francisco Seguí 3607`, la dirección de
+ * Capital Federal que D-39 sacó de todo el resto del sistema. La web ya leía
+ * los tres de configuración (D-56), así que el mostrador ofrecía un lugar de
+ * retiro que el sitio no ofrecía y en el que la empresa no opera.
+ *
+ * Queda como fallback y no como lista viva: si la configuración no carga, es
+ * mejor ofrecer los tres correctos que un selector vacío.
+ */
+const LUGARES_FALLBACK = ['Paraguay 241', 'Alsina 350', 'Aeropuerto Comandante Espora'];
 
 function formatTime(t: string) { return t.slice(0, 5); }
 function today() { return new Date().toISOString().split('T')[0]; }
@@ -74,9 +88,32 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const horaFin = horaInicio;
   const [lugarEntrega, setLugarEntrega]       = useState(reserva?.lugar_entrega ?? '');
   const [lugarDevolucion, setLugarDevolucion] = useState(reserva?.lugar_devolucion ?? '');
-  const esLugarPersonalizado = (v: string) => !!v && !LUGARES_PREDEFINIDOS.includes(v);
+  // Los lugares salen de `web.lugares_retiro` (D-56: una sola fuente), no de
+  // una lista en el código. Es la misma clave que lee el sitio público, así
+  // que mostrador y web ofrecen exactamente lo mismo.
+  const { data: configItems } = useConfiguracion();
+  const lugares = useMemo(() => {
+    const item = configItems?.find(c => c.clave === 'web.lugares_retiro');
+    const valores = (item?.valor ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    return valores.length ? valores : LUGARES_FALLBACK;
+  }, [configItems]);
+  const esLugarPersonalizado = (v: string) => !!v && !lugares.includes(v);
   const [entregaEsOtro, setEntregaEsOtro]         = useState(esLugarPersonalizado(reserva?.lugar_entrega ?? ''));
   const [devolucionEsOtro, setDevolucionEsOtro]   = useState(esLugarPersonalizado(reserva?.lugar_devolucion ?? ''));
+  // Los dos flags de arriba se calculan en el primer render, cuando la
+  // configuración todavía puede no haber llegado y `lugares` es el fallback.
+  // Si la lista real trae un lugar más, una reserva vieja con ese lugar
+  // aparecería marcada como "Otro" sin serlo. Se corrige **una sola vez**, al
+  // llegar la config: volver a correrlo en cada cambio pisaría el "Otro" que
+  // la persona acaba de tildar y todavía no completó.
+  const lugaresSincronizados = useRef(false);
+  useEffect(() => {
+    if (lugaresSincronizados.current || !configItems) return;
+    lugaresSincronizados.current = true;
+    setEntregaEsOtro(esLugarPersonalizado(reserva?.lugar_entrega ?? ''));
+    setDevolucionEsOtro(esLugarPersonalizado(reserva?.lugar_devolucion ?? ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configItems]);
   const [notas, setNotas]                     = useState(reserva?.notas ?? '');
   const [lateCheckout, setLateCheckout]       = useState(reserva?.late_checkout ?? false);
   const [horaDevolucionAcordada, setHoraDevolucionAcordada] = useState(
@@ -208,16 +245,30 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     });
   }
 
-  // Espejo de la fórmula del backend (`ReservaService._subtotal_adicional`).
+  // Espejo de la fórmula del backend (`PrecioService._cargar_adicionales`).
   // Es sólo una vista previa: el importe que se cobra lo calcula el servidor.
+  //
+  // **Contempla las coberturas por porcentaje (D-53), que antes se mostraban
+  // en $0.** Una cobertura cuyo precio es un % del alquiler tiene `precio = 0`
+  // y el porcentaje en `porcentaje_sobre_alquiler`; multiplicar por `precio`
+  // daba cero, así que el mostrador veía "Total a facturar" sin la cobertura
+  // mientras el backend sí la cobraba. Las dos coberturas cargadas hoy son
+  // justamente de ese tipo (10% y 30%).
+  //
+  // El porcentaje se calcula sobre el subtotal del vehículo y **no** se
+  // multiplica por los días: el porcentaje ya escala con la duración, y
+  // volver a multiplicarlo lo cobraría al cuadrado.
   const totalAdicionales = useMemo(() => {
+    const subtotalVehiculo = Number(precioTotal) || 0;
     return catalogoAdicionales.reduce((acc, a) => {
       const cantidad = adicionales[a.id];
       if (cantidad === undefined) return acc;
+      const pct = Number(a.porcentaje_sobre_alquiler ?? 0);
+      if (pct > 0) return acc + (subtotalVehiculo * pct / 100) * cantidad;
       const multiplicador = a.unidad_cobro === 'por_dia' ? cantidad * duracionDias : cantidad;
       return acc + Number(a.precio) * multiplicador;
     }, 0);
-  }, [catalogoAdicionales, adicionales, duracionDias]);
+  }, [catalogoAdicionales, adicionales, duracionDias, precioTotal]);
   const [descuentoMotivo, setDescuentoMotivo] = useState(reserva?.descuento_motivo ?? '');
   const lastEditedRef = useRef<'dia' | 'total'>('dia');
 
@@ -240,6 +291,61 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const vehiculoSeleccionado = vehiculosActivos.find(v => v.id.toString() === vehiculoId);
   const tieneCheckoutPendiente = vehiculoSeleccionado?.estado === 'alquilado';
   const categoriaId = vehiculoSeleccionado?.categoria_id ?? null;
+
+  const { data: categoriasData } = useCategorias();
+
+  /**
+   * La categoría, cuando se reserva **sin elegir auto**.
+   *
+   * Si hay vehículo elegido la categoría se deriva de él y este campo no se
+   * usa. Sólo aparece al dejar el vehículo en blanco, que es el caso "todavía
+   * no sé qué unidad le doy".
+   */
+  const [categoriaManualId, setCategoriaManualId] = useState(
+    reserva?.vehiculo_id ? '' : (reserva?.categoria_id?.toString() ?? '')
+  );
+
+  /**
+   * La flota agrupada por categoría, en el orden en que se muestran las
+   * categorías. Los autos sin categoría van al final, juntos: son un problema
+   * de carga —el aviso `vehiculo_sin_categoria` los reclama— y esconderlos
+   * haría que desaparezcan del selector.
+   */
+  const vehiculosPorCategoria = useMemo(() => {
+    const categorias = categoriasData ?? [];
+    const grupos = categorias
+      .map(c => ({
+        nombre: c.nombre,
+        vehiculos: vehiculosActivos.filter(v => v.categoria_id === c.id),
+      }))
+      .filter(g => g.vehiculos.length > 0);
+
+    const huerfanos = vehiculosActivos.filter(
+      v => !v.categoria_id || !categorias.some(c => c.id === v.categoria_id)
+    );
+    if (huerfanos.length) grupos.push({ nombre: 'Sin categoría', vehiculos: huerfanos });
+    return grupos;
+  }, [categoriasData, vehiculosActivos]);
+
+  /** La franquicia que le queda al cliente con el auto elegido y sin cobertura extra. */
+  const franquiciaBase = useMemo(
+    () => (categoriasData ?? []).find(c => c.id === categoriaId)?.franquicia_base ?? null,
+    [categoriasData, categoriaId],
+  );
+
+  /**
+   * La franquicia de la cobertura contratada, si eligió una.
+   *
+   * Manda sobre la base: es exactamente la precedencia que usa el contrato
+   * (`ContratoService._bloque_coberturas`) — si hay cobertura con franquicia
+   * definida, esa; si no, la base de la categoría del auto entregado.
+   */
+  const franquiciaCobertura = useMemo(() => {
+    const elegida = catalogoAdicionales.find(
+      a => a.grupo === 'cobertura' && adicionales[a.id] !== undefined && a.franquicia != null
+    );
+    return elegida?.franquicia != null ? Number(elegida.franquicia) : null;
+  }, [catalogoAdicionales, adicionales]);
 
   // Si el vehículo está afuera, buscamos su reserva bloqueante actual para
   // saber cuándo se espera que vuelva — así el cartel sólo alarma cuando hay
@@ -350,7 +456,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       ? {
           fecha_inicio: fechaInicio,
           fecha_fin: fechaFin,
-          vehiculo_id: Number(vehiculoId),
+          vehiculo_id: vehiculoId ? Number(vehiculoId) : null,
+          // Cuando no se eligió auto, la reserva viaja con la categoría: es lo
+          // que descuenta cupo mientras la unidad puntual está sin decidir.
+          categoria_id: vehiculoId ? null : Number(categoriaManualId),
           canal: 'mostrador',
           adicionales: [],
           fecha_nacimiento: nacimientoDelConductor,
@@ -366,8 +475,17 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     setLocalError(null);
     setWarnings([]);
 
-    if (!vehiculoId || !clienteId || !fechaInicio || !fechaFin) {
-      setLocalError('Complete todos los campos requeridos (Vehículo, Cliente, Fechas).');
+    // **El vehículo dejó de ser obligatorio.** Se puede reservar sólo por
+    // categoría y asignar el auto después, igual que hace la web — es lo que
+    // permite tomar una reserva cuando todavía no se sabe qué unidad va, y lo
+    // que hace que una reserva de mostrador y una web sean la misma cosa.
+    // Elegir el auto sigue siendo el camino normal, no la excepción.
+    if (!clienteId || !fechaInicio || !fechaFin) {
+      setLocalError('Complete todos los campos requeridos (Cliente, Fechas).');
+      return;
+    }
+    if (!vehiculoId && !categoriaManualId) {
+      setLocalError('Elegí un vehículo, o al menos la categoría que se reservó.');
       return;
     }
     if (!lugarEntrega || !lugarDevolucion) {
@@ -549,22 +667,52 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           {/* Vehículo y Cliente */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">Vehículo *</label>
+              <label className="text-sm font-semibold text-slate-700">Vehículo</label>
               <select
                 value={vehiculoId}
                 onChange={e => setVehiculoId(e.target.value)}
                 disabled={isEdit}
                 className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:bg-slate-100 disabled:text-slate-500"
-                required
               >
-                <option value="">Seleccionar vehículo...</option>
-                {vehiculosActivos.map(v => (
-                  <option key={v.id} value={v.id}>
-                    {v.patente} - {v.marca} {v.modelo}
-                    {v.estado === 'alquilado' ? ' ⚠️' : ''}
-                  </option>
+                <option value="">Sin asignar todavía…</option>
+                {/* Agrupado por categoría y no una lista plana de patentes.
+                    El sistema vende por categoría —la web directamente reserva
+                    una— y quien atiende piensa "un compacto", no "el AH762UL".
+                    Es el mismo criterio que ya usa el panel de asignación. */}
+                {vehiculosPorCategoria.map(grupo => (
+                  <optgroup key={grupo.nombre} label={grupo.nombre}>
+                    {grupo.vehiculos.map(v => (
+                      <option key={v.id} value={v.id}>
+                        {v.patente} - {v.marca} {v.modelo}
+                        {v.estado === 'alquilado' ? ' ⚠️' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
+              {/* Sin auto elegido hace falta la categoría: es lo que descuenta
+                  cupo mientras la unidad puntual está sin decidir. Es el mismo
+                  camino que usa la web, que siempre reserva por categoría. */}
+              {!vehiculoId && !isEdit && (
+                <div className="pt-1.5 space-y-1">
+                  <label className="text-xs font-medium text-slate-600">
+                    ¿No sabés todavía qué auto? Elegí la categoría
+                  </label>
+                  <select
+                    value={categoriaManualId}
+                    onChange={e => setCategoriaManualId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="">Sin categoría…</option>
+                    {(categoriasData ?? []).map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500">
+                    La reserva ocupa cupo igual. El auto se asigna después, antes de entregar.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5" ref={dropdownRef}>
@@ -719,7 +867,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <MapPin className="w-4 h-4 text-slate-400" /> Lugar de entrega *
               </label>
               <div className="flex gap-1.5 flex-wrap">
-                {LUGARES_PREDEFINIDOS.map(l => (
+                {lugares.map(l => (
                   <button key={l} type="button"
                     onClick={() => { setLugarEntrega(l); setEntregaEsOtro(false); }}
                     className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
@@ -753,7 +901,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <MapPin className="w-4 h-4 text-slate-400" /> Lugar de devolución *
               </label>
               <div className="flex gap-1.5 flex-wrap">
-                {LUGARES_PREDEFINIDOS.map(l => (
+                {lugares.map(l => (
                   <button key={l} type="button"
                     onClick={() => { setLugarDevolucion(l); setDevolucionEsOtro(false); }}
                     className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
@@ -893,6 +1041,43 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                           <p className="text-[11px] font-medium text-slate-500">
                             {grupo === 'cobertura' ? 'Cobertura (elegí una)' : 'Extras'}
                           </p>
+                          {/* LA FRANQUICIA, que hasta ahora no aparecía en
+                              ninguna parte del sistema interno — el sitio
+                              público sí se la muestra al cliente al elegir
+                              cobertura, así que quien atendía por mostrador
+                              era el único que no sabía qué estaba vendiendo.
+                              Y es lo que después imprime el contrato.
+
+                              No confundir con la GARANTÍA de más abajo: la
+                              garantía es plata que se retiene y se devuelve; la
+                              franquicia es el techo de lo que paga el cliente
+                              si choca. */}
+                          {grupo === 'cobertura' && (
+                            <p className="text-[11px] text-slate-500">
+                              {franquiciaCobertura != null ? (
+                                <>Franquicia a cargo del cliente:{' '}
+                                  <strong className="text-slate-700 tabular-nums">
+                                    ${franquiciaCobertura.toLocaleString('es-AR')}
+                                  </strong>
+                                  {franquiciaBase != null && franquiciaCobertura < franquiciaBase && (
+                                    <span className="text-emerald-700">
+                                      {' '}(baja desde ${franquiciaBase.toLocaleString('es-AR')})
+                                    </span>
+                                  )}
+                                </>
+                              ) : franquiciaBase != null ? (
+                                <>Sin cobertura extra, la franquicia es{' '}
+                                  <strong className="text-slate-700 tabular-nums">
+                                    ${franquiciaBase.toLocaleString('es-AR')}
+                                  </strong>
+                                </>
+                              ) : vehiculoId ? (
+                                <span className="font-medium text-amber-700">
+                                  Esta categoría no tiene franquicia cargada: el contrato va a salir sin declararla.
+                                </span>
+                              ) : null}
+                            </p>
+                          )}
                           <div className="flex flex-wrap gap-1.5">
                             {delGrupo.map(a => {
                               const elegido = adicionales[a.id] !== undefined;
@@ -913,6 +1098,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                                     <span className="ml-1 opacity-75">
                                       ${Number(a.precio).toLocaleString('es-AR')}
                                       {a.unidad_cobro === 'por_dia' ? '/día' : ''}
+                                    </span>
+                                  )}
+                                  {/* Las coberturas por porcentaje tienen
+                                      `precio` 0 y el chip no decía nada del
+                                      costo: parecían gratis. */}
+                                  {Number(a.porcentaje_sobre_alquiler ?? 0) > 0 && (
+                                    <span className="ml-1 opacity-75">
+                                      +{Number(a.porcentaje_sobre_alquiler)}%
                                     </span>
                                   )}
                                   {elegido && adicionales[a.id] > 1 && ` ×${adicionales[a.id]}`}

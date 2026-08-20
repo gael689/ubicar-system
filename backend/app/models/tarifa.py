@@ -37,3 +37,20 @@ class Tarifa(Base):
     # falta. Se limpia sola: cargar una tarifa diaria nueva desactiva la
     # anterior, así que la genérica pasa al histórico.
     es_generica: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # ── Canal (migración 074) ────────────────────────────────────────────────
+    # `ambos` | `web` | `mostrador`. Misma semántica que
+    # `TarifaCalendario.canal`, y a propósito el mismo enum: son el mismo
+    # concepto, y dos enums con los mismos valores se terminan desincronizando.
+    #
+    # `ambos` es el default y rige en los dos canales. Una tarifa de canal
+    # específico le gana a la de `ambos` **sólo en ese canal**; si el canal
+    # pedido no tiene tarifa propia, se usa la de `ambos`. Nunca se queda sin
+    # precio — ver `domain/tarifas._elegir_de_tipo`.
+    canal: Mapped[str] = mapped_column(
+        Enum("ambos", "web", "mostrador", name="canal_tarifa_calendario", create_type=False),
+        nullable=False,
+        default="ambos",
+        server_default="ambos",
+        index=True,
+    )

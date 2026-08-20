@@ -14,6 +14,12 @@ class VehiculoOcupacionItem(BaseModel):
     modelo: str
     estado: str
     activo: bool
+    # La categoría, para poder agrupar las filas y filtrar por gama sin pedir
+    # la flota entera aparte. El nombre viaja resuelto porque el calendario no
+    # tiene la tabla de categorías a mano y cruzarla en el front obligaría a
+    # una segunda consulta sólo para poner un encabezado.
+    categoria_id: int | None = None
+    categoria_nombre: str | None = None
     model_config = {"from_attributes": True}
 
 
@@ -32,6 +38,21 @@ class EventoOcupacion(BaseModel):
     precio_total: float | None = None
     notas: str | None = None
     tiene_alquiler: bool = False
+
+    # ── Canal (Fase 1 de la reestructuración) ────────────────────────────────
+    # `origen` ya existía en `Reserva` desde la migración 047, indexado, y
+    # **nunca llegaba al calendario**: el evento no lo transportaba. Sin esto,
+    # una reserva web confirmada es indistinguible de una de mostrador apenas
+    # sale de la bandeja, que es justamente el problema que esta fase arregla.
+    #
+    # Default "mostrador" y no None: un bloqueo de vehículo no tiene canal, y
+    # "mostrador" es lo correcto para él —lo carga una persona— además de
+    # evitarle al front un caso nulo que no aporta nada.
+    origen: str = "mostrador"
+    # Quién la cargó. Se resuelve a nombre acá y no en el front porque el
+    # calendario no tiene la tabla de usuarios a mano. Vacío para bloqueos y
+    # para lo que entró por la web (ahí el front muestra "Sitio web").
+    creado_por: str = ""
 
 
 class FechaEspecialOcupacion(BaseModel):

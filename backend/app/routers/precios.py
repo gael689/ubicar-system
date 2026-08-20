@@ -142,9 +142,6 @@ def calcular_precio(
         subtotal_vehiculo=cotizacion.subtotal_vehiculo,
         adicionales=[a.__dict__ for a in cotizacion.adicionales],
         total_adicionales=cotizacion.total_adicionales,
-        recargo_edad=(
-            cotizacion.recargo_edad.__dict__ if cotizacion.recargo_edad else None
-        ),
         total=cotizacion.total,
         precio_dia_promedio=cotizacion.precio_dia_promedio,
         total_referencia=cotizacion.total_referencia,

@@ -6,7 +6,7 @@ GET /api/v1/ocupacion — devuelve vehículos + eventos para el timeline.
 from datetime import date, time, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_db, get_current_user
 from app.core.responses import ok
@@ -36,7 +36,13 @@ def get_ocupacion(
     Incluye vehículos activos y sus reservas/alquileres en el rango de fechas.
     """
     # Vehículos activos
-    q = db.query(Vehiculo).filter(Vehiculo.activo == True)
+    q = (
+        db.query(Vehiculo)
+        # Sin esto, resolver el nombre de la categoría de cada auto sería una
+        # consulta por fila.
+        .options(joinedload(Vehiculo.categoria))
+        .filter(Vehiculo.activo == True)
+    )
     if vehiculo_ids:
         q = q.filter(Vehiculo.id.in_(vehiculo_ids))
     vehiculos = q.order_by(Vehiculo.patente).all()
@@ -77,6 +83,13 @@ def get_ocupacion(
             precio_total=float(r.precio_total) if r.precio_total else None,
             notas=r.notas,
             tiene_alquiler=r.alquiler is not None,
+            origen=r.origen,
+            # Sólo para las de mostrador: en una reserva web el `usuario` es el
+            # usuario "Sistema", que no le dice nada a nadie. Ahí el front
+            # muestra "Sitio web", que es la información verdadera.
+            creado_por=(
+                r.usuario.nombre if r.origen != "web" and r.usuario else ""
+            ),
         ))
 
     # Bloqueos (mantenimiento, siniestro, uso interno). Van al calendario
@@ -125,7 +138,15 @@ def get_ocupacion(
     )
 
     return ok(OcupacionResponse(
-        vehiculos=[VehiculoOcupacionItem.model_validate(v) for v in vehiculos],
+        vehiculos=[
+            VehiculoOcupacionItem(
+                id=v.id, patente=v.patente, marca=v.marca, modelo=v.modelo,
+                estado=v.estado, activo=v.activo,
+                categoria_id=v.categoria_id,
+                categoria_nombre=v.categoria.nombre if v.categoria else None,
+            )
+            for v in vehiculos
+        ],
         eventos=eventos,
         sin_asignar=sin_asignar,
         fechas_especiales=[FechaEspecialOcupacion.model_validate(f) for f in fechas_especiales],

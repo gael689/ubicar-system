@@ -1,11 +1,13 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_current_user
 from app.core.exceptions import BusinessRuleError
 from app.core.responses import ok
+from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 from app.models.presupuesto import Presupuesto
 from app.models.vehiculo import Vehiculo
@@ -16,6 +18,10 @@ from app.schemas.presupuesto import PresupuestoCreate, PresupuestoResponse
 from app.utils.helpers import calcular_dias
 
 router = APIRouter(prefix="/cotizador", tags=["Cotizador"])
+
+
+class AsignarClienteRequest(BaseModel):
+    cliente_id: int
 
 
 @router.post("/calcular")
@@ -47,12 +53,16 @@ def calcular_cotizacion(
         TarifaInfo(
             id=t.id, tipo=TipoTarifa(t.tipo), monto=Decimal(str(t.monto)),
             vehiculo_id=t.vehiculo_id, categoria_id=t.categoria_id,
+            canal=t.canal,
         )
         for t in tarifas
     ]
 
     try:
-        cot = cotizar_por_bandas(dias, tarifas_info, categoria_efectiva)
+        # Canal `mostrador`: una cotización comercial se arma desde el
+        # mostrador, no desde el sitio. Si no hay tarifa propia de mostrador
+        # cae sola a la compartida (`ambos`).
+        cot = cotizar_por_bandas(dias, tarifas_info, categoria_efectiva, "mostrador", vehiculo_id)
         total_sugerido = cot.total
         # Precio efectivo por día. Desde D-35 el `monto` de una tarifa semanal
         # es el de la semana completa, así que mostrarlo tal cual como "tarifa
@@ -83,11 +93,58 @@ def calcular_cotizacion(
 
 @router.get("/presupuestos")
 def list_presupuestos(
+    cliente_id: int | None = Query(None, description="Sólo los de este cliente"),
+    huerfanas: bool = Query(
+        False,
+        description="Sólo las cotizaciones sin cliente asignado",
+    ),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    items = db.query(Presupuesto).order_by(Presupuesto.created_at.desc()).all()
+    """
+    Las cotizaciones guardadas.
+
+    **`huerfanas=true` es el caso que da sentido a que `cliente_id` sea
+    nullable**: se le cotiza a alguien que todavía no es cliente. Crear un
+    cliente por cada consulta ensucia la base con gente que nunca alquiló, pero
+    sin cliente el presupuesto es un PDF que no deja rastro en ningún lado.
+    Guardarlas sueltas y poder asignarlas después resuelve las dos cosas.
+    """
+    q = db.query(Presupuesto)
+    if huerfanas:
+        q = q.filter(Presupuesto.cliente_id.is_(None))
+    elif cliente_id is not None:
+        q = q.filter(Presupuesto.cliente_id == cliente_id)
+    items = q.order_by(Presupuesto.created_at.desc()).all()
     return ok([PresupuestoResponse.model_validate(p) for p in items])
+
+
+@router.patch("/presupuestos/{presupuesto_id}/cliente")
+def asignar_cliente(
+    presupuesto_id: int,
+    payload: AsignarClienteRequest,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Le pone dueño a una cotización huérfana.
+
+    Es la segunda mitad de lo anterior: se cotizó a alguien suelto, esa persona
+    volvió y se dio de alta, y ahora la cotización tiene que aparecer en su
+    historial.
+    """
+    presupuesto = db.get(Presupuesto, presupuesto_id)
+    if not presupuesto:
+        raise HTTPException(status_code=404, detail="No existe ese presupuesto.")
+
+    cliente = db.get(Cliente, payload.cliente_id)
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="No existe ese cliente.")
+
+    presupuesto.cliente_id = cliente.id
+    db.commit()
+    db.refresh(presupuesto)
+    return ok(PresupuestoResponse.model_validate(presupuesto), "Cotización asignada")
 
 
 @router.post("/presupuestos", status_code=status.HTTP_201_CREATED)

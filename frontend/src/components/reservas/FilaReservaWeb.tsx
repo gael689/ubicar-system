@@ -1,6 +1,7 @@
-import { Clock, Mail, Phone, Wrench, X, Globe, Store } from 'lucide-react';
+import { Clock, Mail, Phone, Wrench, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { BadgeCanal } from '@/components/reservas/BadgeCanal';
 import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import type { Reserva } from '@/types';
@@ -36,7 +37,6 @@ export function FilaReservaWeb({
   const cobrado = Number(reserva.anticipo_monto ?? 0);
   const falta = total - cobrado;
   const espera = esperandoHace(reserva.created_at);
-  const esWeb = reserva.origen === 'web';
 
   // Lo que le falta a esta reserva, en la fila: sin esto hay que abrirla una
   // por una para saber cuál es la urgente.
@@ -65,10 +65,7 @@ export function FilaReservaWeb({
             )}>
               {ESTADO_RESERVA_LABEL[reserva.estado]}
             </span>
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              {esWeb ? <Globe className="h-3 w-3" /> : <Store className="h-3 w-3" />}
-              {esWeb ? 'Web' : 'Mostrador'}
-            </span>
+            <BadgeCanal origen={reserva.origen} creadoPor={reserva.usuario_nombre} />
             {reserva.categoria?.nombre && (
               <span className="text-sm text-muted-foreground">{reserva.categoria.nombre}</span>
             )}

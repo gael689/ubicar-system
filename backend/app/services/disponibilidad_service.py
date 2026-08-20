@@ -24,7 +24,6 @@ from app.domain.disponibilidad import (
     con_preparacion,
     proponer_entrega_por_rotacion,
 )
-from app.domain.recargo_edad import vista_con_recargo_incluido
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.hold import Hold
 from app.models.categoria import Categoria
@@ -184,12 +183,10 @@ class DisponibilidadService:
         no tienen se muestran deshabilitadas en la web, no se ocultan — eso
         convierte, y evita que el cliente crea que no trabajamos el segmento.
 
-        `edad_conductor` hace que **el precio salga con el recargo por edad ya
-        incluido desde esta primera pantalla**. Antes el recargo aparecía
-        recién en el paso 3, cuando se pedían los datos: el cliente elegía una
-        categoría con un precio y en el paso siguiente veía otro. Un precio que
-        se mueve después de mostrado es la peor forma de perder una reserva, y
-        además obligaba a rotular el aumento para justificarlo.
+        `edad_conductor` **ya no cambia el precio**: se retiró el recargo por
+        franja etaria (D-38). Se sigue recibiendo porque la edad decide otra
+        cosa — si la persona puede alquilar por la web (`alquiler.edad_minima`,
+        D-51), que se valida en el router antes de llegar acá.
 
         Es la edad **declarada** en el buscador, no derivada de una fecha de
         nacimiento: en la portada todavía no hay cliente, y pedir un documento
@@ -278,14 +275,11 @@ class DisponibilidadService:
                     canal="web",
                     edad_conductor=edad_conductor,
                 )
-                # `total` ya trae el recargo adentro; el promedio por día y el
-                # precio de referencia, no. Ver `vista_con_recargo_incluido`.
-                promedio, referencia = vista_con_recargo_incluido(
-                    cotizacion.precio_dia_promedio,
-                    cotizacion.total_referencia,
-                    cotizacion.recargo_edad,
-                    cotizacion.duracion_dias,
-                )
+                # Ya no hay que reponer nada: al retirarse el recargo por edad
+                # (D-38), el promedio por día y el precio de referencia son
+                # directamente consistentes con el total.
+                promedio = cotizacion.precio_dia_promedio
+                referencia = cotizacion.total_referencia
                 # El mismo alquiler cotizado como si pagara el 100% por
                 # adelantado. Es lo que la tarjeta muestra como precio grande,
                 # con el de lista tachado al lado: los **dos números son
@@ -304,10 +298,7 @@ class DisponibilidadService:
                     if c100.descuento_monto and c100.total < cotizacion.total:
                         pago_total = {
                             "total": c100.total,
-                            "precio_dia_promedio": vista_con_recargo_incluido(
-                                c100.precio_dia_promedio, None,
-                                c100.recargo_edad, c100.duracion_dias,
-                            )[0],
+                            "precio_dia_promedio": c100.precio_dia_promedio,
                             "descuento_monto": c100.descuento_monto,
                             "descuento_porcentaje": c100.descuento_porcentaje,
                             "descuento_nombre": c100.descuento_nombre,

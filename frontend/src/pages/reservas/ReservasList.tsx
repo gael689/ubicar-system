@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AccionesContrato } from '@/components/reservas/AccionesContrato';
-import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2, Clock, Globe, Wrench } from 'lucide-react';
+import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2, Clock, Globe, Store, Wrench } from 'lucide-react';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -8,7 +8,8 @@ import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import api from '@/lib/api';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { extractError, cn } from '@/lib/utils';
-import { useAppStore } from '@/store/useAppStore';
+import { useAppStore, type CanalReserva } from '@/store/useAppStore';
+import { BadgeCanal } from '@/components/reservas/BadgeCanal';
 import type { Reserva, EstadoReserva, PaginatedResponse } from '@/types';
 import { ReservaModal } from './ReservaModal';
 import { CheckoutModal } from './CheckoutModal';
@@ -26,6 +27,17 @@ const ESTADOS: { value: EstadoReserva | ''; label: string }[] = [
   { value: 'pendiente_pago', label: 'Esperando pago' },
   { value: 'finalizada', label: 'Finalizada' },
   { value: 'cancelada', label: 'Cancelada' },
+];
+
+/**
+ * De dónde vino la reserva. Un solo listado con filtro, en vez de una pantalla
+ * separada para la web: son la misma tabla y el mismo circuito a partir de que
+ * están confirmadas.
+ */
+const CANALES: { value: CanalReserva; label: string; icon?: typeof Globe }[] = [
+  { value: 'todas', label: 'Todas' },
+  { value: 'web', label: 'Web', icon: Globe },
+  { value: 'mostrador', label: 'Mostrador', icon: Store },
 ];
 
 const ESTADO_COLORS: Record<string, string> = {
@@ -93,10 +105,15 @@ export function ReservasList() {
   // Fase 3 §5.2: filtros colapsables (arrancan cerrados para recuperar
   // espacio) y densidad de tabla persistida.
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const { reservasDensidad: densidad, setReservasDensidad: setDensidad } = useAppStore();
+  const {
+    reservasDensidad: densidad, setReservasDensidad: setDensidad,
+    reservasCanal: canal, setReservasCanal: setCanal,
+  } = useAppStore();
+  // El canal cuenta como filtro activo sólo si acota algo: en "todas" no
+  // esconde nada, así que marcarlo haría que el contador mienta.
   const activeFiltersCount = useMemo(
-    () => [estado, search, fechaFiltro].filter(Boolean).length,
-    [estado, search, fechaFiltro],
+    () => [estado, search, fechaFiltro, canal !== 'todas' ? canal : ''].filter(Boolean).length,
+    [estado, search, fechaFiltro, canal],
   );
   const compacta = densidad === 'compacta';
   const cellPad = compacta ? 'px-3 py-1.5' : 'px-4 py-3';
@@ -111,12 +128,15 @@ export function ReservasList() {
       estado: estado || undefined,
       q: search.trim() || undefined,
       fecha: fechaFiltro || undefined,
+      // El backend ya aceptaba `origen` (lo usa el banner de arriba); lo que
+      // faltaba era que el listado principal pudiera pasarlo.
+      origen: canal === 'todas' ? undefined : canal,
       page,
       page_size: pageSize,
     });
     setReservas(resp.data);
     setTotal(resp.total);
-  }, [listReservas, estado, search, fechaFiltro, page]);
+  }, [listReservas, estado, search, fechaFiltro, canal, page]);
 
   useEffect(() => {
     loadReservas().catch(() => {});
@@ -247,6 +267,27 @@ export function ReservasList() {
                   </button>
                 )}
               </div>
+            </div>
+
+            {/* Canal. Va antes que el estado y separado a propósito: no es una
+                búsqueda sino una forma de trabajar, y es lo único de esta
+                barra que queda puesto entre sesiones. */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-slate-500">Canal</span>
+              {CANALES.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => { setCanal(c.value); setPage(1); }}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                    canal === c.value
+                      ? 'bg-primary/15 text-primary border-primary/25'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {c.icon && <c.icon className="w-3.5 h-3.5" />}
+                  {c.label}
+                </button>
+              ))}
             </div>
 
             {/* Filtros de estado */}
@@ -387,8 +428,19 @@ export function ReservasList() {
                   </td>
                   <td className={cn(cellPad, 'border-r border-slate-200')}>
                     <div className={cn('text-slate-800 font-medium', compacta && 'text-xs')}>
-                      {r.cliente?.nombre_completo ?? `Cliente ${r.cliente_id}`}
+                      {/* Una solicitud web sin cupo puede no tener cliente
+                          todavía: el contacto vive en la reserva (D-04). */}
+                      {r.cliente?.nombre_completo ?? r.web_contacto_nombre ?? `Cliente ${r.cliente_id}`}
                     </div>
+                    {/* El canal, debajo del cliente: quién reservó y cómo
+                        reservó son la misma pregunta. Va acá y no en una
+                        columna propia para no ensanchar la tabla. */}
+                    <BadgeCanal
+                      origen={r.origen}
+                      creadoPor={r.usuario_nombre}
+                      size="sm"
+                      className="mt-0.5"
+                    />
                   </td>
                   <td className={cn(cellPad, 'border-r border-slate-200')}>
                     <div className="text-slate-800 text-xs font-medium">

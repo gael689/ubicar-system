@@ -16,10 +16,10 @@ import { ReportesPage } from '@/pages/reportes/ReportesPage';
 import { ConfiguracionPage } from '@/pages/configuracion/ConfiguracionPage';
 import { FechasEspecialesPage } from '@/pages/fechas-especiales/FechasEspecialesPage';
 import { NotificacionesPage } from '@/pages/notificaciones/NotificacionesPage';
+import { SimuladorPage } from './pages/precios/SimuladorPage';
 import { PreciosPage } from '@/pages/precios/PreciosPage';
 import { AdicionalesPage } from '@/pages/adicionales/AdicionalesPage';
 import { ReservasWebPage } from '@/pages/reservas/ReservasWebPage';
-import { RecargosEdadPage } from '@/pages/precios/RecargosEdadPage';
 import { AuditoriaPage } from '@/pages/auditoria/AuditoriaPage';
 
 export default function App() {
@@ -73,9 +73,9 @@ export default function App() {
         <Route path="/precios" element={<Navigate to="/precios/mostrador" replace />} />
         <Route path="/precios/mostrador" element={<AppLayout title="Precios de mostrador"><PreciosPage canal="mostrador" /></AppLayout>} />
         <Route path="/precios/web" element={<AppLayout title="Precios de la web"><PreciosPage canal="web" /></AppLayout>} />
+        <Route path="/precios/simulador" element={<AppLayout title="Simulador de precios"><SimuladorPage /></AppLayout>} />
         <Route path="/adicionales" element={<AppLayout title="Adicionales"><AdicionalesPage /></AppLayout>} />
         <Route path="/reservas-web" element={<AppLayout title="Reservas web"><ReservasWebPage /></AppLayout>} />
-        <Route path="/recargos-edad" element={<AppLayout title="Recargos por edad"><RecargosEdadPage /></AppLayout>} />
         <Route path="/auditoria" element={<AppLayout title="Auditoría"><AuditoriaPage /></AppLayout>} />
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>
