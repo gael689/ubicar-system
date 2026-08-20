@@ -39,6 +39,15 @@ const GARANTIA_TIPOS = [
  * Queda como fallback y no como lista viva: si la configuración no carga, es
  * mejor ofrecer los tres correctos que un selector vacío.
  */
+/** Los criterios de desempate del motor, en corto para un renglón. */
+const MOTIVO_CORTO: Record<string, string> = {
+  unica: 'ser la única que cubre esas fechas',
+  prioridad: 'tener la prioridad más alta',
+  especificidad: 'ser más específica',
+  rango_mas_corto: 'tener el rango más corto',
+  mas_reciente: 'ser la más reciente',
+};
+
 const LUGARES_FALLBACK = ['Paraguay 241', 'Alsina 350', 'Aeropuerto Comandante Espora'];
 
 function formatTime(t: string) { return t.slice(0, 5); }
@@ -288,12 +297,6 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const vehiculosActivos = (vehiculosData?.data ?? []).filter(
     v => v.activo && ['disponible', 'reservado', 'en_transicion', 'alquilado'].includes(v.estado)
   );
-  const vehiculoSeleccionado = vehiculosActivos.find(v => v.id.toString() === vehiculoId);
-  const tieneCheckoutPendiente = vehiculoSeleccionado?.estado === 'alquilado';
-  const categoriaId = vehiculoSeleccionado?.categoria_id ?? null;
-
-  const { data: categoriasData } = useCategorias();
-
   /**
    * La categoría, cuando se reserva **sin elegir auto**.
    *
@@ -301,9 +304,54 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * usa. Sólo aparece al dejar el vehículo en blanco, que es el caso "todavía
    * no sé qué unidad le doy".
    */
+  /**
+   * En qué paso del wizard está.
+   *
+   * **Los mismos campos de siempre, en el orden en que uno piensa una
+   * reserva.** El formulario era una sola pantalla de 39 controles que
+   * arrancaba pidiendo el vehículo —una lista plana de patentes— y terminaba
+   * con una sección de pago enorme donde casi siempre la respuesta es la
+   * misma. No se sacó ni se agregó ningún campo: se reordenaron y se plegó lo
+   * que casi nunca se toca.
+   *
+   * **Editando se muestra todo junto.** Editar es corregir un dato puntual, y
+   * obligar a recorrer seis pasos para cambiar una hora sería peor que el muro
+   * original.
+   */
+  const [paso, setPaso] = useState(1);
+  const [errorPaso, setErrorPaso] = useState('');
+  /**
+   * Si el detalle de pago está abierto.
+   *
+   * Arranca cerrado en una reserva nueva —el default cubre casi todos los
+   * casos— y abierto si ya hay algo cargado, para no esconder datos que
+   * alguien puso.
+   */
+  const [pagoDetalladoAbierto, setPagoDetalladoAbierto] = useState(
+    Boolean(reserva?.con_factura || reserva?.forma_pago_prevista || (reserva?.estado_pago && reserva.estado_pago !== 'pendiente'))
+  );
+  /** Editando no hay pasos: se muestra todo junto para corregir un dato suelto. */
+  const enPasos = !isEdit;
+
   const [categoriaManualId, setCategoriaManualId] = useState(
     reserva?.vehiculo_id ? '' : (reserva?.categoria_id?.toString() ?? '')
   );
+
+  const vehiculoSeleccionado = vehiculosActivos.find(v => v.id.toString() === vehiculoId);
+  const tieneCheckoutPendiente = vehiculoSeleccionado?.estado === 'alquilado';
+  /**
+   * La categoría de la reserva.
+   *
+   * Sale del auto elegido, y si no hay auto, de la categoría que se eligió a
+   * mano. **Sin esta segunda mitad, reservar por categoría dejaba al formulario
+   * sin franquicia y sin precio sugerido**, y el resumen avisaba "esta
+   * categoría no tiene franquicia cargada" aunque sí la tuviera.
+   */
+  const categoriaId = vehiculoSeleccionado?.categoria_id
+    ?? (categoriaManualId ? Number(categoriaManualId) : null);
+
+  const { data: categoriasData } = useCategorias();
+
 
   /**
    * La flota agrupada por categoría, en el orden en que se muestran las
@@ -408,6 +456,46 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     }
   }, [duracionDias]);
 
+  /**
+   * Lo mínimo que cada paso necesita para poder avanzar.
+   *
+   * **Sólo se pide lo que sin ello el paso siguiente no tiene sentido.** El
+   * wizard no bloquea más que el formulario de antes: guiar no es poner
+   * puertas. Todo lo que era una advertencia sigue siendo una advertencia y se
+   * ve en el resumen del paso 6, donde todavía se puede guardar igual.
+   */
+  function faltaEnElPaso(n: number): string {
+    if (n === 1 && !clienteId) return 'Elegí un cliente para seguir.';
+    if (n === 2) {
+      if (!fechaInicio || !fechaFin) return 'Faltan las fechas.';
+      if (fechaFin <= fechaInicio) return 'La devolución tiene que ser posterior al retiro.';
+      if (!lugarEntrega) return 'Falta el lugar de retiro.';
+      if (!lugarDevolucion) return 'Falta el lugar de devolución.';
+    }
+    // El paso 3 no exige auto: reservar sólo por categoría es válido. Lo único
+    // que no se puede es no elegir ninguna de las dos cosas.
+    if (n === 3 && !vehiculoId && !categoriaManualId) {
+      return 'Elegí un auto, o al menos la categoría.';
+    }
+    if (n === 4 && (precioTotal === '' || Number(precioTotal) <= 0)) {
+      return 'Falta el precio.';
+    }
+    if (n === 4 && hayDescuentoManual && !descuentoMotivo.trim()) {
+      return 'El precio difiere del sugerido: escribí el motivo.';
+    }
+    if (n === 5 && !isEdit && !condicionPagoAncla) {
+      return 'Elegí en qué momento se cobra.';
+    }
+    return '';
+  }
+
+  function siguientePaso() {
+    const falta = faltaEnElPaso(paso);
+    setErrorPaso(falta);
+    if (falta) return;
+    setPaso(p => Math.min(6, p + 1));
+  }
+
   const handlePrecioPorDiaChange = (val: string) => {
     lastEditedRef.current = 'dia';
     if (val === '') { setPrecioPorDia(''); setPrecioTotal(''); return; }
@@ -452,7 +540,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   // correspondía, y —peor— **no aparecía cuando sí**, y el backend rechazaba
   // la reserva con un 422 sin campo donde escribir el motivo.
   const { data: cotizacionLista } = useCalcularPrecio(
-    !isEdit && vehiculoId && fechaInicio && fechaFin && fechaFin > fechaInicio
+    !isEdit && (vehiculoId || categoriaManualId) && fechaInicio && fechaFin && fechaFin > fechaInicio
       ? {
           fecha_inicio: fechaInicio,
           fecha_fin: fechaFin,
@@ -467,11 +555,95 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       : null
   );
   const precioListaEstimado = cotizacionLista ? Number(cotizacionLista.total) : null;
+  /**
+   * El precio que el motor sugiere, y **por qué** ese precio.
+   *
+   * `cotizacionLista` ya traía el desglose día por día con la regla que
+   * gobernó cada uno y el criterio con que ganó; el formulario usaba sólo el
+   * total, y nada más que para avisar que el precio tipeado difería. Mostrar
+   * de dónde sale el número es lo que convierte la sugerencia en algo que se
+   * puede aceptar o rechazar con criterio.
+   *
+   * La explicación se arma sobre los días cotizados: si todos salen de la misma
+   * regla se nombra esa; si son varias, se dice cuántas intervinieron, porque
+   * listarlas todas en un renglón no lo lee nadie.
+   */
+  const precioSugerido = useMemo(() => {
+    if (!cotizacionLista || duracionDias <= 0) return null;
+    const total = Number(cotizacionLista.subtotal_vehiculo ?? cotizacionLista.total ?? 0);
+    if (!total) return null;
+
+    const dias = cotizacionLista.dias ?? [];
+    const nombres = Array.from(new Set(dias.map(d => d.regla_nombre).filter(Boolean)));
+    const deCalendario = dias.filter(d => d.origen === 'calendario');
+
+    let explicacion: string;
+    if (deCalendario.length === 0) {
+      explicacion = nombres[0] ? `Sale de la ${nombres[0]!.toLowerCase()}.` : 'Sale de la tarifa por banda.';
+    } else if (nombres.length === 1) {
+      const d = deCalendario[0];
+      explicacion = `Sale de la regla "${nombres[0]}"`
+        + (d.motivo && d.candidatas > 1 ? `, que ganó por ${MOTIVO_CORTO[d.motivo] ?? d.motivo}` : '')
+        + '.';
+    } else {
+      explicacion = `${nombres.length} reglas distintas cubren estos días. Mirá el desglose en el Simulador.`;
+    }
+
+    const conDescuento = Number(cotizacionLista.descuento_monto ?? 0) > 0
+      ? ` Ya tiene aplicado el descuento por duración (−${Number(cotizacionLista.descuento_porcentaje)}%).`
+      : '';
+
+    return { total, porDia: total / duracionDias, explicacion: explicacion + conDescuento };
+  }, [cotizacionLista, duracionDias]);
+
+  /**
+   * Lo que hay cargado detrás del plegado, en una línea.
+   *
+   * Sin esto, plegar esconde información y quien mira no sabe si hay algo
+   * adentro. El resumen es lo que permite tenerlo cerrado sin perderlo de
+   * vista.
+   */
+  const resumenPagoDetallado = useMemo(() => {
+    const partes: string[] = [];
+    if (conFactura) partes.push('con factura');
+    if (formaPagoPrevista) partes.push(formaPagoPrevista.replace(/_/g, ' '));
+    if (estadoPago === 'anticipo' && anticipoMonto) partes.push(`anticipo $${Number(anticipoMonto).toLocaleString('es-AR')}`);
+    if (estadoPago === 'pagado') partes.push('ya pagado');
+    return partes.join(' · ');
+  }, [conFactura, formaPagoPrevista, estadoPago, anticipoMonto]);
+
   const hayDescuentoManual = precioListaEstimado !== null && precioTotal !== '' && Math.round(precioTotal) !== Math.round(precioListaEstimado);
   const requiereDatosEcheq = formaPagoPrevista === 'echeq' || (estadoPago !== 'pendiente' && anticipoMedioPago === 'echeq');
 
+  /**
+   * Falla el guardado y **te lleva al paso donde está el campo**.
+   *
+   * Cinco validaciones del guardado (garantía, ancla, anticipo) no tienen
+   * puerta de paso porque dependen de combinaciones, así que saltan recién en
+   * el resumen — con el control a dos pantallas de distancia y un mensaje que
+   * no decía a dónde volver.
+   */
+  function errorEnPaso(mensaje: string, n: number) {
+    setLocalError(mensaje);
+    if (!enPasos) return;
+    setPaso(n);
+    // Si el campo está detrás del plegado del paso 5, abrirlo: mandar al paso
+    // correcto y dejar el control escondido no resuelve nada.
+    if (n === 5) setPagoDetalladoAbierto(true);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // Enter dentro de un input dispara el submit del form. Estando a mitad del
+    // wizard eso guardaría la reserva sin que nadie haya visto el resumen, así
+    // que acá se convierte en "avanzar al paso siguiente", que es lo que la
+    // persona quiso decir.
+    if (enPasos && paso < 6) {
+      siguientePaso();
+      return;
+    }
+
     setLocalError(null);
     setWarnings([]);
 
@@ -481,31 +653,31 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     // que hace que una reserva de mostrador y una web sean la misma cosa.
     // Elegir el auto sigue siendo el camino normal, no la excepción.
     if (!clienteId || !fechaInicio || !fechaFin) {
-      setLocalError('Complete todos los campos requeridos (Cliente, Fechas).');
+      errorEnPaso('Complete todos los campos requeridos (Cliente, Fechas).', 1);
       return;
     }
     if (!vehiculoId && !categoriaManualId) {
-      setLocalError('Elegí un vehículo, o al menos la categoría que se reservó.');
+      errorEnPaso('Elegí un vehículo, o al menos la categoría que se reservó.', 3);
       return;
     }
     if (!lugarEntrega || !lugarDevolucion) {
-      setLocalError('Complete el lugar de entrega y de devolución.');
+      errorEnPaso('Complete el lugar de entrega y de devolución.', 2);
       return;
     }
     if (new Date(fechaFin) <= new Date(fechaInicio)) {
-      setLocalError('La fecha de fin debe ser posterior a la de inicio');
+      errorEnPaso('La fecha de fin debe ser posterior a la de inicio', 2);
       return;
     }
     if (!precioTotal) {
-      setLocalError('La cotización es obligatoria. Ingrese el precio total o por día.');
+      errorEnPaso('La cotización es obligatoria. Ingrese el precio total o por día.', 4);
       return;
     }
     if (!isEdit && hayDescuentoManual && !descuentoMotivo.trim()) {
-      setLocalError(`El precio cargado difiere del precio de lista ($${precioListaEstimado?.toLocaleString('es-AR')}) — indique el motivo de la diferencia.`);
+      errorEnPaso(`El precio cargado difiere del precio de lista ($${precioListaEstimado?.toLocaleString('es-AR')}) — indique el motivo de la diferencia.`, 4);
       return;
     }
     if (garantiaTipo !== 'no_aplica' && !garantiaMonto) {
-      setLocalError('Ingrese el monto de garantía.');
+      errorEnPaso('Ingrese el monto de garantía.', 5);
       return;
     }
     if (!isEdit && !condicionPagoAncla) {
@@ -517,22 +689,22 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       return;
     }
     if (!isEdit && condicionPagoAncla === 'fecha_especifica' && !condicionPagoFechaAncla) {
-      setLocalError('Ingrese la fecha a partir de la cual se cuenta el plazo de pago.');
+      errorEnPaso('Ingrese la fecha a partir de la cual se cuenta el plazo de pago.', 5);
       return;
     }
     if (estadoPago === 'anticipo') {
       if (!anticipoMonto || !anticipoFecha || !anticipoMedioPago) {
-        setLocalError('Si hubo un anticipo, complete el monto, fecha y medio de pago.');
+        errorEnPaso('Si hubo un anticipo, complete el monto, fecha y medio de pago.', 5);
         return;
       }
       if (parseFloat(anticipoMonto as string) >= parseFloat(String(precioTotal))) {
-        setLocalError('El anticipo debe ser menor al precio total. Si abonó el total, seleccione "Abonó el total".');
+        errorEnPaso('El anticipo debe ser menor al precio total. Si abonó el total, seleccione "Abonó el total".', 5);
         return;
       }
     }
     if (estadoPago === 'pagado') {
       if (!anticipoFecha || !anticipoMedioPago) {
-        setLocalError('Si abonó el total, complete la fecha y medio de pago.');
+        errorEnPaso('Si abonó el total, complete la fecha y medio de pago.', 5);
         return;
       }
     }
@@ -570,7 +742,13 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         onSuccess(actualizada, warnings);
       } else {
         const payload: ReservaCreate = {
-          vehiculo_id: parseInt(vehiculoId),
+          // **Sin auto, la reserva viaja con la categoría.** `parseInt('')` da
+          // `NaN`, que `JSON.stringify` manda como `null`: el backend recibía
+          // una reserva sin vehículo Y sin categoría, y la rechazaba por
+          // invariante. O sea que el camino que el paso 3 ofrece —"sin asignar
+          // todavía"— nunca había funcionado.
+          vehiculo_id: vehiculoId ? parseInt(vehiculoId) : null,
+          categoria_id: vehiculoId ? null : (categoriaManualId ? parseInt(categoriaManualId) : null),
           cliente_id: parseInt(clienteId),
           conductor_id: conductorId ? parseInt(conductorId) : null,
           fecha_inicio: fechaInicio,
@@ -635,13 +813,53 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
       <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-          <h2 className="text-xl font-bold text-slate-800">
-            {isEdit ? 'Editar Reserva' : 'Nueva Reserva'}
-          </h2>
-          <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+        <div className="px-6 pt-4 pb-3 border-b border-slate-200 bg-slate-50 shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">
+                {isEdit ? 'Editar Reserva' : 'Nueva Reserva'}
+              </h2>
+              {enPasos && (
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Paso {paso} de 6 · {PASOS_WIZARD[paso - 1].ayuda}
+                </p>
+              )}
+            </div>
+            <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Los seis pasos, clickeables hacia atrás. Adelante no: saltear un
+              paso deja campos sin lo mínimo y el error aparecería recién al
+              final, que es justo lo que el wizard viene a evitar. */}
+          {enPasos && (
+            <div className="mt-3 flex items-center gap-1">
+              {PASOS_WIZARD.map(p2 => {
+                const hecho = p2.n < paso;
+                const actual = p2.n === paso;
+                return (
+                  <button
+                    key={p2.n}
+                    type="button"
+                    disabled={p2.n > paso}
+                    onClick={() => { setErrorPaso(''); setPaso(p2.n); }}
+                    className={`flex-1 group text-left ${p2.n > paso ? 'cursor-default' : 'cursor-pointer'}`}
+                    title={p2.titulo}
+                  >
+                    <div className={`h-1 rounded-full transition-colors ${
+                      actual ? 'bg-primary' : hecho ? 'bg-primary/40' : 'bg-slate-200'
+                    }`} />
+                    <span className={`mt-1 hidden sm:block text-[10px] font-medium truncate ${
+                      actual ? 'text-primary' : hecho ? 'text-slate-500' : 'text-slate-400'
+                    }`}>
+                      {p2.titulo}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <form id="reserva-form" onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
@@ -664,8 +882,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             </p>
           )}
 
-          {/* Vehículo y Cliente */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* ── PASO 3 · ¿QUÉ? ──────────────────────────────────────────── */}
+          {(!enPasos || paso === 3) && (
+          <div className="space-y-5">
             <div className="space-y-1.5">
               <label className="text-sm font-semibold text-slate-700">Vehículo</label>
               <select
@@ -714,7 +933,12 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 </div>
               )}
             </div>
+          </div>
+          )}
 
+          {/* ── PASO 1 · ¿QUIÉN? ────────────────────────────────────────── */}
+          {(!enPasos || paso === 1) && (
+          <div className="space-y-5">
             <div className="space-y-1.5" ref={dropdownRef}>
               <label className="text-sm font-semibold text-slate-700">Cliente *</label>
               <div className="relative">
@@ -774,7 +998,6 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 )}
               </div>
             </div>
-          </div>
 
           {/* Conductor (si es distinto de quien paga) */}
           {clienteId && conductoresCliente && conductoresCliente.length > 0 && (
@@ -793,7 +1016,12 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               <p className="text-xs text-slate-500">Para empresas: quién retira el auto, si no es quien paga/firma.</p>
             </div>
           )}
+          </div>
+          )}
 
+          {/* ── PASO 2 · ¿CUÁNDO Y DÓNDE? ───────────────────────────────── */}
+          {(!enPasos || paso === 2) && (
+          <div className="space-y-5">
           {/* Fechas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
@@ -932,7 +1160,13 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             </div>
           </div>
 
-          {/* Cotización y Pago OBLIGATORIA */}
+          </div>
+          )}
+
+          {/* ── PASO 4 · ¿CUÁNTO? ───────────────────────────────────────── */}
+          {(!enPasos || paso === 4) && (
+          <div className="space-y-5">
+          {/* Cotización */}
           <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-4">
             <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-primary" /> Cotización y Pago *
@@ -979,6 +1213,42 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 Sin tarifa propia ni de categoría: se cotiza con la tarifa general.
               </p>
             )}
+            {/* **El precio sugerido, con la regla que lo puso.** El backend ya
+                devolvía todo esto —el total, de dónde salió el precio de cada
+                día y con qué criterio ganó la regla— y el formulario sólo usaba
+                el total, y encima nada más que para reprochar que el precio
+                difería. Ver de dónde sale el número es la diferencia entre
+                aceptar una sugerencia y adivinar. */}
+            {precioSugerido && (
+              <div className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm text-slate-700">
+                    Sugerido:{' '}
+                    <strong className="tabular-nums text-primary">
+                      ${precioSugerido.total.toLocaleString('es-AR')}
+                    </strong>
+                    <span className="text-xs text-slate-500">
+                      {' '}· ${precioSugerido.porDia.toLocaleString('es-AR')}/día
+                    </span>
+                  </span>
+                  {precioTotal !== Math.round(precioSugerido.total) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrecioTotal(Math.round(precioSugerido.total));
+                        setPrecioPorDia(Math.round(precioSugerido.porDia));
+                        lastEditedRef.current = 'total';
+                      }}
+                      className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primary/90"
+                    >
+                      Usar este precio
+                    </button>
+                  )}
+                </div>
+                <p className="mt-0.5 text-[11px] text-slate-500">{precioSugerido.explicacion}</p>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-600">Precio x Día ($) *</label>
@@ -1142,8 +1412,16 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 />
               </div>
             )}
+          </div>
+          </div>
+          )}
+
+          {/* ── PASO 5 · ¿CÓMO SE PAGA? ─────────────────────────────────── */}
+          {(!enPasos || paso === 5) && (
+          <div className="space-y-5">
+            <div className="space-y-3 rounded-xl border-2 border-primary/20 bg-primary/5 p-4">
             {!isEdit && (
-              <div className="space-y-1.5 pt-2 border-t border-slate-200">
+              <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-600">Condición de pago *</label>
                 <div className="flex gap-2 flex-wrap">
                   {[
@@ -1209,6 +1487,30 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 </div>
               </div>
             )}
+            {/* **Lo que casi nunca se toca, plegado.** En la enorme mayoría de
+                las reservas la respuesta es "contado, al entregar, sin
+                anticipo", y todo esto —factura, forma de pago prevista,
+                anticipo, echeq— quedaba desplegado ocupando media pantalla para
+                no cambiar nada. Se abre cuando hace falta.
+
+                Se abre solo si ya hay algo cargado: editando una reserva que sí
+                tiene anticipo, esconderlo sería peor que mostrarlo de más. */}
+            <button
+              type="button"
+              onClick={() => setPagoDetalladoAbierto(v => !v)}
+              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <span>
+                Factura, forma de pago y anticipo
+                {!pagoDetalladoAbierto && resumenPagoDetallado && (
+                  <span className="ml-1 font-normal text-slate-400">· {resumenPagoDetallado}</span>
+                )}
+              </span>
+              <span className="text-slate-400">{pagoDetalladoAbierto ? 'Ocultar' : 'Cambiar'}</span>
+            </button>
+
+            {pagoDetalladoAbierto && (
+            <div className="space-y-3">
             <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
               <input type="checkbox" checked={conFactura} onChange={e => setConFactura(e.target.checked)} className="accent-primary" />
               Con factura
@@ -1344,9 +1646,12 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 </div>
               )}
             </div>
+            </div>
+            )}
           </div>
 
-          {/* Garantía / Depósito */}
+          {/* Garantía / Depósito — va en el mismo paso que el pago: las dos
+              cosas son "cómo se cubre la plata de este alquiler". */}
           {!isEdit && (
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-3">
               <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
@@ -1429,6 +1734,37 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             </div>
           )}
 
+          </div>
+          )}
+
+          {/* ── PASO 6 · RESUMEN ────────────────────────────────────────── */}
+          {(!enPasos || paso === 6) && (
+          <div className="space-y-5">
+          {/* Sólo al crear. Editando, varias secciones están ocultas por
+              `!isEdit`, así que el resumen avisaría de cosas que no se pueden
+              arreglar desde esta pantalla. */}
+          {enPasos && (
+          <ResumenReserva
+            vehiculo={vehiculoSeleccionado}
+            categoriaNombre={
+              vehiculoSeleccionado
+                ? (categoriasData ?? []).find(c => c.id === vehiculoSeleccionado.categoria_id)?.nombre
+                : (categoriasData ?? []).find(c => String(c.id) === categoriaManualId)?.nombre
+            }
+            clienteNombre={clientSearch}
+            fechaInicio={fechaInicio}
+            fechaFin={fechaFin}
+            horaInicio={horaInicio}
+            duracionDias={duracionDias}
+            lugarEntrega={lugarEntrega}
+            lugarDevolucion={lugarDevolucion}
+            precioTotal={precioTotal === '' ? null : Number(precioTotal)}
+            totalAdicionales={totalAdicionales}
+            franquicia={franquiciaCobertura ?? franquiciaBase}
+            condicionPago={condicionPago}
+            garantiaTipo={garantiaTipo}
+          />
+          )}
           {/* Notas */}
           <div className="space-y-1.5">
             <label className="text-sm font-semibold text-slate-700">Notas internas</label>
@@ -1437,7 +1773,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               placeholder="Observaciones, acuerdos especiales..." />
           </div>
 
-          {/* Warnings de solape */}
+          </div>
+          )}
+
+          {/* Warnings de solape — fuera de los pasos: si hay un conflicto hay
+              que verlo esté donde esté, no sólo al llegar al final. */}
           {warnings.length > 0 && (
             <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-2">
               <p className="text-sm font-bold text-amber-800 flex items-center gap-2">
@@ -1463,18 +1803,144 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         </form>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-3 shrink-0">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">
-            Cancelar
-          </button>
-          <button type="submit" form="reserva-form" disabled={loading}
-            className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2 shadow-sm">
-            {loading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
-            {isEdit ? 'Guardar cambios' : 'Crear reserva'}
-          </button>
+        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">
+              Cancelar
+            </button>
+            {enPasos && paso > 1 && (
+              <button type="button" onClick={() => { setErrorPaso(''); setPaso(p => p - 1); }}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">
+                ← Atrás
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* **El error del paso se muestra acá, al lado del botón**, y no
+                arriba de todo: es donde está mirando la persona cuando aprieta
+                Siguiente. */}
+            {enPasos && errorPaso && (
+              <span className="text-xs font-medium text-amber-700">{errorPaso}</span>
+            )}
+            {enPasos && paso < 6 ? (
+              <button type="button" onClick={siguientePaso}
+                className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors shadow-sm">
+                Siguiente →
+              </button>
+            ) : (
+              <button type="submit" form="reserva-form" disabled={loading}
+                className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2 shadow-sm">
+                {loading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
+                {isEdit ? 'Guardar cambios' : 'Crear reserva'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Los seis pasos, en el orden en que uno piensa una reserva.
+ *
+ * No es el orden en que estaban los campos: el formulario arrancaba pidiendo
+ * el vehículo, que es lo último que se sabe cuando alguien llama preguntando
+ * por fechas.
+ */
+export const PASOS_WIZARD = [
+  { n: 1, titulo: '¿Quién?', ayuda: 'El cliente, y quién va a manejar si no es el mismo.' },
+  { n: 2, titulo: '¿Cuándo y dónde?', ayuda: 'Fechas, horarios y lugares de retiro y devolución.' },
+  { n: 3, titulo: '¿Qué?', ayuda: 'El auto, o la categoría si todavía no se sabe cuál.' },
+  { n: 4, titulo: '¿Cuánto?', ayuda: 'El precio y los adicionales.' },
+  { n: 5, titulo: '¿Cómo se paga?', ayuda: 'Condición de pago, garantía y factura.' },
+  { n: 6, titulo: 'Resumen', ayuda: 'Revisá antes de guardar.' },
+] as const;
+
+/**
+ * Lo que se está por guardar, en una sola pantalla.
+ *
+ * **Existe para que los problemas se vean antes de confirmar y no después.**
+ * Antes había que guardar la reserva, abrirla y recién ahí darse cuenta de que
+ * faltaba la garantía o de que el precio no era el que se había acordado.
+ */
+function ResumenReserva({
+  vehiculo, categoriaNombre, clienteNombre, fechaInicio, fechaFin, horaInicio,
+  duracionDias, lugarEntrega, lugarDevolucion, precioTotal, totalAdicionales,
+  franquicia, condicionPago, garantiaTipo,
+}: {
+  vehiculo?: { patente: string; marca: string; modelo: string } | null;
+  categoriaNombre?: string;
+  clienteNombre: string;
+  fechaInicio: string; fechaFin: string; horaInicio: string;
+  duracionDias: number;
+  lugarEntrega: string; lugarDevolucion: string;
+  precioTotal: number | null; totalAdicionales: number;
+  franquicia: number | null;
+  condicionPago: string; garantiaTipo: string;
+}) {
+  const faltantes: string[] = [];
+  if (!vehiculo && !categoriaNombre) faltantes.push('no se eligió ni auto ni categoría');
+  else if (!vehiculo) faltantes.push('todavía no tiene auto asignado');
+  if (precioTotal === null || precioTotal <= 0) faltantes.push('falta el precio');
+  if (garantiaTipo === 'no_aplica') faltantes.push('sin garantía definida');
+  if (franquicia === null) faltantes.push('esta categoría no tiene franquicia cargada');
+
+  const Fila = ({ k, v }: { k: string; v: React.ReactNode }) => (
+    <div className="flex justify-between gap-4 py-1.5">
+      <span className="text-xs text-slate-500">{k}</span>
+      <span className="text-right text-sm font-medium text-slate-800">{v}</span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 divide-y divide-slate-100">
+        <Fila k="Cliente" v={clienteNombre || '—'} />
+        <Fila
+          k="Vehículo"
+          v={vehiculo
+            ? `${vehiculo.patente} · ${vehiculo.marca} ${vehiculo.modelo}`
+            : (categoriaNombre ? `${categoriaNombre} — sin asignar` : '—')}
+        />
+        <Fila k="Período" v={`${fechaInicio} → ${fechaFin} · ${duracionDias} día${duracionDias !== 1 ? 's' : ''} · ${horaInicio}`} />
+        <Fila k="Retiro" v={lugarEntrega || '—'} />
+        <Fila k="Devolución" v={lugarDevolucion || '—'} />
+        <Fila
+          k="Precio del auto"
+          v={precioTotal !== null ? `$${precioTotal.toLocaleString('es-AR')}` : '—'}
+        />
+        {totalAdicionales > 0 && (
+          <Fila k="Adicionales" v={`$${totalAdicionales.toLocaleString('es-AR')}`} />
+        )}
+        {precioTotal !== null && (
+          <Fila
+            k="Total a facturar"
+            v={<strong>${(precioTotal + totalAdicionales).toLocaleString('es-AR')}</strong>}
+          />
+        )}
+        <Fila
+          k="Franquicia del cliente"
+          v={franquicia !== null ? `$${franquicia.toLocaleString('es-AR')}` : 'sin cargar'}
+        />
+        <Fila k="Condición de pago" v={condicionPago} />
+      </div>
+
+      {/* El semáforo, antes de guardar. Es la misma información que el listado
+          muestra después, sólo que llega a tiempo para hacer algo al respecto. */}
+      {faltantes.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+            <AlertTriangle className="h-4 w-4" /> Se puede guardar igual, pero:
+          </p>
+          <ul className="mt-1 list-disc pl-6 text-xs text-amber-800">
+            {faltantes.map(f => <li key={f}>{f}</li>)}
+          </ul>
+        </div>
+      )}
+
     </div>
   );
 }
