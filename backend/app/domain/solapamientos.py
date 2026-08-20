@@ -9,7 +9,7 @@ Reglas (D2):
 - Ventanas adyacentes (fin_a == inicio_b) → NO solapan
 """
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from app.domain.ventana import VentanaReserva
 
@@ -35,6 +35,36 @@ class ResultadoSolapamiento:
     @property
     def hay_advertencia(self) -> bool:
         return bool(self.conflictos_advertencia)
+
+
+# Cuánto se ensancha, de cada lado, el rango con el que se van a **buscar** las
+# ventanas candidatas en la base. Ver `rango_de_carga`.
+MARGEN_CARGA_DIAS = 1
+
+
+def rango_de_carga(inicio: datetime, fin: datetime) -> tuple[date, date]:
+    """
+    El rango de **fechas** con el que hay que ir a buscar las ventanas que
+    podrían solapar con el rango de **datetimes** pedido.
+
+    Existe porque las ventanas se guardan como fecha + hora en columnas
+    separadas y se consultan por fecha, pero el solapamiento se decide por
+    datetime. Traducir de uno al otro a ojo es donde se pierde una ventana.
+
+    **El margen de un día no es paranoia, es la traducción.** Una reserva que
+    termina el 9 a las 23:00 solapa con una que empieza el 10 a las 00:30 sólo
+    si se mira la hora; por fecha, `fecha_fin (9) >= inicio.date() (10)` es
+    falso y esa ventana no se traería. Un día de más no cuesta nada —son unas
+    pocas filas— y uno de menos es una reserva doble que nadie ve hasta el día
+    de la entrega.
+
+    El invariante que esto garantiza, y que fija `test_rango_de_carga`: **toda
+    ventana que pueda solapar con `[inicio, fin]` entra en el rango devuelto.**
+    Traer de más es aceptable; `detectar_solapamientos` descarta lo que no
+    solapa de verdad. Traer de menos, no.
+    """
+    margen = timedelta(days=MARGEN_CARGA_DIAS)
+    return (inicio.date() - margen, fin.date() + margen)
 
 
 def hay_solapamiento(

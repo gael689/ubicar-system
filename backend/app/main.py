@@ -12,6 +12,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.database import SessionLocal
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError, UnauthorizedError
+from app.services.reserva_service import ReservaService
 from app.routers import (
     vehiculos, clientes, reservas, alquileres,
     contratos, pagos, gastos, echeqs, documentos,
@@ -25,6 +26,40 @@ from app.routers import (
 logger = logging.getLogger(__name__)
 
 TZ_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+def _sincronizar_estados() -> None:
+    """
+    Job del scheduler: pone al día los estados que dependen del reloj
+    (`confirmada` → `activa` cuando llega la hora de retiro, `activa` →
+    `vencida` cuando pasa la de devolución).
+
+    **Existe para que las pantallas no escriban.** Esto vivía adentro del
+    listado de reservas y del calendario, o sea que dos de las pantallas más
+    abiertas del sistema hacían dos UPDATE masivos y un COMMIT en cada
+    request. Con tres personas trabajando a la vez sobre la misma flota, eran
+    escrituras constantes sobre la tabla más consultada — y encima
+    inconsistentes: el estado de una reserva dependía de quién hubiera abierto
+    qué pantalla.
+
+    **Cada 5 minutos y no cada minuto** porque el dato no es urgente: son
+    etiquetas derivadas del reloj, y ningún camino de escritura depende de que
+    estén frescas (`checkout()` acepta `confirmada` y `activa`; `checkin()`
+    acepta `activa` y `vencida`, que son justo los pares entre los que esto
+    mueve). Lo peor que puede pasar es que una etiqueta tarde cinco minutos.
+
+    Se lo llama además al arranque del motor de notificaciones, que evalúa
+    reglas sobre estos estados y necesita que estén al día en ese instante.
+    """
+    db = SessionLocal()
+    try:
+        ReservaService(db).sincronizar_estados_por_horario()
+    except Exception:
+        # Un fallo acá no puede tumbar el scheduler: la próxima corrida lo
+        # reintenta sola, y el motor de notificaciones también sincroniza.
+        logger.exception("Falló la sincronización de estados por horario")
+    finally:
+        db.close()
 
 
 def _correr_motor_notificaciones(con_digest: bool = False) -> None:
@@ -42,7 +77,6 @@ def _correr_motor_notificaciones(con_digest: bool = False) -> None:
     no un resumen— sigue siendo sólo de las 08:00, con `con_digest=True`.
     """
     from app.services.notificacion_service import NotificacionService
-    from app.services.reserva_service import ReservaService
 
     db = SessionLocal()
     try:
@@ -152,9 +186,20 @@ async def lifespan(app: FastAPI):
         id="motor_notificaciones_frecuente",
         replace_existing=True,
     )
+    # Los estados por reloj, cada 5 minutos. Va aparte del motor de
+    # notificaciones —que corre cada 30— porque es mucho más barato y mucho
+    # más visible: es lo que hace que el calendario y el listado muestren
+    # `activa` o `vencida` a tiempo sin que ninguna pantalla escriba.
+    scheduler.add_job(
+        _sincronizar_estados,
+        IntervalTrigger(minutes=5),
+        id="sincronizar_estados_por_horario",
+        replace_existing=True,
+    )
     scheduler.start()
     logger.info(
-        "Scheduler iniciado — motor de notificaciones cada 30 min, digest a las 08:00 ART"
+        "Scheduler iniciado — estados cada 5 min, motor de notificaciones cada "
+        "30 min, digest a las 08:00 ART"
     )
     yield
     scheduler.shutdown(wait=False)

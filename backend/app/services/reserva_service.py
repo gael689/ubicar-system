@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
 from app.domain.enums import EstadoReserva, EstadoVehiculo
-from app.domain.solapamientos import detectar_solapamientos
+from app.domain.solapamientos import detectar_solapamientos, rango_de_carga
 from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
 from app.domain.tarifas import (
     cotizar_por_bandas, calcular_duracion_dias, canal_de_origen, TarifaInfo,
@@ -78,7 +78,18 @@ class ReservaService:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[Reserva], int]:
-        self.sincronizar_estados_por_horario()
+        # **Listar no escribe.** Acá había un `sincronizar_estados_por_horario()`,
+        # que son dos UPDATE masivos y un COMMIT — en cada request del listado
+        # de reservas, que es de las pantallas más abiertas del sistema. La
+        # sincronización la hace ahora el scheduler cada 5 minutos (ver
+        # `main.py`), que además es más consistente: el estado de una reserva
+        # dependía de quién había abierto qué pantalla.
+        #
+        # Sacarla de acá es seguro porque **ningún camino de escritura depende
+        # de que esté fresca**: `checkout()` acepta `confirmada` y `activa`, y
+        # `checkin()` acepta `activa` y `vencida`, que son justamente los pares
+        # entre los que esta sincronización mueve. Lo único que cambia es que
+        # una etiqueta puede tardar hasta 5 minutos en cambiar sola.
         return self.reserva_repo.list(
             estado=estado,
             vehiculo_id=vehiculo_id,
@@ -428,7 +439,7 @@ class ReservaService:
         # bloqueara un auto arbitrario.
         resultado = None
         if vehiculo_id is not None:
-            ventanas = self._cargar_ventanas(vehiculo_id)
+            ventanas = self._cargar_ventanas(vehiculo_id, fecha_inicio, fecha_fin)
             resultado = detectar_solapamientos(vehiculo_id, inicio_dt, fin_dt, ventanas)
 
             if resultado.hay_conflicto_bloqueante:
@@ -741,7 +752,7 @@ class ReservaService:
             raise BusinessRuleError("fechas_invalidas", "La fecha de fin debe ser posterior a la de inicio")
 
         # Re-verificar solapamiento con el nuevo rango/vehículo
-        ventanas = self._cargar_ventanas(v_id)
+        ventanas = self._cargar_ventanas(v_id, f_inicio, f_fin)
         resultado = detectar_solapamientos(v_id, inicio_dt, fin_dt, ventanas, excluir_id=id)
 
         if resultado.hay_conflicto_bloqueante:
@@ -862,7 +873,9 @@ class ReservaService:
         # Re-verificar solapamiento al momento de confirmar
         inicio_dt = datetime.combine(reserva.fecha_inicio, reserva.hora_inicio)
         fin_dt = datetime.combine(reserva.fecha_fin, reserva.hora_fin)
-        ventanas = self._cargar_ventanas(reserva.vehiculo_id)
+        ventanas = self._cargar_ventanas(
+            reserva.vehiculo_id, reserva.fecha_inicio, reserva.fecha_fin
+        )
         resultado = detectar_solapamientos(
             reserva.vehiculo_id, inicio_dt, fin_dt, ventanas, excluir_id=id
         )
@@ -1033,7 +1046,9 @@ class ReservaService:
 
         inicio_dt = datetime.combine(reserva.fecha_inicio, reserva.hora_inicio)
         fin_dt = datetime.combine(reserva.fecha_fin, reserva.hora_fin)
-        ventanas = self._cargar_ventanas(nuevo_vehiculo_id)
+        ventanas = self._cargar_ventanas(
+            nuevo_vehiculo_id, reserva.fecha_inicio, reserva.fecha_fin
+        )
         resultado = detectar_solapamientos(nuevo_vehiculo_id, inicio_dt, fin_dt, ventanas)
 
         if resultado.hay_conflicto_bloqueante:
@@ -1471,17 +1486,37 @@ class ReservaService:
         inicio_dt = datetime.combine(fecha_inicio, hora_inicio)
         fin_dt = datetime.combine(fecha_fin, hora_fin)
         ventanas = [
-            v for v in self._cargar_ventanas(vehiculo_id)
+            v for v in self._cargar_ventanas(vehiculo_id, fecha_inicio, fecha_fin)
             if excluir_reserva_id is None or v.id != excluir_reserva_id
         ]
         resultado = detectar_solapamientos(vehiculo_id, inicio_dt, fin_dt, ventanas)
         if resultado.hay_conflicto_bloqueante:
             raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
 
-    def _cargar_ventanas(self, vehiculo_id: int) -> list[VentanaReserva]:
+    def _cargar_ventanas(
+        self,
+        vehiculo_id: int,
+        desde: date | None = None,
+        hasta: date | None = None,
+    ) -> list[VentanaReserva]:
         """
         Carga las ventanas que ocupan el vehículo: sus reservas **y sus
         bloqueos** (mantenimiento, siniestro, uso interno).
+
+        **`desde`/`hasta` acotan la consulta al rango que se está por validar.**
+        Antes traía `page_size=9999`, o sea la historia completa del vehículo,
+        y filtraba en Python — en cada crear, editar, confirmar, reasignar y
+        chequear disponibilidad. Un auto con tres años de alquileres encima
+        pagaba ese costo para decidir sobre una semana.
+
+        Se ensancha **un día de cada lado** a propósito: el filtro es por fecha
+        y las ventanas son datetime, así que una reserva que termina el día
+        anterior a las 23:00 tiene que seguir entrando cuando la nueva empieza
+        a las 00:30. Un día de más no cuesta nada; uno de menos es una reserva
+        doble que nadie ve hasta el día de la entrega.
+
+        Sin rango se comporta como antes y trae todo: ningún llamador que se
+        olvide de acotar pierde una validación, sólo pierde la mejora.
 
         Los bloqueos entran acá y no en una validación aparte para que
         `detectar_solapamientos` sea el único que decide si un vehículo está
@@ -1502,7 +1537,21 @@ class ReservaService:
         sobre la tabla, así que dos reservas de autos distintos no se estorban.
         """
         self._lock_vehiculo(vehiculo_id)
-        reservas = self.reserva_repo.list(vehiculo_id=vehiculo_id, page=1, page_size=9999)[0]
+        # El ensanchado de un día por lado lo decide `rango_de_carga`, que es
+        # donde está escrito por qué: ver ahí el invariante que lo hace seguro.
+        if desde is not None and hasta is not None:
+            f_desde, f_hasta = rango_de_carga(
+                datetime.combine(desde, time.min), datetime.combine(hasta, time.max)
+            )
+        else:
+            f_desde = f_hasta = None
+        reservas = self.reserva_repo.list(
+            vehiculo_id=vehiculo_id,
+            fecha_desde=f_desde,
+            fecha_hasta=f_hasta,
+            page=1,
+            page_size=9999,
+        )[0]
 
         ventanas = self._cargar_ventanas_bloqueos(vehiculo_id)
         for r in reservas:

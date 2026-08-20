@@ -48,9 +48,13 @@ def get_ocupacion(
     vehiculos = q.order_by(Vehiculo.patente).all()
     vehiculo_ids_activos = [v.id for v in vehiculos]
 
-    # Sincronizar estados antes de consultar ocupación
-    from app.services.reserva_service import ReservaService
-    ReservaService(db).sincronizar_estados_por_horario()
+    # **El calendario no escribe.** Acá se llamaba a
+    # `sincronizar_estados_por_horario()`, que hace dos UPDATE masivos y un
+    # COMMIT. El calendario es la pantalla de inicio (D-24): cada vez que
+    # alguien entraba, cambiaba de mes o volvía a la pestaña, se disparaban
+    # escrituras sobre la tabla más consultada del sistema, con tres personas
+    # trabajando a la vez. Lo hace el scheduler cada 5 minutos — ver `main.py`
+    # y el comentario de `ReservaService.list`.
 
     # Reservas en el rango
     reserva_repo = ReservaRepo(db)

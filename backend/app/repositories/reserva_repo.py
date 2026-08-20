@@ -103,6 +103,19 @@ class ReservaRepo:
             query = query.filter(Reserva.cliente_id == cliente_id)
         if fecha:
             query = query.filter(Reserva.fecha_inicio <= fecha, Reserva.fecha_fin >= fecha)
+        # **Estos dos estaban en la firma y no se aplicaban.** El router los
+        # declara y los documenta, el service los pasa, y acá se perdían: el
+        # filtro por rango de la pantalla de reservas no filtraba nada, y quien
+        # lo usaba veía la lista completa creyendo que estaba acotada.
+        #
+        # Semántica de solapamiento, la misma que documenta el router: entra
+        # toda reserva que **toque** el rango, no sólo la que empiece adentro.
+        # Un alquiler que arrancó en marzo y termina en abril tiene que
+        # aparecer al filtrar abril.
+        if fecha_desde:
+            query = query.filter(Reserva.fecha_fin >= fecha_desde)
+        if fecha_hasta:
+            query = query.filter(Reserva.fecha_inicio <= fecha_hasta)
         if q:
             term = f"%{q.strip()}%"
             query = (

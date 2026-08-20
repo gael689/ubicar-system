@@ -9,6 +9,7 @@ import { useCalcularPrecio } from '@/hooks/usePrecios';
 import { useConfiguracion } from '@/hooks/useConfiguracion';
 import { useCategorias } from '@/hooks/useCategorias';
 import { useDisponibilidadInterna, useVehiculosLibres } from '@/hooks/useDisponibilidad';
+import { useBorradorReserva, haceCuanto } from '@/hooks/useBorradorReserva';
 import { usePreCheckoutPrevio } from '@/hooks/useSemaforo';
 import api from '@/lib/api';
 import { toast } from 'sonner';
@@ -458,7 +459,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         nombre: g.nombre,
         vehiculos: g.vehiculos.map(v => ({
           id: v.id,
-          etiqueta: `${v.patente} - ${v.marca} ${v.modelo}`,
+          etiqueta: `${v.patente} · ${v.marca} ${v.modelo}`,
           ocupado: !idsLibres.has(v.id),
         })),
       }));
@@ -469,7 +470,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       const lista = porCategoria.get(nombre) ?? [];
       lista.push({
         id: v.id,
-        etiqueta: `${v.patente} - ${v.marca} ${v.modelo}`
+        etiqueta: `${v.patente} · ${v.marca} ${v.modelo}`
           + (v.es_downgrade ? ' · categoría menor' : ''),
         ocupado: false,
       });
@@ -961,6 +962,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           echeq_fecha_cobro: requiereDatosEcheq ? (echeqFechaCobro || null) : null,
         };
         const { reserva: r, warnings: w } = await createReserva(payload);
+        // La reserva existe: el borrador ya no es trabajo pendiente. Se limpia
+        // acá y no en `onClose` porque cerrar sin guardar es justamente el caso
+        // en el que el borrador tiene que sobrevivir.
+        descartarBorrador();
         if (w.length > 0) setWarnings(w);
         // El PDF de confirmación se descarga solo para mandárselo al cliente.
         // Si la descarga falla no se pierde nada: el backend ya lo archivó en
@@ -995,12 +1000,89 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     const partes: string[] = [];
     if (initialVehiculoId) {
       const v = vehiculosActivos.find(x => x.id === initialVehiculoId);
-      if (v) partes.push(`${v.patente} - ${v.marca} ${v.modelo}`);
+      if (v) partes.push(`${v.patente} · ${v.marca} ${v.modelo}`);
     }
     if (initialFechaInicio) partes.push(`retiro ${formatFecha(initialFechaInicio)}`);
-    return partes.length ? partes.join(' - ') : null;
+    return partes.length ? partes.join(' · ') : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, initialVehiculoId, initialFechaInicio, vehiculosActivos]);
+
+  /**
+   * Lo que se guarda del formulario a medio cargar.
+   *
+   * **Sin los tres campos de la tarjeta**, a propósito: ver el comentario de
+   * `useBorradorReserva`. Quien retoma un borrador vuelve a tipearlos, que es
+   * el precio correcto por no dejar un número de tarjeta en el navegador de
+   * una máquina compartida.
+   */
+  const borradorActual = useMemo(() => ({
+    paso,
+    clienteId, clientSearch, conductorId,
+    vehiculoId, categoriaManualId,
+    fechaInicio, horaInicio, fechaFin,
+    lugarEntrega, lugarDevolucion, entregaEsOtro, devolucionEsOtro,
+    lateCheckout, horaDevolucionAcordada, cargoLateCheckout,
+    precioTotal, precioPorDia, descuentoMotivo, adicionales, conFactura,
+    garantiaTipo, garantiaMonto,
+    formaPagoPrevista, estadoPago, anticipoMonto, anticipoFecha, anticipoMedioPago,
+    condicionPago, condicionPagoAncla, condicionPagoFechaAncla,
+    tipoFactura, facturaANombreDe,
+    echeqBanco, echeqNumeroCheque, echeqFechaCobro,
+    notas,
+  }), [
+    paso, clienteId, clientSearch, conductorId, vehiculoId, categoriaManualId,
+    fechaInicio, horaInicio, fechaFin, lugarEntrega, lugarDevolucion,
+    entregaEsOtro, devolucionEsOtro, lateCheckout, horaDevolucionAcordada,
+    cargoLateCheckout, precioTotal, precioPorDia, descuentoMotivo, adicionales,
+    conFactura, garantiaTipo, garantiaMonto, formaPagoPrevista, estadoPago,
+    anticipoMonto, anticipoFecha, anticipoMedioPago, condicionPago,
+    condicionPagoAncla, condicionPagoFechaAncla, tipoFactura, facturaANombreDe,
+    echeqBanco, echeqNumeroCheque, echeqFechaCobro, notas,
+  ]);
+
+  const { pendiente: borrador, marcarRetomado, descartar: descartarBorrador } =
+    useBorradorReserva(borradorActual, { activo: !isEdit });
+
+  /**
+   * Vuelve a poner en pantalla lo que había quedado a medio cargar.
+   *
+   * Se aplica campo por campo y no con un `setState` masivo porque el
+   * formulario son estados sueltos; escribirlo así deja a la vista **qué se
+   * repone y qué no** — los tres campos de la tarjeta no están, y tienen que
+   * seguir sin estar.
+   */
+  const retomarBorrador = () => {
+    if (!borrador) return;
+    const d = borrador.datos as typeof borradorActual;
+    setClienteId(d.clienteId); setClientSearch(d.clientSearch); setConductorId(d.conductorId);
+    setVehiculoId(d.vehiculoId); setCategoriaManualId(d.categoriaManualId);
+    setFechaInicio(d.fechaInicio); setHoraInicio(d.horaInicio); setFechaFin(d.fechaFin);
+    setLugarEntrega(d.lugarEntrega); setLugarDevolucion(d.lugarDevolucion);
+    setEntregaEsOtro(d.entregaEsOtro); setDevolucionEsOtro(d.devolucionEsOtro);
+    // La sincronización de lugares corre una sola vez al llegar la config y
+    // pisaría los dos flags de arriba; acá se da por hecha.
+    lugaresSincronizados.current = true;
+    setLateCheckout(d.lateCheckout); setHoraDevolucionAcordada(d.horaDevolucionAcordada);
+    setCargoLateCheckout(d.cargoLateCheckout);
+    setPrecioTotal(d.precioTotal); setPrecioPorDia(d.precioPorDia);
+    setDescuentoMotivo(d.descuentoMotivo); setAdicionales(d.adicionales);
+    setConFactura(d.conFactura);
+    setGarantiaTipo(d.garantiaTipo); setGarantiaMonto(d.garantiaMonto);
+    setFormaPagoPrevista(d.formaPagoPrevista); setEstadoPago(d.estadoPago);
+    setAnticipoMonto(d.anticipoMonto); setAnticipoFecha(d.anticipoFecha);
+    setAnticipoMedioPago(d.anticipoMedioPago);
+    setCondicionPago(d.condicionPago); setCondicionPagoAncla(d.condicionPagoAncla);
+    setCondicionPagoFechaAncla(d.condicionPagoFechaAncla);
+    setTipoFactura(d.tipoFactura); setFacturaANombreDe(d.facturaANombreDe);
+    setEcheqBanco(d.echeqBanco); setEcheqNumeroCheque(d.echeqNumeroCheque);
+    setEcheqFechaCobro(d.echeqFechaCobro);
+    setNotas(d.notas);
+    setPaso(d.paso);
+    marcarRetomado();
+    if (d.garantiaTipo === 'tarjeta') {
+      toast.info('Los datos de la tarjeta hay que cargarlos de nuevo: no se guardan en el navegador.');
+    }
+  };
 
   const TIPO_TARIFA_LABEL: Record<string, string> = { diaria: 'Diaria', semanal: 'Semanal', mensual: 'Mensual' };
 
@@ -1066,6 +1148,30 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         </div>
 
         <form id="reserva-form" onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
+          {/* **El borrador, si quedó uno.** No se aplica solo: aplicar sin
+              preguntar pisaría lo que la persona acaba de empezar a cargar, que
+              es peor que perder el borrador. */}
+          {borrador && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
+              <p className="min-w-0 flex-1 text-sm text-sky-900">
+                Quedó una reserva a medio cargar {haceCuanto(borrador.guardadoEn)}.
+              </p>
+              <button
+                type="button"
+                onClick={retomarBorrador}
+                className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700"
+              >
+                Retomarla
+              </button>
+              <button
+                type="button"
+                onClick={descartarBorrador}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100"
+              >
+                Empezar de cero
+              </button>
+            </div>
+          )}
           {/* Alerta check-out pendiente — sólo aplica al crear: si estamos editando
               la reserva que generó justamente ese alquiler activo, la alerta se
               dispararía sobre sí misma sin sentido. */}
@@ -1095,20 +1201,20 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             {!isEdit && (
               <div className="space-y-2">
                 <div className="flex items-baseline justify-between gap-2">
-                  <label className="text-sm font-semibold text-slate-700">Categoria</label>
+                  <label className="text-sm font-semibold text-slate-700">Categoría</label>
                   {rangoElegido && (
                     <span className="text-[11px] text-slate-500">
-                      Cupo para {formatFecha(fechaInicio)} - {formatFecha(fechaFin)}
+                      Cupo para {formatFecha(fechaInicio)} → {formatFecha(fechaFin)}
                     </span>
                   )}
                 </div>
 
                 {!rangoElegido ? (
                   <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                    Elegi las fechas en el paso anterior para ver que hay libre.
+                    Elegí las fechas en el paso anterior para ver qué hay libre.
                   </p>
                 ) : cargandoCupo ? (
-                  <p className="text-xs text-slate-500">Consultando disponibilidad...</p>
+                  <p className="text-xs text-slate-500">Consultando disponibilidad…</p>
                 ) : (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {(categoriasData ?? []).map(c => {
@@ -1149,7 +1255,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                               </span>
                             ) : cupo.ultima_unidad ? (
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">
-                                Ultima unidad
+                                Última unidad
                               </span>
                             ) : (
                               <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800">
@@ -1183,7 +1289,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                             <span className="mt-1.5 block text-[11px] text-slate-500">
                               {cupo.precio === null
                                 ? 'Sin precio cargado: no se puede cotizar.'
-                                : 'No hay ninguna unidad que se libere ese dia.'}
+                                : 'No hay ninguna unidad que se libere ese día.'}
                             </span>
                           )}
                         </div>
@@ -1192,8 +1298,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   </div>
                 )}
                 <p className="text-[11px] text-slate-500">
-                  Con la categoria alcanza para reservar: ocupa cupo igual y el auto se
-                  asigna despues, antes de entregar.
+                  Con la categoría alcanza para reservar: ocupa cupo igual y el auto se
+                  asigna después, antes de entregar.
                 </p>
               </div>
             )}
@@ -1201,7 +1307,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             <div className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <label className="text-sm font-semibold text-slate-700">
-                  Vehiculo {!isEdit && <span className="font-normal text-slate-400">(opcional)</span>}
+                  Vehículo {!isEdit && <span className="font-normal text-slate-400">(opcional)</span>}
                 </label>
                 {!isEdit && rangoElegido && (
                   <button
@@ -1209,7 +1315,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                     onClick={() => setVerTodaLaFlota(v => !v)}
                     className="text-[11px] font-medium text-primary hover:underline"
                   >
-                    {verTodaLaFlota ? 'Ver solo los libres' : 'Ver toda la flota'}
+                    {verTodaLaFlota ? 'Ver sólo los libres' : 'Ver toda la flota'}
                   </button>
                 )}
               </div>
@@ -1219,7 +1325,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 disabled={isEdit}
                 className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:bg-slate-100 disabled:text-slate-500"
               >
-                <option value="">Sin asignar todavia...</option>
+                <option value="">Sin asignar todavía…</option>
                 {/* Agrupado por categoria y no una lista plana de patentes.
                     El sistema vende por categoria -la web directamente reserva
                     una- y quien atiende piensa "un compacto", no "el AH762UL".
@@ -1228,7 +1334,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   <optgroup key={grupo.nombre} label={grupo.nombre}>
                     {grupo.vehiculos.map(v => (
                       <option key={v.id} value={v.id}>
-                        {v.etiqueta}{v.ocupado ? ' (comprometido)' : ''}
+                        {v.etiqueta}{v.ocupado ? ' — comprometido' : ''}
                       </option>
                     ))}
                   </optgroup>
@@ -1236,14 +1342,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </select>
               {!isEdit && rangoElegido && !verTodaLaFlota && (
                 <p className="text-[11px] text-slate-500">
-                  Solo los que estan libres en estas fechas, con el tiempo de preparacion
+                  Sólo los que están libres en estas fechas, con el tiempo de preparación
                   entre alquileres ya descontado.
                 </p>
               )}
               {vehiculoOcupadoEnElRango && (
                 <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  Este auto esta comprometido en estas fechas. Se puede reservar igual -
+                  Este auto está comprometido en estas fechas. Se puede reservar igual —
                   el solape queda marcado y hay que resolverlo antes de entregar.
                 </p>
               )}

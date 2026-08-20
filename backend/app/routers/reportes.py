@@ -1,7 +1,9 @@
 from datetime import date, timedelta
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, extract
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_db, get_current_user
 from app.core.responses import ok
@@ -203,59 +205,96 @@ def reporte_flota(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    """Utilización por vehículo en el período indicado."""
+    """
+    Utilización por vehículo en el período indicado.
+
+    **Cuatro consultas, no una por vehículo.** Antes esto era un N+1 anidado en
+    tres niveles: una consulta por vehículo para sus reservas, otra por reserva
+    para su alquiler, otra por alquiler para sus pagos, y otra por vehículo
+    para sus gastos. Con diez autos y veinte reservas cada uno eran más de
+    cuatrocientas consultas para dibujar una tabla de diez filas — y crecía con
+    el histórico, no con lo que se está mirando.
+
+    Ahora: una consulta de vehículos, una de reservas del período con su
+    alquiler ya cargado, una de pagos agregados por alquiler y una de gastos
+    agregados por vehículo. Las dos sumas las hace Postgres con `SUM()`, que es
+    donde tienen que hacerse.
+
+    **La plata se suma en `Decimal`**, no en `float`. El total de un reporte que
+    acumula cientos de importes con coma no puede depender de cómo redondea el
+    punto flotante.
+    """
     vehiculos = db.query(Vehiculo).filter(Vehiculo.activo == True).all()
+    if not vehiculos:
+        return ok([])
+    vehiculo_ids = [v.id for v in vehiculos]
+
+    # Las reservas del período, de todos los autos de una vez, con el alquiler
+    # ya cargado: es lo que evita la consulta por fila del segundo nivel.
+    reservas = (
+        db.query(Reserva)
+        .options(joinedload(Reserva.alquiler))
+        .filter(
+            Reserva.vehiculo_id.in_(vehiculo_ids),
+            Reserva.estado.in_(["activa", "vencida", "finalizada"]),
+            Reserva.fecha_inicio <= fecha_hasta,
+            Reserva.fecha_fin >= fecha_desde,
+        )
+        .all()
+    )
+
+    # Los pagos, sumados por alquiler en la base. Traerlos para sumarlos en
+    # Python era el tercer nivel del N+1.
+    alquiler_ids = [r.alquiler.id for r in reservas if r.alquiler]
+    pagos_por_alquiler: dict[int, Decimal] = {}
+    if alquiler_ids:
+        pagos_por_alquiler = {
+            aid: total or Decimal("0")
+            for aid, total in db.query(Pago.alquiler_id, func.sum(Pago.monto))
+            .filter(Pago.alquiler_id.in_(alquiler_ids))
+            .group_by(Pago.alquiler_id)
+            .all()
+        }
+
+    # Los gastos, también agregados por la base.
+    gastos_por_vehiculo: dict[int, Decimal] = {
+        vid: total or Decimal("0")
+        for vid, total in db.query(Gasto.vehiculo_id, func.sum(Gasto.monto))
+        .filter(
+            Gasto.vehiculo_id.in_(vehiculo_ids),
+            Gasto.fecha >= fecha_desde,
+            Gasto.fecha <= fecha_hasta,
+        )
+        .group_by(Gasto.vehiculo_id)
+        .all()
+    }
+
+    reservas_por_vehiculo: dict[int, list[Reserva]] = {vid: [] for vid in vehiculo_ids}
+    for r in reservas:
+        if r.vehiculo_id in reservas_por_vehiculo:
+            reservas_por_vehiculo[r.vehiculo_id].append(r)
+
+    dias_periodo = (fecha_hasta - fecha_desde).days + 1
     resultado = []
 
     for v in vehiculos:
-        reservas = (
-            db.query(Reserva)
-            .filter(
-                Reserva.vehiculo_id == v.id,
-                Reserva.estado.in_(["activa", "vencida", "finalizada"]),
-                Reserva.fecha_inicio <= fecha_hasta,
-                Reserva.fecha_fin >= fecha_desde,
-            )
-            .all()
-        )
+        de_este = reservas_por_vehiculo[v.id]
 
         dias_alquilados = 0
-        ingresos_vehiculo = 0.0
-        gastos_vehiculo = 0.0
-
-        for r in reservas:
-            # Días aproximados del período solapado (ambos son date, sin conversiones)
+        ingresos_vehiculo = Decimal("0")
+        for r in de_este:
+            # Días del período que efectivamente se solapan (ambos son date).
             inicio = max(r.fecha_inicio, fecha_desde)
             fin = min(r.fecha_fin, fecha_hasta)
             if fin >= inicio:
                 dias_alquilados += (fin - inicio).days + 1
+            if r.alquiler:
+                ingresos_vehiculo += pagos_por_alquiler.get(r.alquiler.id, Decimal("0"))
 
-            # Ingresos asociados al alquiler
-            alquiler = (
-                db.query(Alquiler)
-                .filter(Alquiler.reserva_id == r.id)
-                .first()
-            )
-            if alquiler:
-                pagos = db.query(Pago).filter(Pago.alquiler_id == alquiler.id).all()
-                ingresos_vehiculo += sum(float(p.monto) for p in pagos)
-
-        # Gastos del vehículo en el período
-        gastos = (
-            db.query(Gasto)
-            .filter(
-                Gasto.vehiculo_id == v.id,
-                Gasto.fecha >= fecha_desde,
-                Gasto.fecha <= fecha_hasta,
-            )
-            .all()
+        gastos_vehiculo = gastos_por_vehiculo.get(v.id, Decimal("0"))
+        ocupacion_pct = round(
+            (dias_alquilados / dias_periodo * 100) if dias_periodo > 0 else 0, 1
         )
-        gastos_vehiculo = sum(float(g.monto) for g in gastos)
-
-        # Días totales del período
-        dias_periodo = (fecha_hasta - fecha_desde).days + 1
-
-        ocupacion_pct = round((dias_alquilados / dias_periodo * 100) if dias_periodo > 0 else 0, 1)
 
         resultado.append({
             "vehiculo_id": v.id,
@@ -263,7 +302,7 @@ def reporte_flota(
             "marca": v.marca,
             "modelo": v.modelo,
             "tipo": v.tipo,
-            "alquileres_count": len(reservas),
+            "alquileres_count": len(de_este),
             "dias_alquilados": dias_alquilados,
             "ocupacion_porcentaje": min(ocupacion_pct, 100.0),
             "ingresos": ingresos_vehiculo,
