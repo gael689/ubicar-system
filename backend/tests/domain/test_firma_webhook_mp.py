@@ -4,8 +4,11 @@ La firma del webhook de Mercado Pago.
 El valor de `V1_ESPERADO` no está calculado con el mismo código que se prueba
 —eso no probaría nada—: sale de correr la implementación de JLI
 (`supabase/functions/_shared/mp.ts`), que está andando en producción contra
-Mercado Pago de verdad, con este mismo secreto, request-id y ts. Si alguien
-cambia el manifiesto, este test se cae.
+Mercado Pago de verdad, con este secreto, request-id y ts. Si alguien cambia el
+manifiesto, este test se cae.
+
+**El secreto de acá es inventado.** El real no puede estar en el repo. Lo que
+se prueba es la forma del manifiesto, y para eso cualquier clave sirve.
 """
 import pytest
 
@@ -16,11 +19,14 @@ from app.domain.webhook_mp import (
     parsear_x_signature,
 )
 
-SECRETO = "bd1d9c3c7fa8b46611f221ce6fe95b2df74e3e2ff7e7c16a2986c4a355ea20c5"
+# **Inventado.** El secreto real del webhook no puede vivir acá: este repo
+# es público. Cualquier valor sirve — lo que el test prueba es el
+# manifiesto, no el secreto.
+SECRETO = "secreto-de-prueba-no-es-el-de-nadie"
 TS = "1755600000"
 REQUEST_ID = "abc-123-req"
 DATA_ID = "123456789"
-V1_ESPERADO = "4332d81f4ac42d506424be31b251d08c408ee66075d2fd0088dee58e75e149a6"
+V1_ESPERADO = "890b36088e9d3f680360f3dc0c6b0b902296752aaf0eb051c4adb58fd51c14bb"
 
 
 def _header(v1=V1_ESPERADO, ts=TS):
@@ -150,12 +156,18 @@ def test_un_header_vacio_no_rompe():
 # avisos y sólo uno se puede verificar. Los datos de acá son los del aviso
 # legacy real que el endpoint rechazó con 401.
 
-# Firma real de un aviso `topic=payment` del pago 174642477530, con el secreto
-# de producción cargado. No coincide con ningún manifiesto: está acá para dejar
-# constancia de que se intentó y de con qué.
-LEGACY_TS = "1787166825"
-LEGACY_V1 = "6ff405b17b81eb221cf5a86792dcd69c5d8b1dddd464e5d7b4a927afbf83b089"
-LEGACY_REQUEST_ID = "717663fe-46e7-4226-bbde-225838aa8f12"
+# **Cómo se comprobó, que no se puede volver a comprobar desde acá.**
+#
+# El aviso legacy real del pago 174642477530 llegó firmado
+# (`ts=1787166825,v1=6ff405b1…`, request-id `717663fe-46e7-…`) y con el
+# secreto de producción cargado **no valida**. Se probaron doce variantes del
+# manifiesto contra las tres firmas que llegaron: con el id del pago, con el
+# de la merchant order, sin id, sin request-id, sin el punto y coma final, en
+# otro orden. Ninguna coincide.
+#
+# Ese chequeo necesita el secreto real, y el secreto real no puede estar en un
+# repo público. Así que la evidencia queda escrita y lo que se testea acá es la
+# consecuencia: qué formato se valida y cuál no.
 LEGACY_PAYMENT_ID = "174642477530"
 
 
@@ -180,17 +192,3 @@ def test_el_formato_viejo_no_se_valida():
 
 def test_la_merchant_order_tampoco():
     assert lleva_firma({"topic": "merchant_order"}, {"topic": "merchant_order", "id": "9"}) is False
-
-
-def test_la_firma_real_del_aviso_viejo_efectivamente_no_valida():
-    """
-    Deja constancia de por qué existe `lleva_firma`. Si algún día Mercado Pago
-    empieza a firmar el formato viejo con este secreto, este test se cae y hay
-    que revisar la decisión.
-    """
-    assert firma_valida(
-        secreto=SECRETO,
-        x_signature=f"ts={LEGACY_TS},v1={LEGACY_V1}",
-        x_request_id=LEGACY_REQUEST_ID,
-        data_id=LEGACY_PAYMENT_ID,
-    ) is False
