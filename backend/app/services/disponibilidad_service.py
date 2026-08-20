@@ -175,6 +175,7 @@ class DisponibilidadService:
         categoria_ids: list[int] | None = None,
         excluir_hold_token: str | None = None,
         edad_conductor: int | None = None,
+        canal: str = "web",
     ) -> list[dict]:
         """
         Cupo y precio por categoría para el rango pedido.
@@ -182,6 +183,13 @@ class DisponibilidadService:
         Devuelve **todas** las categorías publicables, con o sin cupo: las que
         no tienen se muestran deshabilitadas en la web, no se ocultan — eso
         convierte, y evita que el cliente crea que no trabajamos el segmento.
+
+        `canal` es con qué precio se cotiza. Por default `web`, que es de
+        donde nació este service. **El mostrador pasa `mostrador`**: si cotizara
+        con el precio de la web, el operador vería en pantalla un número que no
+        es el que va a cobrar, que es peor que no ver ninguno. La disponibilidad
+        en sí no depende del canal —una unidad ocupada lo está para los dos—,
+        así que sólo cambia el precio.
 
         `edad_conductor` **ya no cambia el precio**: se retiró el recargo por
         franja etaria (D-38). Se sigue recibiendo porque la edad decide otra
@@ -272,7 +280,7 @@ class DisponibilidadService:
                     fecha_inicio=fecha_inicio,
                     fecha_fin=fecha_fin,
                     categoria_id=cat.id,
-                    canal="web",
+                    canal=canal,
                     edad_conductor=edad_conductor,
                 )
                 # Ya no hay que reponer nada: al retirarse el recargo por edad
@@ -291,7 +299,7 @@ class DisponibilidadService:
                         fecha_inicio=fecha_inicio,
                         fecha_fin=fecha_fin,
                         categoria_id=cat.id,
-                        canal="web",
+                        canal=canal,
                         edad_conductor=edad_conductor,
                         porcentaje_anticipo=100,
                     )

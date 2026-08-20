@@ -245,16 +245,10 @@ class ContratoService:
         """
         lineas = []
         dias = (r.fecha_fin - r.fecha_inicio).days
-        # Plan de conexión (13/08), §3.4: el recargo por edad ya viene
-        # sumado adentro de `precio_total` — sale de la misma cotización que
-        # el precio de lista, no de un cálculo aparte (ver el comentario en
-        # `ReservaService.create` sobre por qué no se le suma una segunda
-        # vez). Antes se imprimía además como concepto propio, "Conductor
-        # joven (19 años)", que le dice al cliente en la cara que le cobran
-        # más por su edad. Mismo criterio que ya rige en la web (D-44,
-        # `ResumenReserva.tsx`): se deja de mostrar como línea separada, sin
-        # tocar el total — el importe sigue auditado en
-        # `reserva.recargo_edad_monto` para quien lo necesite explicar.
+        # El recargo por edad ya no existe (D-38, retirado): la edad decide
+        # si la persona puede alquilar (D-51) pero no cuánto paga. Antes esto
+        # imprimía además una línea "Conductor joven (19 años)", que le dice
+        # al cliente en la cara que le cobran más por su edad.
         precio = Decimal(str(r.precio_total or 0))
         if precio > 0:
             lineas.append({

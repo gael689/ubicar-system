@@ -8,9 +8,11 @@ import { useAdicionales } from '@/hooks/useAdicionales';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
 import { useConfiguracion } from '@/hooks/useConfiguracion';
 import { useCategorias } from '@/hooks/useCategorias';
+import { useDisponibilidadInterna, useVehiculosLibres } from '@/hooks/useDisponibilidad';
+import { usePreCheckoutPrevio } from '@/hooks/useSemaforo';
 import api from '@/lib/api';
 import { toast } from 'sonner';
-import type { Adicional, Reserva, ReservaCreate, ReservaUpdate, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
+import type { Adicional, CategoriaConCupo, Reserva, ReservaCreate, ReservaUpdate, Semaforo, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
 
 interface Props {
   reserva?: Reserva;
@@ -375,6 +377,175 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     return grupos;
   }, [categoriasData, vehiculosActivos]);
 
+  /**
+   * El cupo real de cada categoría para las fechas del paso 2.
+   *
+   * **Sin esto el paso 3 vendía a ciegas.** Listaba la flota activa entera sin
+   * mirar el rango elegido, así que se podía tomar un auto ya comprometido y
+   * el conflicto aparecía como advertencia recién *después* de crear la
+   * reserva — con el cliente enfrente y la reserva ya hecha.
+   *
+   * Lo calcula el backend, el mismo `DisponibilidadService` del que cuelga el
+   * sitio público. Acá no se cuenta nada: tener dos cuentas de cupo es tener
+   * dos verdades sobre cuántos autos hay.
+   */
+  const rangoElegido = fechaInicio && fechaFin && fechaFin > fechaInicio;
+  const { data: disponibilidad, isLoading: cargandoCupo } = useDisponibilidadInterna(
+    !isEdit && rangoElegido
+      ? {
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin,
+          hora_inicio: horaInicio + ':00',
+          hora_fin: horaFin + ':00',
+        }
+      : null
+  );
+  const cupoPorCategoria = useMemo(() => {
+    const m = new Map<number, CategoriaConCupo>();
+    for (const c of disponibilidad?.categorias ?? []) m.set(c.categoria_id, c);
+    return m;
+  }, [disponibilidad]);
+
+  /**
+   * Los autos que están libres **en estas fechas**, no la flota entera.
+   *
+   * Es el mismo criterio de solapamiento que usa el panel de asignación, con
+   * la preparación entre alquileres ya descontada. Editando no se consulta:
+   * ahí el vehículo no se cambia desde esta pantalla.
+   */
+  const { data: libres } = useVehiculosLibres(
+    !isEdit && rangoElegido
+      ? {
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin,
+          hora_inicio: horaInicio + ':00',
+          hora_fin: horaFin + ':00',
+          categoria_id: categoriaManualId ? Number(categoriaManualId) : null,
+        }
+      : null
+  );
+
+  /**
+   * Ver la flota entera, incluidos los autos comprometidos.
+   *
+   * **La salida de emergencia, no el default.** Quien atiende a veces sabe
+   * algo que el sistema no —una devolución adelantada, un auto que vuelve
+   * antes—, y cerrarle la puerta lo manda a anotar en un papel. Lo que cambia
+   * es de qué lado está el esfuerzo: elegir un auto ocupado ahora cuesta un
+   * click extra y viene con el aviso puesto.
+   */
+  const [verTodaLaFlota, setVerTodaLaFlota] = useState(false);
+
+  /** Los ids libres, para poder marcar los que no lo están. */
+  const idsLibres = useMemo(
+    () => new Set((libres?.vehiculos ?? []).map(v => v.id)),
+    [libres],
+  );
+
+  /**
+   * Las opciones del selector de auto, agrupadas por categoría.
+   *
+   * Con la vista normal salen sólo los libres —y el backend ya los devuelve
+   * con la categoría pedida primero—; con la flota entera salen todos, y los
+   * comprometidos van marcados.
+   */
+  const opcionesVehiculo = useMemo(() => {
+    // Editando no hay consulta de libres (el auto no se cambia desde esta
+    // pantalla, el select esta deshabilitado): se muestra la flota entera para
+    // que el auto que la reserva ya tiene siga apareciendo.
+    if (isEdit || verTodaLaFlota) {
+      return vehiculosPorCategoria.map(g => ({
+        nombre: g.nombre,
+        vehiculos: g.vehiculos.map(v => ({
+          id: v.id,
+          etiqueta: `${v.patente} - ${v.marca} ${v.modelo}`,
+          ocupado: !idsLibres.has(v.id),
+        })),
+      }));
+    }
+    const porCategoria = new Map<string, { id: number; etiqueta: string; ocupado: boolean }[]>();
+    for (const v of libres?.vehiculos ?? []) {
+      const nombre = v.categoria_nombre ?? 'Sin categoría';
+      const lista = porCategoria.get(nombre) ?? [];
+      lista.push({
+        id: v.id,
+        etiqueta: `${v.patente} - ${v.marca} ${v.modelo}`
+          + (v.es_downgrade ? ' · categoría menor' : ''),
+        ocupado: false,
+      });
+      porCategoria.set(nombre, lista);
+    }
+    return [...porCategoria.entries()].map(([nombre, vehiculos]) => ({ nombre, vehiculos }));
+  }, [isEdit, verTodaLaFlota, vehiculosPorCategoria, libres, idsLibres]);
+
+  /**
+   * El auto elegido está comprometido en estas fechas.
+   *
+   * Se avisa **antes** de guardar y no después. Sigue pudiendo guardarse: el
+   * backend revalida y devuelve el solape como advertencia, que es la regla de
+   * siempre ("el sistema informa, la persona decide").
+   */
+  const vehiculoOcupadoEnElRango = Boolean(
+    !isEdit && vehiculoId && libres && !idsLibres.has(Number(vehiculoId))
+  );
+
+  /**
+   * Elige una categoria y suelta el auto si ya no le corresponde.
+   *
+   * Dejar puesto un compacto despues de pasar a SUV seria reservar una cosa
+   * diciendo otra: el precio, la franquicia y el cupo saldrian de categorias
+   * distintas.
+   */
+  const elegirCategoria = (id: number) => {
+    setCategoriaManualId(String(id));
+    if (vehiculoSeleccionado && vehiculoSeleccionado.categoria_id !== id) {
+      setVehiculoId('');
+    }
+  };
+
+  /**
+   * Toma la entrega por rotación que propone el backend.
+   *
+   * Sólo mueve la hora de retiro, y sólo cuando la unidad se libera **ese
+   * mismo día**: si vuelve otro día lo que cambia es la fecha, y eso ya no es
+   * "entregar más tarde" sino otra reserva — esa decisión no se automatiza.
+   */
+  const aplicarRotacion = (cupo: CategoriaConCupo) => {
+    if (!cupo.rotacion) return;
+    if (cupo.rotacion.fecha_entrega !== fechaInicio) {
+      toast.error('Esa unidad se libera otro día. Cambiá la fecha de retiro a mano.');
+      return;
+    }
+    setHoraInicio(cupo.rotacion.hora_entrega);
+    setCategoriaManualId(String(cupo.categoria_id));
+    setVehiculoId('');
+    toast.success(`Retiro movido a las ${cupo.rotacion.hora_entrega}.`);
+  };
+
+  /**
+   * El semaforo previo a la entrega, **calculado por el backend**.
+   *
+   * Es el mismo `domain/bloqueos.py` que el listado consume por
+   * `/reservas/{id}/pre-checkout`, evaluado sobre los datos que hay cargados
+   * en el formulario. Antes esta pantalla armaba su propia lista de faltantes
+   * a mano: dos criterios que pueden divergir, y el que la persona cree es el
+   * que tiene delante.
+   *
+   * Lo que sigue calculandose aca son las tres cosas que el backend no puede
+   * saber porque son del formulario y no de la reserva: que no se eligio ni
+   * auto ni categoria, que falta el precio, y que la categoria no tiene
+   * franquicia cargada.
+   */
+  const { data: semaforoPrevio } = usePreCheckoutPrevio(
+    {
+      cliente_id: clienteId ? Number(clienteId) : null,
+      conductor_id: conductorId ? Number(conductorId) : null,
+      vehiculo_id: vehiculoId ? Number(vehiculoId) : null,
+      garantia_tipo: garantiaTipo,
+    },
+    !isEdit && Boolean(clienteId),
+  );
+
   /** La franquicia que le queda al cliente con el auto elegido y sin cobertura extra. */
   const franquiciaBase = useMemo(
     () => (categoriasData ?? []).find(c => c.id === categoriaId)?.franquicia_base ?? null,
@@ -535,7 +706,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   // grabar. Antes se estimaba acá como `tarifa.monto × días`, que estaba mal
   // por tres lados: `monto` es el precio del bloque completo (D-35), no el del
   // día, así que una tarifa semanal se multiplicaba por 11; no miraba las
-  // reglas del calendario ni las promos; y no incluía el recargo por edad.
+  // reglas del calendario ni las promos.
   // Resultado: el aviso de "indique el motivo" aparecía cuando no
   // correspondía, y —peor— **no aparecía cuando sí**, y el backend rechazaba
   // la reserva con un 422 sin campo donde escribir el motivo.
@@ -807,6 +978,30 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     }
   }
 
+  /**
+   * Lo que llego precargado desde el calendario, en una linea.
+   *
+   * **El wizard abre en el paso 1 a proposito**: se entra desde una celda del
+   * calendario, o sea con un auto y una fecha ya elegidos, pero lo que falta
+   * es el cliente y sin cliente no hay reserva. Saltar al paso 3 dejaria el
+   * dato imprescindible para el final.
+   *
+   * Lo que si estaba mal era que el auto y la fecha que la persona acababa de
+   * clickear quedaran invisibles hasta el paso 3, como si el click no hubiera
+   * hecho nada. Esto los muestra arriba, en todos los pasos.
+   */
+  const precargado = useMemo(() => {
+    if (isEdit) return null;
+    const partes: string[] = [];
+    if (initialVehiculoId) {
+      const v = vehiculosActivos.find(x => x.id === initialVehiculoId);
+      if (v) partes.push(`${v.patente} - ${v.marca} ${v.modelo}`);
+    }
+    if (initialFechaInicio) partes.push(`retiro ${formatFecha(initialFechaInicio)}`);
+    return partes.length ? partes.join(' - ') : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, initialVehiculoId, initialFechaInicio, vehiculosActivos]);
+
   const TIPO_TARIFA_LABEL: Record<string, string> = { diaria: 'Diaria', semanal: 'Semanal', mensual: 'Mensual' };
 
   return (
@@ -822,6 +1017,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               {enPasos && (
                 <p className="text-xs text-slate-500 mt-0.5">
                   Paso {paso} de 6 · {PASOS_WIZARD[paso - 1].ayuda}
+                </p>
+              )}
+              {/* Lo que vino del calendario. Sin esto, el click en la celda no
+                  se ve reflejado en ningun lado hasta el paso 3. */}
+              {precargado && (
+                <p className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  <Calendar className="h-3 w-3" />
+                  Desde el calendario: {precargado}
                 </p>
               )}
             </div>
@@ -882,55 +1085,167 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             </p>
           )}
 
-          {/* ── PASO 3 · ¿QUÉ? ──────────────────────────────────────────── */}
+          {/* PASO 3 - QUE */}
           {(!enPasos || paso === 3) && (
           <div className="space-y-5">
+            {/* **La categoria, con el cupo ya calculado para estas fechas.**
+                Va primero porque es como se vende: el sistema vende categorias
+                (D-02) y el auto puntual es un detalle posterior. Antes esto era
+                un desplegable de patentes que no miraba el rango elegido. */}
+            {!isEdit && (
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <label className="text-sm font-semibold text-slate-700">Categoria</label>
+                  {rangoElegido && (
+                    <span className="text-[11px] text-slate-500">
+                      Cupo para {formatFecha(fechaInicio)} - {formatFecha(fechaFin)}
+                    </span>
+                  )}
+                </div>
+
+                {!rangoElegido ? (
+                  <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                    Elegi las fechas en el paso anterior para ver que hay libre.
+                  </p>
+                ) : cargandoCupo ? (
+                  <p className="text-xs text-slate-500">Consultando disponibilidad...</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {(categoriasData ?? []).map(c => {
+                      const cupo = cupoPorCategoria.get(c.id);
+                      const elegida = String(c.id) === categoriaManualId
+                        || vehiculoSeleccionado?.categoria_id === c.id;
+                      const hayCupo = cupo?.hay_cupo ?? false;
+                      return (
+                        <div
+                          key={c.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => elegirCategoria(c.id)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              elegirCategoria(c.id);
+                            }
+                          }}
+                          className={`cursor-pointer rounded-lg border p-2.5 text-left transition-colors ${
+                            elegida
+                              ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                              : hayCupo
+                                ? 'border-slate-300 bg-white hover:border-primary/50'
+                                : 'border-slate-200 bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-slate-800">{c.nombre}</span>
+                            {/* El cupo, en el lenguaje del mostrador. "Ultima
+                                unidad" no es un adorno: es lo que cambia la
+                                conversacion con el cliente. */}
+                            {cupo === undefined ? (
+                              <span className="text-[11px] text-slate-400">-</span>
+                            ) : !hayCupo ? (
+                              <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-600">
+                                Sin cupo
+                              </span>
+                            ) : cupo.ultima_unidad ? (
+                              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">
+                                Ultima unidad
+                              </span>
+                            ) : (
+                              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800">
+                                {cupo.disponibles} libres
+                              </span>
+                            )}
+                          </div>
+                          {/* **La entrega por rotacion, aca mismo.** Sin cupo a
+                              la hora pedida pero con una unidad que vuelve ese
+                              dia, el "no" se convierte en "a partir de las
+                              14:00" sin salir de la pantalla. */}
+                          {cupo?.rotacion && (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={e => { e.stopPropagation(); aplicarRotacion(cupo); }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault(); e.stopPropagation(); aplicarRotacion(cupo);
+                                }
+                              }}
+                              className="mt-1.5 block cursor-pointer rounded bg-sky-50 px-2 py-1 text-[11px] leading-tight text-sky-800 hover:bg-sky-100"
+                            >
+                              Hay una que vuelve a las {cupo.rotacion.hora_devolucion_unidad}:
+                              <strong> entregar a las {cupo.rotacion.hora_entrega}</strong>
+                              {cupo.rotacion.fecha_entrega !== fechaInicio
+                                && ` del ${formatFecha(cupo.rotacion.fecha_entrega)}`}
+                            </span>
+                          )}
+                          {cupo && !hayCupo && !cupo.rotacion && (
+                            <span className="mt-1.5 block text-[11px] text-slate-500">
+                              {cupo.precio === null
+                                ? 'Sin precio cargado: no se puede cotizar.'
+                                : 'No hay ninguna unidad que se libere ese dia.'}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500">
+                  Con la categoria alcanza para reservar: ocupa cupo igual y el auto se
+                  asigna despues, antes de entregar.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">Vehículo</label>
+              <div className="flex items-baseline justify-between gap-2">
+                <label className="text-sm font-semibold text-slate-700">
+                  Vehiculo {!isEdit && <span className="font-normal text-slate-400">(opcional)</span>}
+                </label>
+                {!isEdit && rangoElegido && (
+                  <button
+                    type="button"
+                    onClick={() => setVerTodaLaFlota(v => !v)}
+                    className="text-[11px] font-medium text-primary hover:underline"
+                  >
+                    {verTodaLaFlota ? 'Ver solo los libres' : 'Ver toda la flota'}
+                  </button>
+                )}
+              </div>
               <select
                 value={vehiculoId}
                 onChange={e => setVehiculoId(e.target.value)}
                 disabled={isEdit}
                 className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:bg-slate-100 disabled:text-slate-500"
               >
-                <option value="">Sin asignar todavía…</option>
-                {/* Agrupado por categoría y no una lista plana de patentes.
-                    El sistema vende por categoría —la web directamente reserva
-                    una— y quien atiende piensa "un compacto", no "el AH762UL".
-                    Es el mismo criterio que ya usa el panel de asignación. */}
-                {vehiculosPorCategoria.map(grupo => (
+                <option value="">Sin asignar todavia...</option>
+                {/* Agrupado por categoria y no una lista plana de patentes.
+                    El sistema vende por categoria -la web directamente reserva
+                    una- y quien atiende piensa "un compacto", no "el AH762UL".
+                    Es el mismo criterio que ya usa el panel de asignacion. */}
+                {opcionesVehiculo.map(grupo => (
                   <optgroup key={grupo.nombre} label={grupo.nombre}>
                     {grupo.vehiculos.map(v => (
                       <option key={v.id} value={v.id}>
-                        {v.patente} - {v.marca} {v.modelo}
-                        {v.estado === 'alquilado' ? ' ⚠️' : ''}
+                        {v.etiqueta}{v.ocupado ? ' (comprometido)' : ''}
                       </option>
                     ))}
                   </optgroup>
                 ))}
               </select>
-              {/* Sin auto elegido hace falta la categoría: es lo que descuenta
-                  cupo mientras la unidad puntual está sin decidir. Es el mismo
-                  camino que usa la web, que siempre reserva por categoría. */}
-              {!vehiculoId && !isEdit && (
-                <div className="pt-1.5 space-y-1">
-                  <label className="text-xs font-medium text-slate-600">
-                    ¿No sabés todavía qué auto? Elegí la categoría
-                  </label>
-                  <select
-                    value={categoriaManualId}
-                    onChange={e => setCategoriaManualId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="">Sin categoría…</option>
-                    {(categoriasData ?? []).map(c => (
-                      <option key={c.id} value={c.id}>{c.nombre}</option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-slate-500">
-                    La reserva ocupa cupo igual. El auto se asigna después, antes de entregar.
-                  </p>
-                </div>
+              {!isEdit && rangoElegido && !verTodaLaFlota && (
+                <p className="text-[11px] text-slate-500">
+                  Solo los que estan libres en estas fechas, con el tiempo de preparacion
+                  entre alquileres ya descontado.
+                </p>
+              )}
+              {vehiculoOcupadoEnElRango && (
+                <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  Este auto esta comprometido en estas fechas. Se puede reservar igual -
+                  el solape queda marcado y hay que resolverlo antes de entregar.
+                </p>
               )}
             </div>
           </div>
@@ -1762,7 +2077,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             totalAdicionales={totalAdicionales}
             franquicia={franquiciaCobertura ?? franquiciaBase}
             condicionPago={condicionPago}
-            garantiaTipo={garantiaTipo}
+            semaforo={semaforoPrevio ?? null}
           />
           )}
           {/* Notas */}
@@ -1869,7 +2184,7 @@ export const PASOS_WIZARD = [
 function ResumenReserva({
   vehiculo, categoriaNombre, clienteNombre, fechaInicio, fechaFin, horaInicio,
   duracionDias, lugarEntrega, lugarDevolucion, precioTotal, totalAdicionales,
-  franquicia, condicionPago, garantiaTipo,
+  franquicia, condicionPago, semaforo,
 }: {
   vehiculo?: { patente: string; marca: string; modelo: string } | null;
   categoriaNombre?: string;
@@ -1879,14 +2194,24 @@ function ResumenReserva({
   lugarEntrega: string; lugarDevolucion: string;
   precioTotal: number | null; totalAdicionales: number;
   franquicia: number | null;
-  condicionPago: string; garantiaTipo: string;
+  condicionPago: string;
+  /** El semaforo del backend. `null` mientras la consulta viaja. */
+  semaforo: Semaforo | null;
 }) {
+  /**
+   * Lo que falta **del formulario**, que es lo unico que el backend no puede
+   * saber: no mira campos a medio cargar, mira una reserva. Todo lo demas
+   * -garantia, licencia, deuda, VTV, poliza, auto fuera de servicio- sale del
+   * semaforo y no se duplica aca.
+   */
   const faltantes: string[] = [];
   if (!vehiculo && !categoriaNombre) faltantes.push('no se eligió ni auto ni categoría');
   else if (!vehiculo) faltantes.push('todavía no tiene auto asignado');
   if (precioTotal === null || precioTotal <= 0) faltantes.push('falta el precio');
-  if (garantiaTipo === 'no_aplica') faltantes.push('sin garantía definida');
   if (franquicia === null) faltantes.push('esta categoría no tiene franquicia cargada');
+
+  const bloqueantes = (semaforo?.items ?? []).filter(i => i.severidad === 'bloqueante');
+  const advertencias = (semaforo?.items ?? []).filter(i => i.severidad !== 'bloqueante');
 
   const Fila = ({ k, v }: { k: string; v: React.ReactNode }) => (
     <div className="flex justify-between gap-4 py-1.5">
@@ -1929,14 +2254,33 @@ function ResumenReserva({
       </div>
 
       {/* El semáforo, antes de guardar. Es la misma información que el listado
-          muestra después, sólo que llega a tiempo para hacer algo al respecto. */}
-      {faltantes.length > 0 && (
+          muestra después, sólo que llega a tiempo para hacer algo al respecto.
+
+          **Bloqueante y advertencia van separados, y con distinto color.** Una
+          VTV vencida y "todavía no tiene auto asignado" no son el mismo
+          problema: mezclarlos en una sola lista amarilla es cómo se aprende a
+          ignorar la lista entera. Ninguno de los dos impide guardar — la
+          reserva se puede crear igual y el bloqueo salta al entregar, que es
+          la regla de siempre ("el sistema informa, la persona decide"). */}
+      {bloqueantes.length > 0 && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-red-800">
+            <AlertTriangle className="h-4 w-4" /> Esto va a frenar la entrega:
+          </p>
+          <ul className="mt-1 list-disc pl-6 text-xs text-red-800">
+            {bloqueantes.map(i => <li key={i.codigo}>{i.mensaje}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {(faltantes.length > 0 || advertencias.length > 0) && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
           <p className="flex items-center gap-2 text-sm font-semibold text-amber-800">
             <AlertTriangle className="h-4 w-4" /> Se puede guardar igual, pero:
           </p>
           <ul className="mt-1 list-disc pl-6 text-xs text-amber-800">
             {faltantes.map(f => <li key={f}>{f}</li>)}
+            {advertencias.map(i => <li key={i.codigo}>{i.mensaje}</li>)}
           </ul>
         </div>
       )}

@@ -490,8 +490,8 @@ export interface ConductorAdicional {
   dni?: string;
   licencia_numero?: string;
   licencia_vencimiento: string;
-  // El recargo por edad (D-38) mira la edad de quien maneja: si la reserva
-  // designa un conductor, el riesgo es el suyo y no el del titular.
+  // La edad de quien maneja: si la reserva designa un conductor, el riesgo es
+  // el suyo y no el del titular. Decide la edad mínima (D-51), no el precio.
   fecha_nacimiento?: string | null;
   activo: boolean;
 }
@@ -1658,7 +1658,61 @@ export interface ContratoPreparado {
 }
 
 
-// ─── Recargos por edad (D-38) ────────────────────────────────────────────────
+// ─── Disponibilidad interna (cupo del mostrador) ─────────────────────────────
+
+/**
+ * Lo que devuelve `/disponibilidad/interna` por categoría.
+ *
+ * Es la misma forma que consume el sitio público: el cupo lo calcula un solo
+ * service y los dos canales leen la misma respuesta. `rotacion` sólo viene
+ * cuando **no** hay cupo a la hora pedida pero una unidad vuelve ese mismo día
+ * — es la entrega más tarde que se puede ofrecer en vez de decir que no.
+ */
+export interface CategoriaConCupo {
+  categoria_id: number;
+  codigo: string;
+  nombre: string;
+  disponibles: number;
+  hay_cupo: boolean;
+  ultima_unidad: boolean;
+  franquicia_base: number | null;
+  rotacion: {
+    fecha_entrega: string;
+    hora_entrega: string;
+    /** A qué hora vuelve el auto que habilita esa entrega. */
+    hora_devolucion_unidad: string;
+    margen_horas: number;
+  } | null;
+  precio: { total: string; precio_dia_promedio: string; dias: number } | null;
+}
+
+export interface DisponibilidadInterna {
+  fecha_inicio: string;
+  fecha_fin: string;
+  dias: number;
+  categorias: CategoriaConCupo[];
+}
+
+/** Un auto libre en un rango, con el aviso de upgrade/downgrade (D-54). */
+export interface VehiculoLibre {
+  id: number;
+  patente: string;
+  marca: string;
+  modelo: string;
+  anio: number | null;
+  color: string | null;
+  estado: string;
+  categoria_id: number | null;
+  categoria_nombre: string | null;
+  es_categoria_pedida: boolean;
+  es_downgrade: boolean;
+}
+
+export interface VehiculosLibres {
+  categoria_id: number | null;
+  categoria_nombre: string | null;
+  vehiculos: VehiculoLibre[];
+}
 
 
 

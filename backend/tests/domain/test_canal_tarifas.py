@@ -105,3 +105,48 @@ class TestVehiculoPedido:
         ]
         cot = cotizar_por_bandas(1, tarifas, categoria_id=7, canal="ambos", vehiculo_id=3)
         assert cot.total == Decimal("50000.00")
+
+
+class TestCanalDeOrigen:
+    """
+    `Reserva.origen` y `Tarifa.canal` son el mismo concepto con dos
+    vocabularios. Traducir a mano en cada llamador es cómo se cuelan los que se
+    olvidan de traducir — y olvidarse no da error: la tarifa entra como `ambos`
+    y se cobra el precio del otro canal.
+    """
+
+    def test_web_es_web(self):
+        from app.domain.tarifas import canal_de_origen
+        assert canal_de_origen("web") == "web"
+
+    def test_mostrador_es_mostrador(self):
+        from app.domain.tarifas import canal_de_origen
+        assert canal_de_origen("mostrador") == "mostrador"
+
+    def test_desconocido_cae_a_mostrador(self):
+        """
+        No cae a `ambos`: pedir `ambos` significa "sólo las tarifas marcadas
+        ambos", y una reserva sin origen legible no puede quedarse sin precio.
+        Mostrador es el canal donde hay alguien mirando el número.
+        """
+        from app.domain.tarifas import canal_de_origen
+        assert canal_de_origen(None) == "mostrador"
+        assert canal_de_origen("") == "mostrador"
+
+    def test_una_tarifa_de_web_no_se_cobra_en_el_mostrador(self):
+        """
+        El bug que esto fija: los dos `_cargar_tarifas_info` de los services
+        construían `TarifaInfo` **sin el canal**, así que toda tarifa entraba
+        como `ambos` y una cargada sólo para web se cobraba también enfrente
+        del cliente.
+        """
+        from app.domain.tarifas import canal_de_origen
+        tarifas = [diaria(1, "50000", "web", categoria_id=7)]
+        with pytest.raises(BusinessRuleError):
+            cotizar_por_bandas(
+                3, tarifas, categoria_id=7, canal=canal_de_origen("mostrador")
+            )
+        cot = cotizar_por_bandas(
+            3, tarifas, categoria_id=7, canal=canal_de_origen("web")
+        )
+        assert cot.total == Decimal("150000.00")

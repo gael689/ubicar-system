@@ -406,7 +406,16 @@ export function OcupacionPage() {
    * permite reusar `getEventSpan` sin tocarlo.
    */
   const eventosSinAsignar: EventoOcupacion[] = useMemo(
-    () => sinAsignar.map(r => ({
+    () => sinAsignar
+      // **Los filtros valen también acá.** La fila "Por asignar" nacía de
+      // `sinAsignar` crudo, así que con el filtro en "Mostrador" seguía
+      // mostrando las reservas web, y con una categoría elegida mostraba las
+      // de todas. La grilla decía una cosa y la fila de arriba otra — y es la
+      // fila desde la que se arrastra para asignar, o sea justo donde
+      // equivocarse cuesta.
+      .filter(r => filtroCanal === 'todas' || (r.origen ?? 'mostrador') === filtroCanal)
+      .filter(r => !filtroCategoria || String(r.categoria_id ?? '') === filtroCategoria)
+      .map(r => ({
       id: r.id,
       vehiculo_id: FILA_SIN_ASIGNAR,
       tipo: 'reserva' as const,
@@ -423,8 +432,45 @@ export function OcupacionPage() {
       origen: r.origen,
       creado_por: r.usuario_nombre ?? '',
     })),
-    [sinAsignar],
+    [sinAsignar, filtroCanal, filtroCategoria],
   );
+
+  /**
+   * En qué carril va cada reserva sin asignar, para que dos que se pisan no se
+   * dibujen una encima de la otra.
+   *
+   * **La fila "Por asignar" es una sola fila para N reservas.** A diferencia de
+   * las filas de vehículo —donde dos reservas simultáneas serían una
+   * sobreventa y no pueden pasar—, acá lo normal es que varias convivan: son
+   * justamente las que todavía no tienen unidad. Con posicionamiento absoluto
+   * y sin carriles, la segunda tapaba a la primera y la fila mentía diciendo
+   * que había una sola reserva pendiente.
+   *
+   * Reparto codicioso por fecha de inicio: cada reserva va al primer carril
+   * cuyo último ocupante ya terminó. Es el mismo algoritmo con el que se
+   * dibuja cualquier línea de tiempo, y con dos o tres pendientes —el caso
+   * real— da uno o dos carriles.
+   */
+  const carrilesSinAsignar = useMemo(() => {
+    const orden = [...eventosSinAsignar].sort(
+      (a, b) => (a.fecha_inicio < b.fecha_inicio ? -1 : a.fecha_inicio > b.fecha_inicio ? 1 : a.id - b.id)
+    );
+    const finDeCarril: string[] = [];
+    const carril = new Map<number, number>();
+    for (const ev of orden) {
+      // Adyacente no es solapado: una que termina el 10 y otra que empieza el
+      // 10 comparten carril, igual que en las filas de vehículo.
+      let i = finDeCarril.findIndex(fin => fin < ev.fecha_inicio);
+      if (i === -1) { i = finDeCarril.length; finDeCarril.push(ev.fecha_fin); }
+      else if (ev.fecha_fin > finDeCarril[i]) finDeCarril[i] = ev.fecha_fin;
+      carril.set(ev.id, i);
+    }
+    return { carril, cantidad: Math.max(1, finDeCarril.length) };
+  }, [eventosSinAsignar]);
+
+  /** Alto de la fila "Por asignar": crece con los carriles, no con las reservas. */
+  const ALTO_CARRIL = 56;
+  const altoSinAsignar = carrilesSinAsignar.cantidad * ALTO_CARRIL + 4;
 
   /**
    * Las filas que se dibujan, después de aplicar el filtro de categoría.
@@ -449,7 +495,7 @@ export function OcupacionPage() {
   const eventosVisibles = useMemo(
     () => (filtroCanal === 'todas'
       ? eventos
-      : eventos.filter(e => ES_BLOQUEO(e.tipo) || e.origen === filtroCanal)),
+      : eventos.filter(e => ES_BLOQUEO(e.tipo) || (e.origen ?? 'mostrador') === filtroCanal)),
     [eventos, filtroCanal],
   );
 
@@ -743,7 +789,10 @@ export function OcupacionPage() {
                       sobreventa. */}
                   {eventosSinAsignar.length > 0 && (
                     <tr className="bg-amber-50">
-                      <td className="px-3 py-1 sticky left-0 bg-amber-50 z-20 border-r border-amber-200 shadow-[1px_0_0_0_#fde68a] align-middle h-[60px]">
+                      <td
+                        className="px-3 py-1 sticky left-0 bg-amber-50 z-20 border-r border-amber-200 shadow-[1px_0_0_0_#fde68a] align-middle"
+                        style={{ height: altoSinAsignar }}
+                      >
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                           <div className="flex flex-col min-w-0">
@@ -767,8 +816,8 @@ export function OcupacionPage() {
                         return (
                           <td
                             key={dayIdx}
-                            className="relative border-r border-amber-200/70 h-[60px] p-0"
-                            style={{ minWidth: '180px', width: '180px' }}
+                            className="relative border-r border-amber-200/70 p-0"
+                            style={{ minWidth: '180px', width: '180px', height: altoSinAsignar }}
                           >
                             {aDibujar.map(ev => {
                               const { leftPercent, widthPercent } = getEventSpan(ev, day, eventosSinAsignar);
@@ -783,8 +832,16 @@ export function OcupacionPage() {
                                     e.dataTransfer.setData('text/plain', `reserva:${ev.id}`);
                                   }}
                                   onDragEnd={() => setReservaArrastrada(null)}
-                                  className="absolute inset-y-1 rounded-md border border-dashed border-amber-500 bg-amber-200 text-amber-950 shadow-sm cursor-grab active:cursor-grabbing transition-all z-10 overflow-hidden hover:brightness-105"
-                                  style={{ left: `calc(${leftPercent}% + 1px)`, width: `calc(${widthPercent}% - 2px)`, minWidth: 0, height: '52px' }}
+                                  className="absolute rounded-md border border-dashed border-amber-500 bg-amber-200 text-amber-950 shadow-sm cursor-grab active:cursor-grabbing transition-all z-10 overflow-hidden hover:brightness-105"
+                                  style={{
+                                    left: `calc(${leftPercent}% + 1px)`,
+                                    width: `calc(${widthPercent}% - 2px)`,
+                                    minWidth: 0,
+                                    // El carril, para que dos reservas que se
+                                    // pisan se vean las dos.
+                                    top: (carrilesSinAsignar.carril.get(ev.id) ?? 0) * ALTO_CARRIL + 4,
+                                    height: ALTO_CARRIL - 8,
+                                  }}
                                 >
                                   <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full gap-0.5">
                                     <div className="font-bold text-[11px] truncate flex items-center gap-1 leading-tight">

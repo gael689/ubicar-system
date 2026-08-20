@@ -70,8 +70,10 @@ class ConductorAdicional(Base):
     dni: Mapped[str | None] = mapped_column(String(20), nullable=True)
     licencia_numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
     licencia_vencimiento: Mapped[date] = mapped_column(Date(), nullable=False)
-    # El recargo por edad (D-38) mira la edad de quien maneja: si la reserva
-    # designa un conductor adicional, el riesgo es el suyo y no el del titular.
+    # Quien maneja puede no ser quien paga: si la reserva designa un conductor
+    # adicional, la edad y la licencia que valen son las suyas. Ya no cambia el
+    # precio (se retiró el recargo por franja etaria, D-38); sigue decidiendo
+    # la edad mínima para alquilar (D-51).
     fecha_nacimiento: Mapped[date | None] = mapped_column(Date(), nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

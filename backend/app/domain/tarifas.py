@@ -97,6 +97,22 @@ def calcular_duracion_dias(fecha_inicio: date, fecha_fin: date) -> int:
     return (fecha_fin - fecha_inicio).days
 
 
+def canal_de_origen(origen: str | None) -> str:
+    """
+    El canal de tarifas que le corresponde a una reserva según su `origen`.
+
+    Existe porque `Reserva.origen` y `Tarifa.canal` son el mismo concepto con
+    dos vocabularios: la reserva dice de dónde vino (`web` | `mostrador`) y la
+    tarifa dice dónde rige (`ambos` | `web` | `mostrador`). Traducir a mano en
+    cada llamador es cómo se cuelan los que se olvidan de traducir — y
+    olvidarse acá no da error: cae a `ambos` y cobra el precio del otro canal.
+
+    Cualquier origen desconocido cae a `mostrador`: es el canal donde hay
+    alguien mirando el número antes de cobrarlo.
+    """
+    return "web" if origen == "web" else "mostrador"
+
+
 def seleccionar_tipo_tarifa(dias: int) -> TipoTarifa:
     """
     Banda a la que pertenece la duración, mirada como un todo.

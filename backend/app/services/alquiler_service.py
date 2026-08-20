@@ -18,7 +18,8 @@ from app.domain.cuenta_corriente import calcular_vencimiento
 from app.domain.enums import EstadoReserva, EstadoVehiculo, DecisionExcedente
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.tarifas import (
-    seleccionar_tarifa, cotizar_por_bandas, calcular_duracion_dias, TarifaInfo
+    seleccionar_tarifa, cotizar_por_bandas, calcular_duracion_dias, canal_de_origen,
+    TarifaInfo,
 )
 from app.domain.transiciones import estado_tras_checkout, estado_tras_checkin
 from app.domain.ventana import VentanaReserva
@@ -643,7 +644,10 @@ class AlquilerService:
 
         tarifa_no_encontrada = False
         try:
-            cot = cotizar_por_bandas(nueva_duracion, tarifas_info, categoria_id)
+            cot = cotizar_por_bandas(
+                nueva_duracion, tarifas_info, categoria_id,
+                canal_de_origen(reserva.origen),
+            )
             nuevo_precio = cot.total
             nueva_tarifa_id = cot.tarifa_principal.id
         except BusinessRuleError:
@@ -772,7 +776,9 @@ class AlquilerService:
 
         tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
         try:
-            cot = cotizar_por_bandas(duracion, tarifas_info, categoria_id)
+            cot = cotizar_por_bandas(
+                duracion, tarifas_info, categoria_id, canal_de_origen(reserva.origen)
+            )
             return cot.total / Decimal(duracion)
         except BusinessRuleError:
             raise BusinessRuleError(
@@ -800,6 +806,9 @@ class AlquilerService:
                 monto=Decimal(str(t.monto)),
                 vehiculo_id=t.vehiculo_id,
                 categoria_id=t.categoria_id,
+                # Ver el mismo comentario en `ReservaService._cargar_tarifas_info`:
+                # sin el canal, una tarifa de un solo canal se cobra en los dos.
+                canal=t.canal,
             )
             for t in tarifas
         ]

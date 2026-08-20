@@ -13,7 +13,9 @@ from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
 from app.domain.enums import EstadoReserva, EstadoVehiculo
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
-from app.domain.tarifas import cotizar_por_bandas, calcular_duracion_dias, TarifaInfo
+from app.domain.tarifas import (
+    cotizar_por_bandas, calcular_duracion_dias, canal_de_origen, TarifaInfo,
+)
 from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.categoria import Categoria
@@ -490,7 +492,7 @@ class ReservaService:
         # muestra como "tarifa". Es informativo y no interviene en el precio.
         tarifas_info, _ = self._cargar_tarifas_info(vehiculo_id, categoria_id)
         try:
-            cot = cotizar_por_bandas(duracion, tarifas_info, categoria_id)
+            cot = cotizar_por_bandas(duracion, tarifas_info, categoria_id, canal)
             tarifa_id = cot.tarifa_principal.id
             if precio_lista is None:
                 precio_lista = cot.total
@@ -879,7 +881,9 @@ class ReservaService:
             duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
             tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
             try:
-                cot = cotizar_por_bandas(duracion, tarifas_info, categoria_id)
+                cot = cotizar_por_bandas(
+                    duracion, tarifas_info, categoria_id, canal_de_origen(reserva.origen)
+                )
                 precio = cot.total
                 tarifa_id = cot.tarifa_principal.id
             except BusinessRuleError:
@@ -1598,6 +1602,12 @@ class ReservaService:
                 monto=Decimal(str(t.monto)),
                 vehiculo_id=t.vehiculo_id,
                 categoria_id=t.categoria_id,
+                # **El canal tiene que viajar.** Sin esto toda tarifa entraba
+                # al motor como `ambos` sin importar cómo estuviera cargada, y
+                # una tarifa marcada sólo para web se cobraba también en el
+                # mostrador (y al revés) — que es exactamente lo que la
+                # columna `canal` de la migración 074 vino a impedir.
+                canal=t.canal,
             )
             for t in tarifas
         ]

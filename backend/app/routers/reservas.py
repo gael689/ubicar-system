@@ -254,6 +254,58 @@ def list_reservas_a_reasignar(
     return ok([ReservaResponse.model_validate(r) for r in items])
 
 
+@router.get("/pre-checkout-previo")
+def pre_checkout_previo(
+    cliente_id: int | None = None,
+    conductor_id: int | None = None,
+    vehiculo_id: int | None = None,
+    garantia_tipo: str | None = None,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    El mismo semáforo de `/{reserva_id}/pre-checkout`, **sobre una reserva que
+    todavía no existe**.
+
+    El formulario de alta necesita mostrarlo en el resumen, antes de guardar,
+    que es el único momento en que todavía se puede corregir. Como no hay
+    `reserva_id`, hasta ahora el frontend armaba su propia lista de faltantes
+    a mano — dos criterios que pueden divergir, que es justo lo que el resto
+    del repo evita a propósito (ver el comentario de `hooks/usePrecios.ts`
+    sobre no crear un segundo motor).
+
+    No evalúa nada nuevo: llama a `evaluar_datos_pre_checkout`, del que
+    `/{reserva_id}/pre-checkout` pasó a ser un caso particular.
+
+    **Va declarado antes que `/{reserva_id}`**: si no, FastAPI intenta leer
+    "pre-checkout-previo" como un id y devuelve 422.
+    """
+    from app.domain.bloqueos import evaluar_datos_pre_checkout
+    from app.models.cliente import Cliente, ConductorAdicional
+    from app.models.vehiculo import Vehiculo
+
+    cliente = db.get(Cliente, cliente_id) if cliente_id else None
+    conductor = db.get(ConductorAdicional, conductor_id) if conductor_id else None
+    vehiculo = db.get(Vehiculo, vehiculo_id) if vehiculo_id else None
+
+    semaforo, items = evaluar_datos_pre_checkout(
+        db,
+        vehiculo=vehiculo,
+        cliente=cliente,
+        conductor=conductor,
+        garantia_tipo=garantia_tipo,
+        # Al crear no puede haber solape marcado ni contrato: el solape se
+        # detecta al guardar y se devuelve como warning, y el contrato no
+        # existe hasta el check-out.
+        bloqueada_por_solape=False,
+        contrato_firmado=None,
+    )
+    return ok(SemaforoResponse(
+        semaforo=semaforo,
+        items=[BloqueoItemResponse(**i.__dict__) for i in items],
+    ).model_dump())
+
+
 @router.get("/{reserva_id}")
 def get_reserva(
     reserva_id: int,

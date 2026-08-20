@@ -11,8 +11,9 @@ export interface ConductorAdicional {
   dni?: string;
   licencia_numero?: string;
   licencia_vencimiento: string;
-  // De acá sale el recargo por edad (D-38) cuando la reserva designa un
-  // conductor: el riesgo es de quien maneja, no del titular que paga.
+  // La edad de quien maneja. Ya no cambia el precio (se retiró el recargo por
+  // franja etaria, D-38); decide la edad mínima para alquilar (D-51), y manda
+  // la del conductor designado por sobre la del titular que paga.
   fecha_nacimiento?: string | null;
   activo: boolean;
 }

@@ -28,7 +28,7 @@ import { QueryClient } from '@tanstack/react-query';
 export const CACHE = {
   /** Reservas, disponibilidad, caja, cuentas corrientes, notificaciones. */
   COMPARTIDO: { staleTime: 15_000, refetchOnWindowFocus: true },
-  /** Categorías, adicionales, tarifas, configuración, recargos por edad. */
+  /** Categorías, adicionales, tarifas, configuración. */
   CATALOGO: { staleTime: 10 * 60_000, refetchOnWindowFocus: false },
   /** Reportes cerrados, historial de notificaciones, movimientos pasados. */
   HISTORICO: { staleTime: 30 * 60_000, refetchOnWindowFocus: false },

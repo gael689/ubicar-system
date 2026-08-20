@@ -95,8 +95,9 @@ export function ComoSeArmaElPrecio({ className }: { className?: string }) {
               </li>
             </ol>
             <p className="mt-2">
-              Después suma los días, resta el descuento por duración, suma el
-              recargo por edad y suma los seguros y extras.
+              Después suma los días, resta el descuento por duración y suma los
+              seguros y extras. La edad no cambia el precio: el recargo por
+              conductor joven se retiró.
             </p>
           </div>
 

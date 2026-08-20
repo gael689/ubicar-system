@@ -58,13 +58,39 @@ def _deuda_cliente(db: Session, cliente_id: int) -> BloqueoItem | None:
     return BloqueoItem("deuda_previa", f"El cliente tiene un saldo pendiente de ${saldo:,.2f}", "advertencia")
 
 
-def evaluar_pre_checkout(db: Session, reserva: Reserva, hoy: date | None = None) -> tuple[str, list[BloqueoItem]]:
+def evaluar_datos_pre_checkout(
+    db: Session,
+    *,
+    vehiculo=None,
+    cliente=None,
+    conductor=None,
+    garantia_tipo: str | None = None,
+    bloqueada_por_solape: bool = False,
+    contrato_firmado: bool | None = None,
+    hoy: date | None = None,
+) -> tuple[str, list[BloqueoItem]]:
+    """
+    El semáforo sobre los datos sueltos, sin exigir una reserva guardada.
+
+    **Existe para que haya un solo criterio.** El formulario de alta necesita
+    mostrar el semáforo *antes* de guardar —que es cuando todavía se puede
+    hacer algo al respecto—, y hasta ahora lo armaba a mano en el frontend con
+    su propia lista de faltantes. Dos listas que dicen parecido son dos listas
+    que en algún momento dicen distinto, y la que el operador cree es la que
+    tiene delante.
+
+    `evaluar_pre_checkout` pasó a ser esta misma función leyendo los datos de
+    una reserva: la de siempre no cambió de comportamiento, sólo dejó de ser
+    la única puerta.
+
+    `contrato_firmado=None` significa que todavía no hay alquiler —el caso del
+    alta— y entonces el ítem del contrato no se evalúa: reclamar una firma que
+    no puede existir todavía es ruido.
+    """
     hoy = hoy or date.today()
     items: list[BloqueoItem] = []
-    vehiculo = reserva.vehiculo
-    cliente = reserva.cliente
 
-    if reserva.bloqueada_por_solape:
+    if bloqueada_por_solape:
         items.append(BloqueoItem(
             "solape_pendiente", "La reserva tiene un solape con otra reserva pendiente de resolver", "bloqueante"
         ))
@@ -78,7 +104,6 @@ def evaluar_pre_checkout(db: Session, reserva: Reserva, hoy: date | None = None)
             items.append(BloqueoItem("poliza_vencida", f"La póliza del vehículo venció el {vehiculo.poliza_vencimiento}", "bloqueante"))
 
     # Licencia de quien maneja: el conductor real si hay uno asignado, si no el cliente.
-    conductor = reserva.conductor
     licencia_vencimiento = conductor.licencia_vencimiento if conductor else (cliente.licencia_vencimiento if cliente else None)
     quien = conductor.nombre_completo if conductor else (cliente.nombre_completo if cliente else "el cliente")
     if licencia_vencimiento and licencia_vencimiento < hoy:
@@ -89,13 +114,31 @@ def evaluar_pre_checkout(db: Session, reserva: Reserva, hoy: date | None = None)
         if deuda:
             items.append(deuda)
 
-    if not reserva.garantia_tipo:
+    # `no_aplica` es el valor con el que arranca el formulario, así que en la
+    # práctica significa "todavía no se definió" igual que el vacío.
+    if not garantia_tipo or garantia_tipo == "no_aplica":
         items.append(BloqueoItem("sin_garantia", "La reserva no tiene garantía/depósito definido", "advertencia"))
 
-    if reserva.alquiler and not reserva.alquiler.contrato_firmado:
+    if contrato_firmado is False:
         items.append(BloqueoItem("contrato_no_firmado", "El contrato de este alquiler todavía no está firmado", "advertencia"))
 
     return _semaforo(items), items
+
+
+def evaluar_pre_checkout(db: Session, reserva: Reserva, hoy: date | None = None) -> tuple[str, list[BloqueoItem]]:
+    """El semáforo de una reserva guardada. Ver `evaluar_datos_pre_checkout`."""
+    return evaluar_datos_pre_checkout(
+        db,
+        vehiculo=reserva.vehiculo,
+        cliente=reserva.cliente,
+        conductor=reserva.conductor,
+        garantia_tipo=reserva.garantia_tipo,
+        bloqueada_por_solape=bool(reserva.bloqueada_por_solape),
+        contrato_firmado=(
+            bool(reserva.alquiler.contrato_firmado) if reserva.alquiler else None
+        ),
+        hoy=hoy,
+    )
 
 
 def evaluar_pre_checkin(db: Session, alquiler: Alquiler, hoy: date | None = None) -> tuple[str, list[BloqueoItem]]:

@@ -35,9 +35,9 @@ const PASOS = ["Elegí fechas", "Elegí tu vehículo", "Sumá extras", "Reservá
 // D-53 (13/08): 21 es el mínimo para alquilar (`alquiler.edad_minima`, hoy
 // fijo en 21 vía configuración) — por debajo de eso el backend rechaza la
 // reserva, así que no tiene sentido ofrecerlo en la lista. Sube hasta 80, y
-// un 81 que representa "más de 80": arriba de esa edad ninguna franja de
-// recargo distingue, así que pedir el número exacto no cambia el precio y sí
-// alarga la lista.
+// un 81 que representa "más de 80": la edad ya no cambia el precio en ningún
+// tramo (se retiró el recargo por franja etaria, D-38), así que pedir el
+// número exacto arriba de 80 sólo alarga la lista.
 const EDADES = Array.from({ length: 61 }, (_, i) => i + 21);
 
 /**
