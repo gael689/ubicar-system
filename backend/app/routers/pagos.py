@@ -34,6 +34,9 @@ def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
     vehiculo_patente = None
     reserva_id = None
 
+    # La reserva sale del alquiler si lo hay y, si no, del propio pago: una
+    # seña se cobra antes de que el alquiler exista, y sin esto el cobro
+    # aparecía en la caja sin decir de qué reserva era (migración 079).
     alquiler = db.get(Alquiler, pago.alquiler_id) if pago.alquiler_id else None
     if alquiler:
         reserva_id = alquiler.reserva_id
@@ -43,6 +46,15 @@ def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
             if cliente:
                 cliente_nombre = cliente.nombre_completo
             # `vehiculo_id` es nullable desde la 042 (reserva por categoría).
+            if reserva.vehiculo_id:
+                vehiculo = db.get(Vehiculo, reserva.vehiculo_id)
+                if vehiculo:
+                    vehiculo_patente = vehiculo.patente
+
+    if reserva_id is None and pago.reserva_id:
+        reserva_id = pago.reserva_id
+        reserva = db.get(Reserva, pago.reserva_id)
+        if reserva:
             if reserva.vehiculo_id:
                 vehiculo = db.get(Vehiculo, reserva.vehiculo_id)
                 if vehiculo:
@@ -73,8 +85,10 @@ def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
 # `mercado_pago` entra acá para que el desglose de la caja del día lo muestre
 # como una línea propia: lo cobrado online se concilia contra el extracto de
 # Mercado Pago, no contra el arqueo del mostrador.
+# Tiene que ser exactamente el enum de `models/pago.py`. `wapa` faltaba, así
+# que filtrar la caja por Wapa devolvía 400 aunque hubiera cobros por ese medio.
 MEDIOS_PAGO = ["efectivo", "transferencia", "tarjeta", "cheque", "echeq",
-               "cuenta_corriente", "mercado_pago"]
+               "cuenta_corriente", "mercado_pago", "wapa"]
 
 
 def _filtrar_pagos(
@@ -88,6 +102,7 @@ def _filtrar_pagos(
     fecha_hasta: date | None,
     monto_min: float | None,
     monto_max: float | None,
+    incluir_anulados: bool = False,
 ):
     """
     Los filtros de cobros, en un solo lugar.
@@ -96,8 +111,12 @@ def _filtrar_pagos(
     **exactamente igual**: si divergen, el total de abajo no coincide con las
     filas de arriba y el listado deja de servir para cerrar la caja.
     """
-    # Los cobros dados de baja no cuentan en ningún total (migración 083).
-    q = db.query(Pago).filter(Pago.anulado == False)
+    # Los cobros dados de baja no cuentan en ningún total (migración 083). Se
+    # pueden pedir explícitamente —la baja es lógica justamente para poder
+    # verlos— pero nunca por default: el 99% de las consultas es "cuánto entró".
+    q = db.query(Pago)
+    if not incluir_anulados:
+        q = q.filter(Pago.anulado == False)
     if alquiler_id:
         q = q.filter(Pago.alquiler_id == alquiler_id)
     if cliente_id:
@@ -147,6 +166,10 @@ def list_pagos(
     fecha_hasta: date | None = Query(None),
     monto_min: float | None = Query(None, ge=0),
     monto_max: float | None = Query(None, ge=0),
+    incluir_anulados: bool = Query(
+        False,
+        description="Si true, incluye los cobros dados de baja (no suman al resumen)",
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -161,7 +184,8 @@ def list_pagos(
     filas de una tabla paginada es donde aparecen las diferencias.
     """
     q = _filtrar_pagos(db, alquiler_id, cliente_id, medio_pago, con_factura,
-                       cobrado_por, fecha_desde, fecha_hasta, monto_min, monto_max)
+                       cobrado_por, fecha_desde, fecha_hasta, monto_min, monto_max,
+                       incluir_anulados)
 
     total = q.count()
     pagos = (
@@ -173,8 +197,12 @@ def list_pagos(
 
     # El desglose se calcula en la base sobre el filtro completo, no sobre la
     # página: si no, el total de caja cambiaría al pasar de página.
+    #
+    # **Y nunca incluye los anulados**, aunque se hayan pedido en el listado: si
+    # se muestran es para poder mirarlos, no para que sumen.
     desglose = dict(
-        q.with_entities(Pago.medio_pago, func.coalesce(func.sum(Pago.monto), 0))
+        q.filter(Pago.anulado == False)
+        .with_entities(Pago.medio_pago, func.coalesce(func.sum(Pago.monto), 0))
         .group_by(Pago.medio_pago)
         .all()
     )

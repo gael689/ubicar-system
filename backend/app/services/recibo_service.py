@@ -72,6 +72,15 @@ class ReciboService:
                 "pago_sin_cliente",
                 "No se puede emitir un recibo de un pago que no tiene cliente asociado",
             )
+        # Un cobro dado de baja no entró: emitirle un recibo pondría a circular
+        # un papel que afirma lo contrario de lo que dice el libro. El orden
+        # correcto es al revés — primero se anula el recibo, después el cobro —
+        # y eso ya lo exige `POST /pagos/{id}/anular`.
+        if pago.anulado:
+            raise BusinessRuleError(
+                "pago_anulado",
+                f"El cobro #{pago.id} está dado de baja: no se le puede emitir un recibo.",
+            )
 
         existente = self.db.query(Recibo).filter(
             Recibo.pago_id == pago.id, Recibo.estado == "emitido"

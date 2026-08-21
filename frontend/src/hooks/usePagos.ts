@@ -140,14 +140,3 @@ export function useAnularPago() {
   });
 }
 
-export function useEliminarPago() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: number) => api.delete(`/pagos/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [KEY] });
-      qc.invalidateQueries({ queryKey: ['caja'] });
-      qc.invalidateQueries({ queryKey: ['reportes'] });
-    },
-  });
-}

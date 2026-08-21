@@ -4,7 +4,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { usePagos, useCrearPago, useEliminarPago } from '@/hooks/usePagos';
+import { usePagos, useCrearPago, useAnularPago } from '@/hooks/usePagos';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { formatCurrency, formatDate, extractError } from '@/lib/utils';
 import { METODO_PAGO_LABEL } from '@/lib/constants';
 import type { MetodoPago } from '@/types';
@@ -47,7 +48,8 @@ export function PagosTab({ alquilerId, precioTotal }: Props) {
   const { data, isLoading } = usePagos({ alquiler_id: alquilerId });
   const pagos = data?.data ?? [];
   const crear = useCrearPago();
-  const eliminar = useEliminarPago();
+  const anular = useAnularPago();
+  const [anularId, setAnularId] = useState<number | null>(null);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -73,11 +75,16 @@ export function PagosTab({ alquilerId, precioTotal }: Props) {
     }
   }
 
-  async function handleDelete(id: number) {
-    if (!confirm('¿Eliminar este cobro?')) return;
+  // Un cobro no se borra: se da de baja con motivo (migración 083). El
+  // `confirm()` del navegador no sirve para esto — no puede pedir un texto, y
+  // el motivo es lo único que va a explicar por qué cambió la caja de un día
+  // pasado.
+  async function handleAnular(motivo: string) {
+    if (!anularId) return;
     try {
-      await eliminar.mutateAsync(id);
-      toast.success('Cobro eliminado');
+      await anular.mutateAsync({ id: anularId, motivo });
+      toast.success('Cobro dado de baja');
+      setAnularId(null);
     } catch (err) {
       toast.error(extractError(err));
     }
@@ -134,7 +141,8 @@ export function PagosTab({ alquilerId, precioTotal }: Props) {
                 </p>
               </div>
               <button
-                onClick={() => handleDelete(p.id)}
+                onClick={() => setAnularId(p.id)}
+                title="Dar de baja este cobro"
                 className="p-1 text-muted-foreground hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -143,6 +151,16 @@ export function PagosTab({ alquilerId, precioTotal }: Props) {
           ))}
         </div>
       )}
+
+      <MotivoDialog
+        open={anularId !== null}
+        onOpenChange={open => !open && setAnularId(null)}
+        title="Dar de baja el cobro"
+        description="El cobro no se borra: queda registrado como dado de baja, sale de la caja de su fecha, y su crédito en la cuenta corriente se revierte con un contra-asiento."
+        confirmLabel="Dar de baja"
+        loading={anular.isPending}
+        onConfirm={handleAnular}
+      />
 
       {/* Botón + formulario */}
       {showForm ? (
