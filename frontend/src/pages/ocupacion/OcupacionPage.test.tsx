@@ -261,3 +261,75 @@ describe('Dos reservas sin asignar que se pisan', () => {
     ).toHaveLength(2);
   });
 });
+
+
+describe('La lista de las sin asignar', () => {
+  it('se abre desde la etiqueta y las muestra todas, caigan donde caigan', async () => {
+    // **El problema que resuelve.** Las barras se dibujan en la columna de su
+    // fecha: con 120 días de grilla y 180px por día, una reserva de dentro de
+    // dos meses está a más de diez mil píxeles a la derecha. La fila decía
+    // "2 reservas sin auto" y no se veía ninguna.
+    estado.ocupacion = ocupacion([
+      reservaSinAsignar({
+        id: 1, cliente: { nombre_completo: 'Cerca' },
+        fecha_inicio: enDias(2), fecha_fin: enDias(4),
+      }),
+      reservaSinAsignar({
+        id: 2, cliente: { nombre_completo: 'Lejos' },
+        fecha_inicio: enDias(85), fecha_fin: enDias(90),
+      }),
+    ]);
+    const user = userEvent.setup();
+    await montarTimeline(user);
+
+    await user.click(screen.getByRole('button', { name: /Por asignar/i }));
+
+    const dialogo = screen.getByText('Reservas sin auto asignado').closest('div')!
+      .parentElement!.parentElement as HTMLElement;
+    expect(within(dialogo).getByText('Cerca')).toBeInTheDocument();
+    expect(within(dialogo).getByText('Lejos')).toBeInTheDocument();
+  });
+
+  it('ofrece Ir, Detalle y Asignar en cada una', async () => {
+    const user = userEvent.setup();
+    await montarTimeline(user);
+
+    await user.click(screen.getByRole('button', { name: /Por asignar/i }));
+
+    expect(screen.getByRole('button', { name: /^Ir$/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Detalle$/ })).toBeInTheDocument();
+    // "Asignar auto" ya existe en la barra de la fila, así que hay dos.
+    expect(screen.getAllByRole('button', { name: /Asignar auto/i }).length).toBeGreaterThan(1);
+  });
+
+  it('"Ir" cierra la lista', async () => {
+    // Cerrarla es parte de la acción: el punto de "Ir" es mirar el calendario,
+    // y dejarla abierta encima lo tapa.
+    const user = userEvent.setup();
+    await montarTimeline(user);
+
+    await user.click(screen.getByRole('button', { name: /Por asignar/i }));
+    await user.click(screen.getByRole('button', { name: /^Ir$/ }));
+
+    expect(screen.queryByText('Reservas sin auto asignado')).not.toBeInTheDocument();
+  });
+
+  it('respeta los filtros, igual que la fila', async () => {
+    // Que el botón mostrara cosas que la grilla esconde sería otra forma de
+    // que la pantalla mienta.
+    estado.ocupacion = ocupacion([
+      reservaSinAsignar({ id: 1, cliente: { nombre_completo: 'De Mostrador' }, origen: 'mostrador' }),
+      reservaSinAsignar({ id: 2, cliente: { nombre_completo: 'De Web' }, origen: 'web' }),
+    ]);
+    const user = userEvent.setup();
+    await montarTimeline(user);
+
+    await user.click(screen.getByRole('button', { name: /^Mostrador$/i }));
+    await user.click(screen.getByRole('button', { name: /Por asignar/i }));
+
+    // Aparece dos veces —en la barra de la fila y en la lista—, que es lo
+    // correcto: son la misma reserva vista de dos formas.
+    expect(screen.getAllByText('De Mostrador').length).toBeGreaterThan(0);
+    expect(screen.queryByText('De Web')).not.toBeInTheDocument();
+  });
+});

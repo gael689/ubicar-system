@@ -376,6 +376,16 @@ export function OcupacionPage() {
   // upgrade o downgrade y dispara la emisión del contrato (D-47); duplicar esa
   // lógica en un drag sería tener dos formas de asignar que después divergen.
   const [reservaArrastrada, setReservaArrastrada] = useState<number | null>(null);
+  /**
+   * La lista de las sin asignar, abierta.
+   *
+   * **Por qué hace falta un botón y no alcanza con la fila.** Las barras se
+   * dibujan en la columna de su fecha, así que una reserva que empieza dentro
+   * de dos meses queda a mil y pico de píxeles a la derecha: la fila dice "1
+   * reserva sin auto" y no se ve ninguna. Había que scrollear a ciegas hasta
+   * encontrarla. Desde acá se ven todas de una, sin importar en qué día caen.
+   */
+  const [listaSinAsignarAbierta, setListaSinAsignarAbierta] = useState(false);
   const [asignarA, setAsignarA] = useState<{ reserva: Reserva; vehiculoId: number } | null>(null);
 
   /**
@@ -793,7 +803,17 @@ export function OcupacionPage() {
                         className="px-3 py-1 sticky left-0 bg-amber-50 z-20 border-r border-amber-200 shadow-[1px_0_0_0_#fde68a] align-middle"
                         style={{ height: altoSinAsignar }}
                       >
-                        <div className="flex items-center gap-2">
+                        {/* **La etiqueta es el botón.** Las barras se dibujan
+                            en la columna de su fecha, así que una reserva de
+                            dentro de dos meses queda fuera de pantalla y la
+                            fila dice "1 reserva sin auto" sin mostrar
+                            ninguna. Acá se abren todas juntas. */}
+                        <button
+                          type="button"
+                          onClick={() => setListaSinAsignarAbierta(true)}
+                          className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-amber-100"
+                          title="Ver todas las reservas sin auto asignado"
+                        >
                           <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                           <div className="flex flex-col min-w-0">
                             <span className="font-bold text-amber-900 text-[13px] uppercase tracking-wide truncate">
@@ -801,9 +821,10 @@ export function OcupacionPage() {
                             </span>
                             <span className="text-amber-800 font-semibold text-[10.5px] truncate">
                               {eventosSinAsignar.length} reserva{eventosSinAsignar.length !== 1 ? 's' : ''} sin auto
+                              <span className="ml-1 font-normal underline">— ver todas</span>
                             </span>
                           </div>
-                        </div>
+                        </button>
                       </td>
                       {days.map((day, dayIdx) => {
                         const dayStr = formatDate(day);
@@ -1199,6 +1220,16 @@ export function OcupacionPage() {
       {/* Soltar una reserva sobre un auto abre el panel de asignación de
           siempre. El arrastre es un atajo para llegar acá, no una segunda
           forma de asignar. */}
+      {listaSinAsignarAbierta && (
+        <ListaSinAsignar
+          eventos={eventosSinAsignar}
+          onCerrar={() => setListaSinAsignarAbierta(false)}
+          onIr={fecha => { setListaSinAsignarAbierta(false); jumpToDate(fecha); }}
+          onAsignar={id => { setListaSinAsignarAbierta(false); abrirAsignacion(id); }}
+          onVer={id => { setListaSinAsignarAbierta(false); setReservaInfoId(id); }}
+        />
+      )}
+
       {asignarA && (
         <PanelResolverReserva
           reserva={asignarA.reserva}
@@ -1577,4 +1608,127 @@ function VistaAnualOcupacion({
       />
     </div>
   );
+}
+
+
+/**
+ * Las reservas sin auto, todas juntas y sin depender de dónde caen.
+ *
+ * **El problema que resuelve.** La fila "Por asignar" dibuja cada reserva en la
+ * columna de su fecha de retiro. Con 120 días de grilla y 180 px por día, una
+ * reserva de dentro de dos meses está a más de diez mil píxeles a la derecha: la
+ * fila dice "1 reserva sin auto" y no se ve ninguna. La única forma de llegar
+ * era scrollear a ciegas.
+ *
+ * Cada fila ofrece las tres cosas que se quieren hacer con una reserva sin auto,
+ * en el orden en que se quieren: **Ir** —llevar el calendario hasta sus fechas,
+ * que es donde se decide qué auto darle mirando lo que hay alrededor—,
+ * **Asignar** y ver el detalle.
+ *
+ * Muestra lo mismo que la fila, o sea **ya filtrado**: si alguien filtró por
+ * canal o categoría, la lista respeta el filtro. Que el botón mostrara cosas
+ * que la grilla esconde sería otra forma de que la pantalla mienta.
+ */
+function ListaSinAsignar({
+  eventos, onCerrar, onIr, onAsignar, onVer,
+}: {
+  eventos: EventoOcupacion[];
+  onCerrar: () => void;
+  onIr: (fecha: string) => void;
+  onAsignar: (reservaId: number) => void;
+  onVer: (reservaId: number) => void;
+}) {
+  // Por fecha de retiro: es el orden en que hay que resolverlas, porque la que
+  // sale antes es la que antes deja de tener solución.
+  const ordenadas = [...eventos].sort((a, b) =>
+    a.fecha_inicio < b.fecha_inicio ? -1 : a.fecha_inicio > b.fecha_inicio ? 1 : a.id - b.id
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm"
+      onClick={onCerrar}
+    >
+      <div
+        className="my-8 w-full max-w-2xl rounded-2xl bg-white shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-bold text-slate-800">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              Reservas sin auto asignado
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Ya ocupan cupo. Hay que ponerles un auto antes de entregar.
+            </p>
+          </div>
+          <button
+            onClick={onCerrar}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          >
+            <XCircle className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {ordenadas.length === 0 && (
+            <p className="px-5 py-8 text-center text-sm text-slate-500">
+              No hay ninguna sin asignar con los filtros puestos.
+            </p>
+          )}
+          {ordenadas.map(ev => (
+            <div key={ev.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-semibold text-slate-800">
+                    {ev.cliente_nombre}
+                  </span>
+                  {ev.origen === 'web' && (
+                    <Globe className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  )}
+                </div>
+                <div className="mt-0.5 text-xs text-slate-500">
+                  {formatDisplayDate(ev.fecha_inicio)} {ev.hora_inicio?.slice(0, 5)}
+                  {' → '}
+                  {formatDisplayDate(ev.fecha_fin)} {ev.hora_fin?.slice(0, 5)}
+                </div>
+                {ev.notas && (
+                  <div className="mt-0.5 text-[11px] text-slate-400">{ev.notas}</div>
+                )}
+              </div>
+
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  onClick={() => onIr(ev.fecha_inicio)}
+                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                  title="Llevar el calendario a estas fechas"
+                >
+                  Ir
+                </button>
+                <button
+                  onClick={() => onVer(ev.id)}
+                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                >
+                  Detalle
+                </button>
+                <button
+                  onClick={() => onAsignar(ev.id)}
+                  className="rounded-lg bg-amber-600 px-2.5 py-1.5 text-xs font-bold uppercase tracking-wide text-white transition-colors hover:bg-amber-700"
+                >
+                  Asignar auto
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** `2026-09-10` → `10/09`. La grilla ya dice el año en su encabezado. */
+function formatDisplayDate(iso: string): string {
+  const [, m, d] = iso.split('-');
+  return `${d}/${m}`;
 }

@@ -9,6 +9,7 @@ import { extractError } from '@/lib/utils';
 import type { Reserva, ApiResponse } from '@/types';
 import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
 import { ReservaModal } from './ReservaModal';
+import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { CheckoutModal } from './CheckoutModal';
 import { CheckinModal } from './CheckinModal';
 import { ExtenderModal } from './ExtenderModal';
@@ -28,6 +29,7 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [extenderOpen, setExtenderOpen] = useState(false);
   const [cancelarOpen, setCancelarOpen] = useState(false);
+  const [asignarOpen, setAsignarOpen] = useState(false);
 
   const { data: reserva, isLoading, refetch } = useQuery({
     queryKey: ['reserva', reservaId],
@@ -65,6 +67,25 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   }
 
   // Sub-modales abren encima sin cerrar el info
+  if (asignarOpen) {
+    /**
+     * **Es el panel de siempre, no un camino nuevo.**
+     *
+     * `PanelResolverReserva` es el único lugar del sistema que asigna un auto:
+     * revalida disponibilidad en el momento, avisa si es upgrade o downgrade,
+     * deja corregir el precio con motivo auditado y dispara la emisión del
+     * contrato (D-47). Hacer un "cambiar auto" propio acá sería el segundo
+     * camino de asignación, que es justo lo que ese panel vino a eliminar.
+     */
+    return (
+      <PanelResolverReserva
+        reserva={reserva}
+        onClose={() => setAsignarOpen(false)}
+        onCambio={() => { refetch(); onActionComplete?.(); }}
+      />
+    );
+  }
+
   if (editOpen) {
     return (
       <ReservaModal
@@ -119,6 +140,17 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   const cancelable = reserva.estado === 'confirmada' && sinAlquiler;
   const editable = reserva.estado === 'confirmada' || reserva.estado === 'activa' || reserva.estado === 'vencida';
   const puedeCheckout = sinAlquiler && reserva.estado !== 'cancelada' && reserva.estado !== 'finalizada';
+  /**
+   * Cambiar el auto se puede mientras no haya salido.
+   *
+   * **El backend lo corta igual** (`asignar_vehiculo` rechaza con
+   * `alquiler_en_curso`), y con razón: con el auto ya entregado hay que cerrar
+   * ese alquiler con su check-in y abrir otro, porque el kilometraje y el
+   * combustible de salida son de ese vehículo. Acá sólo se evita ofrecer un
+   * botón que va a fallar.
+   */
+  const puedeCambiarAuto =
+    sinAlquiler && reserva.estado !== 'cancelada' && reserva.estado !== 'finalizada';
   const puedeCheckin = conAlquilerActivo;
   const puedeExtender = conAlquilerActivo;
 
@@ -341,6 +373,15 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
               className="w-full px-4 py-2.5 rounded-lg bg-secondary hover:bg-accent text-foreground text-sm font-semibold transition-colors flex items-center justify-center gap-2"
             >
               <TrendingUp className="h-4 w-4" /> Extender alquiler
+            </button>
+          )}
+          {puedeCambiarAuto && (
+            <button
+              onClick={() => setAsignarOpen(true)}
+              className="w-full px-4 py-2.5 rounded-lg bg-secondary hover:bg-accent text-foreground text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+            >
+              <Car className="h-4 w-4" />
+              {reserva.vehiculo_id ? 'Cambiar el auto' : 'Asignar auto'}
             </button>
           )}
           <div className="flex items-center gap-2">

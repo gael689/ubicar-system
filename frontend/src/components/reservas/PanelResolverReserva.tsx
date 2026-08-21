@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import {
   Check, Loader2, Car, Wallet, FileSignature, X, AlertTriangle, ArrowUpRight, ArrowDownRight,
+  Phone, Mail, CreditCard, MessageCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AccionesContrato } from '@/components/reservas/AccionesContrato';
@@ -76,6 +77,18 @@ export function PanelResolverReserva({
                 {' — la web vende por categoría, el auto se elige acá.'}
               </p>
             )}
+
+            {/* **Los datos de la persona, acá y no a dos pantallas.**
+                Asignar un auto casi nunca es un trámite mudo: hay que avisar
+                del upgrade, preguntar si le sirve otro horario, o pedirle el
+                comprobante. Tener sólo el nombre obliga a abrir Clientes en
+                otra pestaña, buscarlo y volver — y con alguien esperando eso
+                no pasa: se resuelve por afuera del sistema.
+
+                Los tres son clickeables: WhatsApp abre el chat, el mail abre
+                el cliente de correo. El DNI no es un link pero es lo que se
+                necesita para el contrato. */}
+            <ContactoDelCliente reserva={reserva} />
           </div>
           <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-muted">
             <X className="h-5 w-5" />
@@ -357,6 +370,69 @@ function FormularioCobro({
 }
 
 /**
+ * El contacto de quien reservó, en una línea.
+ *
+ * **Sale de dos lados y por eso no se lee directo.** Una reserva web puede no
+ * tener cliente todavía (D-04: una solicitud sin cupo no crea uno), y en ese
+ * caso el contacto vive en `web_contacto_*`. Cuando sí hay cliente, el bueno es
+ * el del cliente, que es el que alguien verificó.
+ */
+function ContactoDelCliente({ reserva }: { reserva: Reserva }) {
+  const telefono = reserva.cliente?.telefono ?? reserva.web_contacto_telefono ?? null;
+  const email = reserva.cliente?.email ?? reserva.web_contacto_email ?? null;
+  const dni = reserva.cliente?.dni_cuit ?? null;
+
+  if (!telefono && !email && !dni) return null;
+
+  // `wa.me` quiere sólo dígitos. Los números argentinos se cargan de mil
+  // formas ("+54 9 291 418-0554", "0291 15 418-0554"): se limpia lo que no
+  // sea dígito y listo, sin intentar adivinar el formato correcto.
+  const soloDigitos = telefono?.replace(/\D/g, '') ?? '';
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs">
+      {dni && (
+        <span className="inline-flex items-center gap-1 text-muted-foreground">
+          <CreditCard className="h-3.5 w-3.5" />
+          {dni}
+        </span>
+      )}
+      {telefono && (
+        <>
+          <a
+            href={`tel:${telefono}`}
+            className="inline-flex items-center gap-1 text-foreground hover:underline"
+          >
+            <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+            {telefono}
+          </a>
+          {soloDigitos.length >= 8 && (
+            <a
+              href={`https://wa.me/${soloDigitos}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-md bg-success/10 px-1.5 py-0.5 font-medium text-success hover:bg-success/20"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              WhatsApp
+            </a>
+          )}
+        </>
+      )}
+      {email && (
+        <a
+          href={`mailto:${email}`}
+          className="inline-flex items-center gap-1 truncate text-foreground hover:underline"
+        >
+          <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          {email}
+        </a>
+      )}
+    </div>
+  );
+}
+
+/**
  * Los autos que están libres **de verdad** en esas fechas.
  *
  * No es la flota entera: el backend descuenta reservas, bloqueos, holds y el
@@ -372,6 +448,26 @@ function SelectorVehiculo({
   const asignar = useAsignarVehiculo();
   const [elegido, setElegido] = useState<number | null>(null);
 
+  /**
+   * Corregir el precio en el mismo paso (D-65).
+   *
+   * **Arranca apagado, y eso es la regla.** D-54 define que un upgrade va al
+   * mismo precio, y mientras esto siga apagado no se manda ningún precio y
+   * nada cambia. Se enciende para el acuerdo distinto: un upgrade que sí se
+   * cobra, o —el que más importa— un downgrade que hay que compensar bajando
+   * el precio, que hoy obliga a entregar una categoría peor cobrando lo mismo.
+   */
+  const precioActual = Number(reserva.precio_total ?? 0);
+  const [tocarPrecio, setTocarPrecio] = useState(false);
+  const [precioNuevo, setPrecioNuevo] = useState<string>(String(precioActual || ''));
+  const [precioMotivo, setPrecioMotivo] = useState('');
+
+  const precioCambia =
+    tocarPrecio && precioNuevo !== '' && Number(precioNuevo) !== precioActual;
+  // Mismo criterio que el resto de la plata del sistema (regla 1.7): apartarse
+  // del precio pactado exige decir por qué. El backend lo revalida.
+  const faltaMotivo = precioCambia && !precioMotivo.trim();
+
   if (isLoading) {
     return <p className="text-xs text-muted-foreground">Buscando los autos libres…</p>;
   }
@@ -386,6 +482,9 @@ function SelectorVehiculo({
     asignar.mutate(
       {
         id: reserva.id, vehiculo_id: vehiculoId,
+        // Sólo viaja si se tocó: sin esto el precio queda como estaba.
+        precio_total: tocarPrecio && precioNuevo !== '' ? Number(precioNuevo) : null,
+        precio_motivo: precioCambia ? precioMotivo.trim() : null,
         // Si todavía espera el pago, asignar no puede confirmarla sola: la
         // plata sigue sin estar y confirmarla ocuparía el auto por una venta
         // que puede no cerrarse nunca.
@@ -461,16 +560,83 @@ function SelectorVehiculo({
           <p className="flex items-start gap-2 rounded-lg bg-success/10 px-3 py-2 text-xs text-foreground">
             <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
             <span>
-              <strong>Upgrade a {vehiculoElegido.categoria_nombre ?? 'otra categoría'}, mismo precio</strong> para el cliente.
+              <strong>
+                Upgrade a {vehiculoElegido.categoria_nombre ?? 'otra categoría'}
+                {precioCambia ? '' : ', mismo precio'}
+              </strong>{' '}
+              para el cliente.
             </span>
           </p>
         )
       )}
 
+      {/* El precio, si el acuerdo con el cliente fue otro. Va acá y no en una
+          pantalla aparte porque es la misma decisión: qué auto se entrega y a
+          cuánto. Separarlos obliga a asignar primero y corregir después, con
+          la reserva ya confirmada al precio equivocado. */}
+      <div className="rounded-lg border border-border p-3">
+        <label className="flex items-center gap-2 text-xs font-medium text-foreground">
+          <input
+            type="checkbox"
+            checked={tocarPrecio}
+            onChange={e => {
+              setTocarPrecio(e.target.checked);
+              if (!e.target.checked) { setPrecioNuevo(String(precioActual || '')); setPrecioMotivo(''); }
+            }}
+            className="h-3.5 w-3.5"
+          />
+          Cobrar otro precio
+          <span className="font-normal text-muted-foreground">
+            — ahora {formatCurrency(precioActual)}
+          </span>
+        </label>
+
+        {tocarPrecio && (
+          <div className="mt-2 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Nuevo total</span>
+              <input
+                type="number"
+                min={0}
+                step={100}
+                value={precioNuevo}
+                onChange={e => setPrecioNuevo(e.target.value)}
+                className="w-36 rounded-md border border-input bg-background px-2 py-1 text-sm"
+              />
+              {precioCambia && (
+                <span className={cn(
+                  'text-xs font-medium',
+                  Number(precioNuevo) > precioActual ? 'text-foreground' : 'text-success',
+                )}>
+                  {Number(precioNuevo) > precioActual ? '+' : '−'}
+                  {formatCurrency(Math.abs(Number(precioNuevo) - precioActual))}
+                </span>
+              )}
+            </div>
+            <input
+              type="text"
+              value={precioMotivo}
+              onChange={e => setPrecioMotivo(e.target.value)}
+              placeholder="Por qué se cambia el precio (queda registrado)"
+              className={cn(
+                'w-full rounded-md border bg-background px-2 py-1 text-sm',
+                faltaMotivo ? 'border-danger' : 'border-input',
+              )}
+            />
+            {faltaMotivo && (
+              <p className="text-xs text-danger">
+                El motivo es obligatorio: queda auditado con tu nombre, igual que
+                un descuento manual.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       <Button
         size="sm"
         variant={vehiculoElegido?.es_downgrade ? 'destructive' : 'default'}
-        disabled={elegido === null || asignar.isPending}
+        disabled={elegido === null || asignar.isPending || faltaMotivo}
         onClick={() => elegido !== null && confirmar(elegido)}
       >
         {asignar.isPending
