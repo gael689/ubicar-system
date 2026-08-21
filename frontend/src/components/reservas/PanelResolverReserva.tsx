@@ -10,6 +10,8 @@ import {
   useVehiculosDisponibles, useRegistrarCobro, useAsignarVehiculo,
   type VehiculoLibre,
 } from '@/hooks/useResolverReserva';
+import { useRechazarReservaWeb } from '@/hooks/useReservasWeb';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { cn, formatCurrency, formatDate, extractError } from '@/lib/utils';
 import type { Reserva } from '@/types';
 
@@ -50,6 +52,35 @@ export function PanelResolverReserva({
   const faltaContrato = !faltaAuto && reserva.contrato_estado !== 'firmado';
 
   const aplicar = (r: Reserva) => { setReserva({ ...reserva, ...r }); onCambio?.(); };
+
+  // **Cancelar desde acá y no sólo desde la fila de atrás.**
+  //
+  // Este panel es donde el operador está mirando el caso completo —cuánto se
+  // cobró, si hay auto, qué falta— y es justo donde se da cuenta de que la
+  // reserva no va: el cliente nunca transfirió, o no quedó ninguna unidad de
+  // lo que pidió y no acepta el upgrade. Obligarlo a cerrar el panel, buscar la
+  // fila en el listado y recién ahí cancelar es un paso de más en el momento en
+  // que ya tomó la decisión.
+  const cancelar = useRechazarReservaWeb();
+  const [cancelando, setCancelando] = useState(false);
+
+  const yaCobrado = Number(reserva.anticipo_monto ?? 0);
+
+  async function confirmarCancelacion(motivo: string) {
+    try {
+      await cancelar.mutateAsync({ id: reserva.id, motivo });
+      toast.success(
+        yaCobrado > 0
+          ? `Reserva cancelada. Se le reintegran ${formatCurrency(yaCobrado)} al cliente.`
+          : 'Reserva cancelada.',
+      );
+      setCancelando(false);
+      onCambio?.();
+      onClose();
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
@@ -184,10 +215,39 @@ export function PanelResolverReserva({
           </Paso>
         </div>
 
-        <div className="flex justify-end border-t border-border p-4">
+        {/* Cancelar va a la izquierda y separado de "Cerrar": son la acción
+            más destructiva y la más inocua de la pantalla, y pegadas se
+            confunden. */}
+        <div className="flex items-center justify-between gap-3 border-t border-border p-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setCancelando(true)}
+            className="text-danger hover:bg-danger/10 hover:text-danger"
+          >
+            <X className="h-3.5 w-3.5" /> Cancelar la reserva
+          </Button>
           <Button variant="ghost" size="sm" onClick={onClose}>Cerrar</Button>
         </div>
       </div>
+
+      <MotivoDialog
+        open={cancelando}
+        onOpenChange={setCancelando}
+        title={`Cancelar la reserva #${reserva.id}`}
+        description={
+          yaCobrado > 0
+            ? `El cliente ya pagó ${formatCurrency(yaCobrado)}. Al cancelar se le `
+              + 'reintegran completos: la plata sale de la caja de hoy y su cuenta '
+              + 'corriente queda en cero. El motivo queda registrado.'
+            : 'No hay ningún pago registrado, así que no se genera ningún movimiento '
+              + 'de plata. La reserva queda cancelada con el motivo, y el auto —si '
+              + 'tenía uno asignado— vuelve a estar disponible.'
+        }
+        confirmLabel="Cancelar la reserva"
+        loading={cancelar.isPending}
+        onConfirm={confirmarCancelacion}
+      />
     </div>
   );
 }
