@@ -11,6 +11,34 @@ export function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * En qué orden se dibujan los doce meses.
+ *
+ * **Arranca por el mes en curso**, no por enero. En agosto, la primera fila
+ * empieza en agosto y los meses que ya pasaron se corren al final.
+ *
+ * El motivo es que nadie abre este cuadro para mirar febrero pasado: se abre
+ * para ver lo que viene —qué fechas están tomadas, qué feriados hay que
+ * cargar— y con el orden fijo eso quedaba en la mitad de abajo, siempre
+ * después de siete meses muertos.
+ *
+ * **Sólo rota el año en curso.** En 2027 no hay "mes actual" que poner
+ * primero, y en 2025 ya pasaron todos: ahí enero → diciembre es el orden
+ * correcto y cualquier rotación sería arbitraria.
+ *
+ * No se convierte en una ventana móvil de doce meses (agosto de este año a
+ * julio del que viene) porque las dos pantallas que usan esto piden los datos
+ * **de un año calendario exacto** — `?desde=AAAA-01-01&hasta=AAAA-12-31` y
+ * `/ocupacion/resumen-anual?anio=`. Una ventana a caballo de dos años obliga a
+ * pedir los dos y a mezclarlos, que es otro trabajo y no es lo que se pidió.
+ */
+export function ordenDeMeses(anio: number, hoy: Date): number[] {
+  const todos = Array.from({ length: 12 }, (_, i) => i);
+  if (anio !== hoy.getFullYear()) return todos;
+  const actual = hoy.getMonth();
+  return [...todos.slice(actual), ...todos.slice(0, actual)];
+}
+
 export interface CeldaDia {
   /** Clases del chip del día — color de fondo, texto, anillo, etc. */
   className?: string;
@@ -67,13 +95,17 @@ export function CalendarioAnual({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {MESES_NOMBRE.map((nombre, mes) => (
+        {ordenDeMeses(anio, hoy).map(mes => (
           <MesMini
             key={mes}
             anio={anio}
             mes={mes}
-            nombre={nombre}
+            nombre={MESES_NOMBRE[mes]}
             hoyStr={hoyStr}
+            // Un mes de este año que ya pasó queda **después** de diciembre por
+            // la rotación de arriba. Sin marcarlo, "Enero" al final de la
+            // grilla se lee como enero del año que viene.
+            yaPaso={anio === hoy.getFullYear() && mes < hoy.getMonth()}
             renderDia={renderDia}
             contador={contadorMes ? contadorMes(mes) : null}
             onSelectMes={onSelectMes}
@@ -86,12 +118,14 @@ export function CalendarioAnual({
 }
 
 function MesMini({
-  anio, mes, nombre, hoyStr, renderDia, contador, onSelectMes, onSelectDia,
+  anio, mes, nombre, hoyStr, yaPaso = false, renderDia, contador, onSelectMes, onSelectDia,
 }: {
   anio: number;
   mes: number;
   nombre: string;
   hoyStr: string;
+  /** Mes del año en curso que ya terminó: quedó al final por la rotación. */
+  yaPaso?: boolean;
   renderDia: (fechaISO: string, dia: number, esHoy: boolean) => CeldaDia | null;
   contador?: number | null;
   onSelectMes?: (mes: number) => void;
@@ -107,21 +141,26 @@ function MesMini({
   ];
 
   return (
-    <div className="rounded-xl border border-border p-3">
-      <div className="mb-2 flex items-baseline justify-between">
+    <div className={cn('rounded-xl border border-border p-3', yaPaso && 'bg-muted/20')}>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
         <button
           type="button"
           onClick={() => onSelectMes?.(mes)}
           disabled={!onSelectMes}
+          title={yaPaso ? `${nombre} de ${anio} — ya pasó` : undefined}
           className={cn(
-            'text-sm font-semibold text-foreground',
+            'text-sm font-semibold',
+            yaPaso ? 'text-muted-foreground' : 'text-foreground',
             onSelectMes && 'hover:text-primary hover:underline',
           )}
         >
           {nombre}
+          {/* Sin esto, un "Enero" que aparece después de diciembre se lee como
+              enero del año que viene. Los datos son de este año. */}
+          {yaPaso && <span className="ml-1 font-normal text-[10px]">· ya pasó</span>}
         </button>
         {contador != null && contador > 0 && (
-          <span className="text-[10px] text-muted-foreground">{contador} día{contador !== 1 ? 's' : ''}</span>
+          <span className="shrink-0 text-[10px] text-muted-foreground">{contador} día{contador !== 1 ? 's' : ''}</span>
         )}
       </div>
       <div className="grid grid-cols-7 gap-0.5">
