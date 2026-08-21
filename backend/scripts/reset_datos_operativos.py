@@ -190,7 +190,7 @@ def dry_run(db: Session, incluir_servicios: bool) -> None:
     print(f"\nTotal de filas a borrar: {total}")
 
 
-def limpiar(db: Session, incluir_servicios: bool) -> None:
+def limpiar(db: Session, incluir_servicios: bool) -> int:
     print(f"Limpiando contra: {engine.url.render_as_string(hide_password=True)}\n")
 
     _romper_ciclos(db)
@@ -216,7 +216,83 @@ def limpiar(db: Session, incluir_servicios: bool) -> None:
     _resetear_vehiculos(db)
 
     db.commit()
-    print("\nListo. Confirma que /reservar y /public/solicitudes siguen respondiendo antes de dar la limpieza por buena.")
+
+    # Lo último, y lo más importante: que la base quede operable.
+    return _verificar_operabilidad(db)
+
+
+def _verificar_operabilidad(db: Session) -> int:
+    """
+    Falla ruidosamente si la base quedó sin algo indispensable para vender.
+
+    **La lección del 20/08/2026.** Este script borra `tarifas` y
+    `tarifas_calendario` —está documentado en su encabezado— y esa vez el
+    sistema quedó sin poder cotizar: **cinco de seis categorías devolvieron "sin
+    disponibilidad" sin dar ningún error**. Desde afuera se ve idéntico a que no
+    haya autos libres, así que nadie se entera hasta que un cliente no puede
+    reservar.
+
+    **No inventa nada, avisa.** Inventar un precio es peor que no tenerlo: un
+    número puesto por un script se vende igual que uno decidido, y nadie lo
+    revisa después. Lo que hace es decir exactamente qué falta y en qué
+    categoría.
+
+    Devuelve la cantidad de problemas encontrados, para que el proceso salga con
+    código distinto de cero y un deploy automatizado no siga adelante.
+    """
+    print("\n" + "=" * 60)
+    print("VERIFICACIÓN DE OPERABILIDAD")
+    print("=" * 60)
+
+    problemas: list[str] = []
+
+    # Una categoría activa **con flota** tiene que poder cotizar: si tiene autos
+    # y no tiene tarifa diaria, la web la va a mostrar y no va a poder venderla.
+    filas = db.execute(text("""
+        SELECT c.id, c.nombre,
+               COUNT(DISTINCT v.id) AS autos,
+               COUNT(DISTINCT t.id) AS tarifas_diarias
+          FROM categorias c
+          LEFT JOIN vehiculos v
+                 ON v.categoria_id = c.id AND v.activo = true
+          LEFT JOIN tarifas t
+                 ON t.categoria_id = c.id AND t.tipo = 'diaria' AND t.activo = true
+         WHERE c.activo = true
+      GROUP BY c.id, c.nombre
+      ORDER BY c.nombre
+    """)).all()
+
+    if not filas:
+        problemas.append("No hay ninguna categoría activa: la web no tiene nada que ofrecer.")
+
+    for _id, nombre, autos, tarifas in filas:
+        estado = "OK"
+        if autos and not tarifas:
+            estado = "SIN TARIFA DIARIA"
+            problemas.append(
+                f"La categoría '{nombre}' tiene {autos} auto(s) y ninguna tarifa "
+                f"diaria activa: va a devolver 'sin disponibilidad' sin dar error."
+            )
+        elif not autos:
+            estado = "sin flota (no se ofrece)"
+        print(f"  {nombre:24} {autos:>3} auto(s)  {tarifas:>2} tarifa(s)  {estado}")
+
+    # Y el mínimo para que el back-office arranque.
+    if not db.execute(text("SELECT 1 FROM usuarios WHERE activo = true LIMIT 1")).first():
+        problemas.append("No quedó ningún usuario activo: nadie puede entrar al sistema.")
+
+    print()
+    if problemas:
+        print("!! LA BASE NO QUEDÓ OPERABLE:")
+        for p in problemas:
+            print(f"   - {p}")
+        print("\n   No se inventa ningún dato: cargá lo que falta antes de salir a vender.")
+    else:
+        print("Todo lo indispensable está: cada categoría con flota puede cotizar.")
+
+    print("\nConfirmá igual que /reservar y /public/solicitudes responden antes de "
+          "dar la limpieza por buena.")
+    return len(problemas)
 
 
 def _asegurar_cliente_generico(db: Session) -> None:
@@ -269,7 +345,12 @@ def main() -> None:
     db = SessionLocal()
     try:
         if confirmar:
-            limpiar(db, incluir_servicios)
+            problemas = limpiar(db, incluir_servicios)
+            # Código de salida distinto de cero si la base quedó sin poder
+            # vender: es lo que hace que un deploy automatizado se frene en vez
+            # de seguir contento hasta que un cliente no pueda reservar.
+            if problemas:
+                sys.exit(1)
         else:
             dry_run(db, incluir_servicios)
     except Exception:

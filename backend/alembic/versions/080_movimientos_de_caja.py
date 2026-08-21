@@ -25,6 +25,7 @@ Revises: 079_naturaleza
 """
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "080_movimientos_caja"
 down_revision = "079_naturaleza"
@@ -42,8 +43,12 @@ TIPOS = (
 
 
 def upgrade() -> None:
-    tipo = sa.Enum(*TIPOS, name="tipo_movimiento_caja")
-    tipo.create(op.get_bind(), checkfirst=True)
+    # El tipo se crea una sola vez, acá, con `checkfirst` para que una corrida
+    # repetida no explote. La columna de abajo lo declara con
+    # `create_type=False`: sin eso `create_table` intenta crearlo **de nuevo** y
+    # falla con "ya existe el tipo".
+    sa.Enum(*TIPOS, name="tipo_movimiento_caja").create(op.get_bind(), checkfirst=True)
+    tipo = postgresql.ENUM(*TIPOS, name="tipo_movimiento_caja", create_type=False)
 
     op.create_table(
         "movimientos_caja",

@@ -85,14 +85,19 @@ def upgrade() -> None:
         "UPDATE movimientos_cuenta_corriente SET naturaleza = 'anulacion' "
         "WHERE naturaleza IS NULL AND concepto LIKE 'Anulación de movimiento #%'"
     )
+    # El `::naturaleza_movimiento` no es decorativo: un literal suelto Postgres
+    # lo castea solo, pero el resultado de un CASE es `text` y ahí exige la
+    # conversión explícita.
     op.execute(
         "UPDATE movimientos_cuenta_corriente "
-        "SET naturaleza = CASE WHEN tipo = 'debito' THEN 'multa' ELSE 'pago' END "
+        "SET naturaleza = (CASE WHEN tipo = 'debito' THEN 'multa' ELSE 'pago' END)"
+        "::naturaleza_movimiento "
         "WHERE naturaleza IS NULL AND multa_id IS NOT NULL"
     )
     op.execute(
         "UPDATE movimientos_cuenta_corriente "
-        "SET naturaleza = CASE WHEN tipo = 'debito' THEN 'danio' ELSE 'pago' END "
+        "SET naturaleza = (CASE WHEN tipo = 'debito' THEN 'danio' ELSE 'pago' END)"
+        "::naturaleza_movimiento "
         "WHERE naturaleza IS NULL AND danio_id IS NOT NULL"
     )
     op.execute(
