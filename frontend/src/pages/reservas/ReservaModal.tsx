@@ -218,6 +218,15 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     }
   };
 
+  /**
+   * El nombre tipeado cuando todavía no hay ningún cliente elegido.
+   *
+   * Es lo que permite avanzar sin cliente: la reserva viaja con este nombre y
+   * el cliente se crea recién al guardar. Vacío si ya hay uno elegido — ahí no
+   * hay nada pendiente.
+   */
+  const nombreClientePendiente = clienteId ? '' : clientSearch.trim();
+
   const duracionDias = fechaInicio && fechaFin
     ? Math.max(0, (new Date(fechaFin).getTime() - new Date(fechaInicio).getTime()) / 86400000)
     : 0;
@@ -645,7 +654,16 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * ve en el resumen del paso 6, donde todavía se puede guardar igual.
    */
   function faltaEnElPaso(n: number): string {
-    if (n === 1 && !clienteId) return 'Elegí un cliente para seguir.';
+    // **Un cliente que todavía no existe no frena la reserva.** Con alguien
+    // enfrente esperando, mandarlo a la pantalla de Clientes a cargar un alta
+    // entera y volver a empezar es lo que hace que la reserva se anote en un
+    // papel. Alcanza con el nombre: se crea al guardar y el DNI y el teléfono
+    // quedan reclamados por la campana.
+    //
+    // Lo único que sigue siendo obligatorio es **saber a nombre de quién es**.
+    if (n === 1 && !clienteId && nombreClientePendiente.length < 3) {
+      return 'Poné al menos el nombre del cliente.';
+    }
     if (n === 2) {
       if (!fechaInicio || !fechaFin) return 'Faltan las fechas.';
       if (fechaFin <= fechaInicio) return 'La devolución tiene que ser posterior al retiro.';
@@ -890,6 +908,32 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     }
 
     try {
+      // **El cliente que todavía no existe se crea acá, no antes.**
+      //
+      // El paso 1 deja avanzar con sólo el nombre, así que puede llegarse
+      // hasta el final sin `clienteId`. Se crea recién al guardar y no al
+      // salir del paso 1 a propósito: si la reserva se abandona en el paso 3,
+      // no queda un cliente huérfano en la base por una reserva que nunca
+      // existió.
+      let idCliente = clienteId ? parseInt(clienteId) : 0;
+      if (!isEdit && !idCliente && nombreClientePendiente.length >= 3) {
+        try {
+          const { data } = await api.post('/clientes', {
+            nombre_completo: nombreClientePendiente,
+            dni_cuit: 'A COMPLETAR',
+            telefono: 'A COMPLETAR',
+            tipo: 'particular',
+            notas: 'Alta rápida desde una reserva. Faltan DNI/CUIT y teléfono.',
+          });
+          const creado = data?.data ?? data;
+          idCliente = creado.id;
+          toast.success(`Cliente "${creado.nombre_completo}" creado. Falta cargarle DNI y teléfono.`);
+        } catch {
+          errorEnPaso('No pudimos crear el cliente. Elegí uno existente o cargalo desde Clientes.', 1);
+          return;
+        }
+      }
+
       if (isEdit) {
         const payload: ReservaUpdate = {
           vehiculo_id: parseInt(vehiculoId),
@@ -929,7 +973,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           // todavía"— nunca había funcionado.
           vehiculo_id: vehiculoId ? parseInt(vehiculoId) : null,
           categoria_id: vehiculoId ? null : (categoriaManualId ? parseInt(categoriaManualId) : null),
-          cliente_id: parseInt(clienteId),
+          cliente_id: idCliente,
           conductor_id: conductorId ? parseInt(conductorId) : null,
           fecha_inicio: fechaInicio,
           hora_inicio: horaInicio + ':00',
@@ -1426,6 +1470,22 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   </div>
                 )}
               </div>
+              {/* **Se puede seguir sin elegir un cliente de la lista.** Con
+                  alguien enfrente esperando, mandarlo a la pantalla de Clientes
+                  a cargar un alta entera y volver a empezar es lo que hace que
+                  la reserva termine anotada en un papel. El cliente se crea al
+                  guardar, con el nombre, y la campana reclama el resto. */}
+              {nombreClientePendiente.length >= 3 && (
+                <p className="text-xs text-primary">
+                  Se va a crear el cliente <strong>"{nombreClientePendiente}"</strong> al
+                  guardar la reserva. DNI y teléfono quedan pendientes.
+                </p>
+              )}
+              {!clienteId && nombreClientePendiente.length > 0 && nombreClientePendiente.length < 3 && (
+                <p className="text-xs text-slate-500">
+                  Escribí al menos tres letras del nombre.
+                </p>
+              )}
             </div>
 
           {/* Conductor (si es distinto de quien paga) */}

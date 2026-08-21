@@ -151,14 +151,43 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('El orden de los pasos', () => {
-  it('abre en el paso 1 y pide el cliente antes de dejar avanzar', async () => {
+  it('abre en el paso 1 y pide al menos el nombre del cliente', async () => {
     const user = userEvent.setup();
     abrir();
 
     expect(screen.getByText(/Paso 1 de 6/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Siguiente/ }));
-    expect(screen.getByText(/Elegí un cliente para seguir/)).toBeInTheDocument();
+    expect(screen.getByText(/Poné al menos el nombre del cliente/)).toBeInTheDocument();
+    expect(screen.getByText(/Paso 1 de 6/)).toBeInTheDocument();
+  });
+
+  it('deja avanzar con un cliente que todavía no existe, sólo con el nombre', async () => {
+    // **Antes esto frenaba.** Con alguien enfrente esperando, mandar al
+    // operador a la pantalla de Clientes a cargar un alta entera y volver a
+    // empezar la reserva es lo que hace que termine anotada en un papel. El
+    // cliente se crea al guardar; el DNI y el teléfono quedan reclamados.
+    const user = userEvent.setup();
+    abrir();
+
+    await user.type(
+      screen.getByPlaceholderText(/Buscar por nombre/),
+      'Rodríguez Hermanos SRL',
+    );
+    expect(screen.getByText(/Se va a crear el cliente/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Siguiente/ }));
+    expect(screen.getByText(/Paso 2 de 6/)).toBeInTheDocument();
+  });
+
+  it('con menos de tres letras sigue sin dejar avanzar', async () => {
+    const user = userEvent.setup();
+    abrir();
+
+    await user.type(screen.getByPlaceholderText(/Buscar por nombre/), 'Ro');
+    await user.click(screen.getByRole('button', { name: /Siguiente/ }));
+
+    expect(screen.getByText(/Poné al menos el nombre del cliente/)).toBeInTheDocument();
     expect(screen.getByText(/Paso 1 de 6/)).toBeInTheDocument();
   });
 

@@ -32,7 +32,7 @@ function categoriaDeUnidad(unidad: UnidadNombre): CategoriaVehiculo {
 }
 
 // ─── Estado de formulario por ítem ────────────────────────────────────────────
-interface FormItem {
+export interface FormItem {
   id: string;
   categoria: CategoriaVehiculo;
   unidad: string;        // solo relevante en modo "unidad"
@@ -41,6 +41,25 @@ interface FormItem {
   precio: string;       // mensual=precio/mes, dias=precio/día, libre=total
   fecha_desde: string;  // opcional
   fecha_hasta: string;  // opcional
+}
+
+/**
+ * Pasa un ítem a "por categoría" o "por unidad" **conservando lo cargado**
+ * (precio, días, fechas). Sólo toca los dos campos que definen el tipo.
+ *
+ * `unidad` vacío es lo que marca "por categoría": el render mira `item.unidad`,
+ * así que dejarlo en `''` es lo que devuelve el selector de categorías.
+ */
+export function aplicarModo(item: FormItem, modo: ModoCotizacion): FormItem {
+  if (modo === 'unidad') {
+    if (item.unidad) return item;           // ya es por unidad
+    const unidad = UNIDADES_TODAS[0];
+    return { ...item, unidad, categoria: categoriaDeUnidad(unidad) };
+  }
+  if (!item.unidad) return item;            // ya es por categoría
+  // Se conserva la categoría que correspondía a la unidad: es el equivalente
+  // más cercano, y no obliga a volver a elegirla.
+  return { ...item, unidad: '' };
 }
 
 let _itemCounter = 0;
@@ -185,16 +204,37 @@ export function CotizadorPage() {
     setFormItems(prev => prev.filter((_, i) => i !== idx));
   }, []);
 
+  /** Un ítem que todavía no tiene nada cargado: convertirlo no pierde trabajo. */
+  const estaVacio = (it: FormItem) => !it.precio.trim() && !it.fecha_desde && !it.fecha_hasta;
+
   /**
-   * Cambiar entre "por categoría" y "por unidad" **ya no borra lo cargado**.
+   * Cambiar entre "por categoría" y "por unidad".
    *
-   * Antes reemplazaba la lista entera por un ítem vacío: quien tenía tres
-   * vehículos cotizados y quería agregar uno por unidad, perdía los tres y
-   * tenía que rehacerlos. Ahora el modo sólo decide **de qué tipo nace el
-   * próximo ítem** — cada uno guarda el suyo, así que una misma cotización
-   * puede combinar los dos.
+   * **Convierte los ítems que están vacíos, y no toca los cargados.** Es el
+   * punto medio entre las dos versiones anteriores, que fallaban de maneras
+   * opuestas:
+   *
+   * - La primera reemplazaba la lista entera por un ítem nuevo: quien tenía
+   *   tres vehículos cotizados y quería sumar uno por unidad, perdía los tres.
+   * - La que la reemplazó (commit `2bd9802`) dejó de tocar los ítems **y con
+   *   eso rompió el botón**: al abrir el cotizador hay un solo ítem, vacío, en
+   *   modo categoría; apretar "Por unidad" pintaba el botón y el desplegable
+   *   seguía mostrando Sedán/SUV/Pick up. El caso más común del cotizador —
+   *   abrirlo y elegir una unidad— era justamente el que no funcionaba.
+   *
+   * Convertir sólo lo vacío arregla ese caso sin volver a perder nada: si ya
+   * cargaste un precio, ese ítem se queda como está y para cambiarlo tenés el
+   * selector propio de cada fila.
    */
-  const changeModo = useCallback((m: ModoCotizacion) => setModo(m), []);
+  const changeModo = useCallback((m: ModoCotizacion) => {
+    setModo(m);
+    setFormItems(prev => prev.map(it => (estaVacio(it) ? aplicarModo(it, m) : it)));
+  }, []);
+
+  /** Cambia el tipo de UN ítem, sin tocar el modo global ni los demás. */
+  const changeModoItem = useCallback((idx: number, m: ModoCotizacion) => {
+    setFormItems(prev => prev.map((it, i) => (i === idx ? aplicarModo(it, m) : it)));
+  }, []);
 
   const updateItem = useCallback((idx: number, key: keyof FormItem, value: string) => {
     setFormItems(prev => prev.map((it, i) => {
@@ -393,15 +433,31 @@ export function CotizadorPage() {
                   {/* Fila 1: Categoría/Unidad + Modalidad */}
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
-                      {/* **El tipo lo define el ítem, no el modo global.** Antes
-                          cambiar el selector de arriba redibujaba TODOS los ítems
-                          como si fueran del tipo nuevo, y por eso habia que
-                          borrarlos. Un item con `unidad` cargada es "por unidad";
-                          el resto, por categoria. Asi conviven los dos en la misma
-                          cotizacion. */}
-                      <Label className="text-xs text-muted-foreground mb-1 block">
-                        {item.unidad ? 'Unidad' : 'Categoría'}
-                      </Label>
+                      {/* **El tipo lo define el ítem, no el modo global**, y por
+                          eso el ítem tiene su propio selector. El de arriba
+                          decide de qué tipo nace el próximo y convierte los que
+                          estén vacíos; éste cambia esta fila sola, aunque ya
+                          tenga precio cargado. Sin él, el estado era por ítem y
+                          el control era global — y esa asimetría era el bug. */}
+                      <div className="mb-1 flex items-center gap-1">
+                        {(['categoria', 'unidad'] as ModoCotizacion[]).map(m => {
+                          const activo = m === 'unidad' ? Boolean(item.unidad) : !item.unidad;
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => changeModoItem(idx, m)}
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                activo
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'text-muted-foreground hover:bg-muted'
+                              }`}
+                            >
+                              {m === 'unidad' ? 'Unidad' : 'Categoría'}
+                            </button>
+                          );
+                        })}
+                      </div>
                       {item.unidad ? (
                         <Select
                           value={item.unidad}
