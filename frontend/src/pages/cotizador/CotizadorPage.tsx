@@ -213,9 +213,6 @@ export function CotizadorPage() {
     setFormItems(prev => prev.filter((_, i) => i !== idx));
   }, []);
 
-  /** Un ítem que todavía no tiene nada cargado: convertirlo no pierde trabajo. */
-  const estaVacio = (it: FormItem) => !it.precio.trim() && !it.fecha_desde && !it.fecha_hasta;
-
   /**
    * Cambiar entre "por categoría" y "por unidad".
    *
@@ -231,18 +228,23 @@ export function CotizadorPage() {
    *   seguía mostrando Sedán/SUV/Pick up. El caso más común del cotizador —
    *   abrirlo y elegir una unidad— era justamente el que no funcionaba.
    *
-   * Convertir sólo lo vacío arregla ese caso sin volver a perder nada: si ya
-   * cargaste un precio, ese ítem se queda como está y para cambiarlo tenés el
-   * selector propio de cada fila.
+   * **Y esta version convierte todos los items, no solo los vacios.**
+   *
+   * Convertir solo lo vacio dejaba el boton sin efecto en cuanto la fila tenia
+   * un precio: se apretaba "Por unidad", el boton se pintaba, y el desplegable
+   * seguia diciendo Sedan. Para arreglarlo se habia agregado un segundo par de
+   * botones adentro de cada fila -Categoria / Unidad-, asi que la misma
+   * decision quedaba en dos lugares distintos de la pantalla, con dos
+   * comportamientos distintos. Eso confunde mas de lo que resuelve.
+   *
+   * Queda un solo control, el de arriba, y hace lo que dice: pasa la
+   * cotizacion entera a ese modo. No se pierde ningun item -se conserva el
+   * precio, las fechas y la modalidad-, lo unico que cambia es si la fila se
+   * elige por categoria o por unidad.
    */
   const changeModo = useCallback((m: ModoCotizacion) => {
     setModo(m);
-    setFormItems(prev => prev.map(it => (estaVacio(it) ? aplicarModo(it, m) : it)));
-  }, []);
-
-  /** Cambia el tipo de UN ítem, sin tocar el modo global ni los demás. */
-  const changeModoItem = useCallback((idx: number, m: ModoCotizacion) => {
-    setFormItems(prev => prev.map((it, i) => (i === idx ? aplicarModo(it, m) : it)));
+    setFormItems(prev => prev.map(it => aplicarModo(it, m)));
   }, []);
 
   const updateItem = useCallback((idx: number, key: keyof FormItem, value: string) => {
@@ -460,31 +462,10 @@ export function CotizadorPage() {
                   {/* Fila 1: Categoría/Unidad + Modalidad */}
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
-                      {/* **El tipo lo define el ítem, no el modo global**, y por
-                          eso el ítem tiene su propio selector. El de arriba
-                          decide de qué tipo nace el próximo y convierte los que
-                          estén vacíos; éste cambia esta fila sola, aunque ya
-                          tenga precio cargado. Sin él, el estado era por ítem y
-                          el control era global — y esa asimetría era el bug. */}
-                      <div className="mb-1 flex items-center gap-1">
-                        {(['categoria', 'unidad'] as ModoCotizacion[]).map(m => {
-                          const activo = m === 'unidad' ? Boolean(item.unidad) : !item.unidad;
-                          return (
-                            <button
-                              key={m}
-                              type="button"
-                              onClick={() => changeModoItem(idx, m)}
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                                activo
-                                  ? 'bg-primary/10 text-primary'
-                                  : 'text-muted-foreground hover:bg-muted'
-                              }`}
-                            >
-                              {m === 'unidad' ? 'Unidad' : 'Categoría'}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      {/* Sin el par de botones "Categoría / Unidad" que estaba
+                          acá: era la misma decisión que el toggle de arriba,
+                          repetida en cada fila y con otro comportamiento. Manda
+                          el de arriba, y convierte la cotización entera. */}
                       {item.unidad ? (
                         <Select
                           value={item.unidad}

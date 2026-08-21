@@ -366,6 +366,12 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const { data: categoriasData } = useCategorias();
 
+  /** De qué categoría sale la franquicia, para poder verlo sin adivinar. */
+  const categoriaNombreElegida = useMemo(
+    () => (categoriasData ?? []).find(c => c.id === categoriaId)?.nombre ?? null,
+    [categoriasData, categoriaId],
+  );
+
 
   /**
    * La flota agrupada por categoría, en el orden en que se muestran las
@@ -508,6 +514,31 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * diciendo otra: el precio, la franquicia y el cupo saldrian de categorias
    * distintas.
    */
+  /**
+   * Elige un auto y deja la categoría en la que le corresponde.
+   *
+   * **El auto manda.** `categoriaId` sale de `vehiculoSeleccionado`, que se
+   * busca en la flota (`useVehiculos`); pero el desplegable del paso 3 se arma
+   * con **otra lista**, la de libres del rango (`useVehiculosLibres`), que
+   * además incluye downgrades de categorías más bajas. Si el auto elegido no
+   * aparecía en la primera, `categoriaId` caía en `categoriaManualId` — la
+   * categoría que se había mirado antes— y de ahí salían la franquicia, el
+   * precio sugerido y las tarifas.
+   *
+   * Así se reportó: con el Fiat Argo puesto, que es Compacto, el paso 4 decía
+   * franquicia **$3.000.000**, que es la base de Pick-up.
+   *
+   * Sincronizando acá las dos quedan de acuerdo siempre, sin depender de en
+   * cuál de las dos listas esté el auto.
+   */
+  const elegirVehiculo = (id: string) => {
+    setVehiculoId(id);
+    if (!id) return;
+    const elegido = vehiculosActivos.find(v => v.id.toString() === id)
+      ?? (libres?.vehiculos ?? []).find(v => v.id.toString() === id);
+    if (elegido?.categoria_id != null) setCategoriaManualId(String(elegido.categoria_id));
+  };
+
   const elegirCategoria = (id: number) => {
     setCategoriaManualId(String(id));
     if (vehiculoSeleccionado && vehiculoSeleccionado.categoria_id !== id) {
@@ -1389,7 +1420,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </div>
               <select
                 value={vehiculoId}
-                onChange={e => setVehiculoId(e.target.value)}
+                onChange={e => elegirVehiculo(e.target.value)}
                 disabled={isEdit}
                 className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:bg-slate-100 disabled:text-slate-500"
               >
@@ -1838,31 +1869,50 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                               garantía es plata que se retiene y se devuelve; la
                               franquicia es el techo de lo que paga el cliente
                               si choca. */}
+                          {/* **Se muestra grande.** Es el numero mas caro de
+                              la conversacion —lo que el cliente pone de su
+                              bolsillo si choca— y estaba en el mismo gris de
+                              11 px que el resto de las aclaraciones. Ademas se
+                              dice **de que categoria sale**: es lo que permite
+                              cazar de un vistazo que la franquicia no
+                              corresponda al auto elegido. */}
                           {grupo === 'cobertura' && (
-                            <p className="text-[11px] text-slate-500">
+                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                               {franquiciaCobertura != null ? (
-                                <>Franquicia a cargo del cliente:{' '}
-                                  <strong className="text-slate-700 tabular-nums">
+                                <>
+                                  <p className="text-[11px] font-medium text-slate-500">
+                                    Franquicia a cargo del cliente
+                                    {categoriaNombreElegida && <> · {categoriaNombreElegida}</>}
+                                  </p>
+                                  <p className="text-xl font-bold tabular-nums text-slate-800">
                                     ${franquiciaCobertura.toLocaleString('es-AR')}
-                                  </strong>
+                                  </p>
                                   {franquiciaBase != null && franquiciaCobertura < franquiciaBase && (
-                                    <span className="text-emerald-700">
-                                      {' '}(baja desde ${franquiciaBase.toLocaleString('es-AR')})
-                                    </span>
+                                    <p className="text-xs font-medium text-emerald-700">
+                                      baja desde ${franquiciaBase.toLocaleString('es-AR')}
+                                    </p>
                                   )}
                                 </>
                               ) : franquiciaBase != null ? (
-                                <>Sin cobertura extra, la franquicia es{' '}
-                                  <strong className="text-slate-700 tabular-nums">
+                                <>
+                                  <p className="text-[11px] font-medium text-slate-500">
+                                    Franquicia sin cobertura extra
+                                    {categoriaNombreElegida && <> · {categoriaNombreElegida}</>}
+                                  </p>
+                                  <p className="text-xl font-bold tabular-nums text-slate-800">
                                     ${franquiciaBase.toLocaleString('es-AR')}
-                                  </strong>
+                                  </p>
                                 </>
                               ) : vehiculoId ? (
-                                <span className="font-medium text-amber-700">
+                                <p className="text-xs font-medium text-amber-700">
                                   Esta categoría no tiene franquicia cargada: el contrato va a salir sin declararla.
-                                </span>
-                              ) : null}
-                            </p>
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-500">
+                                  Elegí el auto o la categoría para ver la franquicia.
+                                </p>
+                              )}
+                            </div>
                           )}
                           <div className="flex flex-wrap gap-1.5">
                             {delGrupo.map(a => {
