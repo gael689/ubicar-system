@@ -9,6 +9,7 @@ from app.models.pago import Pago
 from app.models.cuenta_corriente import CuentaCorriente, MovimientoCuentaCorriente
 from app.models.echeq import Echeq
 from app.models.gasto import Gasto
+from app.models.movimiento_caja import MovimientoCaja
 from app.models.documento import Documento
 from app.models.presupuesto import Presupuesto
 from app.models.tarjeta_cliente import TarjetaCliente
@@ -40,7 +41,7 @@ __all__ = [
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",
     "Tarifa", "Reserva", "Alquiler", "Contrato", "Pago",
     "CuentaCorriente", "MovimientoCuentaCorriente",
-    "Echeq", "Gasto", "Documento", "Presupuesto", "TarjetaCliente",
+    "Echeq", "Gasto", "MovimientoCaja", "Documento", "Presupuesto", "TarjetaCliente",
     "Multa", "Servicio", "Danio", "FotoDanio", "FechaEspecial",
     "TarifaCalendario", "DescuentoDuracion",
     "Adicional", "ReservaAdicional", "BloqueoVehiculo",

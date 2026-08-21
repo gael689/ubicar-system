@@ -1,5 +1,9 @@
 from datetime import date
+from decimal import Decimal
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -18,6 +22,8 @@ from app.schemas.recibo import ReciboDePagoRequest, ReciboResponse
 from app.services.recibo_service import ReciboService
 from app.services import auditoria_service
 from app.services import cobranza_service as cobranza
+from app.services.caja_service import CajaService, MEDIOS_QUE_NO_SON_PLATA
+from app.models.movimiento_caja import MovimientoCaja
 from app.models.recibo import Recibo
 
 router = APIRouter(prefix="/pagos", tags=["Pagos"])
@@ -265,7 +271,20 @@ def caja_dia(
     pagos = db.query(Pago).filter(Pago.fecha == fecha).order_by(Pago.id.desc()).all()
     gastos = db.query(Gasto).filter(Gasto.fecha == fecha).order_by(Gasto.id.desc()).all()
 
-    total_ingresos = sum(float(p.monto) for p in pagos)
+    caja = CajaService(db)
+    movimientos = caja.del_dia(fecha)
+
+    # **El total de ingresos ya no suma los cobros con medio cuenta_corriente.**
+    # Ese medio significa "se lo anotamos en la cuenta", o sea que la plata no
+    # entro: sumarlo inflaba el total del dia sin que nadie lo notara
+    # (PLAN_DINERO.md 4.4). El desglose por medio si los sigue mostrando --son
+    # cobros reales, solo que no son plata-- con su propia linea.
+    total_ingresos = sum(
+        float(p.monto) for p in pagos if p.medio_pago not in MEDIOS_QUE_NO_SON_PLATA
+    )
+    total_a_cuenta = sum(
+        float(p.monto) for p in pagos if p.medio_pago in MEDIOS_QUE_NO_SON_PLATA
+    )
     total_egresos = sum(float(g.monto) for g in gastos)
 
     por_medio: dict[str, float] = {}
@@ -278,12 +297,173 @@ def caja_dia(
     return ok({
         "fecha": fecha,
         "total_ingresos": total_ingresos,
+        # Lo que se anoto en cuenta corriente ese dia. Se muestra aparte para
+        # que no parezca que desaparecio del total.
+        "total_a_cuenta": total_a_cuenta,
         "total_egresos": total_egresos,
         "balance": total_ingresos - total_egresos,
         "por_medio_pago": por_medio,
         "cobros": cobros_detalle,
         "gastos": gastos_resp,
+        "movimientos_caja": [_movimiento_caja_response(m) for m in movimientos],
+        # Donde esta la plata. Ver CajaService.donde_esta_la_plata.
+        "donde_esta_la_plata": _serializar_plata(caja.donde_esta_la_plata(fecha)),
     })
+
+
+def _movimiento_caja_response(m: MovimientoCaja) -> dict:
+    return {
+        "id": m.id,
+        "fecha": m.fecha,
+        "tipo": m.tipo,
+        "monto": float(m.monto),
+        "medio": m.medio,
+        "motivo": m.motivo,
+        "cliente_id": m.cliente_id,
+        "reserva_id": m.reserva_id,
+        "alquiler_id": m.alquiler_id,
+        "efecto_en_caja": float(m.efecto_en_caja),
+        "anulado": m.anulado,
+        "creado_por": m.creado_por,
+    }
+
+
+def _serializar_plata(d: dict) -> dict:
+    return {
+        "efectivo_sin_depositar": float(d["efectivo_sin_depositar"]),
+        "ultimo_deposito_fecha": d["ultimo_deposito_fecha"],
+        "ultimo_deposito_monto": (
+            float(d["ultimo_deposito_monto"]) if d["ultimo_deposito_monto"] is not None else None
+        ),
+        "sin_depositos_cargados": d["sin_depositos_cargados"],
+    }
+
+
+# --- Movimientos de caja ------------------------------------------------------
+
+class MovimientoCajaCreate(BaseModel):
+    """
+    Plata que se mueve sin ser de nadie: un deposito al banco, un retiro, una
+    garantia en efectivo que entra o vuelve, un reembolso.
+
+    El **motivo es obligatorio** y no es burocracia: ningun evento del sistema
+    dispara estos movimientos, asi que si no lo escribe quien lo carga, no lo
+    escribe nadie.
+    """
+    tipo: Literal["deposito_banco", "retiro", "garantia_recibida",
+                  "garantia_devuelta", "reembolso"]
+    monto: Decimal
+    medio: str = "efectivo"
+    motivo: str
+    fecha: date
+    cliente_id: int | None = None
+    reserva_id: int | None = None
+    alquiler_id: int | None = None
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_no_vacio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("El movimiento de caja necesita un motivo")
+        return v.strip()
+
+    @field_validator("monto")
+    @classmethod
+    def _monto_positivo(cls, v: Decimal) -> Decimal:
+        # Siempre positivo: el signo lo define el tipo. Ver SIGNO_EN_CAJA.
+        if v is None or v <= 0:
+            raise ValueError("El monto tiene que ser mayor a cero")
+        return v
+
+
+class AnularMovimientoCajaRequest(BaseModel):
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_no_vacio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Anular un movimiento de caja requiere un motivo")
+        return v.strip()
+
+
+@router.get("/caja/movimientos")
+def list_movimientos_caja(
+    fecha_desde: date | None = Query(None),
+    fecha_hasta: date | None = Query(None),
+    tipo: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    q = db.query(MovimientoCaja).filter(MovimientoCaja.anulado == False)
+    if fecha_desde:
+        q = q.filter(MovimientoCaja.fecha >= fecha_desde)
+    if fecha_hasta:
+        q = q.filter(MovimientoCaja.fecha <= fecha_hasta)
+    if tipo:
+        q = q.filter(MovimientoCaja.tipo == tipo)
+    movs = q.order_by(MovimientoCaja.fecha.desc(), MovimientoCaja.id.desc()).all()
+    return ok([_movimiento_caja_response(m) for m in movs])
+
+
+@router.post("/caja/movimientos", status_code=status.HTTP_201_CREATED)
+def create_movimiento_caja(
+    payload: MovimientoCajaCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Registra un movimiento de caja.
+
+    **El reembolso no entra por aca.** Devolverle plata a un cliente tambien
+    tiene que revertir el credito en su cuenta corriente, y hacer solo una de
+    las dos cosas deja el libro contradiciendo a la caja. Ese camino es
+    POST /pagos/reembolsos.
+    """
+    if payload.tipo == "reembolso":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Un reembolso se registra desde el reintegro al cliente, no como "
+                "movimiento de caja suelto: tiene que revertir tambien su cuenta "
+                "corriente."
+            ),
+        )
+    try:
+        mov = CajaService(db).registrar(
+            tipo=payload.tipo,
+            monto=payload.monto,
+            medio=payload.medio,
+            motivo=payload.motivo,
+            fecha=payload.fecha,
+            creado_por=current_user.id,
+            cliente_id=payload.cliente_id,
+            reserva_id=payload.reserva_id,
+            alquiler_id=payload.alquiler_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    db.commit()
+    db.refresh(mov)
+    return ok(_movimiento_caja_response(mov), "Movimiento de caja registrado")
+
+
+@router.post("/caja/movimientos/{movimiento_id}/anular")
+def anular_movimiento_caja(
+    movimiento_id: int,
+    payload: AnularMovimientoCajaRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Baja logica con motivo. Nunca un DELETE: la plata de un dia pasado no
+    puede desaparecer sin rastro."""
+    try:
+        mov = CajaService(db).anular(movimiento_id, payload.motivo, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    db.commit()
+    db.refresh(mov)
+    return ok(_movimiento_caja_response(mov), "Movimiento de caja anulado")
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

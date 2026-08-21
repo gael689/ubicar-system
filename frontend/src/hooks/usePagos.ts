@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { Pago, PagoCreate, CajaData, MetodoPago } from '@/types';
+import type { Pago, PagoCreate, CajaData, MetodoPago, MovimientoCaja, MovimientoCajaCreate } from '@/types';
 
 const KEY = 'pagos';
 
@@ -71,6 +71,37 @@ export function useCajaDia(fecha: string) {
       return res.data.data;
     },
     staleTime: 30_000,
+  });
+}
+
+/**
+ * Registra un movimiento de caja: un depósito al banco, un retiro, una
+ * garantía en efectivo que entra o vuelve.
+ *
+ * El depósito y el retiro son **los dos únicos datos que ningún evento del
+ * sistema dispara solo**: los tiene que cargar una persona. Por eso la caja
+ * del día muestra el efectivo acumulado con la fecha del último depósito — si
+ * nadie los carga, el número queda alto y viejo, y eso se ve.
+ */
+export function useCrearMovimientoCaja() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: MovimientoCajaCreate) =>
+      api.post<{ data: MovimientoCaja }>('/pagos/caja/movimientos', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['caja'] });
+    },
+  });
+}
+
+export function useAnularMovimientoCaja() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, motivo }: { id: number; motivo: string }) =>
+      api.post(`/pagos/caja/movimientos/${id}/anular`, { motivo }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['caja'] });
+    },
   });
 }
 

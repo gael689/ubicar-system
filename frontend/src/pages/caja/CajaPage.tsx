@@ -9,6 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { useCajaDia, useCrearPago, useEliminarPago } from '@/hooks/usePagos';
+import { DondeEstaLaPlata } from '@/components/pagos/DondeEstaLaPlata';
 import { formatCurrency, extractError } from '@/lib/utils';
 import { METODO_PAGO_LABEL } from '@/lib/constants';
 import type { Pago, Gasto, MetodoPago } from '@/types';
@@ -180,6 +181,14 @@ export function CajaPage() {
                 <span className="text-xs text-muted-foreground">Ingresos</span>
               </div>
               <p className="text-2xl font-bold text-success">{formatCurrency(caja.total_ingresos)}</p>
+              {/* Los cobros con medio `cuenta_corriente` no son plata que entro:
+                  se los anotamos al cliente. Estaban sumados al total y lo
+                  inflaban sin que se notara. Ahora salen aparte. */}
+              {!!caja.total_a_cuenta && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  + {formatCurrency(caja.total_a_cuenta)} anotados en cuenta corriente
+                </p>
+              )}
             </div>
             <div className="bg-card border border-border rounded-xl p-4">
               <div className="flex items-center gap-2 mb-1">
@@ -198,6 +207,15 @@ export function CajaPage() {
               </p>
             </div>
           </div>
+        )}
+
+        {/* Donde esta la plata: el efectivo del cajon y desde cuando. */}
+        {caja && (
+          <DondeEstaLaPlata
+            fecha={fecha}
+            datos={caja.donde_esta_la_plata}
+            movimientos={caja.movimientos_caja}
+          />
         )}
 
         {/* Desglose por medio de pago */}

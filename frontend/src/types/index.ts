@@ -286,14 +286,62 @@ export interface ReciboCreate {
 
 // ─── Caja ─────────────────────────────────────────────────────────────────────
 
+/** Plata que se mueve sin ser de nadie: no toca ninguna cuenta corriente. */
+export type TipoMovimientoCaja =
+  | 'deposito_banco' | 'retiro' | 'garantia_recibida'
+  | 'garantia_devuelta' | 'reembolso';
+
+export interface MovimientoCaja {
+  id: number;
+  fecha: string;
+  tipo: TipoMovimientoCaja;
+  monto: number;
+  medio: string;
+  motivo: string;
+  cliente_id: number | null;
+  reserva_id: number | null;
+  alquiler_id: number | null;
+  /** Cuánto suma o resta al efectivo del cajón. El signo lo define el tipo. */
+  efecto_en_caja: number;
+  anulado: boolean;
+  creado_por: number | null;
+}
+
+export interface DondeEstaLaPlata {
+  efectivo_sin_depositar: number;
+  /**
+   * Desde cuándo se viene acumulando. Sin esta fecha, el número de arriba es
+   * una afirmación que puede estar vieja y no se nota.
+   */
+  ultimo_deposito_fecha: string | null;
+  ultimo_deposito_monto: number | null;
+  sin_depositos_cargados: boolean;
+}
+
 export interface CajaData {
   fecha: string;
+  /** Plata que entró de verdad: no incluye los cobros anotados en cuenta corriente. */
   total_ingresos: number;
+  /** Lo que se anotó en cuenta corriente ese día. No es plata. */
+  total_a_cuenta?: number;
   total_egresos: number;
   balance: number;
   por_medio_pago: Record<string, number>;
   cobros: Pago[];
   gastos: Gasto[];
+  movimientos_caja?: MovimientoCaja[];
+  donde_esta_la_plata?: DondeEstaLaPlata;
+}
+
+export interface MovimientoCajaCreate {
+  tipo: TipoMovimientoCaja;
+  monto: number;
+  medio: string;
+  motivo: string;
+  fecha: string;
+  cliente_id?: number | null;
+  reserva_id?: number | null;
+  alquiler_id?: number | null;
 }
 
 // ─── Dashboard Detallado ─────────────────────────────────────────────────────
