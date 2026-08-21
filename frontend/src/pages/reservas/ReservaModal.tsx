@@ -563,11 +563,17 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * definida, esa; si no, la base de la categoría del auto entregado.
    */
   const franquiciaCobertura = useMemo(() => {
-    const elegida = catalogoAdicionales.find(
-      a => a.grupo === 'cobertura' && adicionales[a.id] !== undefined && a.franquicia != null
-    );
-    return elegida?.franquicia != null ? Number(elegida.franquicia) : null;
-  }, [catalogoAdicionales, adicionales]);
+    if (franquiciaBase == null) return null;
+    // Las coberturas son escalones excluyentes —se elige una— así que manda el
+    // descuento más grande de lo que haya seleccionado. Mismo criterio que
+    // `domain/franquicia.py::franquicia_resultante`, y mismo piso: la
+    // franquicia nunca es cero.
+    const descuento = catalogoAdicionales
+      .filter(a => a.grupo === 'cobertura' && adicionales[a.id] !== undefined
+                   && a.franquicia_descuento != null)
+      .reduce((mayor, a) => Math.max(mayor, Number(a.franquicia_descuento)), 0);
+    return Math.max(franquiciaBase - descuento, 500_000);
+  }, [catalogoAdicionales, adicionales, franquiciaBase]);
 
   // Si el vehículo está afuera, buscamos su reserva bloqueante actual para
   // saber cuándo se espera que vuelva — así el cartel sólo alarma cuando hay

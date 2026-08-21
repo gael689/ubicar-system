@@ -52,6 +52,25 @@ export function Paso2Adicionales({
   const coberturas = items.filter((a) => a.grupo === "cobertura");
   const extras = items.filter((a) => a.grupo === "extra");
 
+  /**
+   * La franquicia que le queda al cliente si contrata esta cobertura.
+   *
+   * `null` si la categoría no tiene base cargada: ahí no se puede afirmar
+   * nada, y un cero sería una afirmación falsa — se lee como "no pagás nada".
+   *
+   * **Nunca baja de $500.000.** No existe la franquicia cero: una cobertura
+   * que deja al cliente sin ninguna responsabilidad cambia el incentivo de
+   * cuidar el auto y no es lo que se vende. Es el mismo piso que aplica el
+   * backend (`domain/franquicia.py`), repetido acá porque esta pantalla
+   * muestra el número antes de que exista ninguna reserva contra la cual
+   * pedirlo.
+   */
+  const FRANQUICIA_MINIMA = 500_000;
+  const franquiciaCon = (c: Adicional): number | null => {
+    if (franquiciaBase === null) return null;
+    return Math.max(franquiciaBase - (c.franquicia_descuento ?? 0), FRANQUICIA_MINIMA);
+  };
+
   const elegirCobertura = (id: number) => {
     const limpio = { ...seleccion };
     coberturas.forEach((c) => delete limpio[c.id]);
@@ -187,10 +206,18 @@ export function Paso2Adicionales({
                         {c.descripcion}
                       </span>
                     )}
-                    {c.franquicia !== null && (
+                    {/* **El número se calcula contra la base de ESTA categoría.**
+                        Antes se mostraba un absoluto guardado en la cobertura, que
+                        sólo podía ser cierto para una categoría: el mismo "+10%"
+                        prometía $500.000 en un Compacto y en una SUV, y la SUV
+                        tiene una base del doble. Ver `franquiciaCon`. */}
+                    {franquiciaCon(c) !== null && (
                       <span className="mt-2 block rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
                         Si hay un siniestro, tu responsabilidad máxima es de{" "}
-                        <strong className="text-foreground">{pesos(c.franquicia)}</strong>
+                        <strong className="text-foreground">{pesos(franquiciaCon(c)!)}</strong>
+                        {c.franquicia_descuento ? (
+                          <> · baja {pesos(c.franquicia_descuento)} desde {pesos(franquiciaBase!)}</>
+                        ) : null}
                       </span>
                     )}
                     {activa && c.precio > 0 && (

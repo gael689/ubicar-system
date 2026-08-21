@@ -1603,7 +1603,10 @@ export interface Adicional {
   /** Cobertura que ya viene con el alquiler (se ofrece preseleccionada). */
   incluido: boolean;
   /** Sólo coberturas: monto a cargo del cliente ante un siniestro. */
-  franquicia: string | null;
+  /** Cuánto BAJA la franquicia, no cuánto queda (migración 084). El
+   *  resultado depende de la base de la categoría, y hay tres bases
+   *  distintas: un absoluto compartido sólo podía ser cierto para una. */
+  franquicia_descuento: string | null;
   /**
    * D-53: precio como % del subtotal del alquiler, en vez de un monto fijo.
    * Sólo coberturas. `null` = esta cobertura cobra con `precio` (monto fijo
@@ -1625,7 +1628,7 @@ export interface AdicionalCreate {
   precio: string;
   unidad_cobro?: UnidadCobro;
   incluido?: boolean;
-  franquicia?: string | null;
+  franquicia_descuento?: string | null;
   porcentaje_sobre_alquiler?: string | null;
   max_cantidad?: number | null;
   visible_web?: boolean;
@@ -1775,9 +1778,14 @@ export interface ContratoSnapshot {
     discrimina_iva: boolean;
   };
   coberturas: {
-    contratadas: { nombre: string; franquicia: number | null }[];
+    contratadas: { nombre: string; descuento: number | null }[];
     rechazadas: string[];
-    franquicia: number;
+    /** La franquicia RESUELTA: base de la categoría del auto que se
+     *  entrega, menos el escalón de cobertura contratado. `null` si esa
+     *  categoría todavía no tiene base cargada — un 0 se leería como
+     *  "no pagás nada", que es lo contrario. */
+    franquicia: number | null;
+    franquicia_base?: number | null;
   };
   aceptacion: string;
   atendido_por?: string;

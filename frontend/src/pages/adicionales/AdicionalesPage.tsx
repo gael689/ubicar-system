@@ -20,7 +20,8 @@ const FORM_VACIO = {
   precio: '',
   unidad_cobro: 'por_dia' as UnidadCobro,
   incluido: false,
-  franquicia: '',
+  // Cuánto BAJA la franquicia, no cuánto queda (migración 084).
+  franquicia_descuento: '',
   porcentaje_sobre_alquiler: '',
   max_cantidad: '',
   visible_web: true,
@@ -65,7 +66,7 @@ export function AdicionalesPage() {
       precio: a.precio,
       unidad_cobro: a.unidad_cobro,
       incluido: a.incluido,
-      franquicia: a.franquicia ?? '',
+      franquicia_descuento: a.franquicia_descuento ?? '',
       porcentaje_sobre_alquiler: a.porcentaje_sobre_alquiler ?? '',
       max_cantidad: a.max_cantidad ? String(a.max_cantidad) : '',
       visible_web: a.visible_web,
@@ -85,7 +86,8 @@ export function AdicionalesPage() {
       unidad_cobro: form.unidad_cobro,
       incluido: form.incluido,
       // La franquicia y el % sobre el alquiler sólo existen en las coberturas.
-      franquicia: form.grupo === 'cobertura' && form.franquicia ? form.franquicia : null,
+      franquicia_descuento:
+        form.grupo === 'cobertura' && form.franquicia_descuento ? form.franquicia_descuento : null,
       porcentaje_sobre_alquiler:
         form.grupo === 'cobertura' && form.porcentaje_sobre_alquiler
           ? form.porcentaje_sobre_alquiler
@@ -205,14 +207,25 @@ export function AdicionalesPage() {
               </div>
               {form.grupo === 'cobertura' && (
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Franquicia</label>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Cuánto baja la franquicia
+                  </label>
                   <input
                     type="number" min="0" step="0.01"
-                    value={form.franquicia}
-                    onChange={e => setForm(f => ({ ...f, franquicia: e.target.value }))}
+                    value={form.franquicia_descuento}
+                    onChange={e => setForm(f => ({ ...f, franquicia_descuento: e.target.value }))}
                     className="input-base"
-                    placeholder="0 = sin franquicia"
+                    placeholder="500000"
                   />
+                  {/* Antes acá se cargaba la franquicia que QUEDABA, y eso sólo
+                      podía ser cierto para una categoría: hay tres bases
+                      distintas ($1,5M / $2M / $3M). El mismo número prometía
+                      cosas distintas según el auto. Lo que define la cobertura
+                      es cuánto descuenta. */}
+                  <p className="text-[11px] text-muted-foreground">
+                    Se resta de la base de cada categoría. La franquicia nunca baja
+                    de {formatCurrency(500000)}.
+                  </p>
                 </div>
               )}
               {form.grupo === 'cobertura' && (
@@ -382,7 +395,7 @@ function Grupo({
                 </div>
                 <p className="text-xs text-muted-foreground truncate">
                   {a.descripcion ?? a.codigo}
-                  {a.franquicia !== null && ` · franquicia ${formatCurrency(a.franquicia)}`}
+                  {a.franquicia_descuento !== null && ` · baja ${formatCurrency(a.franquicia_descuento)}`}
                   {a.max_cantidad && ` · máx. ${a.max_cantidad}`}
                 </p>
               </div>
@@ -425,13 +438,13 @@ function Grupo({
  *
  * El backend ya rechaza guardar una cobertura que rompa el orden — acá se ve
  * el orden **antes** de tocar nada, para que el rechazo del `POST`/`PATCH`
- * no sea la primera noticia. Ordenada de más franquicia (más barata) a menos
+ * no sea la primera noticia. Ordenada de menos descuento (más barata) a más
  * (más cara): así se lee de arriba a abajo como "pagás menos, cubrís más".
  */
 function EscaleraFranquicia({ items }: { items: Adicional[] }) {
   const conFranquicia = items
-    .filter(a => a.activo && a.franquicia !== null)
-    .sort((a, b) => Number(b.franquicia) - Number(a.franquicia));
+    .filter(a => a.activo && a.franquicia_descuento !== null)
+    .sort((a, b) => Number(a.franquicia_descuento) - Number(b.franquicia_descuento));
 
   if (conFranquicia.length < 2) return null;
 
@@ -446,7 +459,7 @@ function EscaleraFranquicia({ items }: { items: Adicional[] }) {
           <div key={a.id} className="flex items-center justify-between gap-3 text-xs">
             <span className="truncate text-foreground">{a.nombre}</span>
             <span className="flex shrink-0 items-center gap-3 tabular-nums text-muted-foreground">
-              <span>franquicia {formatCurrency(a.franquicia!)}</span>
+              <span>baja {formatCurrency(a.franquicia_descuento!)}</span>
               <span className="font-medium text-foreground">
                 {a.porcentaje_sobre_alquiler
                   ? `${a.porcentaje_sobre_alquiler}% del alquiler`

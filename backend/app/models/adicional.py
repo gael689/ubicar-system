@@ -55,10 +55,18 @@ class Adicional(Base):
     # básica ya viene", que es el punto de partida del paso 2 del flujo web.
     incluido: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # Sólo para coberturas: monto a cargo del cliente ante un siniestro.
-    # Es el motivo #1 de conflictos post-siniestro, así que es un dato propio
-    # y no una frase perdida dentro de `descripcion`.
-    franquicia: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Sólo para coberturas: **cuánto BAJA la franquicia**, no cuánto queda
+    # (migración 084).
+    #
+    # Guardaba el resultado ya calculado, y eso sólo puede ser cierto para una
+    # categoría: hay seis con tres bases distintas ($1,5M / $2M / $3M). Con un
+    # absoluto compartido, el mismo "+10%" le bajaba $1.000.000 a un Compacto y
+    # $2.500.000 a una SUV — el mismo precio comprando beneficios distintos, y
+    # nadie lo veía porque lo que se mostraba era el resultado.
+    #
+    # La franquicia que ve el cliente se calcula contra la base de **su**
+    # categoría: ver `domain/franquicia.py::franquicia_resultante`.
+    franquicia_descuento: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
     # Plan de conexión (13/08), D-53: las coberturas que bajan la franquicia
     # se cobran como **porcentaje del alquiler del vehículo**, no como un

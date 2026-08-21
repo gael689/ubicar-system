@@ -44,36 +44,60 @@ def _precio_comparable(a: Adicional) -> Decimal | None:
 
 def _validar_franquicia(db: Session, a: Adicional) -> None:
     """
-    Plan de conexión (13/08), D-53 — punto 3 de §3.8b: es lo único que
-    impide volver a cargar la tabla al revés (franquicia $0 más barata que
-    la base, que es exactamente el bug que este plan vino a arreglar).
+    Que la tabla de coberturas no se pueda cargar al revés.
 
-    Dos reglas, sólo para coberturas con franquicia cargada:
+    Desde la migración 084 lo que se carga es **el descuento**, así que las dos
+    reglas cambiaron de forma —no de intención:
 
-    1. **Ninguna franquicia de cobertura puede ser ≥ la base más baja entre
-       las categorías activas.** Si lo fuera, contratar esa "cobertura" no
-       bajaría nada para ninguna categoría — dejaría de ser una cobertura.
-    2. **A menor franquicia, mayor precio.** Comparado sólo contra otras
-       coberturas con una unidad de precio compatible (ver
-       `_precio_comparable`): mezclar porcentaje con monto fijo no da una
-       comparación real.
+    1. **El descuento tiene que bajar algo.** Un descuento en cero o negativo no
+       es una cobertura.
+    2. **La categoría más barata tiene que soportar el escalón más grande.**
+       Las coberturas son excluyentes —el cliente elige una— así que lo que
+       importa es el descuento mayor, no la suma. Si ése llega a la base más
+       baja, el piso de `FRANQUICIA_MINIMA` empieza a tapar el error: el número
+       que ve el cliente se sigue viendo bien y la tabla está mal.
+    3. **A mayor descuento, mayor precio.** Comparado sólo contra coberturas con
+       una unidad de precio compatible (ver `_precio_comparable`): mezclar
+       porcentaje con monto fijo no da una comparación real.
     """
-    if a.grupo != "cobertura" or a.franquicia is None:
+    if a.grupo != "cobertura" or a.franquicia_descuento is None:
         return
 
+    from app.domain.franquicia import FRANQUICIA_MINIMA
     from app.models.categoria import Categoria
+
+    descuento = Decimal(str(a.franquicia_descuento))
+    if descuento <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="El descuento de una cobertura tiene que ser mayor a cero: si no, no baja nada.",
+        )
 
     base_minima = (
         db.query(func.min(Categoria.franquicia_base))
         .filter(Categoria.activo.is_(True), Categoria.franquicia_base.isnot(None))
         .scalar()
     )
-    if base_minima is not None and Decimal(str(a.franquicia)) >= Decimal(str(base_minima)):
+
+    otras = (
+        db.query(Adicional)
+        .filter(
+            Adicional.grupo == "cobertura",
+            Adicional.activo.is_(True),
+            Adicional.franquicia_descuento.isnot(None),
+            Adicional.id != (a.id or -1),
+        )
+        .all()
+    )
+
+    if base_minima is not None and Decimal(str(base_minima)) - descuento < FRANQUICIA_MINIMA:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"La franquicia de una cobertura tiene que ser menor a la base más "
-                f"baja entre las categorías (${base_minima:,.0f}). Si no, no baja nada."
+                f"Este descuento baja ${descuento:,.0f} y la categoría más barata "
+                f"tiene una base de ${base_minima:,.0f}: la franquicia quedaría por "
+                f"debajo del mínimo de ${FRANQUICIA_MINIMA:,.0f}. Subí la base de esa "
+                f"categoría o bajá el descuento."
             ),
         )
 
@@ -81,38 +105,30 @@ def _validar_franquicia(db: Session, a: Adicional) -> None:
     if precio_propio is None:
         return
 
-    otras = (
-        db.query(Adicional)
-        .filter(
-            Adicional.grupo == "cobertura",
-            Adicional.activo.is_(True),
-            Adicional.franquicia.isnot(None),
-            Adicional.id != (a.id or -1),
-        )
-        .all()
-    )
     for otra in otras:
         precio_otra = _precio_comparable(otra)
         if precio_otra is None:
             continue
-        franquicia_propia = Decimal(str(a.franquicia))
-        franquicia_otra = Decimal(str(otra.franquicia))
-        if franquicia_propia < franquicia_otra and precio_propio <= precio_otra:
+        descuento_otra = Decimal(str(otra.franquicia_descuento))
+        if descuento > descuento_otra and precio_propio <= precio_otra:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"'{a.nombre}' deja una franquicia más baja que '{otra.nombre}' "
-                    "pero no cuesta más — revisá los precios."
+                    f"'{a.nombre}' baja más la franquicia que '{otra.nombre}' "
+                    f"(${descuento:,.0f} contra ${descuento_otra:,.0f}) y no cuesta más. "
+                    f"A mayor cobertura, mayor precio."
                 ),
             )
-        if franquicia_propia > franquicia_otra and precio_propio >= precio_otra:
+        if descuento < descuento_otra and precio_propio >= precio_otra:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"'{a.nombre}' deja una franquicia más alta que '{otra.nombre}' "
-                    "pero cuesta igual o más — revisá los precios."
+                    f"'{a.nombre}' baja menos la franquicia que '{otra.nombre}' "
+                    f"(${descuento:,.0f} contra ${descuento_otra:,.0f}) y no cuesta menos. "
+                    f"A menor cobertura, menor precio."
                 ),
             )
+
 
 
 @router.get("")
@@ -168,7 +184,7 @@ def update_adicional(
     a = _get(db, adicional_id)
     for campo, valor in payload.model_dump(exclude_unset=True).items():
         setattr(a, campo, valor)
-    if a.grupo == "extra" and a.franquicia is not None:
+    if a.grupo == "extra" and a.franquicia_descuento is not None:
         raise HTTPException(
             status_code=422,
             detail="La franquicia sólo aplica a las coberturas, no a los extras",

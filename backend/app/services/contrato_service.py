@@ -302,18 +302,54 @@ class ContratoService:
         cliente dijo que no. Sin esa línea, un cliente que choca puede alegar
         que nunca le ofrecieron nada.
         """
+        # **La franquicia del contrato es la resuelta, no la del catálogo.**
+        #
+        # Antes se copiaba el número del adicional, que era absoluto y por lo
+        # tanto sólo podía ser cierto para una categoría (migración 084). El
+        # contrato de una SUV imprimía la franquicia de un Compacto.
+        #
+        # Ahora sale de la base de **esta** categoría menos lo que descuenta
+        # cada cobertura contratada, que es el número que el cliente va a poner
+        # si rompe el auto — y es el que firma.
+        from app.domain.franquicia import franquicia_resultante
+
+        coberturas_contratadas = [a for a in r.adicionales if a.grupo == "cobertura"]
+
+        # D-64: manda la categoría del **vehículo que se entrega**, no la que
+        # el cliente reservó. Si hubo upgrade de Compacto a Pick-up, el
+        # contrato dice la franquicia de la Pick-up.
+        #
+        # Lo que lo justifica es operativo: el contrato se firma al momento de
+        # entregar el auto, así que cuando el cliente firma ya sabe qué
+        # vehículo se lleva y con qué franquicia. No hay sorpresa posterior, y
+        # Ubicar no absorbe una diferencia de riesgo por una cortesía.
+        #
+        # `r.categoria` queda de respaldo para el único caso en que no hay auto
+        # todavía: la reserva por categoría sin asignar.
+        categoria = (r.vehiculo.categoria if r.vehiculo else None) or r.categoria
+        base = categoria.franquicia_base if categoria is not None else None
+
+        franquicia = franquicia_resultante(
+            base,
+            [
+                a.adicional.franquicia_descuento
+                for a in coberturas_contratadas
+                if a.adicional is not None
+            ],
+        )
+        franquicia = float(franquicia) if franquicia is not None else None
+
         contratadas = [
             {
                 "nombre": a.nombre,
-                # La franquicia es del catálogo, no de la línea contratada:
-                # es un dato de la cobertura, no del precio pactado.
-                "franquicia": (
-                    float(a.adicional.franquicia)
-                    if a.adicional and a.adicional.franquicia is not None else None
+                # Cuánto baja esta cobertura en particular. Sirve para explicar
+                # el número de abajo, que es el que importa.
+                "descuento": (
+                    float(a.adicional.franquicia_descuento)
+                    if a.adicional and a.adicional.franquicia_descuento is not None else None
                 ),
             }
-            for a in r.adicionales
-            if a.grupo == "cobertura"
+            for a in coberturas_contratadas
         ]
         ids_contratadas = {a.adicional_id for a in r.adicionales}
 
@@ -325,44 +361,22 @@ class ContratoService:
             if a.id not in ids_contratadas
         ]
 
-        # La franquicia que rige es la de la cobertura contratada; sin
-        # cobertura, la BASE de la categoría (D-53) — no un número global
-        # único, porque el riesgo de una Pick-up no es el de un Compacto.
-        #
         # **Si no hay base cargada para esa categoría, no se imprime ningún
         # número.** Antes acá caía a `contrato.franquicia_default` (0 por
-        # default), y el alquiler MÁS BARATO —el que no contrató
-        # cobertura— salía con "FRANQUICIA: $ 0", que se lee como "no pagás
-        # nada" y es exactamente lo contrario de lo que significa. `None` es
-        # la señal correcta: "todavía no cargado", que la campana reclama
-        # (`categoria_sin_franquicia`, ver domain/notificaciones_reglas.py).
-        if contratadas and contratadas[0]["franquicia"] is not None:
-            franquicia = contratadas[0]["franquicia"]
-        else:
-            # D-64: manda la categoría del **vehículo que se entrega**, no la
-            # que el cliente contrató. Si hubo upgrade de Compacto a Pick-up,
-            # el contrato dice la franquicia de la Pick-up.
-            #
-            # El orden estaba al revés y sin ningún test. Lo que lo justifica
-            # es operativo: **el contrato se firma al momento de entregar el
-            # auto**, con upgrade o sin él, así que cuando el cliente firma ya
-            # sabe qué vehículo se lleva y con qué franquicia. No hay sorpresa
-            # posterior, y Ubicar no absorbe una diferencia de riesgo por una
-            # cortesía.
-            #
-            # `r.categoria` queda como respaldo para el único caso en que no
-            # hay auto todavía: la reserva por categoría sin asignar.
-            categoria = (r.vehiculo.categoria if r.vehiculo else None) or r.categoria
-            franquicia = (
-                float(categoria.franquicia_base)
-                if categoria is not None and categoria.franquicia_base is not None
-                else None
-            )
-
+        # default), y el alquiler MÁS BARATO —el que no contrató cobertura—
+        # salía con "FRANQUICIA: $ 0", que se lee como "no pagás nada" y es
+        # exactamente lo contrario de lo que significa. `None` es la señal
+        # correcta: "todavía no cargado", que la campana reclama
+        # (`categoria_sin_franquicia`).
         return {
             "contratadas": contratadas,
             "rechazadas": no_contratadas,
+            # La franquicia **resuelta**: base de la categoría del auto que se
+            # entrega, menos lo que descuenta cada cobertura contratada. Es el
+            # número que el cliente va a poner si rompe el auto, y es el que
+            # firma.
             "franquicia": franquicia,
+            "franquicia_base": float(base) if base is not None else None,
         }
 
     # ── Emisión ───────────────────────────────────────────────────────────

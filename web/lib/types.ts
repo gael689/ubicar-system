@@ -230,7 +230,9 @@ export interface Adicional {
   unidad_cobro: "por_dia" | "unico";
   incluido: boolean;
   /** Sólo coberturas: lo que queda a cargo del cliente ante un siniestro. */
-  franquicia: number | null;
+  /** Cuánto BAJA la franquicia, no cuánto queda: el resultado depende de
+   *  la base de la categoría elegida (migración 084). */
+  franquicia_descuento: number | null;
   max_cantidad: number | null;
 }
 

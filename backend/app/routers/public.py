@@ -165,7 +165,8 @@ def get_adicionales_publicos(db: Session = Depends(get_db)):
     )
     coberturas = sorted(
         (a for a in items if a.grupo == "cobertura"),
-        key=lambda a: a.franquicia if a.franquicia is not None else Decimal("Infinity"),
+        # De mayor a menor cobertura: el que más baja la franquicia va primero.
+        key=lambda a: -(a.franquicia_descuento or Decimal("0")),
         reverse=True,
     )
     extras = [a for a in items if a.grupo != "cobertura"]
@@ -181,7 +182,10 @@ def get_adicionales_publicos(db: Session = Depends(get_db)):
             "precio": a.precio,
             "unidad_cobro": a.unidad_cobro,
             "incluido": a.incluido,
-            "franquicia": a.franquicia,
+            # **Cuánto baja**, no cuánto queda: la franquicia que ve el cliente
+            # depende de la base de SU categoría, y la web ya la recibe
+            # (`categoria.franquicia_base`). Ver `domain/franquicia.py`.
+            "franquicia_descuento": a.franquicia_descuento,
             "porcentaje_sobre_alquiler": a.porcentaje_sobre_alquiler,
             "max_cantidad": a.max_cantidad,
         }
