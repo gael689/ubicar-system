@@ -219,9 +219,19 @@ def rechazar(
     Rechaza la solicitud. **Nunca se borra**: el motivo es lo que después
     explica una devolución y lo que permite medir por qué se caen las ventas.
 
-    ⚠️ Si la reserva tenía un pago asociado, **la devolución todavía no está
-    implementada** (decisión #5, depende de Mercado Pago). El rechazo se
-    registra igual, pero la plata hay que devolverla a mano por ahora.
+    **Si el cliente ya había pagado, se le reintegra.** Antes esto sólo cambiaba
+    el estado y avisaba "la devolución se hace a mano" — la plata quedaba en la
+    caja, el libro seguía diciendo que había entrado, y devolverla dependía de
+    que alguien se acordara.
+
+    Ahora pasa por `ReservaService.cancelar(responsable="ubicar")`, que es
+    exactamente el caso: **el que no pudo cumplir fue Ubicar**, no el cliente.
+    Una reserva llega a esta bandeja porque el cupo se fue o porque pidieron
+    algo que no había, así que D-11 manda reintegrar el 100 %. El reembolso sale
+    de la caja con su medio y el débito consume el crédito del anticipo.
+
+    Las que no tienen nada pagado —`pendiente_pago` sin transferencia
+    acreditada— no generan ningún movimiento: no hay qué devolver.
     """
     try:
         reserva = _get(db, reserva_id)
@@ -234,9 +244,27 @@ def rechazar(
             detail=f"La reserva ya fue resuelta (estado: {reserva.estado})",
         )
 
-    reserva.estado = EstadoReserva.CANCELADA.value
+    # El asiento lo hace el service, no este router: es el único lugar donde
+    # vive la regla de qué pasa con la plata al cancelar (D-11), y duplicarla
+    # acá era lo que hacía que este camino la salteara.
+    from app.services.reserva_service import ReservaService
+
+    tenia_pago = bool(reserva.anticipo_monto and reserva.anticipo_monto > 0)
+    try:
+        ReservaService(db).cancelar(
+            reserva.id,
+            current_user.id,
+            payload.motivo,
+            # No pudimos cumplir nosotros: se reintegra el 100 %.
+            responsable="ubicar",
+            reembolso_medio=reserva.anticipo_medio_pago or "transferencia",
+        )
+    except (BusinessRuleError, ConflictError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Lo propio de la bandeja web: quién la resolvió y con qué motivo, que es
+    # lo que después permite medir por qué se caen las ventas.
     reserva.web_motivo_rechazo = payload.motivo
-    reserva.motivo_cancelacion = payload.motivo
     reserva.web_resuelta_por = current_user.id
     reserva.web_resuelta_en = datetime.utcnow()
 
@@ -248,5 +276,6 @@ def rechazar(
 
     return ok(
         ReservaResponse.model_validate(reserva),
-        "Solicitud rechazada. Si había un pago, la devolución todavía se hace a mano.",
+        "Reserva rechazada y reintegrada al cliente." if tenia_pago
+        else "Reserva rechazada.",
     )
