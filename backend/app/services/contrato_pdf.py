@@ -340,12 +340,23 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
         y -= 3.6 * mm
     for contratada in cob.get("contratadas", []):
         txt = f"Cobertura contratada: {contratada['nombre']}"
-        # `is not None`, no un chequeo de verdad: la cobertura total contrata
-        # una franquicia de **$0**, y eso es justo lo que hay que imprimir —
-        # un `if contratada.get('franquicia')` se lo comía en silencio y el
-        # cliente que pagó por el $0 no veía la confirmación en el papel.
-        if contratada.get("franquicia") is not None:
-            txt += f" — franquicia $ {_money(contratada['franquicia'])}"
+        # **Se imprime cuánto BAJA, no cuánto queda** (migración 084).
+        #
+        # El número que queda es uno solo para toda la operación y va abajo, en
+        # la línea grande de "SEGURO CON FRANQUICIA DE $ X". Repetirlo por
+        # cobertura era lo que hacía el contrato antes, y con más de una línea
+        # habría dicho dos franquicias distintas en el mismo papel.
+        #
+        # Lo que sí aporta acá es el descuento: explica de dónde sale el número
+        # de abajo y deja constancia de qué compró el cliente cuando pagó el
+        # 10 % o el 30 % extra.
+        #
+        # `is not None` y no un chequeo de verdad: un descuento que por lo que
+        # sea quedara en cero tiene que verse, no desaparecer en silencio —
+        # justamente porque un cliente que pagó por una cobertura y no la ve en
+        # el papel es un reclamo.
+        if contratada.get("descuento") is not None:
+            txt += f" — baja la franquicia en $ {_money(contratada['descuento'])}"
         c.drawString(izq, y, txt)
         y -= 3.6 * mm
 
