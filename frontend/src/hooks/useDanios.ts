@@ -75,6 +75,22 @@ export function useImputarDanio() {
   });
 }
 
+/**
+ * El cliente pagó el daño imputado.
+ *
+ * Crea el `Pago` —que lo hace entrar a la caja del día, con su medio— y el
+ * crédito que cancela el débito, en un solo acto. El daño **sigue imputado**:
+ * cobrarlo no lo repara. Ver `PLAN_DINERO.md` §1.4.
+ */
+export function useCobrarDanio() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ id, medio_pago, fecha_cobro }: { id: number; medio_pago: string; fecha_cobro: string }) =>
+      api.post<{ data: Danio }>(`/danios/${id}/cobrar`, { medio_pago, fecha_cobro }),
+    onSuccess: invalidar,
+  });
+}
+
 export function useBonificarDanio() {
   const invalidar = useInvalidar();
   return useMutation({

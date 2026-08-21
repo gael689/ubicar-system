@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { CobroDialog, type DatosDeCobro } from '@/components/shared/CobroDialog';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { useMultas } from '@/hooks/useMultas';
@@ -89,6 +89,7 @@ export function MultasPage() {
   const [editandoNotas, setEditandoNotas] = useState<number | null>(null);
   const [notasEdit, setNotasEdit] = useState('');
   const [cobrarId, setCobrarId] = useState<number | null>(null);
+  const multaACobrar = multas.find(m => m.id === cobrarId) ?? null;
   const [bonificarId, setBonificarId] = useState<number | null>(null);
   const [resolviendo, setResolviendo] = useState(false);
   const [cambiandoEstado, setCambiandoEstado] = useState(false);
@@ -168,12 +169,12 @@ export function MultasPage() {
     cargarMultas();
   };
 
-  const handleCobrar = async () => {
+  const handleCobrar = async (datos: DatosDeCobro) => {
     if (!cobrarId) return;
     setResolviendo(true);
     try {
-      await resolverMulta(cobrarId, { decision: 'cobrada' });
-      toast.success('Multa marcada como cobrada');
+      await resolverMulta(cobrarId, { decision: 'cobrada', ...datos });
+      toast.success('Multa cobrada — entró a la caja del día');
       setCobrarId(null);
       cargarMultas();
     } catch (err) {
@@ -511,12 +512,13 @@ export function MultasPage() {
         )}
       </Card>
 
-      <ConfirmDialog
+      <CobroDialog
         open={cobrarId !== null}
         onOpenChange={open => !open && setCobrarId(null)}
-        title="Marcar multa como cobrada"
-        description="El cliente pagó la multa: se genera el crédito que cancela el débito en su cuenta corriente."
-        confirmLabel="Marcar cobrada"
+        title="Cobrar multa"
+        description="El cliente pagó la multa. Se registra el cobro en la caja del día y se cancela el débito en su cuenta corriente, en un solo paso."
+        monto={multaACobrar ? formatMoney(multaACobrar.monto) : undefined}
+        confirmLabel="Registrar cobro"
         loading={resolviendo}
         onConfirm={handleCobrar}
       />

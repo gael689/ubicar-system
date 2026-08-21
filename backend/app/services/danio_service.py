@@ -20,7 +20,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import NotFoundError, BusinessRuleError
 from app.models.alquiler import Alquiler
+from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.models.danio import Danio, FotoDanio
+from app.models.pago import Pago
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 
 
@@ -188,6 +190,96 @@ class DanioService:
         danio.movimiento_cc_id = mov.id
         danio.responsable = "cliente"
         danio.estado = "imputado"
+        self.db.flush()
+        return danio
+
+    def _ya_tiene_credito(self, danio_id: int) -> bool:
+        """
+        ¿Este daño ya se cobró? Misma guarda que en multas, por `danio_id`.
+
+        El cobro suelto de Caja sigue existiendo; lo que no puede pasar es
+        cobrar el daño por ahí **y además** desde acá, y que el cliente termine
+        con dos créditos y la caja con dos pagos por la misma plata.
+        """
+        return (
+            self.db.query(MovimientoCuentaCorriente.id)
+            .filter(
+                MovimientoCuentaCorriente.danio_id == danio_id,
+                MovimientoCuentaCorriente.tipo == "credito",
+                MovimientoCuentaCorriente.anulado == False,
+            )
+            .first()
+            is not None
+        )
+
+    def cobrar(
+        self,
+        danio_id: int,
+        usuario_id: int | None,
+        medio_pago: str = "efectivo",
+        fecha_cobro: date | None = None,
+    ) -> Danio:
+        """
+        El cliente pagó el daño que se le había imputado.
+
+        Crea el `Pago` —que es lo que lo hace entrar a la caja del día, con su
+        medio de pago— **y** el crédito que cancela el débito, en un solo acto.
+        Mismo patrón que `MultaService.resolver` y que `ReciboService.crear`:
+        el operador no tiene que acordarse de hacer dos cosas.
+
+        **El daño sigue en estado `imputado` a propósito.** Cobrarlo no lo
+        repara: el rayón sigue en el auto y tiene que seguir precargándose como
+        preexistente en el próximo check-out (`ESTADOS_VIGENTES`). Lo que
+        cambió es la plata, no la chapa.
+        """
+        danio = self.get(danio_id)
+        if danio.estado != "imputado":
+            raise BusinessRuleError(
+                "danio_no_imputado",
+                f"Sólo se puede cobrar un daño imputado (estado actual: {danio.estado})",
+            )
+        if not danio.cliente_id:
+            raise BusinessRuleError("danio_sin_cliente", "El daño no tiene cliente asociado")
+        if not danio.monto_imputado or Decimal(str(danio.monto_imputado)) <= 0:
+            raise BusinessRuleError(
+                "danio_sin_monto", "El daño no tiene monto imputado que cobrar"
+            )
+        if self._ya_tiene_credito(danio.id):
+            raise BusinessRuleError(
+                "danio_ya_cobrado",
+                f"El daño #{danio.id} ya tiene un cobro registrado en la cuenta "
+                "corriente del cliente. Si el cobro anterior fue un error, anulalo "
+                "primero — no se cobra dos veces.",
+            )
+
+        fecha = fecha_cobro or date.today()
+        monto = Decimal(str(danio.monto_imputado))
+        patente = danio.vehiculo.patente if danio.vehiculo else danio.vehiculo_id
+
+        pago = Pago(
+            cliente_id=danio.cliente_id,
+            alquiler_id=danio.alquiler_id,
+            monto=monto,
+            medio_pago=medio_pago,
+            con_factura=False,
+            cobrado_por=usuario_id,
+            fecha=fecha,
+            notas=f"Daño #{danio.id} en {danio.zona} — {patente}",
+        )
+        self.db.add(pago)
+        self.db.flush()  # asegurar pago.id antes de enlazarlo al movimiento
+
+        self.cc_service.registrar_movimiento(
+            cliente_id=danio.cliente_id,
+            tipo="credito",
+            concepto=f"Daño #{danio.id} cobrado — {danio.zona}, {patente} ({medio_pago})",
+            monto=monto,
+            fecha=fecha,
+            creado_por=usuario_id,
+            alquiler_id=danio.alquiler_id,
+            danio_id=danio.id,
+            pago_id=pago.id,
+        )
         self.db.flush()
         return danio
 

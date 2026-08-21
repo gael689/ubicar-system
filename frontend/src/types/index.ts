@@ -1183,6 +1183,10 @@ export interface MultaUpdate {
 export interface ResolverMultaPayload {
   decision: DecisionMulta;
   motivo?: string; // requerido si decision === 'bonificada'
+  // Sólo cuando decision === 'cobrada': cobrar una multa crea el Pago que la
+  // hace entrar a la caja del día, y una caja sin medio de pago no se arquea.
+  medio_pago?: string;
+  fecha_cobro?: string;
 }
 
 export interface BusquedaMultaResult {

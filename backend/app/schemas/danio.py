@@ -79,6 +79,26 @@ class ImputarDanioRequest(BaseModel):
         return v
 
 
+# Los mismos valores que `Pago.medio_pago` (models/pago.py).
+MedioPagoDanio = Literal[
+    "efectivo", "transferencia", "tarjeta", "cheque", "echeq",
+    "cuenta_corriente", "mercado_pago", "wapa",
+]
+
+
+class CobrarDanioRequest(BaseModel):
+    """
+    El cliente pagó el daño imputado. Crea el `Pago` (entra a la caja del día,
+    con su medio) y el crédito que cancela el débito, en un solo acto.
+
+    El monto no se pide: es `monto_imputado`, lo que se decidió cobrarle. Si el
+    cliente paga menos, eso es una bonificación parcial y se hace bonificando y
+    volviendo a imputar — no cambiando el monto por atrás.
+    """
+    medio_pago: MedioPagoDanio = "efectivo"
+    fecha_cobro: date | None = None
+
+
 class BonificarDanioRequest(BaseModel):
     """Se le perdona el daño al cliente. Si ya estaba imputado, el débito se
     revierte con un contra-asiento. Motivo obligatorio (queda auditado)."""

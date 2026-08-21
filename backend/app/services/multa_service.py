@@ -17,6 +17,7 @@ from app.models.reserva import Reserva
 from app.models.vehiculo import Vehiculo
 from app.models.cliente import Cliente
 from app.models.cuenta_corriente import MovimientoCuentaCorriente
+from app.models.pago import Pago
 from app.repositories.multa_repo import MultaRepo
 from app.schemas.multa import MultaCreate, MultaUpdate, BusquedaMultaResponse
 from app.services.cuenta_corriente_service import CuentaCorrienteService
@@ -140,11 +141,54 @@ class MultaService:
 
         return multa
 
-    def resolver(self, id: int, decision: str, motivo: str | None, usuario_id: int | None):
+    def _ya_tiene_credito(self, multa_id: int) -> bool:
         """
-        Resuelve una multa imputada: "cobrada" (el cliente la pagó — genera
-        el crédito que cancela el débito) o "bonificada" (se le perdona —
-        anula el débito con un contra-asiento, motivo obligatorio).
+        ¿Esta multa ya se cobró?
+
+        **La guarda que impide cobrarla dos veces.** El cobro suelto de Caja
+        (`POST /pagos`) sigue existiendo para lo que no cuelga de ninguna multa,
+        pero nada impedía que alguien cobrara la multa por ahí **y además** la
+        resolviera como "cobrada": dos créditos por la misma plata, y desde este
+        commit también dos pagos en la caja. Ver `PLAN_DINERO.md` §1.4.
+
+        Es el mismo filtro que la rama bonificada ya usaba para encontrar el
+        débito, con el tipo dado vuelta.
+        """
+        return (
+            self.db.query(MovimientoCuentaCorriente.id)
+            .filter(
+                MovimientoCuentaCorriente.multa_id == multa_id,
+                MovimientoCuentaCorriente.tipo == "credito",
+                MovimientoCuentaCorriente.anulado == False,
+            )
+            .first()
+            is not None
+        )
+
+    def resolver(
+        self,
+        id: int,
+        decision: str,
+        motivo: str | None,
+        usuario_id: int | None,
+        medio_pago: str = "efectivo",
+        fecha_cobro: date | None = None,
+    ):
+        """
+        Resuelve una multa imputada: "cobrada" (el cliente la pagó) o
+        "bonificada" (se le perdona — anula el débito con un contra-asiento,
+        motivo obligatorio).
+
+        **Cobrarla hace las dos cosas en un solo acto**: crea el `Pago` —que es
+        lo que la hace entrar a la caja del día, con su medio de pago— y el
+        crédito que cancela el débito. Es el patrón de `ReciboService.crear`
+        (`recibo_service.py:127-164`): el operador no tiene que acordarse de
+        hacer dos cosas, que es exactamente cómo se terminaba cobrando dos
+        veces o ninguna.
+
+        Antes sólo asentaba el crédito. La deuda del cliente bajaba y esa plata
+        **no aparecía en la caja de ningún día** — el arqueo del mostrador no
+        cerraba y nadie sabía por qué.
         """
         multa = self.get(id)
         if multa.estado != "imputada":
@@ -158,15 +202,37 @@ class MultaService:
         cc_service = CuentaCorrienteService(self.db)
 
         if decision == "cobrada":
+            if self._ya_tiene_credito(multa.id):
+                raise BusinessRuleError(
+                    "multa_ya_cobrada",
+                    f"La multa #{multa.id} ya tiene un cobro registrado en la cuenta "
+                    "corriente del cliente. Si el cobro anterior fue un error, anulalo "
+                    "primero — no se cobra dos veces.",
+                )
+            fecha = fecha_cobro or date.today()
+            pago = Pago(
+                cliente_id=multa.cliente_id,
+                alquiler_id=multa.alquiler_id,
+                monto=multa.monto,
+                medio_pago=medio_pago,
+                con_factura=False,
+                cobrado_por=usuario_id,
+                fecha=fecha,
+                notas=f"Multa #{multa.id} — {multa.patente} ({multa.fecha_infraccion})",
+            )
+            self.db.add(pago)
+            self.db.flush()  # asegurar pago.id antes de enlazarlo al movimiento
+
             cc_service.registrar_movimiento(
                 cliente_id=multa.cliente_id,
                 tipo="credito",
-                concepto=f"Multa #{multa.id} cobrada — {multa.patente}",
+                concepto=f"Multa #{multa.id} cobrada — {multa.patente} ({medio_pago})",
                 monto=multa.monto,
-                fecha=date.today(),
+                fecha=fecha,
                 creado_por=usuario_id,
                 alquiler_id=multa.alquiler_id,
                 multa_id=multa.id,
+                pago_id=pago.id,
             )
         elif decision == "bonificada":
             if not motivo or not motivo.strip():

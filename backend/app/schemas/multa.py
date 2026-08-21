@@ -11,9 +11,24 @@ DecisionMulta = Literal["cobrada", "bonificada"]
 EstadoMultaEditable = Literal["pendiente", "imputada", "apelando"]
 
 
+# Los mismos valores que `Pago.medio_pago` (models/pago.py). No se reusa un
+# enum del modelo porque los schemas no importan modelos.
+MedioPagoMulta = Literal[
+    "efectivo", "transferencia", "tarjeta", "cheque", "echeq",
+    "cuenta_corriente", "mercado_pago", "wapa",
+]
+
+
 class ResolverMultaRequest(BaseModel):
     decision: DecisionMulta
     motivo: str | None = None  # requerido si decision == "bonificada"
+    # Sólo cuando decision == "cobrada": cobrar una multa crea el `Pago` que la
+    # hace entrar a la caja del día, y una caja sin medio de pago no se puede
+    # arquear. Default `efectivo` porque es lo que pasa en el mostrador; la
+    # pantalla lo pregunta igual.
+    medio_pago: MedioPagoMulta = "efectivo"
+    # La plata puede haber entrado antes de que alguien cargue la resolución.
+    fecha_cobro: date | None = None
 
 
 class MultaCreate(BaseModel):

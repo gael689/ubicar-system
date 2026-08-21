@@ -18,7 +18,8 @@ from app.models.usuario import Usuario
 from app.models.danio import Danio
 from app.schemas.danio import (
     DanioCreate, DanioUpdate, DanioResponse,
-    ImputarDanioRequest, BonificarDanioRequest,
+    ImputarDanioRequest,
+    CobrarDanioRequest, BonificarDanioRequest,
 )
 from app.services.danio_service import DanioService
 
@@ -126,6 +127,37 @@ def imputar_danio(
     db.commit()
     db.refresh(danio)
     return ok(_to_response(danio, storage), "Daño imputado al cliente")
+
+
+@router.post("/{danio_id}/cobrar")
+def cobrar_danio(
+    danio_id: int,
+    payload: CobrarDanioRequest,
+    db: Session = Depends(get_db),
+    svc: DanioService = Depends(_service),
+    storage: IStorage = Depends(get_storage),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    El cliente pagó el daño imputado.
+
+    Crea el `Pago` —que lo hace entrar a la caja del día, con su medio— y el
+    crédito que cancela el débito, en un solo acto. Falla si ya había un
+    crédito vivo para este daño: no se cobra dos veces
+    (`PLAN_DINERO.md` §1.4).
+
+    El daño **sigue imputado**: cobrarlo no lo repara, y tiene que seguir
+    apareciendo como preexistente en el próximo check-out.
+    """
+    danio = svc.cobrar(
+        danio_id,
+        usuario_id=current_user.id,
+        medio_pago=payload.medio_pago,
+        fecha_cobro=payload.fecha_cobro,
+    )
+    db.commit()
+    db.refresh(danio)
+    return ok(_to_response(danio, storage), "Daño cobrado")
 
 
 @router.post("/{danio_id}/bonificar")

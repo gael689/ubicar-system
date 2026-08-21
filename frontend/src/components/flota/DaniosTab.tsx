@@ -5,8 +5,10 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
+import { CobroDialog, type DatosDeCobro } from '@/components/shared/CobroDialog';
 import {
   useDanios, useCrearDanio, useActualizarDanio, useImputarDanio,
+  useCobrarDanio,
   useBonificarDanio, useDarDeBajaDanio, useSubirFotoDanio, useEliminarFotoDanio,
 } from '@/hooks/useDanios';
 import {
@@ -47,6 +49,7 @@ export function DaniosTab({
   const crear = useCrearDanio();
   const actualizar = useActualizarDanio();
   const imputar = useImputarDanio();
+  const cobrar = useCobrarDanio();
   const bonificar = useBonificarDanio();
   const darDeBaja = useDarDeBajaDanio();
   const subirFoto = useSubirFotoDanio();
@@ -55,6 +58,8 @@ export function DaniosTab({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(FORM_VACIO);
   const [bonificarId, setBonificarId] = useState<number | null>(null);
+  const [cobrarId, setCobrarId] = useState<number | null>(null);
+  const danioACobrar = danios.find(d => d.id === cobrarId) ?? null;
   const [imputandoId, setImputandoId] = useState<number | null>(null);
   const [montoImputar, setMontoImputar] = useState('');
   const fileInputs = useRef<Record<number, HTMLInputElement | null>>({});
@@ -93,6 +98,17 @@ export function DaniosTab({
       setMontoImputar('');
     } catch (err) {
       toast.error(extractError(err));
+    }
+  }
+
+  async function handleCobrar(datos: DatosDeCobro) {
+    if (!cobrarId) return;
+    try {
+      await cobrar.mutateAsync({ id: cobrarId, ...datos });
+      toast.success('Daño cobrado — entró a la caja del día');
+      setCobrarId(null);
+    } catch (e) {
+      toast.error(extractError(e));
     }
   }
 
@@ -315,9 +331,20 @@ export function DaniosTab({
                       variant="outline" size="sm"
                       onClick={() => { setImputandoId(d.id); setMontoImputar(d.costo_estimado ?? ''); }}
                     >
-                      <DollarSign className="h-3.5 w-3.5" /> Cobrar al cliente
+                      <DollarSign className="h-3.5 w-3.5" /> Imputar al cliente
                     </Button>
                   )
+                )}
+
+                {/* Imputar y cobrar son dos actos distintos y el botón de
+                    arriba decía "Cobrar al cliente" para el primero. Imputar
+                    genera el débito —el cliente lo debe—; cobrar es la plata
+                    entrando, y desde `PLAN_DINERO.md` §1.4 crea el Pago que la
+                    hace aparecer en la caja del día. */}
+                {d.estado === 'imputado' && (
+                  <Button variant="default" size="sm" onClick={() => setCobrarId(d.id)}>
+                    <DollarSign className="h-3.5 w-3.5" /> Registrar cobro
+                  </Button>
                 )}
 
                 {d.estado !== 'bonificado' && (
@@ -349,6 +376,16 @@ export function DaniosTab({
           ))}
         </div>
       )}
+
+      <CobroDialog
+        open={cobrarId !== null}
+        onOpenChange={open => !open && setCobrarId(null)}
+        title="Cobrar daño"
+        description="El cliente pagó el daño imputado. Se registra el cobro en la caja del día y se cancela el débito en su cuenta corriente. El daño sigue figurando en el auto hasta que se marque reparado."
+        monto={danioACobrar?.monto_imputado ? `$${parseFloat(String(danioACobrar.monto_imputado)).toLocaleString('es-AR')}` : undefined}
+        loading={cobrar.isPending}
+        onConfirm={handleCobrar}
+      />
 
       <MotivoDialog
         open={bonificarId !== null}

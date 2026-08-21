@@ -114,12 +114,24 @@ def resolver_multa(
     current_user: Usuario = Depends(get_current_user),
 ):
     """
-    Resuelve una multa imputada: "cobrada" (el cliente la pagó — genera el
-    crédito que cancela el débito) o "bonificada" (se le perdona — anula el
-    débito con un contra-asiento, motivo obligatorio).
+    Resuelve una multa imputada.
+
+    - **"cobrada"**: el cliente la pagó. Crea el `Pago` —que la hace entrar a
+      la caja del día con su medio de pago— y el crédito que cancela el débito,
+      en un solo acto. Falla si ya había un crédito vivo para esta multa: no se
+      cobra dos veces (`PLAN_DINERO.md` §1.4).
+    - **"bonificada"**: se le perdona. Anula el débito con un contra-asiento,
+      motivo obligatorio.
     """
     svc = MultaService(db)
-    multa = svc.resolver(multa_id, payload.decision, payload.motivo, current_user.id)
+    multa = svc.resolver(
+        multa_id,
+        payload.decision,
+        payload.motivo,
+        current_user.id,
+        medio_pago=payload.medio_pago,
+        fecha_cobro=payload.fecha_cobro,
+    )
     db.commit()
     db.refresh(multa)
     return ok(MultaResponse.model_validate(multa), "Multa resuelta")
