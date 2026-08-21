@@ -27,6 +27,14 @@ class CuentaCorrienteService:
         """
         ¿Ya se le acreditó algo a esta reserva?
 
+        ⚠️ **TRANSITORIA.** Es el parche de la Fase 1 del `PLAN_DINERO.md`, no
+        el diseño. La Fase 2 unifica la seña en un solo camino —todo cobro
+        anterior al check-out asienta su crédito de naturaleza `anticipo` en el
+        momento en que entra la plata— y con eso esta pregunta deja de tener
+        sentido: nunca habrá un `anticipo_monto` sin su crédito. **La Fase 2 la
+        elimina**, junto con sus dos llamadores (`AlquilerService.checkout` y
+        `ReservaService.cancelar`). No construir nada nuevo encima.
+
         Existe para que **la seña no se cuente dos veces**. El cobro online
         asienta el crédito en el momento en que Mercado Pago acredita, y deja
         además `anticipo_monto` en la reserva para que el mostrador sepa cuánto

@@ -935,10 +935,15 @@ class ReservaService:
         """
         Cancela una reserva pendiente o confirmada.
 
-        D-11: la seña (anticipo) no se devuelve — si había una cargada, se
-        registra como ingreso (débito por cancelación + crédito por lo ya
-        cobrado, que se cancelan entre sí en el saldo pero quedan en el
-        historial de la cuenta corriente). Motivo obligatorio.
+        D-11: la seña (anticipo) no se devuelve. Si había una cargada, se
+        asienta el **débito** por la seña retenida — que es lo que convierte
+        esa plata en ingreso de la empresa — y, **sólo si el crédito no existía
+        ya**, el crédito por lo cobrado. El saldo queda en cero y el historial
+        de la cuenta corriente cuenta las dos mitades. Motivo obligatorio.
+
+        La pregunta "¿el crédito ya existía?" no es un detalle: la seña de
+        mostrador no toca el ledger hasta el check-out, pero la de Mercado Pago
+        y la de echeq sí lo tocan en el momento. Ver el comentario del cuerpo.
         """
         reserva = self.get(id)
         if reserva.estado not in (EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value):
@@ -951,6 +956,13 @@ class ReservaService:
         with self.db.begin_nested():
             if reserva.anticipo_monto and reserva.anticipo_monto > 0:
                 fecha_hoy = date.today()
+                # **Se pregunta ANTES de asentar nada.** El crédito de la seña
+                # puede existir ya —lo asienta el cobro online al acreditar
+                # Mercado Pago (`PagoWebService._acreditar`), y el del echeq al
+                # recibirlo— y en ese caso la cancelación sólo tiene que poner
+                # el débito que lo consume. Ver el bloque de abajo.
+                ya_acreditada = self.cc_service.tiene_credito_de_reserva(reserva.id)
+
                 self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="debito",
@@ -960,15 +972,28 @@ class ReservaService:
                     creado_por=usuario_id,
                     reserva_id=reserva.id,
                 )
-                self.cc_service.registrar_movimiento(
-                    cliente_id=reserva.cliente_id,
-                    tipo="credito",
-                    concepto=f"Seña ya abonada — reserva #{reserva.id} ({reserva.anticipo_medio_pago or 'medio no especificado'})",
-                    monto=reserva.anticipo_monto,
-                    fecha=reserva.anticipo_fecha or fecha_hoy,
-                    creado_por=usuario_id,
-                    reserva_id=reserva.id,
-                )
+                # El crédito representa "esta plata ya entró". Se asienta sólo
+                # si no estaba asentado.
+                #
+                # **Con la seña de mostrador no estaba**: `registrar_cobro`
+                # acumula en `anticipo_monto` y no toca el ledger, así que el
+                # par débito+crédito se anula solo y el saldo queda en cero,
+                # que es D-11.
+                #
+                # **Con Mercado Pago y con echeq sí estaba**, y crearlo de
+                # nuevo dejaba `crédito + débito + crédito = −seña`: saldo a
+                # FAVOR del cliente por el importe exacto de la plata que D-11
+                # dice que no se devuelve. El sistema se la acreditaba.
+                if not ya_acreditada:
+                    self.cc_service.registrar_movimiento(
+                        cliente_id=reserva.cliente_id,
+                        tipo="credito",
+                        concepto=f"Seña ya abonada — reserva #{reserva.id} ({reserva.anticipo_medio_pago or 'medio no especificado'})",
+                        monto=reserva.anticipo_monto,
+                        fecha=reserva.anticipo_fecha or fecha_hoy,
+                        creado_por=usuario_id,
+                        reserva_id=reserva.id,
+                    )
 
             self.reserva_repo.update(reserva, estado=EstadoReserva.CANCELADA.value, motivo_cancelacion=motivo)
 
