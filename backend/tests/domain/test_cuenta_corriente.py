@@ -53,3 +53,21 @@ class TestCalcularVencimiento:
 
     def test_condicion_desconocida_no_calcula(self):
         assert calcular_vencimiento(date(2026, 7, 26), "algo_raro") is None
+
+
+class TestContadoVenceHoy:
+    """
+    El docstring de `calcular_vencimiento` decía que devolvía None para
+    'contado' y el código devolvía la misma fecha. Se corrigió el docstring —
+    el comportamiento es el correcto— y esto lo deja escrito para que no se
+    "arregle" el código en la dirección equivocada.
+    """
+
+    def test_contado_devuelve_la_misma_fecha(self):
+        assert calcular_vencimiento(date(2026, 9, 1), "contado") == date(2026, 9, 1)
+
+    def test_sin_condicion_no_hay_vencimiento(self):
+        assert calcular_vencimiento(date(2026, 9, 1), None) is None
+
+    def test_una_condicion_desconocida_no_inventa_una_fecha(self):
+        assert calcular_vencimiento(date(2026, 9, 1), "cta_cte_45") is None

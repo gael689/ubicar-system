@@ -37,7 +37,18 @@ def aplicar_movimiento(saldo_actual: Decimal, tipo: str, monto: Decimal) -> Deci
 def calcular_vencimiento(fecha: date, condicion: str | None) -> date | None:
     """
     Calcula la fecha de vencimiento a partir de la condición de pago.
-    None si no hay condición o es 'contado' (vence el mismo día, no aplica plazo).
+
+    Devuelve `None` **sólo** si no hay condición o si la condición no está en
+    `DIAS_POR_CONDICION`. Con `contado` (0 días) devuelve **la misma fecha del
+    movimiento**: contado vence hoy, y "hoy" es una fecha, no la ausencia de
+    una.
+
+    El docstring anterior decía lo contrario —"None si … es 'contado'"— y el
+    código nunca hizo eso. Importa: quien lea el docstring en vez del cuerpo va
+    a asumir que un débito al contado nace sin vencimiento, y toda la lógica de
+    avisos de deuda (`notificaciones_reglas.cc_vencida` y
+    `cc_vencimiento_proximo`) depende de que venza el mismo día. Ver
+    `PLAN_DINERO.md` §1.1.
     """
     if not condicion or condicion not in DIAS_POR_CONDICION:
         return None
