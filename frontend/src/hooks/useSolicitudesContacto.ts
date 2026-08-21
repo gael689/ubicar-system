@@ -11,7 +11,10 @@ const KEY = 'solicitudes-contacto';
  * mezclarlas en un hook sería el primer paso para volver a confundirlas en la
  * pantalla, que es justo lo que esto vino a separar.
  */
-export function useSolicitudesContacto(estado: EstadoSolicitud = 'pendiente') {
+export function useSolicitudesContacto(
+  estado: EstadoSolicitud = 'pendiente',
+  habilitada = true,
+) {
   return useQuery({
     queryKey: [KEY, estado],
     queryFn: async () => {
@@ -20,6 +23,11 @@ export function useSolicitudesContacto(estado: EstadoSolicitud = 'pendiente') {
       });
       return res.data.data;
     },
+    // `habilitada` existe por el historial. Las ya atendidas son dos estados
+    // más (`contactado` y `cerrado`), o sea dos consultas más en cada carga de
+    // la bandeja y otras dos cada 60 segundos — para una lista que la mayoría
+    // de las veces nadie abre. Se piden recién cuando alguien las pide.
+    enabled: habilitada,
     // Le prometimos una llamada: el mostrador tiene que enterarse sin
     // recargar, igual que con una reserva web.
     refetchInterval: 60_000,

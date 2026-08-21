@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { Globe, AlertTriangle } from 'lucide-react';
+import { Globe, AlertTriangle, History } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { FilaReservaWeb } from '@/components/reservas/FilaReservaWeb';
 import { useReservasWeb, useResumenReservasWeb, useRechazarReservaWeb } from '@/hooks/useReservasWeb';
 import { useListaReservas } from '@/hooks/useReservas';
-import { FilaSolicitudContacto } from '@/components/reservas/FilaSolicitudContacto';
+import { FilaSolicitudContacto, FilaSolicitudResuelta } from '@/components/reservas/FilaSolicitudContacto';
 import {
   useSolicitudesContacto, useResolverSolicitudContacto,
 } from '@/hooks/useSolicitudesContacto';
@@ -41,6 +42,21 @@ export function ReservasWebPage() {
   >(null);
   const resolverSolicitud = useResolverSolicitudContacto();
 
+  // El historial de llamadas. **Faltaba entero**: apenas se marcaba "Ya lo
+  // llamé", la solicitud pasaba a `contactado` y desaparecía de la única
+  // pantalla que las mostraba — la bandeja lista sólo `pendiente`. O sea que
+  // no había forma de revisar a quién se llamó ni qué dijo, y el campo
+  // `resultado` que el mostrador se toma el trabajo de escribir no se leía
+  // nunca más. Van las dos juntas y no una sección por estado: para quien
+  // atiende, "ya la llamé" y "el asunto se terminó" son lo mismo — algo que
+  // ya no requiere levantar el teléfono.
+  const [verAtendidas, setVerAtendidas] = useState(false);
+  const { data: contactadas } = useSolicitudesContacto('contactado', verAtendidas);
+  const { data: cerradas } = useSolicitudesContacto('cerrado', verAtendidas);
+  const atendidas = [...(contactadas ?? []), ...(cerradas ?? [])].sort(
+    (a, b) => (b.resuelta_en ?? '').localeCompare(a.resuelta_en ?? ''),
+  );
+
   // Las que ya se resolvieron a medias: confirmadas, pero sin auto o sin
   // contrato firmado. Salen del listado general porque la bandeja sólo
   // devuelve los tres estados sin resolver.
@@ -59,14 +75,30 @@ export function ReservasWebPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Globe className="h-5 w-5 text-primary" />
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Reservas web</h1>
-          <p className="text-sm text-muted-foreground">
-            Lo que entró por la web y todavía no es una venta cerrada.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Globe className="h-5 w-5 text-primary" />
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">Reservas web</h1>
+            <p className="text-sm text-muted-foreground">
+              Lo que entró por la web y todavía no es una venta cerrada.
+            </p>
+          </div>
         </div>
+
+        {/* El acceso al historial vive acá arriba y no adentro de la sección
+            de solicitudes, que sólo se dibuja cuando hay alguna pendiente. Si
+            estuviera ahí, el día que no queda ninguna llamada por hacer —que
+            es justo cuando uno quiere revisar qué se hizo— el botón
+            desaparecería con la sección. */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setVerAtendidas(v => !v)}
+        >
+          <History className="h-4 w-4" />
+          {verAtendidas ? 'Ocultar las llamadas atendidas' : 'Ver las llamadas atendidas'}
+        </Button>
       </div>
 
       {/* D-61: el aviso cuenta las dos cosas. Antes sólo miraba las reservas,
@@ -128,6 +160,36 @@ export function ReservasWebPage() {
               />
             ))}
           </div>
+        </section>
+      )}
+
+      {/* El historial. Se muestra apagado (`FilaSolicitudResuelta`) porque no
+          hay nada que hacer con estas filas: son para consultar, no para
+          trabajar. Lo importante de cada una es el `resultado` —"alquiló",
+          "no atiende", "llama en marzo"— que es lo que evita que el próximo
+          que atienda vuelva a llamar para preguntar lo mismo. */}
+      {verAtendidas && (
+        <section className="space-y-2">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">
+              Llamadas ya atendidas{' '}
+              <span className="text-muted-foreground">({atendidas.length})</span>
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Las que alguien ya llamó o dio por cerradas, de la más reciente a la más vieja.
+            </p>
+          </div>
+          {atendidas.length === 0 ? (
+            <Card className="p-4 text-sm text-muted-foreground">
+              Todavía no se atendió ninguna solicitud.
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {atendidas.map(s => (
+                <FilaSolicitudResuelta key={s.id} solicitud={s} />
+              ))}
+            </div>
+          )}
         </section>
       )}
 
