@@ -108,7 +108,7 @@ class ReservaCreate(BaseModel):
     # Garantía
     garantia_tipo: str | None = None
     garantia_monto: Decimal | None = None
-    garantia_tarjeta_numero: str | None = None
+    garantia_tarjeta_ultimos4: str | None = None
     garantia_tarjeta_vencimiento: str | None = None
     garantia_tarjeta_titular: str | None = None
     # Pago
@@ -233,7 +233,7 @@ class ReservaResponse(BaseModel):
     # Garantía
     garantia_tipo: str | None = None
     garantia_monto: Decimal | None = None
-    garantia_tarjeta_numero: str | None = None
+    garantia_tarjeta_ultimos4: str | None = None
     garantia_tarjeta_vencimiento: str | None = None
     garantia_tarjeta_titular: str | None = None
     # Pago

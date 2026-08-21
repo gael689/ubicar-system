@@ -136,7 +136,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   // Garantía
   const [garantiaTipo, setGarantiaTipo]                   = useState(reserva?.garantia_tipo ?? 'no_aplica');
   const [garantiaMonto, setGarantiaMonto]                 = useState(reserva?.garantia_monto ?? '');
-  const [garantiaTarjetaNumero, setGarantiaTarjetaNumero] = useState(reserva?.garantia_tarjeta_numero ?? '');
+  // Sólo los últimos cuatro: el número completo dejó de guardarse (migración
+  // 078). Es lo único que sirve para reconocer la tarjeta frente al cliente.
+  const [garantiaTarjetaUltimos4, setGarantiaTarjetaUltimos4] = useState(reserva?.garantia_tarjeta_ultimos4 ?? '');
   const [garantiaTarjetaVenc, setGarantiaTarjetaVenc]     = useState(reserva?.garantia_tarjeta_vencimiento ?? '');
   const [garantiaTarjetaTitular, setGarantiaTarjetaTitular] = useState(reserva?.garantia_tarjeta_titular ?? '');
 
@@ -939,7 +941,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           })),
           garantia_tipo: garantiaTipo !== 'no_aplica' ? garantiaTipo : null,
           garantia_monto: garantiaTipo !== 'no_aplica' && garantiaMonto ? parseFloat(garantiaMonto as string) : null,
-          garantia_tarjeta_numero: garantiaTipo === 'tarjeta' ? garantiaTarjetaNumero || null : null,
+          garantia_tarjeta_ultimos4: garantiaTipo === 'tarjeta' ? garantiaTarjetaUltimos4 || null : null,
           garantia_tarjeta_vencimiento: garantiaTipo === 'tarjeta' ? garantiaTarjetaVenc || null : null,
           garantia_tarjeta_titular: garantiaTipo === 'tarjeta' ? garantiaTarjetaTitular || null : null,
           forma_pago_prevista: formaPagoPrevista || null,
@@ -2114,6 +2116,15 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                       <p className="text-xs font-semibold text-primary/90 flex items-center gap-1.5">
                         <CreditCard className="w-3.5 h-3.5" /> Datos de la tarjeta
                       </p>
+                      {/* El sistema no guarda el número completo ni el código de
+                          seguridad, y no es una omisión: guardar datos de tarjeta
+                          en texto plano es exactamente lo que no hay que hacer, y
+                          para reconocer la tarjeta en el mostrador alcanzan los
+                          últimos cuatro. Ver migración 078. */}
+                      <p className="text-[11px] text-slate-600 leading-snug">
+                        Anotá sólo los <strong>últimos cuatro dígitos</strong>. El sistema no
+                        guarda el número completo ni el código de seguridad.
+                      </p>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="col-span-2 space-y-1">
                           <label className="text-xs text-slate-600">Titular</label>
@@ -2126,13 +2137,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs text-slate-600">Número</label>
+                          <label className="text-xs text-slate-600">Últimos 4 dígitos</label>
                           <input
                             type="text"
-                            value={garantiaTarjetaNumero}
-                            onChange={e => setGarantiaTarjetaNumero(e.target.value)}
-                            placeholder="**** **** **** 1234"
-                            maxLength={19}
+                            inputMode="numeric"
+                            value={garantiaTarjetaUltimos4}
+                            onChange={e => setGarantiaTarjetaUltimos4(e.target.value.replace(/\D/g, '').slice(-4))}
+                            placeholder="1234"
+                            maxLength={4}
                             className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                           />
                         </div>

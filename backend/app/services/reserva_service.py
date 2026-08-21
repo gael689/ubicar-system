@@ -47,6 +47,24 @@ from app.services.echeq_service import EcheqService
 from app.services.precio_service import PrecioService
 
 
+def _ultimos_cuatro(valor: str | None) -> str | None:
+    """
+    Se queda con los últimos cuatro dígitos y descarta el resto.
+
+    **La última línea de defensa** para que el número completo de una tarjeta no
+    entre a la base (migración 078). El formulario ya manda sólo cuatro, pero un
+    POST directo —o un formulario futuro que se olvide— entraría igual, y este
+    es el único punto por el que pasan todas las altas de reserva.
+
+    Se descartan los no-dígitos antes de cortar: alguien puede pegar
+    "4509 9535 6623 3704" con espacios, y quedarse con "3704" es lo correcto.
+    """
+    if not valor:
+        return None
+    digitos = "".join(c for c in valor if c.isdigit())
+    return digitos[-4:] or None
+
+
 class ReservaService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -355,7 +373,7 @@ class ReservaService:
         # Garantía
         garantia_tipo: str | None = None,
         garantia_monto: Decimal | None = None,
-        garantia_tarjeta_numero: str | None = None,
+        garantia_tarjeta_ultimos4: str | None = None,
         garantia_tarjeta_vencimiento: str | None = None,
         garantia_tarjeta_titular: str | None = None,
         # Pago
@@ -587,7 +605,7 @@ class ReservaService:
                 tarifa_aplicada_id=tarifa_id,
                 garantia_tipo=garantia_tipo,
                 garantia_monto=garantia_monto,
-                garantia_tarjeta_numero=garantia_tarjeta_numero,
+                garantia_tarjeta_ultimos4=_ultimos_cuatro(garantia_tarjeta_ultimos4),
                 garantia_tarjeta_vencimiento=garantia_tarjeta_vencimiento,
                 garantia_tarjeta_titular=garantia_tarjeta_titular,
                 forma_pago_prevista=forma_pago_prevista,

@@ -494,6 +494,11 @@ describe('El borrador de lo que quedó a medio cargar', () => {
     await avanzarHasta(user, 2);
 
     const crudo = localStorage.getItem('ubicar:borrador-reserva') ?? '';
+    // El número completo ya no existe en ningún lado (migración 078), pero el
+    // borrador tampoco puede llevarse los últimos cuatro ni el titular: son
+    // datos del cliente en el navegador de una máquina compartida.
+    expect(crudo).not.toContain('garantiaTarjetaUltimos4');
+    expect(crudo).not.toContain('garantia_tarjeta_ultimos4');
     expect(crudo).not.toContain('garantiaTarjetaNumero');
     expect(crudo).not.toContain('garantia_tarjeta_numero');
     expect(crudo).not.toContain('garantiaTarjetaTitular');

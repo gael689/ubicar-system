@@ -124,7 +124,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
                 {reserva.garantia_tarjeta_titular && (
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {reserva.garantia_tarjeta_titular}
-                    {reserva.garantia_tarjeta_numero && ` · **** ${reserva.garantia_tarjeta_numero.slice(-4)}`}
+                    {reserva.garantia_tarjeta_ultimos4 && ` · **** ${reserva.garantia_tarjeta_ultimos4}`}
                   </p>
                 )}
               </div>

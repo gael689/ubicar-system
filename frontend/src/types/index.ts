@@ -741,7 +741,7 @@ export interface Reserva {
   // Garantía
   garantia_tipo?: string | null;
   garantia_monto?: string | null;
-  garantia_tarjeta_numero?: string | null;
+  garantia_tarjeta_ultimos4?: string | null;
   garantia_tarjeta_vencimiento?: string | null;
   garantia_tarjeta_titular?: string | null;
   // Pagos y anticipos
@@ -791,7 +791,7 @@ export interface ReservaCreate {
   precio_total?: number | null;
   garantia_tipo?: string | null;
   garantia_monto?: number | null;
-  garantia_tarjeta_numero?: string | null;
+  garantia_tarjeta_ultimos4?: string | null;
   garantia_tarjeta_vencimiento?: string | null;
   garantia_tarjeta_titular?: string | null;
   forma_pago_prevista?: string | null;

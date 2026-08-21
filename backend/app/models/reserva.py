@@ -83,7 +83,12 @@ class Reserva(Base):
     # Garantía / depósito (se define en la reserva)
     garantia_tipo: Mapped[str | None] = mapped_column(String(30), nullable=True)
     garantia_monto: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
-    garantia_tarjeta_numero: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # **Últimos cuatro dígitos, nunca el número completo** (migración 078).
+    # Es lo único que el mostrador necesita para reconocer la tarjeta frente al
+    # cliente. El número entero estuvo guardado en texto plano hasta el
+    # 2026-08-21; si algún día hace falta de verdad va a ser porque se cobra con
+    # él, y entonces lo guarda la pasarela y devuelve un token — nunca esta base.
+    garantia_tarjeta_ultimos4: Mapped[str | None] = mapped_column(String(4), nullable=True)
     garantia_tarjeta_vencimiento: Mapped[str | None] = mapped_column(String(10), nullable=True)
     garantia_tarjeta_titular: Mapped[str | None] = mapped_column(String(120), nullable=True)
 

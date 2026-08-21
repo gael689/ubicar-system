@@ -177,7 +177,7 @@ def create_reserva(
             adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
             garantia_tipo=payload.garantia_tipo,
             garantia_monto=payload.garantia_monto,
-            garantia_tarjeta_numero=payload.garantia_tarjeta_numero,
+            garantia_tarjeta_ultimos4=payload.garantia_tarjeta_ultimos4,
             garantia_tarjeta_vencimiento=payload.garantia_tarjeta_vencimiento,
             garantia_tarjeta_titular=payload.garantia_tarjeta_titular,
             forma_pago_prevista=payload.forma_pago_prevista,
