@@ -299,6 +299,9 @@ class DanioService:
                 danio.movimiento_cc_id,
                 motivo=f"Daño bonificado — {motivo}",
                 creado_por=usuario_id,
+                # El daño estaba bien imputado: esto es plata que se regala, no
+                # un error que se corrige. Ver `anular_movimiento`.
+                naturaleza="bonificacion",
             )
             danio.movimiento_cc_id = None
 

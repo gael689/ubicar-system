@@ -428,10 +428,21 @@ def cancelar_reserva(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """D-11: la seña no se devuelve, motivo obligatorio."""
+    """
+    D-11: la seña no se devuelve, motivo obligatorio.
+
+    **Salvo que el que no pudo cumplir seamos nosotros** (`responsable="ubicar"`):
+    ahí se reintegra el 100%, la plata sale de la caja con su medio y el débito
+    `reembolso` consume el crédito del anticipo. Es la única excepción que D-11
+    admite, y usa el mecanismo genérico de reembolso — sin flujo propio.
+    """
     svc = ReservaService(db)
     try:
-        reserva = svc.cancelar(reserva_id, current_user.id, payload.motivo)
+        reserva = svc.cancelar(
+            reserva_id, current_user.id, payload.motivo,
+            responsable=payload.responsable,
+            reembolso_medio=payload.reembolso_medio,
+        )
         db.commit()
     except ConflictError as e:
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))

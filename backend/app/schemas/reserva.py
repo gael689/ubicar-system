@@ -169,6 +169,11 @@ class ReasignarRequest(BaseModel):
 class CancelarReservaRequest(BaseModel):
     """D-11: la seña no se devuelve, motivo obligatorio para la auditoría."""
     motivo: str
+    # La única excepción de D-11: *"si el que no puede cumplir es Ubicar Rent,
+    # se reintegra el 100% o se ofrece otro vehículo"*. Con `ubicar` la seña no
+    # se retiene — se devuelve, y la plata sale de la caja con su medio.
+    responsable: Literal["cliente", "ubicar"] = "cliente"
+    reembolso_medio: str = "transferencia"
 
     @field_validator("motivo")
     @classmethod

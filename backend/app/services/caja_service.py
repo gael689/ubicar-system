@@ -128,6 +128,77 @@ class CajaService:
         )
         return mov
 
+    def reembolsar(
+        self,
+        *,
+        cliente_id: int,
+        monto: Decimal,
+        medio: str,
+        motivo: str,
+        fecha: date,
+        creado_por: int | None,
+        reserva_id: int | None = None,
+        alquiler_id: int | None = None,
+        automatico: bool = False,
+    ) -> tuple[MovimientoCaja, "object"]:
+        """
+        Le devuelve plata a un cliente. **Las dos mitades, en un solo acto.**
+
+        Un reembolso es dos hechos que tienen que pasar juntos o no pasar:
+
+        1. **La plata sale.** Movimiento de caja de tipo `reembolso`, con su
+           medio: si volvió por Mercado Pago no salió del cajón, y la caja del
+           día tiene que poder distinguirlo.
+        2. **El libro deja de decir que esa plata entró.** Débito de naturaleza
+           `reembolso` en la cuenta corriente, que consume el crédito que había
+           generado el cobro.
+
+        Hacer sólo la primera deja el saldo del cliente a favor por plata que ya
+        se le devolvió. Hacer sólo la segunda le inventa una deuda. Por eso no
+        se puede cargar un reembolso como movimiento de caja suelto — el
+        endpoint lo rechaza explícitamente.
+
+        `automatico=True` es para la devolución y el contracargo de Mercado
+        Pago: ahí **el hecho económico ya ocurrió afuera** y nadie lo eligió. El
+        sistema no pregunta, copia, y avisa.
+        """
+        # Import local: `CuentaCorrienteService` está en el mismo árbol y
+        # a nivel de módulo sería un ciclo.
+        from app.services.cuenta_corriente_service import CuentaCorrienteService
+
+        if monto is None or Decimal(str(monto)) <= 0:
+            raise ValueError("El monto del reembolso debe ser > 0")
+        if not motivo or not motivo.strip():
+            raise ValueError("Un reembolso requiere un motivo")
+        motivo = motivo.strip()
+
+        etiqueta = "Devolución automática" if automatico else "Reembolso"
+        mov_cc = CuentaCorrienteService(self.db).registrar_movimiento(
+            cliente_id=cliente_id,
+            tipo="debito",
+            naturaleza="reembolso",
+            concepto=f"{etiqueta} ({medio}) — {motivo}",
+            monto=Decimal(str(monto)),
+            fecha=fecha,
+            creado_por=creado_por,
+            reserva_id=reserva_id,
+            alquiler_id=alquiler_id,
+        )
+
+        mov_caja = self.registrar(
+            tipo="reembolso",
+            monto=Decimal(str(monto)),
+            medio=medio,
+            motivo=motivo,
+            fecha=fecha,
+            creado_por=creado_por,
+            cliente_id=cliente_id,
+            reserva_id=reserva_id,
+            alquiler_id=alquiler_id,
+            movimiento_cc_id=mov_cc.id,
+        )
+        return mov_caja, mov_cc
+
     # ── Lectura ──────────────────────────────────────────────────────────────
 
     def del_dia(self, fecha: date) -> list[MovimientoCaja]:

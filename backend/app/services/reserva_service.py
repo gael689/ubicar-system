@@ -950,7 +950,14 @@ class ReservaService:
 
     # ── Cancelar reserva ──────────────────────────────────────────────────────
 
-    def cancelar(self, id: int, usuario_id: int, motivo: str) -> Reserva:
+    def cancelar(
+        self,
+        id: int,
+        usuario_id: int,
+        motivo: str,
+        responsable: str = "cliente",
+        reembolso_medio: str = "efectivo",
+    ) -> Reserva:
         """
         Cancela una reserva pendiente o confirmada.
 
@@ -971,7 +978,25 @@ class ReservaService:
         `anticipo_monto` cargado sin ningún crédito detrás — datos de antes de
         la migración 079. Sin ella, cancelar una de ésas dejaría un débito
         suelto y le inventaría una deuda al cliente.
+
+        **`responsable="ubicar"` invierte todo esto**, y es la única excepción
+        que D-11 admite: *"si el que no puede cumplir es Ubicar Rent, se
+        reintegra el 100% o se ofrece otro vehículo"*. Ahí la seña no se
+        retiene — se devuelve. En vez del débito `sena_retenida` va un
+        **reembolso**: la plata sale de la caja con su medio, y el débito
+        `reembolso` consume el crédito del anticipo. Es el mecanismo genérico,
+        sin flujo propio: el dueño estimó que pasa una vez por año y un flujo
+        aparte para eso es código que nadie recuerda cómo funciona cuando hace
+        falta.
+
+        Ofrecer otro vehículo —la otra mitad de D-11— no es un asiento: es
+        reasignar la reserva, que ya existe (`reasignar`).
         """
+        if responsable not in ("cliente", "ubicar"):
+            raise BusinessRuleError(
+                "responsable_invalido",
+                "El responsable de la cancelación es 'cliente' o 'ubicar'",
+            )
         reserva = self.get(id)
         if reserva.estado not in (EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value):
             raise ConflictError(f"estado_invalido|No se puede cancelar una reserva en estado '{reserva.estado}'")
@@ -981,7 +1006,25 @@ class ReservaService:
         era_confirmada = reserva.estado == EstadoReserva.CONFIRMADA.value
 
         with self.db.begin_nested():
-            if reserva.anticipo_monto and reserva.anticipo_monto > 0:
+            if reserva.anticipo_monto and reserva.anticipo_monto > 0 and responsable == "ubicar":
+                # No pudimos cumplir nosotros: la seña se devuelve entera.
+                from app.services.caja_service import CajaService
+
+                CajaService(self.db).reembolsar(
+                    cliente_id=reserva.cliente_id,
+                    monto=Decimal(str(reserva.anticipo_monto)),
+                    medio=reembolso_medio,
+                    motivo=f"Cancelación por Ubicar Rent de la reserva #{reserva.id} — {motivo}",
+                    fecha=date.today(),
+                    creado_por=usuario_id,
+                    reserva_id=reserva.id,
+                )
+                # El anticipo se consumió: se lo devolvimos. Se marca aplicado
+                # para que deje de figurar en "por aplicar" — si no, la ficha
+                # diría que le debemos un auto que ya no le debemos.
+                self.cc_service.aplicar_anticipos_de_reserva(reserva.id, None)
+
+            elif reserva.anticipo_monto and reserva.anticipo_monto > 0:
                 fecha_hoy = date.today()
 
                 debito = self.cc_service.registrar_movimiento(
@@ -1052,7 +1095,14 @@ class ReservaService:
                 datos_despues={
                     "estado": EstadoReserva.CANCELADA.value,
                     "motivo": motivo,
-                    "sena_retenida": reserva.anticipo_monto,
+                    "responsable": responsable,
+                    # Con `responsable="ubicar"` no se retiene: se reintegra.
+                    "sena_retenida": (
+                        reserva.anticipo_monto if responsable == "cliente" else None
+                    ),
+                    "sena_reintegrada": (
+                        reserva.anticipo_monto if responsable == "ubicar" else None
+                    ),
                 },
                 monto=reserva.anticipo_monto,
             )

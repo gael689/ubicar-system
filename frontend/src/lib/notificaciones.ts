@@ -47,6 +47,10 @@ export const TIPO_GRUPO: Record<string, string> = {
   multa_vencida: '⚠️ Multas',
   reserva_web_nueva: '🌐 Reservas web',
   reserva_web_sin_atender: '🌐 Reservas web',
+  // Una devolución o un contracargo de Mercado Pago. El asiento se revierte
+  // solo (la plata ya volvió al cliente); lo que sigue —el auto, la respuesta—
+  // necesita una persona, y de eso avisa esto.
+  pago_web_devuelto: '🌐 Reservas web',
   // Huecos de configuración, no hechos: se arreglan en dos minutos y evitan
   // perder plata en silencio.
   fecha_especial_sin_precio: '📌 Falta completar',

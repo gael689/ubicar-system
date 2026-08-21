@@ -170,12 +170,25 @@ export function useReservas() {
     []
   );
 
+  /**
+   * Cancela una reserva. `responsable` decide qué pasa con la seña:
+   * `'cliente'` la retiene (D-11) y `'ubicar'` la reintegra entera, que es la
+   * única excepción que D-11 admite.
+   */
   const cancelarReserva = useCallback(
-    async (id: number, motivo: string): Promise<Reserva> => {
+    async (
+      id: number,
+      motivo: string,
+      opciones?: { responsable?: 'cliente' | 'ubicar'; reembolso_medio?: string },
+    ): Promise<Reserva> => {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await api.post<ApiResponse<Reserva>>(`/reservas/${id}/cancelar`, { motivo });
+        const { data } = await api.post<ApiResponse<Reserva>>(`/reservas/${id}/cancelar`, {
+          motivo,
+          responsable: opciones?.responsable ?? 'cliente',
+          reembolso_medio: opciones?.reembolso_medio ?? 'transferencia',
+        });
         return data.data;
       } catch (err: any) {
         const detail = err?.response?.data?.detail;

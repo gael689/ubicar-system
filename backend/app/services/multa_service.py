@@ -249,7 +249,14 @@ class MultaService:
                 .first()
             )
             if debito:
-                cc_service.anular_movimiento(debito.id, motivo=motivo, creado_por=usuario_id)
+                # `bonificacion` y no `anulacion`: la multa estaba bien
+                # imputada, se decidió no cobrarla. Sumar las bonificaciones de
+                # un mes contesta cuánto se regaló; mezclarlas con las
+                # correcciones de error hace que esa pregunta no tenga respuesta.
+                cc_service.anular_movimiento(
+                    debito.id, motivo=motivo, creado_por=usuario_id,
+                    naturaleza="bonificacion",
+                )
             multa.motivo_bonificacion = motivo
         else:
             raise BusinessRuleError("decision_invalida", f"Decisión inválida: {decision!r}")

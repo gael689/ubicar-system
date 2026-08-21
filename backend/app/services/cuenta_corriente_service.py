@@ -187,8 +187,29 @@ class CuentaCorrienteService:
         return mov
 
     def anular_movimiento(
-        self, movimiento_id: int, motivo: str, creado_por: int | None
+        self,
+        movimiento_id: int,
+        motivo: str,
+        creado_por: int | None,
+        naturaleza: str = "anulacion",
     ) -> MovimientoCuentaCorriente:
+        """
+        Revierte un asiento con un contra-asiento. El original nunca se edita
+        ni se borra: queda marcado `anulado` y enlazado al que lo revirtió.
+
+        `naturaleza` distingue **por qué** se revierte, y no es un detalle
+        cosmético:
+
+        - `anulacion` (default) — *"esto estaba mal"*. Un alquiler cargado al
+          cliente equivocado, un monto tipeado de más.
+        - `bonificacion` — *"esto estaba bien y se lo perdonamos"*. Una multa
+          que se le condona, un daño que se decide no cobrar.
+
+        Las dos hacen exactamente lo mismo con la plata. La diferencia es que
+        sumar las bonificaciones de un mes contesta *cuánto regalamos*, y
+        sumar las anulaciones contesta *cuánto nos equivocamos*. Con una sola
+        etiqueta, las dos preguntas devuelven el mismo número y ninguna sirve.
+        """
         # Mismo criterio que `editar_vencimiento`: sin roles que restrinjan
         # quién puede anular un asiento, el motivo **es** el control. Un motivo
         # vacío queda escrito en el concepto del contra-asiento y en la
@@ -212,9 +233,10 @@ class CuentaCorrienteService:
             cuenta_corriente_id=cc.id,
             tipo=tipo_contrario,
             # Un contra-asiento no es "un pago" ni "una multa": es una
-            # anulación, y mezclarlo con la naturaleza del original haría que
-            # cualquier suma por naturaleza contara el asiento y su reverso.
-            naturaleza="anulacion",
+            # anulación (o una bonificación), y mezclarlo con la naturaleza del
+            # original haría que cualquier suma por naturaleza contara el
+            # asiento y su reverso.
+            naturaleza=naturaleza,
             concepto=f"Anulación de movimiento #{original.id} ({original.concepto}) — {motivo}",
             monto=original.monto,
             fecha=date.today(),

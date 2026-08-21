@@ -49,6 +49,8 @@ from app.models.pago_web import PagoWeb
 from app.models.reserva import Reserva
 from app.models.usuario import AUTH_SUB_SISTEMA, Usuario
 from app.services.configuracion_service import ConfiguracionService
+from app.models.cuenta_corriente import MovimientoCuentaCorriente
+from app.services.caja_service import CajaService
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 from app.services.disponibilidad_service import DisponibilidadService
 from app.services.email_reservas import notificar_reserva_pagada
@@ -378,6 +380,11 @@ class PagoWebService:
 
         reserva.estado = resolucion.estado_reserva
 
+        # La plata volvió al cliente: el libro tiene que dejar de decir que
+        # entró, y alguien se tiene que enterar hoy. Ver `_revertir_cobro`.
+        if externo.estado in dom.DEVUELTOS:
+            self._revertir_cobro(reserva, pago_web, externo)
+
         if resolucion.acreditar:
             pago = self._acreditar(reserva, pago_web, externo)
             pago_web.pago_id = pago.id
@@ -541,6 +548,89 @@ class PagoWebService:
             pago_id=pago.id,
         )
         return pago
+
+    def _revertir_cobro(self, reserva: Reserva, pago_web: PagoWeb, externo: PagoExterno) -> None:
+        """
+        Una devolución o un contracargo de Mercado Pago, copiados al libro.
+
+        **Sin intervención humana, y no es un atajo.** El hecho económico ya
+        ocurrió afuera: la plata volvió al cliente porque él pidió la devolución
+        o porque el banco resolvió el contracargo. Nadie de acá lo eligió y no
+        hay nada que aprobar. Lo único que había era un libro afirmando que esa
+        plata entró y una caja que la contaba — durante días, hasta que alguien
+        mirara el panel de Mercado Pago.
+
+        Hace las tres cosas juntas:
+
+        1. **Contra-asiento del crédito** que había generado `_acreditar`.
+        2. **Egreso de caja** de tipo `reembolso` con medio `mercado_pago`: no
+           salió del cajón, y la caja del día tiene que poder distinguirlo.
+        3. **Aviso crítico al equipo**, porque lo que sigue —el auto, la
+           respuesta al cliente— sí necesita una persona.
+
+        Es idempotente: si el webhook llega dos veces, el crédito ya está
+        anulado y no se hace nada.
+        """
+        if pago_web.pago_id is None:
+            # Nunca se acreditó: no hay nada que revertir. Puede pasar con un
+            # contracargo sobre un pago que quedó en revisión.
+            return
+
+        movimiento = (
+            self.db.query(MovimientoCuentaCorriente)
+            .filter(
+                MovimientoCuentaCorriente.pago_id == pago_web.pago_id,
+                MovimientoCuentaCorriente.anulado.is_(False),
+            )
+            .first()
+        )
+        if movimiento is None:
+            # Ya revertido (o nunca asentado). Idempotencia: un webhook
+            # repetido no puede descontar la plata dos veces.
+            return
+
+        usuario = self._usuario_sistema()
+        etiqueta = "contracargo" if externo.estado == "charged_back" else "devolución"
+        motivo = (
+            f"{etiqueta.capitalize()} de Mercado Pago — pago #{externo.payment_id} "
+            f"de la reserva #{reserva.id}"
+        )
+
+        CuentaCorrienteService(self.db).anular_movimiento(
+            movimiento.id, motivo=motivo, creado_por=usuario.id,
+        )
+        CajaService(self.db).registrar(
+            tipo="reembolso",
+            monto=Decimal(str(pago_web.monto)),
+            medio="mercado_pago",
+            motivo=motivo,
+            fecha=date.today(),
+            creado_por=usuario.id,
+            cliente_id=reserva.cliente_id,
+            reserva_id=reserva.id,
+        )
+
+        NotificacionService(self.db).generar_una({
+            "tipo": "pago_web_devuelto",
+            "titulo": (
+                "Contracargo de Mercado Pago" if externo.estado == "charged_back"
+                else "Devolución de Mercado Pago"
+            ),
+            "descripcion": (
+                f"Reserva #{reserva.id} — ${pago_web.monto} volvieron al cliente. "
+                f"El asiento ya se revirtió solo; hay que decidir qué pasa con la reserva."
+            ),
+            "urgencia": "critica",
+            "entidad_tipo": "reserva",
+            "entidad_id": reserva.id,
+            "url_destino": "/reservas-web",
+            "fecha_objetivo": None,
+        })
+
+        logger.warning(
+            "[MercadoPago] %s revertido: reserva=%s payment=%s monto=%s",
+            etiqueta, reserva.id, externo.payment_id, pago_web.monto,
+        )
 
     def _cerrar_hold(self, pago_web: PagoWeb, resolucion: dom.Resolucion) -> None:
         if not pago_web.hold_token:

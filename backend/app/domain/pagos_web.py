@@ -211,15 +211,25 @@ def resolver(estado_mp: str, hay_cupo: bool) -> Resolucion:
         )
 
     if estado_mp in DEVUELTOS:
-        # No se revierte solo. Una devolución o un contracargo tienen
-        # consecuencias (contra-asiento, auto que se libera, cliente que
-        # reclama) que exceden lo que un webhook puede decidir.
+        # **Sí se revierte solo, y desde la Fase 3 del `PLAN_DINERO.md`.**
+        #
+        # Este comentario decía antes que no, con el argumento de que las
+        # consecuencias exceden lo que un webhook puede decidir. Ese argumento
+        # confundía dos cosas. **El hecho económico ya ocurrió afuera**: la
+        # plata volvió al cliente, la decidió él o la decidió el banco, y no
+        # hay nada que decidir acá. Lo que quedaba era el libro diciendo que
+        # esa plata entró.
+        #
+        # Lo que sí excede al webhook —qué hacer con el auto, cómo contestarle
+        # al cliente— sigue necesitando una persona, y por eso
+        # `requiere_persona` queda en `True`: el asiento se corrige solo y
+        # **además** dispara un aviso. Ver `PagoWebService._revertir_cobro`.
         return Resolucion(
             estado_reserva="revision_sin_cupo",
             acreditar=False,
             liberar_hold=False,
             requiere_persona=True,
-            motivo="Devolución o contracargo — hay que revisarlo a mano",
+            motivo="Devolución o contracargo — la plata volvió al cliente",
         )
 
     # Un estado que no conocemos no puede confirmar nada.

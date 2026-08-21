@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Car, User, Calendar, MapPin, Clock, DollarSign, Pencil, XCircle, Flag, TrendingUp, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useReservas } from '@/hooks/useReservas';
-import { MotivoDialog } from '@/components/shared/MotivoDialog';
+import { CancelarReservaDialog, type DatosDeCancelacion } from '@/components/reservas/CancelarReservaDialog';
 import { extractError } from '@/lib/utils';
 import type { Reserva, ApiResponse } from '@/types';
 import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
@@ -45,9 +45,17 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
     onClose();
   };
 
-  const handleCancelar = async (motivo: string) => {
+  const handleCancelar = async (datos: DatosDeCancelacion) => {
     try {
-      await cancelarReserva(reservaId, motivo);
+      await cancelarReserva(reservaId, datos.motivo, {
+        responsable: datos.responsable,
+        reembolso_medio: datos.reembolso_medio,
+      });
+      toast.success(
+        datos.responsable === 'ubicar'
+          ? 'Reserva cancelada — la seña se reintegró'
+          : 'Reserva cancelada',
+      );
       setCancelarOpen(false);
       handleSuccess();
     } catch (err) {
@@ -405,12 +413,14 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
         </div>
       </div>
 
-      <MotivoDialog
+      <CancelarReservaDialog
         open={cancelarOpen}
         onOpenChange={setCancelarOpen}
-        title="Cancelar reserva"
-        description="La seña, si la hay, no se devuelve — queda registrada como ingreso. El motivo es obligatorio."
-        confirmLabel="Cancelar reserva"
+        senaFormateada={
+          reserva?.anticipo_monto && parseFloat(String(reserva.anticipo_monto)) > 0
+            ? `$${parseFloat(String(reserva.anticipo_monto)).toLocaleString('es-AR')}`
+            : null
+        }
         loading={cancelando}
         onConfirm={handleCancelar}
       />
