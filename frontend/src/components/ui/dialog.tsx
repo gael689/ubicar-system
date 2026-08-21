@@ -35,6 +35,12 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4',
+        // Piso de seguridad: ningún modal puede ser más alto que la ventana.
+        // Sin esto, un formulario largo crece para abajo, se sale de la
+        // pantalla y los botones quedan en un lugar al que no se llega ni
+        // scrolleando, porque el fondo está bloqueado. Cada modal puede pisar
+        // esto con su propio layout (header fijo / cuerpo scrolleable).
+        'max-h-[calc(100dvh-2rem)] overflow-y-auto',
         'border border-border bg-card p-6 shadow-xl rounded-lg',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',

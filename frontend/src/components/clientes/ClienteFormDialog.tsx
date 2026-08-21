@@ -181,219 +181,227 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      {/* El alta de cliente tiene muchos campos y no entra entera en una
+          notebook. El alto está topeado y sólo scrollea el cuerpo, así los
+          botones de guardar nunca se van abajo del borde de la pantalla. */}
+      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col gap-0 p-0">
+        <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
           <DialogTitle>{isEdit ? 'Editar cliente' : 'Nuevo cliente'}</DialogTitle>
         </DialogHeader>
 
         {!isEdit && step === 'onboarding' ? (
-          <div className="py-4 space-y-4">
-            <p className="text-sm text-muted-foreground">¿El cliente es una empresa o una persona particular?</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => { setValue('tipo', 'particular'); setStep('form'); }}
-                className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-accent/40 transition-colors p-6 text-center"
-              >
-                <User className="h-8 w-8 text-primary" />
-                <span className="text-base font-semibold text-foreground">Particular</span>
-                <span className="text-xs text-muted-foreground">Persona física — alquila a título personal</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setValue('tipo', 'empresa'); setStep('form'); }}
-                className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-accent/40 transition-colors p-6 text-center"
-              >
-                <Building2 className="h-8 w-8 text-primary" />
-                <span className="text-base font-semibold text-foreground">Empresa</span>
-                <span className="text-xs text-muted-foreground">Razón social, condición de IVA, contactos con puesto</span>
-              </button>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancelar
-              </Button>
-            </DialogFooter>
-          </div>
-        ) : (
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
-          {!isEdit && (
-            <button
-              type="button"
-              onClick={() => setStep('onboarding')}
-              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
-            >
-              {tipoCliente === 'empresa' ? <Building2 className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
-              <span className="font-medium">{tipoCliente === 'empresa' ? 'Empresa' : 'Particular'}</span>
-              <span className="underline">Cambiar</span>
-            </button>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Nombre completo" error={errors.nombre_completo?.message} required>
-              <input {...register('nombre_completo')} placeholder="Juan Pérez"
-                className="input-base" />
-            </Field>
-            <Field label="DNI / CUIT" error={errors.dni_cuit?.message}>
-              <input {...register('dni_cuit')} placeholder="12345678"
-                className="input-base" disabled={isEdit && !!cliente?.dni_cuit} />
-            </Field>
-            <Field label="Teléfono" error={errors.telefono?.message}>
-              <input {...register('telefono')} placeholder="2914123456"
-                className="input-base" />
-            </Field>
-            <Field label="Email" error={errors.email?.message}>
-              <input {...register('email')} type="email" placeholder="juan@email.com"
-                className="input-base" />
-            </Field>
-          </div>
-
-          {/* Conductor */}
-          <div className="border-t border-border pt-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Conductor
-            </p>
-            <div className="flex gap-6 mb-4">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="radio" {...register('tipo_conductor')} value="es_conductor"
-                  className="accent-primary" />
-                <span>El cliente es el conductor</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="radio" {...register('tipo_conductor')} value="conductor_designado"
-                  className="accent-primary" />
-                <span>Tiene conductor designado</span>
-              </label>
-            </div>
-
-            {/* Toda la licencia vive acá. Antes el vencimiento estaba en esta
-                sección y el país y el "desde" abajo, en Datos fiscales: se
-                leía como si fueran dos licencias distintas. Peor todavía con
-                conductor designado, donde el vencimiento de arriba
-                desaparecía pero los otros dos campos seguían pidiendo datos
-                de la licencia de alguien que no maneja. */}
-            {tipoConductor === 'es_conductor' && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Field label="País de licencia">
-                  <input {...register('licencia_pais')} placeholder="Argentina" className="input-base" />
-                </Field>
-                <Field label="Licencia desde">
-                  <input {...register('licencia_desde')} type="date" className="input-base" />
-                </Field>
-                <Field label="Vencimiento" error={errors.licencia_vencimiento?.message}>
-                  <input {...register('licencia_vencimiento')} type="date" className="input-base" />
-                </Field>
-              </div>
-            )}
-
-            {tipoConductor === 'conductor_designado' && (
+          <>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              <p className="text-sm text-muted-foreground">¿El cliente es una empresa o una persona particular?</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Nombre del conductor" error={errors.conductor_nombre?.message} required>
-                  <input {...register('conductor_nombre')} placeholder="Juan García"
-                    className="input-base" />
-                </Field>
-                <Field label="Vencimiento licencia conductor" error={errors.conductor_licencia_vencimiento?.message}>
-                  <input {...register('conductor_licencia_vencimiento')} type="date"
-                    className="input-base" />
-                </Field>
+                <button
+                  type="button"
+                  onClick={() => { setValue('tipo', 'particular'); setStep('form'); }}
+                  className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-accent/40 transition-colors p-6 text-center"
+                >
+                  <User className="h-8 w-8 text-primary" />
+                  <span className="text-base font-semibold text-foreground">Particular</span>
+                  <span className="text-xs text-muted-foreground">Persona física — alquila a título personal</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setValue('tipo', 'empresa'); setStep('form'); }}
+                  className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-accent/40 transition-colors p-6 text-center"
+                >
+                  <Building2 className="h-8 w-8 text-primary" />
+                  <span className="text-base font-semibold text-foreground">Empresa</span>
+                  <span className="text-xs text-muted-foreground">Razón social, condición de IVA, contactos con puesto</span>
+                </button>
               </div>
+          </div>
+          <DialogFooter className="shrink-0 border-t border-border px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+          </DialogFooter>
+          </>
+        ) : (
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            {!isEdit && (
+              <button
+                type="button"
+                onClick={() => setStep('onboarding')}
+                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {tipoCliente === 'empresa' ? <Building2 className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
+                <span className="font-medium">{tipoCliente === 'empresa' ? 'Empresa' : 'Particular'}</span>
+                <span className="underline">Cambiar</span>
+              </button>
             )}
-          </div>
-
-          {/* Datos fiscales */}
-          <div className="border-t border-border pt-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              {tipoCliente === 'empresa' ? 'Datos fiscales' : 'Datos personales y domicilio'}
-            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {tipoCliente === 'empresa' ? (
-                <>
-                  <Field label="Razón social">
-                    <input {...register('razon_social')} placeholder="Ubicar Rent SA" className="input-base" />
-                  </Field>
-                  <Field label="Condición IVA">
-                    <select {...register('condicion_iva')} className="input-base">
-                      <option value="">Sin especificar</option>
-                      <option value="responsable_inscripto">Responsable Inscripto</option>
-                      <option value="monotributo">Monotributo</option>
-                      <option value="exento">Exento</option>
-                    </select>
-                  </Field>
-                </>
-              ) : (
-                <>
-                  <Field label="Fecha de nacimiento">
-                    <input {...register('fecha_nacimiento')} type="date" className="input-base" />
-                  </Field>
-                  <Field label="Condición IVA">
-                    <select {...register('condicion_iva')} className="input-base">
-                      <option value="">Sin especificar</option>
-                      <option value="consumidor_final">Consumidor Final</option>
-                      <option value="responsable_inscripto">Responsable Inscripto</option>
-                      <option value="monotributo">Monotributo</option>
-                      <option value="exento">Exento</option>
-                    </select>
-                  </Field>
-                </>
-              )}
-              <Field label="Domicilio">
-                <input {...register('domicilio')} placeholder="Av. Alem 123" className="input-base" />
+              <Field label="Nombre completo" error={errors.nombre_completo?.message} required>
+                <input {...register('nombre_completo')} placeholder="Juan Pérez"
+                  className="input-base" />
               </Field>
-              <Field label="Localidad">
-                <input {...register('localidad')} placeholder="Bahía Blanca" className="input-base" />
+              <Field label="DNI / CUIT" error={errors.dni_cuit?.message}>
+                <input {...register('dni_cuit')} placeholder="12345678"
+                  className="input-base" disabled={isEdit && !!cliente?.dni_cuit} />
               </Field>
-              <Field label="Provincia">
-                <input {...register('provincia')} placeholder="Buenos Aires" className="input-base" />
+              <Field label="Teléfono" error={errors.telefono?.message}>
+                <input {...register('telefono')} placeholder="2914123456"
+                  className="input-base" />
               </Field>
-              <Field label="Código postal">
-                <input {...register('codigo_postal')} placeholder="8000" className="input-base" />
+              <Field label="Email" error={errors.email?.message}>
+                <input {...register('email')} type="email" placeholder="juan@email.com"
+                  className="input-base" />
               </Field>
-              {/* Sólo empresa: la cuenta corriente es una condición comercial
-                  que se pacta con una empresa, no con alguien que alquila un
-                  fin de semana. En particular no se pregunta y queda contado.
-                  El campo sigue registrado —no desmontado del formulario— así
-                  que si un particular ya tenía una condición cargada, editarlo
-                  no se la borra en silencio. */}
-              {tipoCliente === 'empresa' && (
-                <Field label="Condición de pago">
-                  <select {...register('condicion_pago_default')} className="input-base">
-                    <option value="">Sin especificar</option>
-                    <option value="contado">Contado</option>
-                    <option value="cta_cte_15">Cta. Cte. 15 días</option>
-                    <option value="cta_cte_30">Cta. Cte. 30 días</option>
-                    <option value="cta_cte_60">Cta. Cte. 60 días</option>
-                    <option value="cta_cte_90">Cta. Cte. 90 días</option>
-                  </select>
-                </Field>
-              )}
             </div>
-          </div>
 
-          <div className="border-t border-border pt-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {isEdit && (
-                <Field label="Tipo de cliente" error={errors.tipo?.message} required>
-                  <select {...register('tipo')} className="input-base">
-                    <option value="particular">Particular</option>
-                    <option value="empresa">Empresa</option>
-                  </select>
-                </Field>
-              )}
-              <div className="flex items-end pb-1">
+            {/* Conductor */}
+            <div className="border-t border-border pt-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                Conductor
+              </p>
+              <div className="flex gap-6 mb-4">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" {...register('es_frecuente')}
-                    className="rounded border-border" />
-                  <span className="text-foreground">Cliente frecuente</span>
+                  <input type="radio" {...register('tipo_conductor')} value="es_conductor"
+                    className="accent-primary" />
+                  <span>El cliente es el conductor</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" {...register('tipo_conductor')} value="conductor_designado"
+                    className="accent-primary" />
+                  <span>Tiene conductor designado</span>
                 </label>
               </div>
+
+              {/* Toda la licencia vive acá. Antes el vencimiento estaba en esta
+                  sección y el país y el "desde" abajo, en Datos fiscales: se
+                  leía como si fueran dos licencias distintas. Peor todavía con
+                  conductor designado, donde el vencimiento de arriba
+                  desaparecía pero los otros dos campos seguían pidiendo datos
+                  de la licencia de alguien que no maneja. */}
+              {tipoConductor === 'es_conductor' && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <Field label="País de licencia">
+                    <input {...register('licencia_pais')} placeholder="Argentina" className="input-base" />
+                  </Field>
+                  <Field label="Licencia desde">
+                    <input {...register('licencia_desde')} type="date" className="input-base" />
+                  </Field>
+                  <Field label="Vencimiento" error={errors.licencia_vencimiento?.message}>
+                    <input {...register('licencia_vencimiento')} type="date" className="input-base" />
+                  </Field>
+                </div>
+              )}
+
+              {tipoConductor === 'conductor_designado' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="Nombre del conductor" error={errors.conductor_nombre?.message} required>
+                    <input {...register('conductor_nombre')} placeholder="Juan García"
+                      className="input-base" />
+                  </Field>
+                  <Field label="Vencimiento licencia conductor" error={errors.conductor_licencia_vencimiento?.message}>
+                    <input {...register('conductor_licencia_vencimiento')} type="date"
+                      className="input-base" />
+                  </Field>
+                </div>
+              )}
             </div>
+
+            {/* Datos fiscales */}
+            <div className="border-t border-border pt-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                {tipoCliente === 'empresa' ? 'Datos fiscales' : 'Datos personales y domicilio'}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {tipoCliente === 'empresa' ? (
+                  <>
+                    <Field label="Razón social">
+                      <input {...register('razon_social')} placeholder="Ubicar Rent SA" className="input-base" />
+                    </Field>
+                    <Field label="Condición IVA">
+                      <select {...register('condicion_iva')} className="input-base">
+                        <option value="">Sin especificar</option>
+                        <option value="responsable_inscripto">Responsable Inscripto</option>
+                        <option value="monotributo">Monotributo</option>
+                        <option value="exento">Exento</option>
+                      </select>
+                    </Field>
+                  </>
+                ) : (
+                  <>
+                    <Field label="Fecha de nacimiento">
+                      <input {...register('fecha_nacimiento')} type="date" className="input-base" />
+                    </Field>
+                    <Field label="Condición IVA">
+                      <select {...register('condicion_iva')} className="input-base">
+                        <option value="">Sin especificar</option>
+                        <option value="consumidor_final">Consumidor Final</option>
+                        <option value="responsable_inscripto">Responsable Inscripto</option>
+                        <option value="monotributo">Monotributo</option>
+                        <option value="exento">Exento</option>
+                      </select>
+                    </Field>
+                  </>
+                )}
+                <Field label="Domicilio">
+                  <input {...register('domicilio')} placeholder="Av. Alem 123" className="input-base" />
+                </Field>
+                <Field label="Localidad">
+                  <input {...register('localidad')} placeholder="Bahía Blanca" className="input-base" />
+                </Field>
+                <Field label="Provincia">
+                  <input {...register('provincia')} placeholder="Buenos Aires" className="input-base" />
+                </Field>
+                <Field label="Código postal">
+                  <input {...register('codigo_postal')} placeholder="8000" className="input-base" />
+                </Field>
+                {/* Sólo empresa: la cuenta corriente es una condición comercial
+                    que se pacta con una empresa, no con alguien que alquila un
+                    fin de semana. En particular no se pregunta y queda contado.
+                    El campo sigue registrado —no desmontado del formulario— así
+                    que si un particular ya tenía una condición cargada, editarlo
+                    no se la borra en silencio. */}
+                {tipoCliente === 'empresa' && (
+                  <Field label="Condición de pago">
+                    <select {...register('condicion_pago_default')} className="input-base">
+                      <option value="">Sin especificar</option>
+                      <option value="contado">Contado</option>
+                      <option value="cta_cte_15">Cta. Cte. 15 días</option>
+                      <option value="cta_cte_30">Cta. Cte. 30 días</option>
+                      <option value="cta_cte_60">Cta. Cte. 60 días</option>
+                      <option value="cta_cte_90">Cta. Cte. 90 días</option>
+                    </select>
+                  </Field>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-border pt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {isEdit && (
+                  <Field label="Tipo de cliente" error={errors.tipo?.message} required>
+                    <select {...register('tipo')} className="input-base">
+                      <option value="particular">Particular</option>
+                      <option value="empresa">Empresa</option>
+                    </select>
+                  </Field>
+                )}
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" {...register('es_frecuente')}
+                      className="rounded border-border" />
+                    <span className="text-foreground">Cliente frecuente</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <Field label="Notas" error={errors.notas?.message}>
+              <textarea {...register('notas')} rows={2} placeholder="Observaciones opcionales..."
+                className="input-base resize-none" />
+            </Field>
+
           </div>
 
-          <Field label="Notas" error={errors.notas?.message}>
-            <textarea {...register('notas')} rows={2} placeholder="Observaciones opcionales..."
-              className="input-base resize-none" />
-          </Field>
-
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border px-6 py-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>

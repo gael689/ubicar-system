@@ -92,8 +92,14 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
+      {/* Son catorce campos: en una notebook el formulario entero no entra en
+          la pantalla. Por eso el modal tiene alto máximo y se parte en tres —
+          el título queda fijo arriba para no perder de vista qué patente se
+          está editando, el cuerpo es lo único que scrollea, y Guardar /
+          Cancelar quedan clavados abajo, siempre alcanzables sin importar
+          cuánto se haya bajado. Mismo patrón que ReservaModal. */}
+      <DialogContent className="flex max-h-[90vh] flex-col gap-0 p-0 sm:max-w-xl">
+        <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
           <DialogTitle>{isEdit ? 'Editar vehículo' : 'Nuevo vehículo'}</DialogTitle>
           <DialogDescription>
             {isEdit
@@ -102,141 +108,143 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field
-              label="Patente *"
-              error={form.formState.errors.patente?.message}
-            >
-              <Input
-                {...form.register('patente')}
-                placeholder="AB123CD"
-                disabled={isEdit}
-                className="uppercase"
-              />
-              {isEdit && (
+        <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+          <div className="grid flex-1 gap-4 overflow-y-auto px-6 py-4">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field
+                label="Patente *"
+                error={form.formState.errors.patente?.message}
+              >
+                <Input
+                  {...form.register('patente')}
+                  placeholder="AB123CD"
+                  disabled={isEdit}
+                  className="uppercase"
+                />
+                {isEdit && (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    La patente no se modifica.
+                  </p>
+                )}
+              </Field>
+
+              <Field label="Tipo *" error={form.formState.errors.tipo?.message}>
+                <Controller
+                  control={form.control}
+                  name="tipo"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={(v) => field.onChange(v as TipoVehiculo)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(TIPO_VEHICULO_LABEL).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </Field>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Categoría">
+                <Controller
+                  control={form.control}
+                  name="categoria_id"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value != null ? String(field.value) : '__none__'}
+                      onValueChange={(v) => field.onChange(v === '__none__' ? null : Number(v))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sin categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Sin categoría</SelectItem>
+                        {(categorias ?? []).map(c => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </Field>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Marca *" error={form.formState.errors.marca?.message}>
+                <Input {...form.register('marca')} placeholder="Toyota" />
+              </Field>
+              <Field label="Modelo *" error={form.formState.errors.modelo?.message}>
+                <Input {...form.register('modelo')} placeholder="Hilux" />
+              </Field>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Año *" error={form.formState.errors.anio?.message}>
+                <Input type="number" {...form.register('anio')} />
+              </Field>
+              <Field label="Color *" error={form.formState.errors.color?.message}>
+                <Input {...form.register('color')} placeholder="Blanco" />
+              </Field>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field
+                label="Kilometraje actual *"
+                error={form.formState.errors.km_actual?.message}
+              >
+                <Input type="number" {...form.register('km_actual')} />
+              </Field>
+              <Field
+                label="Km entre services *"
+                error={form.formState.errors.km_entre_services?.message}
+              >
+                <Input type="number" {...form.register('km_entre_services')} />
+              </Field>
+            </div>
+
+            {isEdit && (
+              <Field
+                label="Próximo service (KM)"
+                error={form.formState.errors.km_proximo_service?.message}
+              >
+                <Input type="number" {...form.register('km_proximo_service')} />
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  La patente no se modifica.
+                  Se actualiza automáticamente al registrar un service. Podés ajustarlo manualmente acá.
                 </p>
-              )}
-            </Field>
+              </Field>
+            )}
 
-            <Field label="Tipo *" error={form.formState.errors.tipo?.message}>
-              <Controller
-                control={form.control}
-                name="tipo"
-                render={({ field }) => (
-                  <Select
-                    value={field.value}
-                    onValueChange={(v) => field.onChange(v as TipoVehiculo)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(TIPO_VEHICULO_LABEL).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </Field>
+            {/* Vencimientos (Fase 3, ítem 38): campos propios del vehículo —
+                el sistema alerta con esto, no depende de que se haya subido
+                el documento en la pestaña de Documentos. */}
+            <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-border">
+              <Field label="Vencimiento VTV" error={form.formState.errors.vtv_vencimiento?.message}>
+                <Input type="date" {...form.register('vtv_vencimiento')} value={form.watch('vtv_vencimiento') ?? ''} />
+              </Field>
+              <Field label="Vencimiento póliza" error={form.formState.errors.poliza_vencimiento?.message}>
+                <Input type="date" {...form.register('poliza_vencimiento')} value={form.watch('poliza_vencimiento') ?? ''} />
+              </Field>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Compañía de seguro" error={form.formState.errors.compania_seguro?.message}>
+                <Input {...form.register('compania_seguro')} value={form.watch('compania_seguro') ?? ''} placeholder="Sancor Seguros" />
+              </Field>
+              <Field label="N° de póliza" error={form.formState.errors.nro_poliza?.message}>
+                <Input {...form.register('nro_poliza')} value={form.watch('nro_poliza') ?? ''} placeholder="123456" />
+              </Field>
+            </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Categoría">
-              <Controller
-                control={form.control}
-                name="categoria_id"
-                render={({ field }) => (
-                  <Select
-                    value={field.value != null ? String(field.value) : '__none__'}
-                    onValueChange={(v) => field.onChange(v === '__none__' ? null : Number(v))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin categoría" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Sin categoría</SelectItem>
-                      {(categorias ?? []).map(c => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </Field>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Marca *" error={form.formState.errors.marca?.message}>
-              <Input {...form.register('marca')} placeholder="Toyota" />
-            </Field>
-            <Field label="Modelo *" error={form.formState.errors.modelo?.message}>
-              <Input {...form.register('modelo')} placeholder="Hilux" />
-            </Field>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Año *" error={form.formState.errors.anio?.message}>
-              <Input type="number" {...form.register('anio')} />
-            </Field>
-            <Field label="Color *" error={form.formState.errors.color?.message}>
-              <Input {...form.register('color')} placeholder="Blanco" />
-            </Field>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field
-              label="Kilometraje actual *"
-              error={form.formState.errors.km_actual?.message}
-            >
-              <Input type="number" {...form.register('km_actual')} />
-            </Field>
-            <Field
-              label="Km entre services *"
-              error={form.formState.errors.km_entre_services?.message}
-            >
-              <Input type="number" {...form.register('km_entre_services')} />
-            </Field>
-          </div>
-
-          {isEdit && (
-            <Field
-              label="Próximo service (KM)"
-              error={form.formState.errors.km_proximo_service?.message}
-            >
-              <Input type="number" {...form.register('km_proximo_service')} />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Se actualiza automáticamente al registrar un service. Podés ajustarlo manualmente acá.
-              </p>
-            </Field>
-          )}
-
-          {/* Vencimientos (Fase 3, ítem 38): campos propios del vehículo —
-              el sistema alerta con esto, no depende de que se haya subido
-              el documento en la pestaña de Documentos. */}
-          <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-border">
-            <Field label="Vencimiento VTV" error={form.formState.errors.vtv_vencimiento?.message}>
-              <Input type="date" {...form.register('vtv_vencimiento')} value={form.watch('vtv_vencimiento') ?? ''} />
-            </Field>
-            <Field label="Vencimiento póliza" error={form.formState.errors.poliza_vencimiento?.message}>
-              <Input type="date" {...form.register('poliza_vencimiento')} value={form.watch('poliza_vencimiento') ?? ''} />
-            </Field>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Compañía de seguro" error={form.formState.errors.compania_seguro?.message}>
-              <Input {...form.register('compania_seguro')} value={form.watch('compania_seguro') ?? ''} placeholder="Sancor Seguros" />
-            </Field>
-            <Field label="N° de póliza" error={form.formState.errors.nro_poliza?.message}>
-              <Input {...form.register('nro_poliza')} value={form.watch('nro_poliza') ?? ''} placeholder="123456" />
-            </Field>
-          </div>
-
-          <DialogFooter className="mt-2">
+          <DialogFooter className="shrink-0 border-t border-border bg-card px-6 py-4">
             <Button
               type="button"
               variant="outline"

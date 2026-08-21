@@ -280,8 +280,11 @@ export function CheckinModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-2xl bg-background border border-border shadow-2xl">
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+      {/* Header fijo / cuerpo scrolleable / footer fijo: el formulario de
+          check-in es largo y, si el modal creciera con el contenido, los
+          botones de confirmar terminarían abajo del borde de la pantalla. */}
+      <div className="w-full max-w-xl rounded-2xl bg-background border border-border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
           <div>
             <div className="flex items-center gap-2">
               <Flag className="h-5 w-5 text-amber-600" />
@@ -297,7 +300,7 @@ export function CheckinModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           {/* Fecha y hora */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -815,7 +818,7 @@ export function CheckinModal({
         </form>
 
         {mostrarConfirmacionCobro ? (
-          <div className="px-6 py-4 border-t border-warning bg-warning">
+          <div className="px-6 py-4 border-t border-warning bg-warning shrink-0">
             <p className="text-sm font-semibold text-white mb-3">
               ⚠️ No marcaste "Cobrar al cliente ahora" — ¿el cliente pagó el saldo pendiente ({formatMoney(totalACobrarAhora)})?
             </p>
@@ -837,7 +840,7 @@ export function CheckinModal({
             </div>
           </div>
         ) : (
-          <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3">
+          <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 shrink-0">
             <button
               onClick={onClose}
               className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
