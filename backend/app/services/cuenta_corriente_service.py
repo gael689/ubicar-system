@@ -85,8 +85,10 @@ class CuentaCorrienteService:
         "le debemos plata" cuando lo que pasa es "nos pagó y todavía no le dimos
         el auto". Son dos hechos distintos y merecen dos números.
 
-        - `anticipos`: créditos vivos atados a una reserva **que todavía no
-          salió**. Es lo que se debe entregar, no lo que se debe pagar.
+        - `anticipos`: créditos vivos atados a una reserva **que todavía puede
+          salir**. Es lo que se debe entregar, no lo que se debe pagar. Una
+          reserva **cancelada** no cuenta: su seña ya no es un anticipo sino un
+          ingreso retenido (D-11).
         - `deuda`: lo que el cliente debe de verdad, o sea el saldo **sin**
           contar esos anticipos.
         - `saldo`: el de siempre, sin tocar. Ninguna cuenta cambia — esto sólo
@@ -102,6 +104,29 @@ class CuentaCorrienteService:
         # no salió, así que el débito que los compensa todavía no existe.
         # `outerjoin` + `is_(None)` y no un `NOT EXISTS` porque un alquiler por
         # reserva es único (`ix_alquileres_reserva_id` es unique).
+        #
+        # ⚠️ **Y la reserva no puede estar cancelada.** Este proxy asumía que
+        # "reserva sin alquiler" significa "todavía no salió"; también significa
+        # **"nunca va a salir"**. Una reserva cancelada con seña deja sus
+        # movimientos con `reserva_id` y jamás va a tener alquiler, así que el
+        # crédito de la seña contaba como anticipo para siempre:
+        #
+        #     saldo = 0  ·  anticipos = seña  →  deuda = 0 + seña
+        #
+        # o sea que después de **toda** cancelación con seña la ficha del
+        # cliente decía "Debe $seña" eternamente. Con seña de Mercado Pago era
+        # peor: dos créditos con `reserva_id` daban `deuda = seña` sobre un
+        # saldo negativo. Ver `PLAN_DINERO.md` §1.4b.
+        #
+        # La seña de una reserva cancelada **no es un anticipo**: es un ingreso
+        # de la empresa (D-11), y el débito `sena_retenida` que asienta
+        # `ReservaService.cancelar` es su contrapartida. Se excluye por estado y
+        # no por "tiene débito de cancelación" porque el estado es el hecho, no
+        # el rastro.
+        #
+        # `revision_sin_cupo` y `sin_disponibilidad` **no** se excluyen: ahí la
+        # plata entró y todavía se le debe al cliente un auto o una devolución.
+        # Eso es exactamente un anticipo.
         total = (
             self.db.query(func.coalesce(func.sum(MovimientoCuentaCorriente.monto), 0))
             .join(
@@ -116,6 +141,7 @@ class CuentaCorrienteService:
                 MovimientoCuentaCorriente.anulado.is_(False),
                 MovimientoCuentaCorriente.reserva_id.isnot(None),
                 Alquiler.id.is_(None),
+                Reserva.estado != "cancelada",
             )
             .scalar()
         )

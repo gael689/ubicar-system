@@ -103,3 +103,74 @@ class TestCancelarConSena:
         ReservaService(db).cancelar(reserva.id, usuario.id, "no vino")
 
         assert db.query(MovimientoCuentaCorriente).count() == 0
+
+
+class TestLaFichaDespuesDeCancelar:
+    """
+    `PLAN_DINERO.md` §1.4b: el desglose del 21/08 definía anticipo como
+    "crédito con reserva_id cuya reserva todavía no tiene alquiler". Una
+    reserva cancelada nunca va a tener alquiler, así que su crédito contaba
+    como anticipo para siempre y la ficha decía **"Debe $seña"** eternamente.
+    """
+
+    def test_tras_cancelar_con_sena_de_mostrador_la_ficha_no_dice_nada(
+        self, db, cliente, usuario, hacer_reserva
+    ):
+        reserva = hacer_reserva(
+            precio_total="400000",
+            anticipo_monto=Decimal("100000"),
+            anticipo_fecha=date(2026, 8, 20),
+            anticipo_medio_pago="efectivo",
+        )
+        ReservaService(db).cancelar(reserva.id, usuario.id, "se arrepintió")
+
+        d = CuentaCorrienteService(db).desglose(cliente.id)
+        assert d["saldo"] == Decimal("0")
+        assert d["anticipos"] == Decimal("0")
+        assert d["deuda"] == Decimal("0"), "la ficha decía 'Debe $seña' para siempre"
+
+    def test_tras_cancelar_con_sena_de_mercado_pago_la_ficha_no_dice_nada(
+        self, db, cliente, usuario, hacer_reserva, hacer_pago
+    ):
+        reserva = hacer_reserva(
+            precio_total="400000",
+            anticipo_monto=Decimal("100000"),
+            anticipo_fecha=date(2026, 8, 20),
+            anticipo_medio_pago="mercado_pago",
+        )
+        pago = hacer_pago(cliente_id=cliente.id, monto="100000",
+                          medio_pago="mercado_pago", fecha=date(2026, 8, 20))
+        CuentaCorrienteService(db).registrar_movimiento(
+            cliente_id=cliente.id, tipo="credito",
+            concepto=f"Pago online reserva #{reserva.id} (25%)",
+            monto=Decimal("100000"), fecha=date(2026, 8, 20),
+            creado_por=usuario.id, reserva_id=reserva.id, pago_id=pago.id,
+        )
+        ReservaService(db).cancelar(reserva.id, usuario.id, "se arrepintió")
+
+        d = CuentaCorrienteService(db).desglose(cliente.id)
+        assert d["saldo"] == Decimal("0")
+        assert d["anticipos"] == Decimal("0")
+        assert d["deuda"] == Decimal("0")
+
+    def test_una_resena_viva_sigue_contando_como_anticipo(
+        self, db, cliente, usuario, hacer_reserva, hacer_pago
+    ):
+        """
+        La contracara: el arreglo no puede apagar el anticipo legítimo, que es
+        para lo que se escribió el desglose.
+        """
+        reserva = hacer_reserva(precio_total="400000", estado="confirmada")
+        pago = hacer_pago(cliente_id=cliente.id, monto="100000",
+                          medio_pago="mercado_pago", fecha=date(2026, 8, 20))
+        CuentaCorrienteService(db).registrar_movimiento(
+            cliente_id=cliente.id, tipo="credito",
+            concepto=f"Pago online reserva #{reserva.id} (25%)",
+            monto=Decimal("100000"), fecha=date(2026, 8, 20),
+            creado_por=usuario.id, reserva_id=reserva.id, pago_id=pago.id,
+        )
+
+        d = CuentaCorrienteService(db).desglose(cliente.id)
+        assert d["saldo"] == Decimal("-100000")
+        assert d["anticipos"] == Decimal("100000")
+        assert d["deuda"] == Decimal("0"), "no le debemos plata: le debemos un auto"
