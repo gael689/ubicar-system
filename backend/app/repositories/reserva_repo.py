@@ -57,6 +57,12 @@ class ReservaRepo:
             # Multivalor: la pantalla de reservas se mira casi siempre como
             # "lo que está vivo" (pendiente + confirmada + activa), no de a un
             # estado por vez.
+            #
+            # Acá no se valida a propósito: quien decide si un estado existe es
+            # el router (`ESTADOS_RESERVA` en `routers/reservas.py`), porque es
+            # el único que puede contestar 400. Si se validara también acá,
+            # serían dos listas blancas para el mismo enum y terminarían
+            # discrepando.
             estados = [e.strip() for e in estado.split(",") if e.strip()]
             query = query.filter(Reserva.estado.in_(estados))
         if origen:

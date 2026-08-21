@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.storage import IStorage
 from app.core.deps import get_db, get_current_user, get_storage
+from app.domain.enums import EstadoReserva
 from app.models.reserva import Reserva
 from app.services.reserva_documento_service import ReservaDocumentoService
 from app.core.exceptions import ConflictError, NotFoundError, BusinessRuleError
@@ -105,13 +106,25 @@ def _parse_conflicto(exc: ConflictError) -> dict:
     return detail
 
 
+# Los estados que el listado acepta filtrar. Sale del enum del dominio y no de
+# una lista escrita a mano acá: en `pagos.py` la copia manual de los medios de
+# pago se desactualizó —faltaba `wapa`— y filtrar por un medio que existía de
+# verdad devolvía 400. Los estados de reserva ya crecieron una vez (los tres de
+# la web llegaron con la migración 047), así que el mismo olvido estaba
+# garantizado.
+ESTADOS_RESERVA = [e.value for e in EstadoReserva]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CRUD Reservas
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("")
 def list_reservas(
-    estado: str | None = Query(None, description="Uno o varios separados por coma"),
+    estado: str | None = Query(
+        None,
+        description="Uno o varios separados por coma (ej: pendiente_pago,confirmada)",
+    ),
     vehiculo_id: int | None = Query(None),
     cliente_id: int | None = Query(None),
     q: str | None = Query(None, description="Buscar por nombre o DNI/CUIT del cliente"),
@@ -126,6 +139,29 @@ def list_reservas(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
+    # Multi-selección de estados, separados por coma. El mostrador mira
+    # "esperando pago + confirmada" de una sola vez, no un estado por turno.
+    #
+    # El `split(",")` ya lo hacía el repositorio, pero **sin validar nada**: un
+    # estado mal escrito no daba error, devolvía cero filas. Y cero filas se lee
+    # exactamente igual que "no hay reservas para mostrar", así que un typo en
+    # la URL pasaba por un sistema que perdió datos. Mismo patrón que
+    # `medio_pago` en `pagos.py`: lista blanca y 400 si viene algo que no es un
+    # estado.
+    #
+    # Un único estado sigue siendo una lista de uno: `?estado=vencida` —que es
+    # como llaman hoy el banner de vencidas y el de reservas web esperando la
+    # transferencia— se comporta igual que antes.
+    if estado:
+        pedidos = [e.strip() for e in estado.split(",") if e.strip()]
+        invalidos = [e for e in pedidos if e not in ESTADOS_RESERVA]
+        if invalidos:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Estado de reserva inválido: {', '.join(invalidos)}",
+            )
+        estado = ",".join(pedidos)
+
     svc = ReservaService(db)
     items, total = svc.list(
         estado=estado,

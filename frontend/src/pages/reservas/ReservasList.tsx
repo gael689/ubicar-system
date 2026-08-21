@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AccionesContrato } from '@/components/reservas/AccionesContrato';
-import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2, Clock, Globe, Store, Wrench } from 'lucide-react';
+import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2, Clock, Globe, Store, Wrench, Check, Hourglass } from 'lucide-react';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -17,14 +17,31 @@ import { CheckinModal } from './CheckinModal';
 import { ExtenderModal } from './ExtenderModal';
 import { SemaforoDot } from './SemaforoDot';
 
-const ESTADOS: { value: EstadoReserva | ''; label: string }[] = [
-  { value: '', label: 'Todos los estados' },
+/**
+ * Los estados que se pueden filtrar, y se eligen **de a varios**.
+ *
+ * Lo pidió el dueño así: "que pueda filtrar por 'esperando pago', por
+ * 'confirmada' y las demás, que sean filtros esto y esto". Antes era un valor
+ * solo, y en el mostrador la pregunta nunca es "mostrame las confirmadas" sino
+ * "mostrame lo que tengo que resolver hoy" — que son dos o tres estados juntos.
+ * Con un chip por vez había que mirar la pantalla tres veces y acordarse de lo
+ * que decía la anterior.
+ *
+ * Están **los nueve** del enum, no una selección. Los tres de la web
+ * (`pendiente_pago`, `sin_disponibilidad`, `revision_sin_cupo`) aparecen en la
+ * tabla igual, así que dejarlos afuera del filtro significaba que la fila que
+ * más grita —una reserva pagada que se quedó sin auto— era justamente la que no
+ * se podía buscar. El orden es el del día de trabajo: primero lo que está vivo,
+ * después lo que hay que resolver, y al final lo cerrado.
+ */
+const ESTADOS: { value: EstadoReserva; label: string }[] = [
+  { value: 'pendiente', label: 'Pendiente' },
   { value: 'confirmada', label: 'Confirmada' },
   { value: 'activa', label: 'Activa' },
   { value: 'vencida', label: 'Vencida' },
-  // Faltaba, y era el único estado que no se podía ni mirar desde acá: una
-  // reserva web esperando la transferencia no existía para este listado.
   { value: 'pendiente_pago', label: 'Esperando pago' },
+  { value: 'revision_sin_cupo', label: 'Pagada sin cupo' },
+  { value: 'sin_disponibilidad', label: 'Sin disponibilidad' },
   { value: 'finalizada', label: 'Finalizada' },
   { value: 'cancelada', label: 'Cancelada' },
 ];
@@ -40,8 +57,14 @@ const CANALES: { value: CanalReserva; label: string; icon?: typeof Globe }[] = [
   { value: 'mostrador', label: 'Mostrador', icon: Store },
 ];
 
+// Los tres que faltaban acá se veían como una etiqueta gris sin borde, porque
+// el lookup caía en el `?? ''`: al poderse filtrar ahora aparecen en tandas, y
+// una columna entera de badges apagados no dice nada.
 const ESTADO_COLORS: Record<string, string> = {
+  pendiente: 'bg-slate-100 text-slate-700 border-slate-300',
   confirmada: 'bg-blue-100 text-blue-800 border-blue-200',
+  revision_sin_cupo: 'bg-rose-100 text-rose-800 border-rose-300',
+  sin_disponibilidad: 'bg-orange-100 text-orange-800 border-orange-200',
   activa: 'bg-emerald-100 text-emerald-800 border-emerald-200',
   vencida: 'bg-red-100 text-red-800 border-red-300 animate-pulse',
   pendiente_pago: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -50,7 +73,10 @@ const ESTADO_COLORS: Record<string, string> = {
 };
 
 const ESTADO_ICONS: Record<string, React.ReactNode> = {
+  pendiente: <Hourglass className="w-3.5 h-3.5" />,
   confirmada: <CheckCircle2 className="w-3.5 h-3.5" />,
+  revision_sin_cupo: <Wrench className="w-3.5 h-3.5" />,
+  sin_disponibilidad: <AlertTriangle className="w-3.5 h-3.5" />,
   activa: <Car className="w-3.5 h-3.5" />,
   vencida: <AlarmClockOff className="w-3.5 h-3.5" />,
   pendiente_pago: <Clock className="w-3.5 h-3.5" />,
@@ -98,7 +124,9 @@ export function ReservasList() {
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [estado, setEstado] = useState<string>('');
+  // La selección de estados. Vacía significa "todos" y no "ninguno": es lo que
+  // espera cualquiera que abre la pantalla sin tocar nada.
+  const [estados, setEstados] = useState<EstadoReserva[]>([]);
   const [search, setSearch] = useState('');
   const [fechaFiltro, setFechaFiltro] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -111,9 +139,13 @@ export function ReservasList() {
   } = useAppStore();
   // El canal cuenta como filtro activo sólo si acota algo: en "todas" no
   // esconde nada, así que marcarlo haría que el contador mienta.
+  // Los estados cuentan como **un** filtro aunque haya cinco elegidos: el
+  // badge dice cuántas cosas están acotando la lista, no cuántos clicks se
+  // dieron. Si sumara uno por chip, elegir tres estados marcaría "3" y
+  // parecería que también hay una búsqueda y una fecha puestas.
   const activeFiltersCount = useMemo(
-    () => [estado, search, fechaFiltro, canal !== 'todas' ? canal : ''].filter(Boolean).length,
-    [estado, search, fechaFiltro, canal],
+    () => [estados.length ? 'estado' : '', search, fechaFiltro, canal !== 'todas' ? canal : ''].filter(Boolean).length,
+    [estados, search, fechaFiltro, canal],
   );
   const compacta = densidad === 'compacta';
   const cellPad = compacta ? 'px-3 py-1.5' : 'px-4 py-3';
@@ -123,9 +155,27 @@ export function ReservasList() {
   const [extenderReserva, setExtenderReserva] = useState<Reserva | null>(null);
   const pageSize = 20;
 
+  /** Suma o saca un estado de la selección, sin pisar los otros. */
+  const toggleEstado = useCallback((valor: EstadoReserva) => {
+    setEstados(prev => prev.includes(valor) ? prev.filter(e => e !== valor) : [...prev, valor]);
+    // Volver a la página 1 es obligatorio: con otro filtro la página 3 puede no
+    // existir, y la tabla queda vacía como si no hubiera resultados.
+    setPage(1);
+  }, []);
+
+  const limpiarFiltros = useCallback(() => {
+    setEstados([]);
+    setSearch('');
+    setFechaFiltro('');
+    setPage(1);
+  }, []);
+
   const loadReservas = useCallback(async () => {
     const resp = await listReservas({
-      estado: estado || undefined,
+      // Coma-separado, que es lo que el backend valida contra el enum y
+      // responde 400 si no reconoce. Sin estados elegidos no se manda el
+      // parámetro: mandar una cadena vacía filtraría por "nada".
+      estado: estados.length ? estados.join(',') : undefined,
       q: search.trim() || undefined,
       fecha: fechaFiltro || undefined,
       // El backend ya aceptaba `origen` (lo usa el banner de arriba); lo que
@@ -136,7 +186,7 @@ export function ReservasList() {
     });
     setReservas(resp.data);
     setTotal(resp.total);
-  }, [listReservas, estado, search, fechaFiltro, canal, page]);
+  }, [listReservas, estados, search, fechaFiltro, canal, page]);
 
   useEffect(() => {
     loadReservas().catch(() => {});
@@ -290,30 +340,62 @@ export function ReservasList() {
               ))}
             </div>
 
-            {/* Filtros de estado */}
-            <div className="flex gap-2 flex-wrap">
-              {ESTADOS.map((e) => (
+            {/* Filtros de estado — se eligen de a varios.
+                El chip "Todos" no es un estado más: es el que limpia la
+                selección, y queda encendido justamente cuando no hay ninguno
+                elegido. Así "sacar el filtro" es un click y no nueve. */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-slate-500">Estado</span>
+              <button
+                onClick={() => { setEstados([]); setPage(1); }}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                  estados.length === 0
+                    ? 'bg-primary/15 text-primary border-primary/25'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                Todos
+              </button>
+              {ESTADOS.map((e) => {
+                const activo = estados.includes(e.value);
+                return (
+                  <button
+                    key={e.value}
+                    onClick={() => toggleEstado(e.value)}
+                    aria-pressed={activo}
+                    title={activo ? `Sacar "${e.label}" del filtro` : `Sumar "${e.label}" al filtro`}
+                    className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                      activo
+                        ? 'bg-primary/15 text-primary border-primary/25'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {/* El tilde es lo que distingue "elegido" de "resaltado".
+                        Con varios chips prendidos a la vez, el color solo no
+                        alcanza para leer que se pueden combinar. */}
+                    {activo && <Check className="w-3.5 h-3.5" />}
+                    {e.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {(estados.length > 0 || search || fechaFiltro) && (
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  key={e.value}
-                  onClick={() => { setEstado(e.value); setPage(1); }}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${
-                    estado === e.value
-                      ? 'bg-primary/15 text-primary border-primary/25'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
+                  onClick={limpiarFiltros}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium border bg-amber-600 text-white border-amber-700 hover:bg-amber-700 transition-all"
                 >
-                  {e.label}
-                </button>
-              ))}
-              {(search || fechaFiltro) && (
-                <button
-                  onClick={() => { setSearch(''); setFechaFiltro(''); setPage(1); }}
-                  className="px-4 py-1.5 rounded-full text-sm font-medium border bg-amber-600 text-white border-amber-700 hover:bg-amber-700 transition-all"
-                >
+                  <X className="w-3.5 h-3.5" />
                   Limpiar filtros
                 </button>
-              )}
-            </div>
+                {estados.length > 0 && (
+                  <span className="text-xs text-slate-500">
+                    Mostrando {estados.map(v => ESTADOS.find(e => e.value === v)?.label ?? v).join(' + ')}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
