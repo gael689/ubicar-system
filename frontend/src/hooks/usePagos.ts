@@ -118,6 +118,28 @@ export function useCrearPago() {
   });
 }
 
+/**
+ * Da de baja un cobro. **No lo borra.**
+ *
+ * El endpoint viejo (`DELETE /pagos/{id}`) era el único borrado físico del
+ * sistema: sacaba plata de la caja de cualquier fecha pasada sin dejar nada que
+ * contara qué había. Ahora el cobro queda marcado `anulado`, con motivo y
+ * autor, y su crédito en la cuenta corriente se revierte con un contra-asiento.
+ */
+export function useAnularPago() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, motivo }: { id: number; motivo: string }) =>
+      api.post(`/pagos/${id}/anular`, { motivo }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [KEY] });
+      qc.invalidateQueries({ queryKey: ['caja'] });
+      qc.invalidateQueries({ queryKey: ['reportes'] });
+      qc.invalidateQueries({ queryKey: ['cuentas-corrientes'] });
+    },
+  });
+}
+
 export function useEliminarPago() {
   const qc = useQueryClient();
   return useMutation({

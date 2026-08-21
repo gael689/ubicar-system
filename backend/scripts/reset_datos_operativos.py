@@ -82,6 +82,9 @@ TABLAS_EN_ORDEN = [
     "recibos",
     "comprobantes",
     "echeqs",
+    # Los movimientos de caja van **antes** que el ledger y que los clientes:
+    # apuntan a los dos (migración 080).
+    "movimientos_caja",
     "movimientos_cuenta_corriente",
     "cuentas_corrientes",
     "pagos",
@@ -134,6 +137,12 @@ def _romper_ciclos(db: Session) -> None:
     # después de `pagos` en la secuencia. Se nullea igual, por si el orden
     # cambia: es más barato que descubrirlo en producción.
     db.execute(text("UPDATE pagos SET reserva_id = NULL"))
+    # `alquileres.garantia_movimiento_caja_id` (migración 081) apunta a
+    # `movimientos_caja`, que se borra en la misma pasada. Sin nullearlo, el
+    # orden relativo entre las dos tablas decide si el DELETE explota o no.
+    db.execute(text("UPDATE alquileres SET garantia_movimiento_caja_id = NULL"))
+    # Y los movimientos de caja apuntan al ledger, que también se borra.
+    db.execute(text("UPDATE movimientos_caja SET movimiento_cc_id = NULL"))
     db.execute(text("UPDATE recibos SET movimiento_cc_id = NULL"))
     db.execute(text("UPDATE comprobantes SET movimiento_cc_id = NULL"))
     db.execute(text("UPDATE danios SET movimiento_cc_id = NULL"))

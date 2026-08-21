@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -96,7 +96,8 @@ def _filtrar_pagos(
     **exactamente igual**: si divergen, el total de abajo no coincide con las
     filas de arriba y el listado deja de servir para cerrar la caja.
     """
-    q = db.query(Pago)
+    # Los cobros dados de baja no cuentan en ningún total (migración 083).
+    q = db.query(Pago).filter(Pago.anulado == False)
     if alquiler_id:
         q = q.filter(Pago.alquiler_id == alquiler_id)
     if cliente_id:
@@ -268,8 +269,18 @@ def caja_dia(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    pagos = db.query(Pago).filter(Pago.fecha == fecha).order_by(Pago.id.desc()).all()
-    gastos = db.query(Gasto).filter(Gasto.fecha == fecha).order_by(Gasto.id.desc()).all()
+    pagos = (
+        db.query(Pago)
+        .filter(Pago.fecha == fecha, Pago.anulado == False)
+        .order_by(Pago.id.desc())
+        .all()
+    )
+    gastos = (
+        db.query(Gasto)
+        .filter(Gasto.fecha == fecha, Gasto.anulado == False)
+        .order_by(Gasto.id.desc())
+        .all()
+    )
 
     caja = CajaService(db)
     movimientos = caja.del_dia(fecha)
@@ -576,18 +587,55 @@ def _concepto_de(pago: Pago, db: Session) -> str:
     return f"Alquiler #{pago.alquiler_id}"
 
 
-@router.delete("/{pago_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_pago(
+class AnularPagoRequest(BaseModel):
+    """
+    Dar de baja un cobro. **El motivo es obligatorio y no es burocracia**: es lo
+    único que va a quedar para explicar por qué la caja de un día pasado cambió.
+    """
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_no_vacio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Anular un cobro requiere un motivo")
+        return v.strip()
+
+
+@router.post("/{pago_id}/anular")
+def anular_pago(
     pago_id: int,
+    payload: AnularPagoRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
+    """
+    Da de baja un cobro. **No lo borra.**
+
+    Hasta la Fase 7 esto era `DELETE /pagos/{id}` con un `db.delete(pago)`
+    adentro: el único borrado físico del sistema, y el que contradecía de frente
+    la regla que gobierna todo el circuito — *el ledger nunca se edita, se
+    compensa*. El comentario del código lo admitía: después del delete no
+    quedaba ninguna fila que pudiera contar qué había ni quién la sacó. Sacaba
+    plata de la caja de cualquier fecha pasada, y el cobro desaparecía del
+    historial del cliente como si nunca hubiera existido.
+
+    El dueño lo cerró: **nadie debe usar el borrado físico**. Ahora el cobro
+    queda, marcado `anulado` con motivo, autor y fecha, y su crédito en la
+    cuenta corriente se revierte con un contra-asiento — nunca editando el
+    original.
+
+    Sigue frenando si hay un recibo emitido: el papel manda, y no se puede
+    anular por atrás un cobro del que el cliente tiene comprobante.
+    """
     pago = db.query(Pago).filter(Pago.id == pago_id).first()
     if not pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
+    if pago.anulado:
+        raise HTTPException(status_code=409, detail="El cobro ya está anulado")
 
     # Si ya se le entregó un recibo al cliente, el papel manda: no se puede
-    # borrar el cobro por atrás y dejar circulando un comprobante que dice que
+    # anular el cobro por atrás y dejar circulando un comprobante que dice que
     # existió. Primero se anula el recibo, que es un acto explícito y con
     # motivo.
     recibo = (
@@ -600,38 +648,32 @@ def delete_pago(
             status_code=409,
             detail=(
                 f"El pago tiene el recibo {recibo.prefijo}-{recibo.numero:08d} emitido. "
-                "Anulá el recibo antes de eliminar el cobro."
+                "Anulá el recibo antes de dar de baja el cobro."
             ),
         )
 
-    # Con el ledger completo, todo pago generó un crédito en la cuenta
-    # corriente del cliente (ver create_pago). Antes de borrar el Pago, se
-    # anula ese movimiento con un contra-asiento — nunca se edita ni se
-    # borra el original — para que el saldo no quede desincronizado.
+    # Todo pago generó un crédito en la cuenta corriente del cliente. Se revierte
+    # con un contra-asiento; el original nunca se toca.
     from app.services.cuenta_corriente_service import CuentaCorrienteService
 
-    mov = CuentaCorrienteService(db).anular_por_pago(
-        pago_id, motivo=f"se eliminó el pago #{pago_id}", creado_por=current_user.id
+    CuentaCorrienteService(db).anular_por_pago(
+        pago_id, motivo=payload.motivo, creado_por=current_user.id
     )
-    if mov:
-        # El Pago está por borrarse (hard delete): anular_por_pago ya
-        # desvinculó la FK del movimiento original. Forzar que ese UPDATE
-        # llegue a la base antes del DELETE del pago, o la FK todavía
-        # referenciada rechaza el borrado.
-        db.flush()
 
-    # El único borrado real que quedó en el sistema, y por eso el que más
-    # falta hace auditar: después del `delete` no queda ninguna fila que
-    # pueda contar qué había ni quién la sacó.
+    pago.anulado = True
+    pago.motivo_anulacion = payload.motivo
+    pago.anulado_por = current_user.id
+    pago.anulado_en = datetime.utcnow()
+
     auditoria_service.registrar(
         db,
         usuario_id=current_user.id,
-        accion="eliminar",
+        accion="anular",
         entidad_tipo="pago",
         entidad_id=pago.id,
         descripcion=(
-            f"Eliminó el cobro #{pago.id} de ${pago.monto} "
-            f"({pago.medio_pago}, {pago.fecha})"
+            f"Dio de baja el cobro #{pago.id} de ${pago.monto} "
+            f"({pago.medio_pago}, {pago.fecha}). Motivo: {payload.motivo}"
         ),
         datos_antes={
             "monto": pago.monto,
@@ -640,8 +682,31 @@ def delete_pago(
             "cliente_id": pago.cliente_id,
             "alquiler_id": pago.alquiler_id,
         },
+        datos_despues={"anulado": True, "motivo": payload.motivo},
         monto=pago.monto,
     )
 
-    db.delete(pago)
     db.commit()
+    db.refresh(pago)
+    return ok(_enriquecer(pago, db), "Cobro dado de baja")
+
+
+@router.delete("/{pago_id}", status_code=status.HTTP_410_GONE)
+def delete_pago(pago_id: int):
+    """
+    **Ya no existe.** El borrado físico de un cobro se eliminó en la Fase 7 del
+    `PLAN_DINERO.md`: sacaba plata de la caja de cualquier fecha pasada sin
+    dejar nada que contara qué había.
+
+    Se devuelve 410 y no 404 a propósito: 404 diría "ese pago no existe" y lo
+    que pasa es otra cosa — el pago existe, la operación no. Cualquier pantalla
+    que todavía llame acá tiene que pasar a `POST /pagos/{id}/anular`, que pide
+    el motivo.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=(
+            "Un cobro no se borra: se da de baja con motivo. "
+            "Usá POST /pagos/{id}/anular."
+        ),
+    )

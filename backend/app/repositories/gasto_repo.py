@@ -21,7 +21,11 @@ class GastoRepository(BaseRepository[Gasto]):
         skip: int = 0,
         limit: int = 20,
     ) -> tuple[list[Gasto], int]:
-        stmt = select(Gasto).where(Gasto.vehiculo_id == vehiculo_id)
+        # Los gastos dados de baja no se listan ni se suman (migración 083).
+        stmt = select(Gasto).where(
+            Gasto.vehiculo_id == vehiculo_id,
+            Gasto.anulado == False,
+        )
         if tipo:
             stmt = stmt.where(Gasto.tipo == tipo)
         if fecha_desde:

@@ -62,7 +62,9 @@ def pagos_de(db: Session, alquiler: Alquiler) -> list:
     from app.models.pago import Pago
     from app.models.pago_web import PagoWeb
 
-    pagos = {p.id: p for p in alquiler.pagos}
+    # Los cobros dados de baja no cuentan (migración 083): la fila queda para
+    # poder explicar qué pasó, pero la plata no entró.
+    pagos = {p.id: p for p in alquiler.pagos if not p.anulado}
 
     ids_online = [
         pw.pago_id
@@ -73,7 +75,7 @@ def pagos_de(db: Session, alquiler: Alquiler) -> list:
     for pago_id in ids_online:
         if pago_id not in pagos:
             pago = db.get(Pago, pago_id)
-            if pago is not None:
+            if pago is not None and not pago.anulado:
                 pagos[pago_id] = pago
 
     return list(pagos.values())

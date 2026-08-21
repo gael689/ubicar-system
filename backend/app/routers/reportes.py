@@ -117,7 +117,9 @@ def dashboard_stats(
         })
 
     # 3. Pagos de la fecha
-    pagos_hoy = db.query(Pago).filter(Pago.fecha == hoy_date).all()
+    pagos_hoy = db.query(Pago).filter(
+        Pago.fecha == hoy_date, Pago.anulado == False
+    ).all()
     for p in pagos_hoy:
         alq = db.get(Alquiler, p.alquiler_id) if p.alquiler_id else None
         r = db.get(Reserva, alq.reserva_id) if alq else None
@@ -137,7 +139,9 @@ def dashboard_stats(
         })
 
     # 4. Gastos de la fecha
-    gastos_hoy = db.query(Gasto).filter(Gasto.fecha == hoy_date).all()
+    gastos_hoy = db.query(Gasto).filter(
+        Gasto.fecha == hoy_date, Gasto.anulado == False
+    ).all()
     for g in gastos_hoy:
         hora = "12:00"
         flujo_del_dia.append({
@@ -174,9 +178,11 @@ def reporte_ingresos(
     for mes in range(1, 13):
         pagos_mes = db.query(Pago).filter(
             extract("year", Pago.fecha) == anio, extract("month", Pago.fecha) == mes,
+            Pago.anulado == False,
         ).all()
         gastos_mes = db.query(Gasto).filter(
             extract("year", Gasto.fecha) == anio, extract("month", Gasto.fecha) == mes,
+            Gasto.anulado == False,
         ).all()
 
         total_ingresos = sum(float(p.monto) for p in pagos_mes)
@@ -254,7 +260,7 @@ def reporte_flota(
         pagos_por_alquiler = {
             aid: total or Decimal("0")
             for aid, total in db.query(Pago.alquiler_id, func.sum(Pago.monto))
-            .filter(Pago.alquiler_id.in_(alquiler_ids))
+            .filter(Pago.alquiler_id.in_(alquiler_ids), Pago.anulado == False)
             .group_by(Pago.alquiler_id)
             .all()
         }
@@ -267,6 +273,7 @@ def reporte_flota(
             Gasto.vehiculo_id.in_(vehiculo_ids),
             Gasto.fecha >= fecha_desde,
             Gasto.fecha <= fecha_hasta,
+            Gasto.anulado == False,
         )
         .group_by(Gasto.vehiculo_id)
         .all()

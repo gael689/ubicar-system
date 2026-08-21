@@ -1,5 +1,6 @@
 from datetime import date
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db
@@ -53,17 +54,55 @@ def update_gasto(
     gasto_id: int,
     payload: GastoUpdate,
     service: GastoService = Depends(_service),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
-    gasto = service.update(gasto_id, payload)
+    """Edita un gasto. Los cambios de monto, fecha, medio o tipo quedan auditados."""
+    gasto = service.update(gasto_id, payload, usuario_id=current_user.id)
     return ok(GastoResponse.model_validate(gasto), "Gasto actualizado")
 
 
-@router.delete("/gastos/{gasto_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_gasto(
+class AnularGastoRequest(BaseModel):
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_no_vacio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Dar de baja un gasto requiere un motivo")
+        return v.strip()
+
+
+@router.post("/gastos/{gasto_id}/anular")
+def anular_gasto(
     gasto_id: int,
+    payload: AnularGastoRequest,
     service: GastoService = Depends(_service),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
-    """Borrado físico (gastos no son entidad auditada en F1)."""
-    service.delete(gasto_id)
+    """
+    Da de baja un gasto. **No lo borra.**
+
+    Los gastos son la mitad de "cuánto se gasta en la flota" y desde la Fase 2.5
+    restan del efectivo del cajón. Borrar uno cambiaba los dos números hacia
+    atrás sin dejar nada. Ver `PLAN_DINERO.md` §3.3b.
+    """
+    try:
+        gasto = service.anular(gasto_id, payload.motivo, usuario_id=current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return ok(GastoResponse.model_validate(gasto), "Gasto dado de baja")
+
+
+@router.delete("/gastos/{gasto_id}", status_code=status.HTTP_410_GONE)
+def delete_gasto(gasto_id: int):
+    """
+    **Ya no existe.** Se devuelve 410 y no 404 a propósito: el gasto existe, la
+    operación no. Usá `POST /gastos/{id}/anular`, que pide el motivo.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=(
+            "Un gasto no se borra: se da de baja con motivo. "
+            "Usá POST /gastos/{id}/anular."
+        ),
+    )

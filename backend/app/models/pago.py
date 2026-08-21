@@ -48,4 +48,14 @@ class Pago(Base):
     fecha: Mapped[date] = mapped_column(Date(), nullable=False)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ── Baja lógica (migración 083) ──────────────────────────────────────────
+    # **Nada de esto se borra.** Un DELETE saca plata de la caja de un día
+    # pasado y no deja ninguna fila que cuente qué había. Con la baja lógica el
+    # registro queda, con el motivo, quién y cuándo — y todo lo que lo lee
+    # filtra por `anulado = false`.
+    anulado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    motivo_anulacion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    anulado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    anulado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     alquiler: Mapped["Alquiler"] = relationship("Alquiler", back_populates="pagos")

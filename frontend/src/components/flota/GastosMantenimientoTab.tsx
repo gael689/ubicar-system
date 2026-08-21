@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
 
 import {
   useGastos, useCreateGasto, useDeleteGasto,
@@ -148,18 +148,17 @@ export function GastosMantenimientoTab({ vehiculoId, kmActual, kmProximoService,
         </Card>
       )}
 
-      <ConfirmDialog
+      <MotivoDialog
         open={!!deleteTarget}
         onOpenChange={() => setDeleteTarget(null)}
-        title="Eliminar registro"
-        description={`¿Eliminar "${deleteTarget?.label}"? Esta acción no se puede deshacer.`}
-        confirmLabel="Eliminar"
-        destructive
+        title="Dar de baja el registro"
+        description={`"${deleteTarget?.label}" deja de contar en los totales. No se borra: queda registrado con el motivo.`}
+        confirmLabel="Dar de baja"
         loading={deleteGasto.isPending || eliminarServicio.isPending}
-        onConfirm={async () => {
+        onConfirm={async (motivo) => {
           if (!deleteTarget) return;
           if (deleteTarget.tipo === 'gasto') {
-            await deleteGasto.mutateAsync(deleteTarget.id);
+            await deleteGasto.mutateAsync({ id: deleteTarget.id, motivo });
           } else {
             await eliminarServicio.mutateAsync(deleteTarget.id);
           }

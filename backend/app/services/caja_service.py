@@ -247,11 +247,16 @@ class CajaService:
         cargó un depósito, el número tiene que quedar alto y visible, no
         reiniciarse solo y ocultar el olvido.
         """
+        # Lo dado de baja no cuenta (migración 083). Es lo que reemplazó al
+        # borrado físico: la fila queda para poder explicar qué pasó, pero la
+        # plata no está.
         q_pagos = self.db.query(func.coalesce(func.sum(Pago.monto), 0)).filter(
-            Pago.medio_pago == MEDIO_EFECTIVO
+            Pago.medio_pago == MEDIO_EFECTIVO,
+            Pago.anulado == False,
         )
         q_gastos = self.db.query(func.coalesce(func.sum(Gasto.monto), 0)).filter(
-            Gasto.medio_pago == MEDIO_EFECTIVO
+            Gasto.medio_pago == MEDIO_EFECTIVO,
+            Gasto.anulado == False,
         )
         q_movs = self.db.query(MovimientoCaja).filter(
             MovimientoCaja.medio == MEDIO_EFECTIVO,

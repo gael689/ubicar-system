@@ -8,7 +8,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { useCajaDia, useCrearPago, useEliminarPago } from '@/hooks/usePagos';
+import { useCajaDia, useCrearPago, useAnularPago } from '@/hooks/usePagos';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { DondeEstaLaPlata } from '@/components/pagos/DondeEstaLaPlata';
 import { formatCurrency, extractError } from '@/lib/utils';
 import { METODO_PAGO_LABEL } from '@/lib/constants';
@@ -112,7 +113,8 @@ export function CajaPage() {
 
   const { data: caja, isLoading, refetch, isFetching } = useCajaDia(fecha);
   const crearPago = useCrearPago();
-  const eliminarPago = useEliminarPago();
+  const anularPago = useAnularPago();
+  const [anularId, setAnularId] = useState<number | null>(null);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -130,11 +132,20 @@ export function CajaPage() {
     }
   }
 
-  async function handleDelete(id: number) {
-    if (!confirm('¿Eliminar este cobro?')) return;
+  // Un cobro no se borra: se da de baja con motivo. El `confirm()` del
+  // navegador no servía para esto — no puede pedir un texto, y el motivo es lo
+  // único que va a quedar para explicar por qué cambió la caja de un día
+  // pasado.
+  function handleDelete(id: number) {
+    setAnularId(id);
+  }
+
+  async function handleAnular(motivo: string) {
+    if (!anularId) return;
     try {
-      await eliminarPago.mutateAsync(id);
-      toast.success('Cobro eliminado');
+      await anularPago.mutateAsync({ id: anularId, motivo });
+      toast.success('Cobro dado de baja');
+      setAnularId(null);
     } catch (err) {
       toast.error(extractError(err));
     }
@@ -210,6 +221,16 @@ export function CajaPage() {
         )}
 
         {/* Donde esta la plata: el efectivo del cajon y desde cuando. */}
+        <MotivoDialog
+          open={anularId !== null}
+          onOpenChange={open => !open && setAnularId(null)}
+          title="Dar de baja el cobro"
+          description="El cobro no se borra: queda registrado como dado de baja, sale de la caja de su fecha, y su crédito en la cuenta corriente se revierte con un contra-asiento. El motivo es lo único que va a explicar por qué."
+          confirmLabel="Dar de baja"
+          loading={anularPago.isPending}
+          onConfirm={handleAnular}
+        />
+
         {caja && (
           <DondeEstaLaPlata
             fecha={fecha}

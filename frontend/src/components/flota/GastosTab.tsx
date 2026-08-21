@@ -4,7 +4,7 @@ import { Plus, Trash2, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 
 import {
@@ -141,17 +141,16 @@ export function GastosTab({ vehiculoId }: Props) {
         />
       )}
 
-      <ConfirmDialog
+      <MotivoDialog
         open={!!deleteTarget}
         onOpenChange={() => setDeleteTarget(null)}
-        title="Eliminar gasto"
-        description={`Esto elimina el gasto "${deleteTarget?.descripcion}" de ${deleteTarget ? formatCurrency(deleteTarget.monto) : ''} permanentemente.`}
-        confirmLabel="Eliminar"
-        destructive
+        title="Dar de baja el gasto"
+        description={`El gasto "${deleteTarget?.descripcion}" de ${deleteTarget ? formatCurrency(deleteTarget.monto) : ''} deja de contar en el reporte de flota y en el efectivo del cajón. No se borra: queda registrado con el motivo.`}
+        confirmLabel="Dar de baja"
         loading={deleteGasto.isPending}
-        onConfirm={async () => {
+        onConfirm={async (motivo) => {
           if (deleteTarget) {
-            await deleteGasto.mutateAsync(deleteTarget.id);
+            await deleteGasto.mutateAsync({ id: deleteTarget.id, motivo });
             setDeleteTarget(null);
           }
         }}

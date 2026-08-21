@@ -80,16 +80,24 @@ export function useCreateGasto(vehiculoId: number) {
   });
 }
 
+/**
+ * Da de baja un gasto. **No lo borra.**
+ *
+ * Los gastos son la mitad de "cuánto se gasta en la flota" y restan del
+ * efectivo del cajón. Borrar uno cambiaba los dos números hacia atrás sin dejar
+ * nada. El motivo es obligatorio.
+ */
 export function useDeleteGasto(vehiculoId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => {
-      await api.delete(`/gastos/${id}`);
+    mutationFn: async ({ id, motivo }: { id: number; motivo: string }) => {
+      await api.post(`/gastos/${id}/anular`, { motivo });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEYS.all(vehiculoId) });
       qc.invalidateQueries({ queryKey: ['vehiculos'] });
-      toast.success('Gasto eliminado');
+      qc.invalidateQueries({ queryKey: ['caja'] });
+      toast.success('Gasto dado de baja');
     },
     onError: (err) => toast.error(extractError(err)),
   });
