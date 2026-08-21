@@ -217,15 +217,6 @@ class AlquilerService:
             # vínculo (mismo patrón que fecha_vencimiento en condicion_pago).
             self.echeq_service.completar_alquiler(reserva.id, alquiler.id)
 
-            # Lo mismo con el cobro online, que hasta acá era el único vínculo
-            # que nadie completaba. `PagoWebService._acreditar` crea el `Pago`
-            # con `alquiler_id=None` —correcto en ese momento, el alquiler no
-            # existe— y ningún código lo completaba después. Como todo lo que
-            # pregunta "cuánto se cobró de este alquiler" suma `alquiler.pagos`,
-            # **ese alquiler figuraba con saldo pendiente inflado por el monto
-            # de la seña online, para siempre**: plata ya cobrada que el sistema
-            # seguía reclamando, en la caja y en una notificación.
-            self._completar_pago_online(reserva.id, alquiler.id)
 
             # El contrato también puede haberse emitido antes de esta entrega
             # —es lo deseable, da tiempo a leerlo— así que acá se completa el
@@ -252,6 +243,7 @@ class AlquilerService:
                 # el resto de los conceptos.
                 + reserva.total_adicionales
             )
+            debito_alquiler = None
             if monto_facturado > 0:
                 # Condición de pago: decisión de la reserva (D-?), no el
                 # default del cliente. Si el ancla es 'checkin', todavía no
@@ -263,9 +255,10 @@ class AlquilerService:
                     fecha_vencimiento_checkout = calcular_vencimiento(
                         reserva.condicion_pago_fecha_ancla, reserva.condicion_pago
                     )
-                self.cc_service.registrar_movimiento(
+                debito_alquiler = self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="debito",
+                    naturaleza="alquiler",
                     concepto=f"Alquiler #{reserva.id} — checkout ({reserva.vehiculo.patente if reserva.vehiculo else ''})",
                     monto=monto_facturado,
                     fecha=checkout_fecha,
@@ -277,42 +270,35 @@ class AlquilerService:
                     reserva_id=reserva.id,
                 )
 
-            # Si hay un anticipo guardado en la reserva, creamos el Pago ahora
+            # ── La seña ya es un crédito: acá sólo se marca aplicada ─────
             #
-            # **Salvo que ya se haya cobrado de verdad.** El cobro online
-            # (`PagoWebService._acreditar`) crea el `Pago` y su credito en la
-            # cuenta corriente en el momento en que Mercado Pago acredita, y
-            # ademas deja `anticipo_monto` para que el mostrador vea cuanto
-            # adelanto el cliente. Si aca se creara otro, **la sena quedaria
-            # contada dos veces**: dos pagos en la caja y dos creditos en la
-            # cuenta del cliente, que terminaria con un saldo a favor que no
-            # existe. Se detecta por el movimiento ya asentado contra esta
-            # reserva, que es el hecho economico, no por el medio de pago.
-            ya_cobrado = self.cc_service.tiene_credito_de_reserva(reserva.id)
-            if reserva.anticipo_monto and reserva.anticipo_monto > 0 and not ya_cobrado:
-                pago_anticipo = Pago(
-                    alquiler_id=alquiler.id,
-                    cliente_id=reserva.cliente_id,
-                    monto=reserva.anticipo_monto,
-                    medio_pago=reserva.anticipo_medio_pago or "efectivo",
-                    con_factura=False,
-                    fecha=reserva.anticipo_fecha or checkout_fecha,
-                    notas=f"Anticipo de reserva #{reserva.id}",
-                    cobrado_por=usuario_id,
-                )
-                self.db.add(pago_anticipo)
-                self.db.flush()
-                self.cc_service.registrar_movimiento(
-                    cliente_id=reserva.cliente_id,
-                    tipo="credito",
-                    concepto=f"Anticipo de reserva #{reserva.id} ({pago_anticipo.medio_pago})",
-                    monto=reserva.anticipo_monto,
-                    fecha=pago_anticipo.fecha,
-                    creado_por=usuario_id,
-                    alquiler_id=alquiler.id,
-                    reserva_id=reserva.id,
-                    pago_id=pago_anticipo.id,
-                )
+            # Hasta la Fase 2 este bloque **fabricaba** el `Pago` y el crédito a
+            # partir de `reserva.anticipo_monto`, con una guarda
+            # (`tiene_credito_de_reserva`) para no duplicar lo que el cobro
+            # online ya había asentado. Eso se terminó: **todo cobro anterior al
+            # check-out asienta su propio crédito `anticipo` en el momento en
+            # que entra la plata** — `registrar_cobro` para el mostrador y la
+            # transferencia, `PagoWebService._acreditar` para Mercado Pago.
+            #
+            # Acá no entra plata nueva. Lo que pasa es que el anticipo encuentra
+            # su contrapartida: se marca aplicado contra el débito del alquiler
+            # y deja de contarse en "anticipos por aplicar".
+            #
+            # `debito_alquiler` puede ser `None` —el auto salió sin precio
+            # cargado— y se marca igual: el anticipo se consumió, y contra qué
+            # es información extra, no la condición. Sin esto quedaría "por
+            # aplicar" para siempre y la deuda saldría inflada por el anticipo
+            # entero (`PLAN_DINERO.md` §4.2, borde a).
+            #
+            # El crédito del **echeq** no se toca: tiene naturaleza
+            # `echeq_en_cartera`, no `anticipo`. Es un papel, no plata.
+            self.cc_service.aplicar_anticipos_de_reserva(
+                reserva.id, debito_alquiler.id if debito_alquiler else None
+            )
+
+            # Y los pagos de la seña, que nacieron sin alquiler porque el
+            # alquiler no existía, encuentran el suyo.
+            self._completar_pagos_de_la_reserva(reserva.id, alquiler.id)
 
             # Si se pasó un pago inmediato en el modal de checkout
             if pago_inmediato and pago_inmediato.monto > 0:
@@ -331,6 +317,7 @@ class AlquilerService:
                 self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="credito",
+                    naturaleza="pago",
                     concepto=f"Cobro en checkout — alquiler #{reserva.id} ({pago_checkout.medio_pago})",
                     monto=pago_inmediato.monto,
                     fecha=pago_inmediato.fecha,
@@ -520,6 +507,7 @@ class AlquilerService:
                 self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="debito",
+                    naturaleza="excedente",
                     concepto=f"Excedente alquiler #{reserva.id} — check-in ({decision_excedente.value})",
                     monto=cargo_excedente,
                     fecha=checkin_fecha,
@@ -540,6 +528,7 @@ class AlquilerService:
                 self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="debito",
+                    naturaleza="cargo_cierre",
                     concepto=f"Cargos de cierre alquiler #{reserva.id} — {', '.join(partes)}",
                     monto=cargos_cierre,
                     fecha=checkin_fecha,
@@ -565,6 +554,7 @@ class AlquilerService:
                 self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="credito",
+                    naturaleza="pago",
                     concepto=f"Cobro en check-in — alquiler #{reserva.id} ({pago_checkin.medio_pago})",
                     monto=pago_inmediato.monto,
                     fecha=pago_inmediato.fecha,
@@ -604,13 +594,31 @@ class AlquilerService:
         nueva_hora_fin: time,
         usuario_id: int,
         precio_manual: Decimal | None = None,
+        pago_inmediato: PagoInmediato | None = None,
     ) -> Alquiler:
         """
         Extiende un alquiler activo a una nueva fecha de fin.
+
         Recalcula tarifa (puede cambiar de banda), salvo que venga un
         `precio_manual` — la extensión respeta entonces el precio pactado
-        (puede tener descuento) en vez de forzar el de lista.
-        Verifica solapamientos en el rango ampliado.
+        (puede tener descuento) en vez de forzar el de lista. Verifica
+        solapamientos en el rango ampliado.
+
+        **Y asienta la diferencia en la cuenta corriente**, que es lo que no
+        hacía. `extender` pisaba `reserva.precio_total` y el débito del
+        check-out se quedaba con el importe viejo: la deuda del cliente quedaba
+        corta por la diferencia, para siempre, y el ledger se contradecía con la
+        caja después de toda extensión (`PLAN_DINERO.md` §3.3b).
+
+        **Un débito nuevo, no un contra-asiento más un débito completo**
+        (decisión 5 del dueño). Reasentar todo perdería el historial de lo que
+        se pactó primero, que es justamente lo que hace falta para explicar una
+        factura discutida. El asiento nuevo dice sólo lo que cambió.
+
+        El **cobro es opcional en el mismo acto**, igual que en el check-out y
+        el check-in: por default el cliente paga la diferencia al devolver el
+        auto, pero si la paga en el momento se registra acá y no hay que ir a
+        Caja por separado.
         """
         alquiler = self.get(alquiler_id)
         reserva = alquiler.reserva
@@ -686,6 +694,76 @@ class AlquilerService:
                 precio_total=nuevo_precio,
                 estado=nuevo_estado,
             )
+
+            # ── La diferencia, al libro ──────────────────────────────────────
+            diferencia = Decimal(str(nuevo_precio or 0)) - Decimal(str(precio_anterior or 0))
+            hoy = date.today()
+            if diferencia > 0:
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="debito",
+                    naturaleza="extension",
+                    concepto=(
+                        f"Extensión de alquiler #{reserva.id} — "
+                        f"hasta {nueva_fecha_fin} ({fecha_fin_anterior} antes)"
+                    ),
+                    monto=diferencia,
+                    fecha=hoy,
+                    creado_por=usuario_id,
+                    condicion=reserva.condicion_pago,
+                    alquiler_id=alquiler.id,
+                    reserva_id=reserva.id,
+                )
+            elif diferencia < 0:
+                # Una extensión que baja el precio es rara pero posible: se
+                # extiende y se pacta un precio manual más bajo. Se asienta el
+                # crédito, con naturaleza `bonificacion` porque eso es —deuda
+                # que se perdona—, y no se lo deja pasar en silencio.
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="credito",
+                    naturaleza="bonificacion",
+                    concepto=(
+                        f"Extensión de alquiler #{reserva.id} — ajuste a la baja "
+                        f"del precio pactado"
+                    ),
+                    monto=-diferencia,
+                    fecha=hoy,
+                    creado_por=usuario_id,
+                    alquiler_id=alquiler.id,
+                    reserva_id=reserva.id,
+                )
+
+            # El cobro, si el operador decidió cobrarla en el momento.
+            if pago_inmediato and pago_inmediato.monto > 0:
+                pago_extension = Pago(
+                    alquiler_id=alquiler.id,
+                    cliente_id=reserva.cliente_id,
+                    reserva_id=reserva.id,
+                    monto=pago_inmediato.monto,
+                    medio_pago=pago_inmediato.medio_pago,
+                    con_factura=False,
+                    fecha=pago_inmediato.fecha,
+                    notas=pago_inmediato.notas or f"Cobro de la extensión #{reserva.id}",
+                    cobrado_por=usuario_id,
+                )
+                self.db.add(pago_extension)
+                self.db.flush()
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="credito",
+                    naturaleza="pago",
+                    concepto=(
+                        f"Cobro de la extensión — alquiler #{reserva.id} "
+                        f"({pago_extension.medio_pago})"
+                    ),
+                    monto=pago_inmediato.monto,
+                    fecha=pago_inmediato.fecha,
+                    creado_por=usuario_id,
+                    alquiler_id=alquiler.id,
+                    reserva_id=reserva.id,
+                    pago_id=pago_extension.id,
+                )
             # Si el auto se queda 3 días más, el seguro cubre esos 3 días más.
             # Sólo se mueve la cantidad de días: el precio unitario pactado no
             # se toca (ver ReservaService.recalcular_adicionales_por_duracion).
@@ -704,6 +782,8 @@ class AlquilerService:
                 "tarifa_nueva_id": nueva_tarifa_id,
                 "precio_anterior": float(precio_anterior or 0),
                 "precio_nuevo": float(nuevo_precio or 0),
+                "diferencia_asentada": float(diferencia),
+                "cobrado_en_el_acto": float(pago_inmediato.monto) if pago_inmediato else 0.0,
                 "tarifa_no_encontrada": tarifa_no_encontrada,
                 "usuario_id": usuario_id,
             },
@@ -714,32 +794,42 @@ class AlquilerService:
 
     # ── Helpers privados ──────────────────────────────────────────────────────
 
-    def _completar_pago_online(self, reserva_id: int, alquiler_id: int) -> None:
+    def _completar_pagos_de_la_reserva(self, reserva_id: int, alquiler_id: int) -> None:
         """
-        Ata al alquiler recién creado el `Pago` que generó el cobro online.
+        Ata al alquiler recién creado los `Pago` que entraron antes de que
+        existiera: la seña de mostrador, la transferencia, el cobro online.
 
-        **El puente es `PagoWeb.pago_id`**, y es el único que hay: a diferencia
-        del echeq (`Echeq.reserva_id`) y del contrato, `Pago` **no tiene**
-        `reserva_id`, así que desde el pago no se puede llegar a la reserva. Se
-        entra por `PagoWeb`, que sí conoce las dos puntas.
+        En la Fase 1 esto entraba sólo por `PagoWeb.pago_id`, porque era el
+        único puente entre un cobro y su reserva. Con `Pago.reserva_id`
+        (migración 079) alcanza con preguntar por la reserva, y el arreglo
+        deja de estar limitado a Mercado Pago.
 
-        Eso deja este arreglo limitado al camino de Mercado Pago, que es el
-        único que crea un `Pago` antes del check-out. El caso general —cualquier
-        cobro anterior a la entrega— lo resuelve `Pago.reserva_id` en la Fase 2,
-        que ya trae migración. Ver `PLAN_DINERO.md` §1.5.a.
+        Se sigue mirando `PagoWeb` además, para los cobros online que se
+        acreditaron antes de esa migración y cuyo `Pago` quedó sin
+        `reserva_id`.
         """
         from app.models.pago_web import PagoWeb
 
-        pagos_web = (
+        pagos = list(
+            self.db.query(Pago)
+            .filter(Pago.reserva_id == reserva_id, Pago.alquiler_id.is_(None))
+            .all()
+        )
+        ids = {p.id for p in pagos}
+        for pw in (
             self.db.query(PagoWeb)
             .filter(PagoWeb.reserva_id == reserva_id, PagoWeb.pago_id.isnot(None))
             .all()
-        )
-        for pw in pagos_web:
-            pago = self.db.get(Pago, pw.pago_id)
+        ):
+            if pw.pago_id not in ids:
+                pago = self.db.get(Pago, pw.pago_id)
+                if pago is not None:
+                    pagos.append(pago)
+
+        for pago in pagos:
             # Sólo si sigue suelto: si alguien ya lo ató a otro alquiler, ese
             # dato es de una persona y no se pisa.
-            if pago is not None and pago.alquiler_id is None:
+            if pago.alquiler_id is None:
                 pago.alquiler_id = alquiler_id
 
 

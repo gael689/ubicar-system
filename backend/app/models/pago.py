@@ -21,6 +21,13 @@ class Pago(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True, index=True)
     alquiler_id: Mapped[int | None] = mapped_column(ForeignKey("alquileres.id"), nullable=True, index=True)
+    # De qué reserva es este cobro. **Es lo que permite que un pago anterior al
+    # check-out sepa a qué operación pertenece**: el alquiler todavía no existe,
+    # pero la reserva sí. Sin esto, el único puente era `PagoWeb.pago_id` —que
+    # existe sólo para Mercado Pago— y por eso la Fase 1 sólo pudo arreglar ese
+    # camino (`PLAN_DINERO.md` §1.5.a). Nullable: un cobro a cuenta o la
+    # cancelación de una deuda vieja no cuelgan de ninguna reserva.
+    reserva_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"), nullable=True, index=True)
     monto: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     medio_pago: Mapped[str] = mapped_column(
         # `mercado_pago` (migración 051) es lo que entra por la web. No se

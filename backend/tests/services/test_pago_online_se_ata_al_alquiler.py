@@ -68,7 +68,7 @@ class TestSaldoDeUnAlquilerPagadoOnline:
         _pago_web(db, reserva, pago, "100000")
 
         assert pago.alquiler_id is None
-        AlquilerService(db)._completar_pago_online(reserva.id, alquiler.id)
+        AlquilerService(db)._completar_pagos_de_la_reserva(reserva.id, alquiler.id)
         assert pago.alquiler_id == alquiler.id
 
     def test_no_se_cuenta_dos_veces_cuando_ya_esta_atado(

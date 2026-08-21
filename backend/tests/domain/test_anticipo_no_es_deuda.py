@@ -30,9 +30,16 @@ def desglosar(saldo: Decimal, anticipos: Decimal) -> dict:
     """
     La misma aritmética que `CuentaCorrienteService.desglose`.
 
-    Se replica acá —y no se importa el service— porque el service necesita la
-    base para saber *cuáles* créditos son anticipos. Lo que se prueba es la
-    regla, que es lo que se puede equivocar: el service sólo la alimenta.
+    ⚠️ **Esto sigue siendo una réplica, y ahora está declarado.** Los tests de
+    abajo prueban **la regla** —cómo se combinan saldo y anticipos— y no el
+    service, así que replicarla acá era razonable, pero el archivo no lo decía y
+    se leía como red donde no la había: la consulta podía estar mal y estos
+    tests seguían en verde.
+
+    **La red de verdad la pone `tests/services/test_la_sena_tiene_un_solo_camino.py`**,
+    que importa el service, escribe en la base y verifica de qué se compone
+    `anticipos`. Estos tests cubren la otra mitad: que la aritmética sea la
+    correcta aunque la consulta la alimente bien.
     """
     return {"saldo": saldo, "deuda": saldo + anticipos, "anticipos": anticipos}
 
@@ -78,7 +85,7 @@ class TestElCasoQueMotivaTodo:
         # Check-out: se crea el débito del alquiler.
         saldo = aplicar_movimiento(Decimal("-425000"), "debito", Decimal("425000"))
         assert saldo == Decimal("0")
-        # Ya no hay anticipo: la reserva tiene alquiler.
+        # Ya no hay anticipo: el check-out lo marcó aplicado contra ese débito.
         d = desglosar(saldo, anticipos=Decimal("0"))
         assert d["deuda"] == Decimal("0")
         assert d["anticipos"] == Decimal("0")
@@ -120,7 +127,8 @@ class TestNoSeTapaUnaDeudaDeVerdad:
     def test_un_pago_normal_sigue_siendo_credito_y_no_anticipo(self):
         """
         Pagar un alquiler ya entregado reduce la deuda y **no** es un anticipo:
-        el auto ya salió, así que su crédito no entra en la cuenta.
+        nace con naturaleza `pago`, no `anticipo`, así que su crédito no entra
+        en la cuenta.
         """
         saldo = aplicar_movimiento(Decimal("300000"), "credito", Decimal("300000"))
         d = desglosar(saldo, anticipos=Decimal("0"))

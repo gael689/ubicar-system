@@ -10,6 +10,7 @@ import type {
   TipoDanio,
   SeveridadDanio,
   EstadoDanio,
+  NaturalezaMovimiento,
   ResponsableDanio,
   TipoFechaEspecial,
   ColorFechaEspecial,
@@ -421,4 +422,52 @@ export const NAV_GROUP_COLOR: Record<string, NavGroupColor> = {
   Flota:     { active: 'bg-teal-500/10 text-teal-600',      text: 'text-teal-700' },
   Clientes:  { active: 'bg-rose-500/10 text-rose-600',      text: 'text-rose-700' },
   Finanzas:  { active: 'bg-emerald-500/10 text-emerald-600', text: 'text-emerald-700' },
+};
+
+
+// ─── Naturaleza de un movimiento de cuenta corriente ──────────────────────────
+//
+// Lo que hace que la ficha del cliente pueda mostrar un **echeq en cartera**
+// distinto de un pago, y un **anticipo** distinto de los dos. Antes de la
+// migración 079 todo eso vivía en el texto libre del concepto y la pantalla no
+// tenía forma de distinguirlos.
+//
+// Las etiquetas están escritas para el mostrador, no para un contador: "Seña"
+// y no "anticipo de naturaleza crédito".
+
+export const NATURALEZA_LABEL: Record<NaturalezaMovimiento, string> = {
+  alquiler: 'Alquiler',
+  extension: 'Extensión',
+  excedente: 'Excedente',
+  cargo_cierre: 'Cargos de cierre',
+  multa: 'Multa',
+  danio: 'Daño',
+  anticipo: 'Seña',
+  pago: 'Cobro',
+  echeq_en_cartera: 'Echeq en cartera',
+  sena_retenida: 'Seña retenida',
+  reembolso: 'Reembolso',
+  bonificacion: 'Bonificación',
+  anulacion: 'Anulación',
+  manual: 'Manual',
+};
+
+export const NATURALEZA_COLOR: Record<NaturalezaMovimiento, string> = {
+  alquiler: 'bg-muted text-muted-foreground',
+  extension: 'bg-muted text-muted-foreground',
+  excedente: 'bg-warning/15 text-warning',
+  cargo_cierre: 'bg-warning/15 text-warning',
+  multa: 'bg-danger/15 text-danger',
+  danio: 'bg-danger/15 text-danger',
+  // La seña se ve distinta del cobro a propósito: no es plata que baje una
+  // deuda, es plata que todavía se debe entregar en forma de auto.
+  anticipo: 'bg-primary/15 text-primary',
+  pago: 'bg-success/15 text-success',
+  // Un cheque en cartera no es plata: puede rebotar. Se ve distinto de un cobro.
+  echeq_en_cartera: 'bg-primary/10 text-primary',
+  sena_retenida: 'bg-warning/15 text-warning',
+  reembolso: 'bg-warning/15 text-warning',
+  bonificacion: 'bg-success/10 text-success',
+  anulacion: 'bg-muted text-muted-foreground line-through',
+  manual: 'bg-muted text-muted-foreground',
 };

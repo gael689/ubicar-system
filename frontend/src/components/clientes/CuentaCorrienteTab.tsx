@@ -11,6 +11,7 @@ import {
   useAgregarMovimiento,
   useEditarVencimiento,
 } from '@/hooks/useCuentasCorrientes';
+import { NATURALEZA_LABEL, NATURALEZA_COLOR } from '@/lib/constants';
 import { formatCurrency, formatDate, extractError } from '@/lib/utils';
 
 const movSchema = z.object({
@@ -269,10 +270,26 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
                     }
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-foreground truncate">{m.concepto}</p>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {/* La etiqueta de naturaleza (migración 079). Es lo que
+                          hace que un echeq en cartera se vea distinto de un
+                          cobro: los dos son créditos y bajan la deuda, pero uno
+                          es plata y el otro es un papel que puede rebotar. */}
+                      {m.naturaleza && (
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${NATURALEZA_COLOR[m.naturaleza]}`}>
+                          {NATURALEZA_LABEL[m.naturaleza]}
+                        </span>
+                      )}
+                      <p className="text-sm text-foreground truncate">{m.concepto}</p>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {formatDate(m.fecha)}
                       {m.alquiler_id ? ` · Alquiler #${m.alquiler_id}` : ''}
+                      {m.naturaleza === 'anticipo' && (
+                        m.aplicado_en
+                          ? ' · Ya aplicada al alquiler'
+                          : ' · Todavía sin aplicar'
+                      )}
                       {m.tipo === 'debito' && !m.anulado && (
                         m.fecha_vencimiento
                           ? ` · Vence ${formatDate(m.fecha_vencimiento)}`

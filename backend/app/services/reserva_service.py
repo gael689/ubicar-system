@@ -35,6 +35,7 @@ from app.domain.transiciones import (
     estado_tras_cancelar_reserva_confirmada,
 )
 from app.domain.ventana import VentanaReserva
+from app.models.pago import Pago
 from app.models.reserva import Reserva
 from app.models.vehiculo import Vehiculo
 from app.models.cliente import Cliente, ConductorAdicional
@@ -953,15 +954,23 @@ class ReservaService:
         """
         Cancela una reserva pendiente o confirmada.
 
-        D-11: la seña (anticipo) no se devuelve. Si había una cargada, se
-        asienta el **débito** por la seña retenida — que es lo que convierte
-        esa plata en ingreso de la empresa — y, **sólo si el crédito no existía
-        ya**, el crédito por lo cobrado. El saldo queda en cero y el historial
-        de la cuenta corriente cuenta las dos mitades. Motivo obligatorio.
+        D-11: la seña no se devuelve. Si había una cargada, se asienta el
+        **débito `sena_retenida`**, que es lo que convierte esa plata en ingreso
+        de la empresa, y **el anticipo que ya estaba asentado se marca aplicado
+        contra él**. El saldo queda en cero y el historial cuenta las dos
+        mitades: entró plata, y esa plata se retuvo. Motivo obligatorio.
 
-        La pregunta "¿el crédito ya existía?" no es un detalle: la seña de
-        mostrador no toca el ledger hasta el check-out, pero la de Mercado Pago
-        y la de echeq sí lo tocan en el momento. Ver el comentario del cuerpo.
+        **El par débito+crédito que esto hacía antes desapareció con la Fase 2.**
+        Hasta entonces la seña de mostrador no tocaba el ledger hasta el
+        check-out, así que cancelar tenía que inventar el crédito además del
+        débito. Ahora todo cobro anterior a la entrega asienta su crédito
+        `anticipo` en el momento en que entra la plata, venga del mostrador, de
+        una transferencia o de Mercado Pago: acá sólo falta la contrapartida.
+
+        Queda una rama de compatibilidad para las reservas que tengan
+        `anticipo_monto` cargado sin ningún crédito detrás — datos de antes de
+        la migración 079. Sin ella, cancelar una de ésas dejaría un débito
+        suelto y le inventaría una deuda al cliente.
         """
         reserva = self.get(id)
         if reserva.estado not in (EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value):
@@ -974,44 +983,44 @@ class ReservaService:
         with self.db.begin_nested():
             if reserva.anticipo_monto and reserva.anticipo_monto > 0:
                 fecha_hoy = date.today()
-                # **Se pregunta ANTES de asentar nada.** El crédito de la seña
-                # puede existir ya —lo asienta el cobro online al acreditar
-                # Mercado Pago (`PagoWebService._acreditar`), y el del echeq al
-                # recibirlo— y en ese caso la cancelación sólo tiene que poner
-                # el débito que lo consume. Ver el bloque de abajo.
-                ya_acreditada = self.cc_service.tiene_credito_de_reserva(reserva.id)
 
-                self.cc_service.registrar_movimiento(
+                debito = self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="debito",
+                    naturaleza="sena_retenida",
                     concepto=f"Cancelación de reserva #{reserva.id} — seña retenida (no reembolsable)",
                     monto=reserva.anticipo_monto,
                     fecha=fecha_hoy,
                     creado_por=usuario_id,
                     reserva_id=reserva.id,
                 )
-                # El crédito representa "esta plata ya entró". Se asienta sólo
-                # si no estaba asentado.
-                #
-                # **Con la seña de mostrador no estaba**: `registrar_cobro`
-                # acumula en `anticipo_monto` y no toca el ledger, así que el
-                # par débito+crédito se anula solo y el saldo queda en cero,
-                # que es D-11.
-                #
-                # **Con Mercado Pago y con echeq sí estaba**, y crearlo de
-                # nuevo dejaba `crédito + débito + crédito = −seña`: saldo a
-                # FAVOR del cliente por el importe exacto de la plata que D-11
-                # dice que no se devuelve. El sistema se la acreditaba.
-                if not ya_acreditada:
-                    self.cc_service.registrar_movimiento(
+
+                self.cc_service.aplicar_anticipos_de_reserva(reserva.id, debito.id)
+
+                if not self.cc_service.hay_credito_vivo_de_reserva(reserva.id):
+                    # Compatibilidad: `anticipo_monto` cargado y ningún crédito
+                    # asentado. Se crea el crédito que falta y se lo marca
+                    # aplicado en el mismo acto — el saldo queda en cero, que es
+                    # lo que D-11 manda.
+                    #
+                    # Se pregunta por **cualquier** crédito vivo de la reserva y
+                    # no sólo por los anticipos aplicados recién: el crédito de
+                    # un echeq es `echeq_en_cartera`, no se marca aplicado —un
+                    # papel no es una seña cobrada— pero ya bajó el saldo, y el
+                    # débito de arriba es su contrapartida.
+                    credito = self.cc_service.registrar_movimiento(
                         cliente_id=reserva.cliente_id,
                         tipo="credito",
+                        naturaleza="anticipo",
                         concepto=f"Seña ya abonada — reserva #{reserva.id} ({reserva.anticipo_medio_pago or 'medio no especificado'})",
                         monto=reserva.anticipo_monto,
                         fecha=reserva.anticipo_fecha or fecha_hoy,
                         creado_por=usuario_id,
                         reserva_id=reserva.id,
                     )
+                    credito.aplicado_por_movimiento_id = debito.id
+                    credito.aplicado_en = datetime.utcnow()
+                    self.db.flush()
 
             self.reserva_repo.update(reserva, estado=EstadoReserva.CANCELADA.value, motivo_cancelacion=motivo)
 
@@ -1230,26 +1239,28 @@ class ReservaService:
         es una segunda decisión sino la misma. Separarlas garantizaba reservas
         cobradas que nadie confirmó.
 
-        **No crea un `Pago`.** Se acumula en `anticipo_monto`, que es el mismo
-        lugar donde el mostrador guarda una seña, y `AlquilerService.checkout`
-        lo convierte en `Pago` + crédito en cuenta corriente cuando el auto
-        sale.
+        **Crea el `Pago` y su crédito de naturaleza `anticipo`, acá y ahora.**
+        Es el cambio de la Fase 2 del `PLAN_DINERO.md` y unifica el único
+        camino que faltaba.
 
-        El motivo que decía este comentario —"crearlo acá lo duplicaría en el
-        checkout"— **ya no es cierto**: `tiene_credito_de_reserva` corta esa
-        duplicación desde que se arregló la seña contada dos veces. El motivo
-        que sí vale es otro, y es contable: el **débito** del alquiler tampoco
-        existe hasta el check-out, así que acreditar acá dejaría un crédito
-        suelto y el saldo del cliente en negativo —"tiene saldo a favor"—
-        durante todo el tiempo que va de la seña a la entrega.
+        Hasta acá sólo acumulaba en `anticipo_monto` y el `Pago` lo fabricaba
+        `AlquilerService.checkout` cuando el auto salía. Eso tenía dos
+        consecuencias malas:
 
-        **Esto ya pasa con las reservas web pagadas con tarjeta**, que sí
-        acreditan al instante (`PagoWebService._acreditar`). Los dos caminos no
-        se comportan igual, y unificarlos es una decisión de negocio pendiente,
-        no un detalle de implementación. Mientras tanto,
-        `CuentaCorrienteService.desglose` separa los anticipos del saldo para
-        que la ficha del cliente no lea "le debemos plata" cuando lo que hay es
-        un auto sin entregar.
+        - **La plata no estaba en la caja del día en que entró.** Una
+          transferencia cobrada el 3 aparecía recién en la caja del 20, cuando
+          se entregó el auto. El arqueo de ese día no cerraba, y si la reserva
+          se cancelaba antes, la plata retenida no estaba en la caja de ningún
+          día.
+        - **Los dos caminos no se comportaban igual.** El cobro online
+          (`PagoWebService._acreditar`) sí acredita al instante. Dos formas de
+          cobrar lo mismo produciendo libros distintos.
+
+        El motivo por el que antes no se acreditaba —que el débito del alquiler
+        no existe hasta el check-out, así que el crédito solo dejaba el saldo en
+        negativo y la ficha decía "tiene saldo a favor"— **ya no aplica**: el
+        crédito nace con naturaleza `anticipo`, y `desglose` lo cuenta como lo
+        que es. Le debemos un auto, no plata.
 
         Se **suma** a lo ya cobrado: una reserva puede recibir la seña por
         transferencia y un refuerzo después, y pisar el monto perdería el
@@ -1289,6 +1300,38 @@ class ReservaService:
         estado_antes = reserva.estado
 
         with self.db.begin_nested():
+            # El hecho económico primero: entró plata, y entró hoy.
+            pago = Pago(
+                cliente_id=reserva.cliente_id,
+                alquiler_id=None,   # todavía no hay alquiler: es la seña
+                reserva_id=reserva.id,
+                monto=monto,
+                medio_pago=medio_pago,
+                con_factura=False,
+                cobrado_por=usuario_id,
+                fecha=fecha,
+                notas=f"Seña de reserva #{reserva.id}"
+                      + (f" (ref: {referencia})" if referencia else ""),
+            )
+            self.db.add(pago)
+            self.db.flush()
+
+            self.cc_service.registrar_movimiento(
+                cliente_id=reserva.cliente_id,
+                tipo="credito",
+                naturaleza="anticipo",
+                concepto=f"Seña de reserva #{reserva.id} ({medio_pago})",
+                monto=monto,
+                fecha=fecha,
+                creado_por=usuario_id,
+                reserva_id=reserva.id,
+                pago_id=pago.id,
+            )
+
+            # `anticipo_monto` se sigue escribiendo, y no es redundancia
+            # descuidada: lo leen dieciocho lugares entre backend, PDFs y
+            # frontend (ver `PLAN_DINERO.md` §Fase 2). Pasa a ser **derivado** —
+            # el hecho es el crédito— pero se mantiene sincronizado acá.
             reserva.anticipo_monto = cobrado_ahora
             reserva.anticipo_fecha = fecha
             reserva.anticipo_medio_pago = medio_pago

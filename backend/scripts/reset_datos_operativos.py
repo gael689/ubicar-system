@@ -122,8 +122,18 @@ def _romper_ciclos(db: Session) -> None:
     db.execute(text("""
         UPDATE movimientos_cuenta_corriente
         SET recibo_id = NULL, comprobante_id = NULL, echeq_id = NULL,
-            multa_id = NULL, danio_id = NULL
+            multa_id = NULL, danio_id = NULL,
+            -- Autorreferenciales, las dos: `anulado_por_movimiento_id` apunta
+            -- al contra-asiento y `aplicado_por_movimiento_id` (migración 079)
+            -- al débito contra el que se consumió un anticipo. Sin nullearlas,
+            -- el DELETE de la tabla choca contra sus propias filas.
+            anulado_por_movimiento_id = NULL,
+            aplicado_por_movimiento_id = NULL, aplicado_en = NULL
     """))
+    # `pagos.reserva_id` (migración 079) apunta a `reservas`, que se borra
+    # después de `pagos` en la secuencia. Se nullea igual, por si el orden
+    # cambia: es más barato que descubrirlo en producción.
+    db.execute(text("UPDATE pagos SET reserva_id = NULL"))
     db.execute(text("UPDATE recibos SET movimiento_cc_id = NULL"))
     db.execute(text("UPDATE comprobantes SET movimiento_cc_id = NULL"))
     db.execute(text("UPDATE danios SET movimiento_cc_id = NULL"))

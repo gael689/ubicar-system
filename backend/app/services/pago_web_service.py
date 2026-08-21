@@ -516,6 +516,7 @@ class PagoWebService:
         pago = Pago(
             cliente_id=reserva.cliente_id,
             alquiler_id=None,   # todavía no hay alquiler: es la seña de una reserva
+            reserva_id=reserva.id,
             monto=Decimal(str(pago_web.monto)),
             medio_pago="mercado_pago",
             con_factura=False,
@@ -529,6 +530,9 @@ class PagoWebService:
         CuentaCorrienteService(self.db).registrar_movimiento(
             cliente_id=reserva.cliente_id,
             tipo="credito",
+            # Plata que entró por un auto que todavía no se entregó: anticipo.
+            # El check-out lo marca aplicado contra el débito del alquiler.
+            naturaleza="anticipo",
             concepto=f"Pago online reserva #{reserva.id} ({pago_web.porcentaje_anticipo}%)",
             monto=Decimal(str(pago_web.monto)),
             fecha=date.today(),

@@ -82,6 +82,10 @@ class ExtenderRequest(BaseModel):
     nueva_fecha_fin: date
     nueva_hora_fin: time
     precio_total: Decimal | None = None
+    # El cliente paga la diferencia **al devolver el auto**, salvo que el
+    # operador decida cobrarla en el momento. Si viene, se registra el cobro en
+    # el mismo acto — igual que en el check-out y el check-in.
+    pago_inmediato: PagoInmediato | None = None
 
 
 # ── Response: excedente preview ───────────────────────────────────────────────

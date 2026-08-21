@@ -48,6 +48,13 @@ export function ExtenderModal({
   const [resultado, setResultado] = useState<ExtenderResponse | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // El cliente paga la diferencia **al devolver el auto** — ése es el default y
+  // por eso arranca apagado. Si la paga en el momento, se registra acá y no hay
+  // que ir a Caja por separado, igual que en el check-out y el check-in.
+  const [cobrarAhora, setCobrarAhora] = useState(false);
+  const [medioCobro, setMedioCobro] = useState('efectivo');
+  const hoyISO = new Date().toISOString().slice(0, 10);
+
   const duracionActual = Math.max(1, diasEntre(fechaInicioActual, fechaFinActual));
   const precioActualNum = precioTotalActual ? parseFloat(String(precioTotalActual)) : 0;
   const tarifaDiariaSugerida = precioActualNum > 0 ? precioActualNum / duracionActual : 0;
@@ -105,6 +112,15 @@ export function ExtenderModal({
         nueva_fecha_fin: nuevaFecha,
         nueva_hora_fin: nuevaHora + ':00',
         precio_total: precioExtraTotal === '' ? null : precioTotalNuevoInformativo,
+        pago_inmediato:
+          cobrarAhora && precioExtraTotal !== '' && precioExtraTotal > 0
+            ? {
+                monto: precioExtraTotal as number,
+                medio_pago: medioCobro,
+                fecha: hoyISO,
+                notas: 'Cobro de la extensión',
+              }
+            : undefined,
       });
       setResultado(res);
     } catch (err: any) {
@@ -146,7 +162,9 @@ export function ExtenderModal({
               </div>
               {resultado.diferencia != null && (
                 <div className="col-span-2 rounded-xl bg-warning p-3 flex justify-between items-center">
-                  <span className="text-white/90 text-sm">Cargo adicional</span>
+                  <span className="text-white/90 text-sm">
+                    {cobrarAhora ? 'Cargo adicional (cobrado)' : 'Cargo adicional (a la cuenta)'}
+                  </span>
                   <span className="text-white font-bold text-base">{formatMoney(resultado.diferencia)}</span>
                 </div>
               )}
@@ -260,6 +278,48 @@ export function ExtenderModal({
               <span className="text-slate-800 font-semibold">{formatMoney(precioTotalNuevoInformativo)}</span>
             </div>
           </div>
+
+          {/* La diferencia se asienta siempre en la cuenta corriente del
+              cliente. Cobrarla ahora es opcional: el default del negocio es que
+              se pague al devolver el auto. */}
+          {precioExtraTotal !== '' && (precioExtraTotal as number) > 0 && (
+            <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+              <p className="text-xs text-slate-500 leading-snug">
+                Se suman <strong>{formatMoney(precioExtraTotal)}</strong> a la cuenta corriente
+                de {clienteNombre}. Por default los paga al devolver el auto.
+              </p>
+              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={cobrarAhora}
+                  onChange={e => setCobrarAhora(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Los está pagando ahora
+              </label>
+              {cobrarAhora && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-600">Medio de pago</label>
+                  <select
+                    value={medioCobro}
+                    onChange={e => setMedioCobro(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="tarjeta">Tarjeta</option>
+                    <option value="mercado_pago">Mercado Pago</option>
+                    <option value="wapa">Wapa (Patagonia)</option>
+                    <option value="echeq">Echeq</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500">
+                    Entra a la caja de hoy.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {(error || localError) && (
             <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">

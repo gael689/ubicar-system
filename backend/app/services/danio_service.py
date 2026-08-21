@@ -177,6 +177,7 @@ class DanioService:
         mov = self.cc_service.registrar_movimiento(
             cliente_id=destinatario,
             tipo="debito",
+            naturaleza="danio",
             concepto=concepto or f"Daño en {danio.zona} — {patente}",
             monto=Decimal(str(monto)),
             fecha=date.today(),
@@ -272,6 +273,7 @@ class DanioService:
         self.cc_service.registrar_movimiento(
             cliente_id=danio.cliente_id,
             tipo="credito",
+            naturaleza="pago",
             concepto=f"Daño #{danio.id} cobrado — {danio.zona}, {patente} ({medio_pago})",
             monto=monto,
             fecha=fecha,

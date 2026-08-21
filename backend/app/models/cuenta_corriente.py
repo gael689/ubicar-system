@@ -48,6 +48,24 @@ class MovimientoCuentaCorriente(Base):
     tipo: Mapped[str] = mapped_column(
         Enum("debito", "credito", name="tipo_movimiento"), nullable=False
     )
+    # **`tipo` es el signo; `naturaleza` es de qué se trata.** Van separados a
+    # propósito: todo el cálculo del saldo depende de `tipo`
+    # (`domain/cuenta_corriente.py::signo_movimiento`), y ampliar ese enum
+    # habría obligado a reescribirlo. Antes la naturaleza vivía en el texto
+    # libre de `concepto`, o sea que no se podía consultar ni sumar: "cuánto
+    # hay en anticipos por aplicar" era una consulta imposible y "esto es un
+    # echeq, no plata" era algo que había que leer entre líneas.
+    naturaleza: Mapped[str] = mapped_column(
+        Enum(
+            "alquiler", "extension", "excedente", "cargo_cierre", "multa", "danio",
+            "anticipo", "pago", "echeq_en_cartera", "sena_retenida", "reembolso",
+            "bonificacion", "anulacion", "manual",
+            name="naturaleza_movimiento",
+        ),
+        nullable=False,
+        default="manual",
+        index=True,
+    )
     concepto: Mapped[str] = mapped_column(String(255), nullable=False)
     monto: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     fecha: Mapped[date] = mapped_column(Date(), nullable=False)
@@ -63,6 +81,25 @@ class MovimientoCuentaCorriente(Base):
     recibo_id: Mapped[int | None] = mapped_column(ForeignKey("recibos.id"), nullable=True)
     comprobante_id: Mapped[int | None] = mapped_column(ForeignKey("comprobantes.id"), nullable=True)
     danio_id: Mapped[int | None] = mapped_column(ForeignKey("danios.id"), nullable=True)
+
+    # ── Aplicación del anticipo ──────────────────────────────────────────────
+    # Sólo tiene sentido en un crédito de naturaleza `anticipo`: apunta al
+    # débito del alquiler que ese anticipo terminó pagando.
+    #
+    # **No es un movimiento nuevo, y es a propósito.** Asentar "anticipo
+    # aplicado" como asiento sumaría uno por cada alquiler sin agregar
+    # información. Con la marca acá, *anticipos por aplicar* es una consulta:
+    # créditos `anticipo`, no anulados, con `aplicado_en` en NULL.
+    #
+    # ⚠️ **El que manda es `aplicado_en`, no la FK.** Un anticipo se puede
+    # consumir sin que exista ningún débito contra el cual: si el auto sale sin
+    # precio cargado, el check-out no asienta nada y la FK queda en NULL. La
+    # fecha dice *"este anticipo ya se consumió"*; la FK dice *"contra qué"*, y
+    # es información extra, no la condición (`PLAN_DINERO.md` §4.2, borde a).
+    aplicado_por_movimiento_id: Mapped[int | None] = mapped_column(
+        ForeignKey("movimientos_cuenta_corriente.id"), nullable=True
+    )
+    aplicado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     anulado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     anulado_por_movimiento_id: Mapped[int | None] = mapped_column(

@@ -23,41 +23,6 @@ class CuentaCorrienteService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def tiene_credito_de_reserva(self, reserva_id: int) -> bool:
-        """
-        ¿Ya se le acreditó algo a esta reserva?
-
-        ⚠️ **TRANSITORIA.** Es el parche de la Fase 1 del `PLAN_DINERO.md`, no
-        el diseño. La Fase 2 unifica la seña en un solo camino —todo cobro
-        anterior al check-out asienta su crédito de naturaleza `anticipo` en el
-        momento en que entra la plata— y con eso esta pregunta deja de tener
-        sentido: nunca habrá un `anticipo_monto` sin su crédito. **La Fase 2 la
-        elimina**, junto con sus dos llamadores (`AlquilerService.checkout` y
-        `ReservaService.cancelar`). No construir nada nuevo encima.
-
-        Existe para que **la seña no se cuente dos veces**. El cobro online
-        asienta el crédito en el momento en que Mercado Pago acredita, y deja
-        además `anticipo_monto` en la reserva para que el mostrador sepa cuánto
-        adelantó el cliente. Sin esta pregunta, el check-out veía ese monto y
-        creaba un segundo pago con su segundo crédito: el cliente terminaba con
-        un saldo a favor que nadie le debía.
-
-        Se mira el **movimiento de cuenta corriente**, no el pago ni el medio:
-        el asiento es el hecho económico, y es lo único que hay que evitar
-        duplicar. Los movimientos anulados no cuentan — si alguien anuló el
-        crédito del cobro online, el anticipo vuelve a hacer falta.
-        """
-        return (
-            self.db.query(MovimientoCuentaCorriente.id)
-            .filter(
-                MovimientoCuentaCorriente.reserva_id == reserva_id,
-                MovimientoCuentaCorriente.tipo == "credito",
-                MovimientoCuentaCorriente.anulado.is_(False),
-            )
-            .first()
-            is not None
-        )
-
     def get_or_create(self, cliente_id: int) -> CuentaCorriente:
         cc = self.db.query(CuentaCorriente).filter(CuentaCorriente.cliente_id == cliente_id).first()
         if not cc:
@@ -68,8 +33,7 @@ class CuentaCorrienteService:
 
     def desglose(self, cliente_id: int) -> dict:
         """
-        El saldo, partido en las dos cosas que hoy vienen sumadas en un solo
-        número.
+        El saldo, partido en las dos cosas que vienen sumadas en un solo número.
 
         **El problema que esto resuelve.** El libro mide *cuánto nos debe el
         cliente* (D-01: positivo = debe). El débito de un alquiler se crea en el
@@ -77,7 +41,7 @@ class CuentaCorrienteService:
         pagada con tarjeta acredita en el momento en que Mercado Pago confirma,
         y con la ventana comercial actual el auto puede retirarse hasta 120 días
         después. En todo ese tiempo hay un crédito sin su débito, el saldo queda
-        negativo, y la ficha dice **"El cliente tiene saldo a favor"** en verde.
+        negativo, y la ficha decía **"El cliente tiene saldo a favor"** en verde.
 
         Eso no es un error de cuentas —plata cobrada por algo no entregado es un
         anticipo, y un anticipo es una obligación real de la empresa— pero está
@@ -85,63 +49,34 @@ class CuentaCorrienteService:
         "le debemos plata" cuando lo que pasa es "nos pagó y todavía no le dimos
         el auto". Son dos hechos distintos y merecen dos números.
 
-        - `anticipos`: créditos vivos atados a una reserva **que todavía puede
-          salir**. Es lo que se debe entregar, no lo que se debe pagar. Una
-          reserva **cancelada** no cuenta: su seña ya no es un anticipo sino un
-          ingreso retenido (D-11).
+        - `anticipos`: créditos de naturaleza `anticipo` **todavía sin aplicar**
+          (`aplicado_en IS NULL`).
         - `deuda`: lo que el cliente debe de verdad, o sea el saldo **sin**
           contar esos anticipos.
         - `saldo`: el de siempre, sin tocar. Ninguna cuenta cambia — esto sólo
           lee y explica.
-        """
-        from app.models.alquiler import Alquiler
-        from app.models.reserva import Reserva
 
+        **Ahora es exacto.** Hasta la Fase 2 esto era un proxy: "crédito con
+        `reserva_id` cuya reserva todavía no tiene alquiler". Fallaba en los dos
+        bordes que importaban —la reserva cancelada, que nunca va a tener
+        alquiler, y el crédito del echeq, que no es plata— y no distinguía un
+        anticipo consumido de uno pendiente. Con `naturaleza` y la marca de
+        aplicación, la pregunta se responde sin adivinar.
+        """
         cc = self.get_or_create(cliente_id)
         saldo = Decimal(str(cc.saldo))
 
-        # Créditos con reserva, cuya reserva todavía no tiene alquiler: el auto
-        # no salió, así que el débito que los compensa todavía no existe.
-        # `outerjoin` + `is_(None)` y no un `NOT EXISTS` porque un alquiler por
-        # reserva es único (`ix_alquileres_reserva_id` es unique).
-        #
-        # ⚠️ **Y la reserva no puede estar cancelada.** Este proxy asumía que
-        # "reserva sin alquiler" significa "todavía no salió"; también significa
-        # **"nunca va a salir"**. Una reserva cancelada con seña deja sus
-        # movimientos con `reserva_id` y jamás va a tener alquiler, así que el
-        # crédito de la seña contaba como anticipo para siempre:
-        #
-        #     saldo = 0  ·  anticipos = seña  →  deuda = 0 + seña
-        #
-        # o sea que después de **toda** cancelación con seña la ficha del
-        # cliente decía "Debe $seña" eternamente. Con seña de Mercado Pago era
-        # peor: dos créditos con `reserva_id` daban `deuda = seña` sobre un
-        # saldo negativo. Ver `PLAN_DINERO.md` §1.4b.
-        #
-        # La seña de una reserva cancelada **no es un anticipo**: es un ingreso
-        # de la empresa (D-11), y el débito `sena_retenida` que asienta
-        # `ReservaService.cancelar` es su contrapartida. Se excluye por estado y
-        # no por "tiene débito de cancelación" porque el estado es el hecho, no
-        # el rastro.
-        #
-        # `revision_sin_cupo` y `sin_disponibilidad` **no** se excluyen: ahí la
-        # plata entró y todavía se le debe al cliente un auto o una devolución.
-        # Eso es exactamente un anticipo.
         total = (
             self.db.query(func.coalesce(func.sum(MovimientoCuentaCorriente.monto), 0))
             .join(
                 CuentaCorriente,
                 CuentaCorriente.id == MovimientoCuentaCorriente.cuenta_corriente_id,
             )
-            .join(Reserva, Reserva.id == MovimientoCuentaCorriente.reserva_id)
-            .outerjoin(Alquiler, Alquiler.reserva_id == Reserva.id)
             .filter(
                 CuentaCorriente.cliente_id == cliente_id,
-                MovimientoCuentaCorriente.tipo == "credito",
+                MovimientoCuentaCorriente.naturaleza == "anticipo",
                 MovimientoCuentaCorriente.anulado.is_(False),
-                MovimientoCuentaCorriente.reserva_id.isnot(None),
-                Alquiler.id.is_(None),
-                Reserva.estado != "cancelada",
+                MovimientoCuentaCorriente.aplicado_en.is_(None),
             )
             .scalar()
         )
@@ -164,6 +99,11 @@ class CuentaCorrienteService:
         monto: Decimal,
         fecha: date,
         creado_por: int | None,
+        # De qué se trata el asiento. Es obligatorio en la práctica —quedó con
+        # default `manual` sólo para que un llamador viejo no reviente— y todo
+        # el código del sistema lo pasa explícito. `manual` significa "lo cargó
+        # una persona a mano", no "no sé".
+        naturaleza: str = "manual",
         condicion: str | None = None,
         fecha_vencimiento: date | None = None,
         sin_vencimiento_automatico: bool = False,
@@ -202,6 +142,7 @@ class CuentaCorrienteService:
         mov = MovimientoCuentaCorriente(
             cuenta_corriente_id=cc.id,
             tipo=tipo,
+            naturaleza=naturaleza,
             concepto=concepto,
             monto=monto,
             fecha=fecha,
@@ -234,6 +175,7 @@ class CuentaCorrienteService:
             descripcion=f"{'Débito' if tipo == 'debito' else 'Crédito'} en cuenta corriente: {concepto}",
             datos_despues={
                 "movimiento_id": mov.id,
+                "naturaleza": naturaleza,
                 "monto": monto,
                 "fecha": fecha,
                 "condicion": condicion_efectiva,
@@ -269,6 +211,10 @@ class CuentaCorrienteService:
         contra = MovimientoCuentaCorriente(
             cuenta_corriente_id=cc.id,
             tipo=tipo_contrario,
+            # Un contra-asiento no es "un pago" ni "una multa": es una
+            # anulación, y mezclarlo con la naturaleza del original haría que
+            # cualquier suma por naturaleza contara el asiento y su reverso.
+            naturaleza="anulacion",
             concepto=f"Anulación de movimiento #{original.id} ({original.concepto}) — {motivo}",
             monto=original.monto,
             fecha=date.today(),
@@ -295,6 +241,15 @@ class CuentaCorrienteService:
 
         original.anulado = True
         original.anulado_por_movimiento_id = contra.id
+        # Si lo que se anula es el **débito del alquiler**, los anticipos que se
+        # habían marcado aplicados contra él quedan colgando: seguirían fuera de
+        # "por aplicar" con su crédito vivo en el saldo, y la ficha volvería a
+        # decir "a favor". Se sueltan.
+        self._soltar_anticipos_aplicados_a(original.id)
+        # Y si lo que se anula es el anticipo mismo, su marca deja de tener
+        # sentido: ya no hay crédito que aplicar.
+        original.aplicado_por_movimiento_id = None
+        original.aplicado_en = None
         # Si el original enlazaba a un pago que puede desaparecer (hard
         # delete), se desvincula la FK acá para que quien borre el pago
         # después no choque con una referencia colgada.
@@ -329,6 +284,100 @@ class CuentaCorrienteService:
             monto=original.monto,
         )
         return contra
+
+    # ── Aplicación de anticipos ─────────────────────────────────────────────
+
+    def anticipos_por_aplicar(self, cliente_id: int) -> list[MovimientoCuentaCorriente]:
+        """
+        Los créditos de naturaleza `anticipo` que todavía no se consumieron.
+
+        Es plata que entró por algo que no se entregó: una obligación de la
+        empresa, no plata a favor del cliente. Ver `desglose`.
+        """
+        return (
+            self.db.query(MovimientoCuentaCorriente)
+            .join(
+                CuentaCorriente,
+                CuentaCorriente.id == MovimientoCuentaCorriente.cuenta_corriente_id,
+            )
+            .filter(
+                CuentaCorriente.cliente_id == cliente_id,
+                MovimientoCuentaCorriente.naturaleza == "anticipo",
+                MovimientoCuentaCorriente.anulado.is_(False),
+                MovimientoCuentaCorriente.aplicado_en.is_(None),
+            )
+            .order_by(MovimientoCuentaCorriente.id)
+            .all()
+        )
+
+    def hay_credito_vivo_de_reserva(self, reserva_id: int) -> bool:
+        """
+        ¿Hay algún crédito no anulado atado a esta reserva, de la naturaleza que
+        sea?
+
+        La usa `ReservaService.cancelar` para decidir si tiene que fabricar el
+        crédito de la seña o si ya está. Mira **cualquier** naturaleza a
+        propósito: el crédito del echeq es `echeq_en_cartera` y no se marca
+        aplicado —un papel no es una seña cobrada— pero existe y ya bajó el
+        saldo. Ignorarlo haría que la cancelación acreditara la seña dos veces.
+        """
+        return (
+            self.db.query(MovimientoCuentaCorriente.id)
+            .filter(
+                MovimientoCuentaCorriente.reserva_id == reserva_id,
+                MovimientoCuentaCorriente.tipo == "credito",
+                MovimientoCuentaCorriente.anulado.is_(False),
+            )
+            .first()
+            is not None
+        )
+
+    def aplicar_anticipos_de_reserva(
+        self, reserva_id: int, debito_id: int | None
+    ) -> list[MovimientoCuentaCorriente]:
+        """
+        Marca aplicados los anticipos de esta reserva. Lo llama el check-out.
+
+        `debito_id` puede venir en `None`, y es uno de los tres bordes que
+        `PLAN_DINERO.md` §4.2 pedía cubrir: **si el auto sale sin precio**, el
+        check-out no asienta ningún débito (`if monto_facturado > 0`) y no hay a
+        qué apuntar. Sin esto el anticipo quedaría "por aplicar" para siempre y
+        `deuda = saldo + anticipos` sobreestimaría la deuda por el anticipo
+        entero. Se marca igual: la marca dice *"este anticipo ya se consumió"*,
+        y contra qué es información extra, no la condición.
+
+        **El crédito del echeq no se toca**: tiene naturaleza
+        `echeq_en_cartera`, no `anticipo`. Un echeq recibido es un papel, no
+        plata en la caja, y confundirlos era el tercer borde de §4.2.
+        """
+        anticipos = (
+            self.db.query(MovimientoCuentaCorriente)
+            .filter(
+                MovimientoCuentaCorriente.reserva_id == reserva_id,
+                MovimientoCuentaCorriente.naturaleza == "anticipo",
+                MovimientoCuentaCorriente.anulado.is_(False),
+                MovimientoCuentaCorriente.aplicado_en.is_(None),
+            )
+            .all()
+        )
+        ahora = datetime.utcnow()
+        for a in anticipos:
+            a.aplicado_por_movimiento_id = debito_id
+            a.aplicado_en = ahora
+        if anticipos:
+            self.db.flush()
+        return anticipos
+
+    def _soltar_anticipos_aplicados_a(self, movimiento_id: int) -> None:
+        """Deshace las marcas que apuntaban a un movimiento que se acaba de anular."""
+        colgados = (
+            self.db.query(MovimientoCuentaCorriente)
+            .filter(MovimientoCuentaCorriente.aplicado_por_movimiento_id == movimiento_id)
+            .all()
+        )
+        for a in colgados:
+            a.aplicado_por_movimiento_id = None
+            a.aplicado_en = None
 
     def editar_vencimiento(
         self,

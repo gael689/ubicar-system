@@ -192,9 +192,22 @@ export interface CuentaCorriente {
   cliente_nombre: string | null;
 }
 
+/**
+ * De qué se trata un asiento. `tipo` es el signo; esto es la naturaleza.
+ *
+ * Existe desde la migración 079: antes vivía en el texto libre de `concepto`,
+ * o sea que la pantalla no podía distinguir un echeq en cartera de un pago sin
+ * leer una cadena escrita a mano.
+ */
+export type NaturalezaMovimiento =
+  | 'alquiler' | 'extension' | 'excedente' | 'cargo_cierre' | 'multa' | 'danio'
+  | 'anticipo' | 'pago' | 'echeq_en_cartera' | 'sena_retenida' | 'reembolso'
+  | 'bonificacion' | 'anulacion' | 'manual';
+
 export interface MovimientoCC {
   id: number;
   tipo: 'debito' | 'credito';
+  naturaleza?: NaturalezaMovimiento;
   concepto: string;
   monto: number;
   fecha: string;
@@ -207,6 +220,11 @@ export interface MovimientoCC {
   echeq_id?: number | null;
   multa_id?: number | null;
   recibo_id?: number | null;
+  // Sólo en un anticipo: cuándo se consumió, y contra qué débito. La fecha es
+  // la que manda — un anticipo se puede consumir sin débito contra el cual, si
+  // el auto salió sin precio cargado.
+  aplicado_por_movimiento_id?: number | null;
+  aplicado_en?: string | null;
   anulado?: boolean;
   anulado_por_movimiento_id?: number | null;
   creado_por?: number | null;
@@ -929,6 +947,14 @@ export interface ExtenderRequest {
   nueva_fecha_fin: string;
   nueva_hora_fin: string;
   precio_total?: number | null;
+  // La diferencia se asienta siempre en la cuenta corriente; cobrarla en el
+  // acto es opcional (el default del negocio es que se pague al devolver).
+  pago_inmediato?: {
+    monto: number;
+    medio_pago: string;
+    fecha: string;
+    notas?: string;
+  };
 }
 
 export interface ExtenderResponse {

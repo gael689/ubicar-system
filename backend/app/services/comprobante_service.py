@@ -68,6 +68,9 @@ class ComprobanteService:
             mov = self.cc_service.registrar_movimiento(
                 cliente_id=cliente_id,
                 tipo=tipo_movimiento,
+                # Una nota de crédito perdona deuda; una de débito la agrega a
+                # mano. Ninguna de las dos mueve plata: son papel que ajusta.
+                naturaleza="bonificacion" if payload.tipo == "nota_credito" else "manual",
                 concepto=f"{'Nota de crédito' if payload.tipo == 'nota_credito' else 'Nota de débito'} {payload.punto_venta or ''}-{payload.numero}",
                 monto=Decimal(str(payload.total)),
                 fecha=payload.fecha_emision,

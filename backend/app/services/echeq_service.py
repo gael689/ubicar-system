@@ -74,6 +74,12 @@ class EcheqService:
             mov = CuentaCorrienteService(self.db).registrar_movimiento(
                 cliente_id=cliente_id,
                 tipo="credito",
+                # **No es un `anticipo` y la diferencia importa.** Un echeq
+                # recibido baja la deuda del cliente, pero no es plata en la
+                # caja: es un papel que puede rebotar. Si fuera `anticipo`, el
+                # check-out lo marcaría aplicado como si fuera una seña
+                # cobrada, y "cuánto tenemos anticipado" contaría cheques.
+                naturaleza="echeq_en_cartera",
                 concepto=f"Echeq recibido {detalle}{banco_txt}{vencimiento_txt}",
                 monto=Decimal(str(monto)),
                 fecha=fecha_emision,

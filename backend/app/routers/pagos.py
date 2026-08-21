@@ -333,6 +333,10 @@ def create_pago(
     CuentaCorrienteService(db).registrar_movimiento(
         cliente_id=cliente_id,
         tipo="credito",
+        # Un cobro suelto siempre es contra una deuda que ya existe: es un
+        # `pago`, no un `anticipo`. La seña de una reserva sin alquiler entra
+        # por `ReservaService.registrar_cobro`, que sí la asienta como anticipo.
+        naturaleza="pago",
         concepto=concepto,
         monto=Decimal(str(payload.monto)),
         fecha=payload.fecha,

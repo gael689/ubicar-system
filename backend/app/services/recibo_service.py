@@ -153,6 +153,7 @@ class ReciboService:
         self.cc_service.registrar_movimiento(
             cliente_id=payload.cliente_id,
             tipo="credito",
+            naturaleza="pago",
             concepto=f"Recibo — {payload.concepto}",
             monto=payload.monto,
             fecha=payload.fecha,

@@ -131,6 +131,7 @@ class MultaService:
             CuentaCorrienteService(self.db).registrar_movimiento(
                 cliente_id=cliente_id,
                 tipo="debito",
+                naturaleza="multa",
                 concepto=f"Multa #{multa.id} — {multa.patente} ({multa.fecha_infraccion})",
                 monto=multa.monto,
                 fecha=date.today(),
@@ -226,6 +227,7 @@ class MultaService:
             cc_service.registrar_movimiento(
                 cliente_id=multa.cliente_id,
                 tipo="credito",
+                naturaleza="pago",
                 concepto=f"Multa #{multa.id} cobrada — {multa.patente} ({medio_pago})",
                 monto=multa.monto,
                 fecha=fecha,

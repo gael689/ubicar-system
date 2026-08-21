@@ -45,6 +45,9 @@ class MovimientoCreate(BaseModel):
 class MovimientoResponse(BaseModel):
     id: int
     tipo: str
+    # De qué se trata el asiento. Es lo que permite que la ficha muestre un
+    # echeq en cartera distinto de un pago, y un anticipo distinto de los dos.
+    naturaleza: str
     concepto: str
     monto: float
     fecha: date
@@ -56,6 +59,8 @@ class MovimientoResponse(BaseModel):
     pago_id: int | None
     echeq_id: int | None
     multa_id: int | None
+    aplicado_por_movimiento_id: int | None = None
+    aplicado_en: datetime | None = None
     anulado: bool
     anulado_por_movimiento_id: int | None
     creado_por: int | None
@@ -267,6 +272,10 @@ def add_movimiento(
         mov = svc.registrar_movimiento(
             cliente_id=cc.cliente_id,
             tipo=payload.tipo,
+            # Lo cargó una persona a mano: eso **es** su naturaleza. Dejar que
+            # el operador elija entre las catorce sería pedirle que entienda el
+            # modelo contable para poder anotar un ajuste.
+            naturaleza="manual",
             concepto=payload.concepto,
             monto=Decimal(str(payload.monto)),
             fecha=payload.fecha,

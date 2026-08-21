@@ -54,6 +54,7 @@ class TestCancelarConSena:
         CuentaCorrienteService(db).registrar_movimiento(
             cliente_id=cliente.id,
             tipo="credito",
+            naturaleza="anticipo",
             concepto=f"Pago online reserva #{reserva.id} (25%)",
             monto=Decimal("100000"),
             fecha=date(2026, 8, 20),
@@ -141,7 +142,7 @@ class TestLaFichaDespuesDeCancelar:
         pago = hacer_pago(cliente_id=cliente.id, monto="100000",
                           medio_pago="mercado_pago", fecha=date(2026, 8, 20))
         CuentaCorrienteService(db).registrar_movimiento(
-            cliente_id=cliente.id, tipo="credito",
+            cliente_id=cliente.id, tipo="credito", naturaleza="anticipo",
             concepto=f"Pago online reserva #{reserva.id} (25%)",
             monto=Decimal("100000"), fecha=date(2026, 8, 20),
             creado_por=usuario.id, reserva_id=reserva.id, pago_id=pago.id,
@@ -164,7 +165,7 @@ class TestLaFichaDespuesDeCancelar:
         pago = hacer_pago(cliente_id=cliente.id, monto="100000",
                           medio_pago="mercado_pago", fecha=date(2026, 8, 20))
         CuentaCorrienteService(db).registrar_movimiento(
-            cliente_id=cliente.id, tipo="credito",
+            cliente_id=cliente.id, tipo="credito", naturaleza="anticipo",
             concepto=f"Pago online reserva #{reserva.id} (25%)",
             monto=Decimal("100000"), fecha=date(2026, 8, 20),
             creado_por=usuario.id, reserva_id=reserva.id, pago_id=pago.id,

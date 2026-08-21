@@ -185,6 +185,7 @@ def extender_alquiler(
             nueva_hora_fin=payload.nueva_hora_fin,
             usuario_id=current_user.id,
             precio_manual=payload.precio_total,
+            pago_inmediato=payload.pago_inmediato,
         )
         db.commit()
     except ConflictError as e:
