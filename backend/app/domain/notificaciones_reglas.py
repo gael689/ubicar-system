@@ -41,6 +41,7 @@ from app.models.multa import Multa
 from app.models.reserva import Reserva
 from app.models.servicio import Servicio
 from app.models.vehiculo import Vehiculo
+from app.services import cobranza_service as cobranza
 
 
 def _vehiculo_desc(v) -> str:
@@ -322,6 +323,32 @@ def echeq_rechazado(db: Session, hoy: date) -> list[dict]:
     ]
 
 
+def _sigue_impago(m, alquileres_con_saldo: set[int], clientes_con_deuda: set[int]) -> bool:
+    """
+    ¿Este débito todavía representa plata que falta cobrar?
+
+    **El sistema no sabe qué débito está pago** — no hay imputación
+    crédito→débito y no se va a construir (`PLAN_DINERO.md` §4.3). Sin esta
+    pregunta, las dos reglas de abajo listaban *todo* débito vencido, pagado o
+    no: un alquiler al contado cobrado íntegro en el mostrador generaba una
+    "deuda vencida" el día siguiente y para siempre, que es el caso más común
+    del negocio. Con volumen, la campana se vuelve ruido y deja de mirarse.
+
+    Se pregunta **por alquiler**, que es donde el dato es exacto: lo facturado
+    contra los pagos que le entraron. Para los movimientos que no cuelgan de
+    ningún alquiler —multas y daños sueltos, movimientos manuales— se cae al
+    filtro por cliente, que ahí alcanza.
+
+    Sigue siendo **aproximado en un punto y está asumido**: no dice *qué*
+    débito del alquiler está impago, sólo que al alquiler le falta plata. Con
+    saldo pendiente > 0 se listan todos sus débitos vencidos.
+    """
+    if m.alquiler_id is not None:
+        return m.alquiler_id in alquileres_con_saldo
+    cliente_id = m.cuenta_corriente.cliente_id if m.cuenta_corriente else None
+    return cliente_id in clientes_con_deuda
+
+
 def cc_vencimiento_proximo(db: Session, hoy: date) -> list[dict]:
     objetivos = {hoy + timedelta(days=3): "T-3", hoy: "T-0"}
     movs = (
@@ -333,8 +360,15 @@ def cc_vencimiento_proximo(db: Session, hoy: date) -> list[dict]:
         )
         .all()
     )
+    # Con condición `contado` el vencimiento es el mismo día del movimiento
+    # (`calcular_vencimiento`), así que sin este filtro el check-out cobrado
+    # íntegro disparaba "vence hoy" el mismo día que se cobró.
+    alquileres_con_saldo = cobranza.alquileres_con_saldo_pendiente(db)
+    con_deuda = cobranza.clientes_con_deuda(db)
     items = []
     for m in movs:
+        if not _sigue_impago(m, alquileres_con_saldo, con_deuda):
+            continue
         cliente = m.cuenta_corriente.cliente
         items.append({
             "tipo": "cc_vencimiento_proximo",
@@ -362,8 +396,12 @@ def cc_vencida(db: Session, hoy: date) -> list[dict]:
         )
         .all()
     )
+    alquileres_con_saldo = cobranza.alquileres_con_saldo_pendiente(db)
+    con_deuda = cobranza.clientes_con_deuda(db)
     items = []
     for m in movs:
+        if not _sigue_impago(m, alquileres_con_saldo, con_deuda):
+            continue
         dias = (hoy - m.fecha_vencimiento).days
         bucket = next(((umbral, urg) for umbral, urg in _BUCKETS_CC_VENCIDA if dias >= umbral), None)
         if bucket is None:

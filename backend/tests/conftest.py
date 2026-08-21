@@ -14,6 +14,8 @@ que se compensan más abajo; a cambio, el suite entero sigue corriendo con
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.schema import ColumnDefault
@@ -133,3 +135,117 @@ def cliente(db):
     db.add(c)
     db.flush()
     return c
+
+
+@pytest.fixture()
+def vehiculo(db):
+    from app.models.vehiculo import Vehiculo
+
+    v = Vehiculo(
+        patente="AB123CD",
+        marca="Fiat",
+        modelo="Cronos",
+        anio=2024,
+        tipo="auto",
+        color="blanco",
+        estado="disponible",
+        km_actual=10_000,
+    )
+    db.add(v)
+    db.flush()
+    return v
+
+
+@pytest.fixture()
+def hacer_reserva(db, cliente, usuario, vehiculo):
+    """
+    Fábrica de reservas. Devuelve una función porque casi todo test del
+    circuito del dinero necesita **dos** reservas (una pagada y una impaga)
+    para demostrar que el filtro discrimina.
+    """
+    from datetime import date as _date, time as _time
+    from app.models.reserva import Reserva
+
+    def _hacer(
+        *,
+        precio_total="100000",
+        estado="confirmada",
+        condicion_pago="contado",
+        condicion_pago_ancla="checkout",
+        fecha_inicio=_date(2026, 9, 1),
+        fecha_fin=_date(2026, 9, 5),
+        cliente_id=None,
+        **extra,
+    ):
+        r = Reserva(
+            vehiculo_id=vehiculo.id,
+            cliente_id=cliente_id or cliente.id,
+            fecha_inicio=fecha_inicio,
+            hora_inicio=_time(10, 0),
+            fecha_fin=fecha_fin,
+            hora_fin=_time(10, 0),
+            lugar_entrega="Local",
+            lugar_devolucion="Local",
+            estado=estado,
+            usuario_id=usuario.id,
+            precio_total=Decimal(str(precio_total)) if precio_total is not None else None,
+            condicion_pago=condicion_pago,
+            condicion_pago_ancla=condicion_pago_ancla,
+            **extra,
+        )
+        db.add(r)
+        db.flush()
+        return r
+
+    return _hacer
+
+
+@pytest.fixture()
+def hacer_alquiler(db, usuario):
+    """
+    Fábrica de alquileres ya entregados, sin pasar por `checkout()`.
+
+    Los tests que ejercitan `checkout()` lo llaman de verdad; los que sólo
+    necesitan "un alquiler que existe" (los filtros de cobranza, por ejemplo)
+    usan esto y se ahorran las validaciones de solapamiento y contrato.
+    """
+    from datetime import date as _date, time as _time
+    from app.models.alquiler import Alquiler
+
+    def _hacer(reserva, *, checkout_fecha=_date(2026, 9, 1), cargo_excedente="0"):
+        a = Alquiler(
+            reserva_id=reserva.id,
+            checkout_fecha=checkout_fecha,
+            checkout_hora=_time(10, 0),
+            checkout_km=10_000,
+            checkout_combustible=100,
+            cargo_excedente=Decimal(str(cargo_excedente)),
+            decidido_por=usuario.id,
+        )
+        db.add(a)
+        db.flush()
+        return a
+
+    return _hacer
+
+
+@pytest.fixture()
+def hacer_pago(db, usuario):
+    from datetime import date as _date
+    from app.models.pago import Pago
+
+    def _hacer(*, cliente_id, monto, alquiler_id=None, medio_pago="efectivo",
+               fecha=_date(2026, 9, 1)):
+        p = Pago(
+            cliente_id=cliente_id,
+            alquiler_id=alquiler_id,
+            monto=Decimal(str(monto)),
+            medio_pago=medio_pago,
+            fecha=fecha,
+            cobrado_por=usuario.id,
+        )
+        db.add(p)
+        db.flush()
+        return p
+
+    return _hacer
