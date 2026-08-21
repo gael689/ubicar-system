@@ -265,9 +265,17 @@ def client(db, usuario):
     from fastapi.testclient import TestClient
 
     from app.core.deps import get_current_user, get_db
+    # **Hay dos `get_db` distintos.** Los routers internos lo importan de
+    # `app.core.deps` y `public.py` de `app.database`: son dos objetos, y
+    # FastAPI resuelve los overrides por identidad. Pisando uno solo, los
+    # endpoints públicos seguían abriendo su propia sesión contra el Postgres
+    # de desarrollo — el test pasaba o fallaba según en qué migración estuviera
+    # esa base, que es lo contrario de un test.
+    from app.database import get_db as get_db_publico
     from app.main import app
 
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_db_publico] = lambda: db
     app.dependency_overrides[get_current_user] = lambda: usuario
     try:
         with TestClient(app) as c:

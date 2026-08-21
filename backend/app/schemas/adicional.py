@@ -14,11 +14,14 @@ class _AdicionalValidaciones(BaseModel):
     @model_validator(mode="after")
     def _validar(self):
         grupo = getattr(self, "grupo", None)
-        franquicia = getattr(self, "franquicia", None)
-        # La franquicia sólo tiene sentido en una cobertura: en un GPS no
-        # significa nada y cargarla sería un dato que después nadie sabe leer.
-        if franquicia is not None and grupo == "extra":
-            raise ValueError("La franquicia sólo aplica a las coberturas, no a los extras")
+        descuento = getattr(self, "franquicia_descuento", None)
+        # El descuento de franquicia sólo tiene sentido en una cobertura: en un
+        # GPS no significa nada y cargarlo sería un dato que después nadie sabe
+        # leer.
+        if descuento is not None and grupo == "extra":
+            raise ValueError(
+                "El descuento de franquicia sólo aplica a las coberturas, no a los extras"
+            )
         return self
 
 
@@ -30,7 +33,9 @@ class AdicionalCreate(_AdicionalValidaciones):
     precio: Decimal = Field(ge=0)
     unidad_cobro: UnidadCobro = "por_dia"
     incluido: bool = False
-    franquicia: Decimal | None = Field(default=None, ge=0)
+    # **Cuánto BAJA la franquicia, no cuánto queda** (migración 084). El
+    # resultado depende de la base de cada categoría, y hay tres distintas.
+    franquicia_descuento: Decimal | None = Field(default=None, ge=0)
     # D-53: coberturas que se cobran como % del alquiler del vehículo, no un
     # monto fijo — "30% más" tiene sentido en cualquier categoría; un monto
     # fijo no. Cuando está cargado, reemplaza a `precio`/`unidad_cobro`.
@@ -61,7 +66,7 @@ class AdicionalUpdate(_AdicionalValidaciones):
     precio: Decimal | None = Field(default=None, ge=0)
     unidad_cobro: UnidadCobro | None = None
     incluido: bool | None = None
-    franquicia: Decimal | None = Field(default=None, ge=0)
+    franquicia_descuento: Decimal | None = Field(default=None, ge=0)
     porcentaje_sobre_alquiler: Decimal | None = Field(default=None, ge=0, le=100)
     max_cantidad: int | None = Field(default=None, ge=1)
     visible_web: bool | None = None
@@ -78,7 +83,17 @@ class AdicionalResponse(BaseModel):
     precio: Decimal
     unidad_cobro: UnidadCobro
     incluido: bool
-    franquicia: Decimal | None
+    # ⚠️ **Sin `= None`, esto era un campo requerido.** La migración 084 sacó
+    # `Adicional.franquicia` del modelo y este schema siguió pidiéndola: Pydantic
+    # no encontraba el atributo, `model_validate` levantaba, y `GET /adicionales`
+    # devolvía **500**.
+    #
+    # Y un 500 se ve en el navegador como un error de CORS, no como un 500: la
+    # respuesta de error la genera un middleware que está por **fuera** del de
+    # CORS, así que sale sin la cabecera `Access-Control-Allow-Origin` y el
+    # browser reporta "No 'Access-Control-Allow-Origin' header is present".
+    # Perseguir eso como un problema de CORS es perder la tarde.
+    franquicia_descuento: Decimal | None = None
     porcentaje_sobre_alquiler: Decimal | None = None
     max_cantidad: int | None
     visible_web: bool
