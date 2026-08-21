@@ -14,6 +14,7 @@ favor que nadie le debía**.
 de cuenta corriente y no el pago ni el medio: el asiento es el hecho económico
 y es lo único que no puede duplicarse.
 """
+import pytest
 from sqlalchemy import Boolean, Column, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -37,44 +38,71 @@ def _sesion():
     return sessionmaker(bind=eng)()
 
 
-def _servicio(db):
-    svc = CuentaCorrienteService(db)
-    # El service consulta el modelo real; acá se apunta al doble para poder
-    # ejercitar la regla sin levantar el esquema entero.
+@pytest.fixture()
+def servicio(monkeypatch):
+    """
+    El service apuntando al doble de la tabla.
+
+    **El `monkeypatch` no es cosmético.** Antes esto era una asignación cruda al
+    global del módulo (`mod.MovimientoCuentaCorriente = MovFalso`) que nunca se
+    restauraba. Mientras ningún otro test tocara `cuenta_corriente_service` era
+    inofensiva; en cuanto existen tests de service de verdad (Fase 0 del
+    `PLAN_DINERO.md`), el primero que corra después de este archivo recibe
+    `MovFalso` en vez del modelo real —según el orden de colección— y falla por
+    un motivo que no tiene nada que ver con lo que prueba. `monkeypatch`
+    devuelve el global a su lugar al terminar cada test.
+    """
     import app.services.cuenta_corriente_service as mod
-    mod.MovimientoCuentaCorriente = MovFalso
-    return svc
+
+    monkeypatch.setattr(mod, "MovimientoCuentaCorriente", MovFalso)
+
+    def _hacer(db):
+        return CuentaCorrienteService(db)
+
+    return _hacer
 
 
 class TestSenaNoSeDuplica:
-    def test_sin_movimientos_el_checkout_tiene_que_crear_el_anticipo(self):
+    def test_sin_movimientos_el_checkout_tiene_que_crear_el_anticipo(self, servicio):
         db = _sesion()
-        assert _servicio(db).tiene_credito_de_reserva(1) is False
+        assert servicio(db).tiene_credito_de_reserva(1) is False
 
-    def test_con_el_credito_del_cobro_online_el_checkout_no_lo_repite(self):
+    def test_con_el_credito_del_cobro_online_el_checkout_no_lo_repite(self, servicio):
         db = _sesion()
         db.add(MovFalso(reserva_id=1, tipo="credito", anulado=False))
         db.commit()
-        assert _servicio(db).tiene_credito_de_reserva(1) is True
+        assert servicio(db).tiene_credito_de_reserva(1) is True
 
-    def test_un_debito_no_cuenta(self):
+    def test_un_debito_no_cuenta(self, servicio):
         """El débito del alquiler no es plata que entró: si lo contara, el
         anticipo nunca se registraría."""
         db = _sesion()
         db.add(MovFalso(reserva_id=1, tipo="debito", anulado=False))
         db.commit()
-        assert _servicio(db).tiene_credito_de_reserva(1) is False
+        assert servicio(db).tiene_credito_de_reserva(1) is False
 
-    def test_un_credito_anulado_no_cuenta(self):
+    def test_un_credito_anulado_no_cuenta(self, servicio):
         """Si alguien anuló el crédito del cobro online, el anticipo vuelve a
         hacer falta: si no, la plata desaparecería del libro."""
         db = _sesion()
         db.add(MovFalso(reserva_id=1, tipo="credito", anulado=True))
         db.commit()
-        assert _servicio(db).tiene_credito_de_reserva(1) is False
+        assert servicio(db).tiene_credito_de_reserva(1) is False
 
-    def test_el_credito_de_otra_reserva_no_cuenta(self):
+    def test_el_credito_de_otra_reserva_no_cuenta(self, servicio):
         db = _sesion()
         db.add(MovFalso(reserva_id=99, tipo="credito", anulado=False))
         db.commit()
-        assert _servicio(db).tiene_credito_de_reserva(1) is False
+        assert servicio(db).tiene_credito_de_reserva(1) is False
+
+
+def test_el_parche_no_sobrevive_al_test(servicio):
+    """
+    La contracara: al salir de cada test, el módulo tiene que volver a apuntar
+    al modelo real. Este test corre *dentro* del parche —así que no puede
+    verificarlo desde adentro— pero deja escrito el contrato, y el archivo de
+    abajo (`tests/services/`) falla ruidosamente si dejara de cumplirse.
+    """
+    import app.services.cuenta_corriente_service as mod
+
+    assert mod.MovimientoCuentaCorriente is MovFalso
