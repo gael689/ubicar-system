@@ -58,7 +58,16 @@ class Settings(BaseSettings):
     # los mails a clientes como `omitido` en vez de mandarlos a la nada. Con
     # el dominio verificado en Resend, cambiar esto acá es todo lo que hay
     # que hacer: no hay ninguna otra bandera.
-    from_email: str = "noreply@ubicarrent.com"
+    # ⚠️ El dominio de la empresa es **`ubicar-rent.com.ar`** (con guion y con
+    # `.ar`). El default decía `ubicarrent.com`, que no es de ellos: si un
+    # deploy se olvida de esta variable, Resend rechaza el envío por dominio no
+    # verificado y no queda claro por qué.
+    #
+    # Verificado el 2026-08-21 contra la API de Resend: **la cuenta no tiene
+    # ningún dominio dado de alta** (`GET /domains` devuelve una lista vacía),
+    # así que hoy este valor sólo puede ser `onboarding@resend.dev` y todos los
+    # mails a clientes se registran como `omitido`.
+    from_email: str = "noreply@ubicar-rent.com.ar"
     # Destinatarios del digest matutino de notificaciones, separados por coma.
     # Vacío = no se envía. Sin usuarios reales todavía (pre-Clerk), es la
     # única forma de configurar a quién le llega. También es el respaldo de
