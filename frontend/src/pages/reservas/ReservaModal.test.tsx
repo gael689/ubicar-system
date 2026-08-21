@@ -174,7 +174,7 @@ describe('El orden de los pasos', () => {
       screen.getByPlaceholderText(/Buscar por nombre/),
       'Rodríguez Hermanos SRL',
     );
-    expect(screen.getByText(/Se va a crear el cliente/)).toBeInTheDocument();
+    expect(screen.getByText(/Reserva rápida — el cliente todavía no está registrado/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Siguiente/ }));
     expect(screen.getByText(/Paso 2 de 6/)).toBeInTheDocument();

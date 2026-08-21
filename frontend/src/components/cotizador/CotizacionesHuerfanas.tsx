@@ -16,16 +16,32 @@ import { formatDate } from '@/lib/utils';
  * suelta, y cuando esa persona vuelve y se da de alta, se le asigna acá y pasa
  * a su historial.
  *
- * No aparece si no hay ninguna: es una bandeja, y una bandeja vacía visible
- * permanentemente es ruido.
+ * **Vive en un sub-módulo propio, no en el formulario.** Antes se dibujaba
+ * entre "Fecha de emisión" y "Empresa cliente", o sea en el medio del camino de
+ * armar una cotización nueva — que es lo que uno hace el 95 % de las veces que
+ * abre esta pantalla. Asignarle dueño a una cotización vieja es otra tarea, de
+ * otro momento, y mezclarlas obligaba a saltear un bloque que no tenía nada que
+ * ver con lo que se estaba haciendo.
+ *
+ * Ahora se abre desde el botón del encabezado, que además lleva el contador: si
+ * hay pendientes se ven sin entrar, y si no hay, el botón no aparece.
  */
-export function CotizacionesHuerfanas() {
+export function CotizacionesHuerfanas({ onCerrar }: { onCerrar?: () => void }) {
   const { data: huerfanas } = usePresupuestosHuerfanos();
   const asignar = useAsignarClienteAPresupuesto();
   const [asignando, setAsignando] = useState<number | null>(null);
   const [elegido, setElegido] = useState<ClienteElegido>({ id: null, empresa: '', contacto: '', email: '' });
 
-  if (!huerfanas || huerfanas.length === 0) return null;
+  // Sin ninguna pendiente el sub-módulo no tiene nada que mostrar. El botón
+  // que lo abre tampoco se dibuja, así que a esto no se llega — queda igual
+  // por si alguien lo monta desde otro lado.
+  if (!huerfanas || huerfanas.length === 0) {
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        No hay cotizaciones sin cliente.
+      </p>
+    );
+  }
 
   const confirmar = (presupuestoId: number) => {
     if (!elegido.id) return;
@@ -35,6 +51,9 @@ export function CotizacionesHuerfanas() {
         onSuccess: () => {
           setAsignando(null);
           setElegido({ id: null, empresa: '', contacto: '', email: '' });
+          // Si era la última, el sub-módulo se cierra solo: quedarse mirando
+          // una bandeja vacía obliga a un click que no aporta nada.
+          if ((huerfanas?.length ?? 0) <= 1) onCerrar?.();
         },
       },
     );

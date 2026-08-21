@@ -850,8 +850,24 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     // permite tomar una reserva cuando todavía no se sabe qué unidad va, y lo
     // que hace que una reserva de mostrador y una web sean la misma cosa.
     // Elegir el auto sigue siendo el camino normal, no la excepción.
-    if (!clienteId || !fechaInicio || !fechaFin) {
-      errorEnPaso('Complete todos los campos requeridos (Cliente, Fechas).', 1);
+    // **El cliente puede no existir todavía, y eso no frena nada.**
+    //
+    // Esta guarda pedía `clienteId` y mandaba de vuelta al paso 1 con
+    // "Complete todos los campos requeridos (Cliente, Fechas)" — un mensaje que
+    // ni siquiera decía cuál faltaba. Era la segunda puerta: el paso 1 ya
+    // dejaba avanzar con sólo el nombre, se recorrían los seis pasos enteros y
+    // recién al guardar aparecía este cartel. Peor que bloquear al principio.
+    //
+    // Alcanza con **saber a nombre de quién es**: si no hay cliente elegido
+    // pero hay un nombre tipeado, el alta rápida se dispara sola unas líneas
+    // más abajo. El DNI y el teléfono quedan reclamados por la campana y se
+    // completan cuando la persona esté enfrente.
+    if (!clienteId && nombreClientePendiente.length < 3) {
+      errorEnPaso('Falta el cliente: elegí uno de la lista o escribí su nombre.', 1);
+      return;
+    }
+    if (!fechaInicio || !fechaFin) {
+      errorEnPaso('Faltan las fechas del alquiler.', 2);
       return;
     }
     if (!vehiculoId && !categoriaManualId) {
@@ -1475,11 +1491,22 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   a cargar un alta entera y volver a empezar es lo que hace que
                   la reserva termine anotada en un papel. El cliente se crea al
                   guardar, con el nombre, y la campana reclama el resto. */}
+              {/* **Reserva rápida a un cliente no registrado.** Se detecta sola:
+                  si hay un nombre tipeado y ninguno elegido de la lista, es
+                  esto. No hay un modo aparte que haya que activar — el operador
+                  escribe el nombre y sigue, que es lo que hace con alguien
+                  enfrente. */}
               {nombreClientePendiente.length >= 3 && (
-                <p className="text-xs text-primary">
-                  Se va a crear el cliente <strong>"{nombreClientePendiente}"</strong> al
-                  guardar la reserva. DNI y teléfono quedan pendientes.
-                </p>
+                <div className="rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-2">
+                  <p className="text-xs font-semibold text-primary">
+                    Reserva rápida — el cliente todavía no está registrado
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Se da de alta a <strong className="text-foreground">"{nombreClientePendiente}"</strong> al
+                    guardar, sólo con el nombre. El DNI y el teléfono quedan pendientes y el
+                    sistema los va a reclamar — sin DNI no se puede emitir el contrato.
+                  </p>
+                </div>
               )}
               {!clienteId && nombreClientePendiente.length > 0 && nombreClientePendiente.length < 3 && (
                 <p className="text-xs text-slate-500">

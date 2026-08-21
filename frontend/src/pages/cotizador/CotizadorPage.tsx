@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '@/lib/api';
-import { FileDown, RefreshCw, Plus, X } from 'lucide-react';
+import { Inbox, FileDown, RefreshCw, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +17,10 @@ import {
 import { CotizacionPreview3 } from '@/components/cotizador/CotizacionPreview3';
 import { SelectorCliente } from '@/components/cotizador/SelectorCliente';
 import { CotizacionesHuerfanas } from '@/components/cotizador/CotizacionesHuerfanas';
+import { usePresupuestosHuerfanos } from '@/hooks/usePresupuestos';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 import { exportCotizacionPDF } from '@/lib/pdfExport';
 import type { CotizacionData, CategoriaVehiculo, ModalidadItem, ModoCotizacion, ItemCotizacion, UnidadNombre } from '@/types/cotizacion';
 import { UNIDADES_CAMIONETA, UNIDADES_VEHICULO, UNIDADES_UTILITARIO } from '@/types/cotizacion';
@@ -185,6 +189,11 @@ export function CotizadorPage() {
   const [modo,         setModo]        = useState<ModoCotizacion>('categoria');
   const [formItems,    setFormItems]   = useState<FormItem[]>(() => [makeFormItem('categoria')]);
   const [exporting,    setExporting]   = useState(false);
+  // El sub-módulo de cotizaciones sin dueño. Se abre desde el encabezado, no
+  // desde el medio del formulario.
+  const [verHuerfanas, setVerHuerfanas] = useState(false);
+  const { data: huerfanasData } = usePresupuestosHuerfanos();
+  const huerfanas = huerfanasData?.length ?? 0;
   // Arranca en true: sumar es lo que se espera de un presupuesto. Se apaga
   // cuando la cotización es un abanico de opciones y no una flota.
   const [mostrarTotal, setMostrarTotal] = useState(true);
@@ -340,9 +349,31 @@ export function CotizadorPage() {
             <h2 className="font-semibold text-sm">Nueva cotización</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Completá los datos y descargá el PDF</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={handleReset} title="Reiniciar formulario">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {/* La bandeja de cotizaciones sin dueño, en su propio sub-módulo.
+                Estaba en el medio del formulario y había que saltearla cada vez
+                que se armaba una cotización nueva, que es a lo que se viene a
+                esta pantalla. Acá se ve el contador sin entrar, y se entra
+                cuando esa es la tarea. */}
+            {huerfanas > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setVerHuerfanas(true)}
+                title="Cotizaciones que quedaron sin cliente asignado"
+                className="gap-1.5 text-xs"
+              >
+                <Inbox className="h-3.5 w-3.5" />
+                Sin cliente
+                <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
+                  {huerfanas}
+                </span>
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={handleReset} title="Reiniciar formulario">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Campos */}
@@ -366,10 +397,6 @@ export function CotizadorPage() {
               </Field>
             </div>
           </section>
-
-          {/* Cotizaciones guardadas que quedaron sin dueño. Sólo se ve si hay
-              alguna: es una bandeja, no una sección fija. */}
-          <CotizacionesHuerfanas />
 
           {/* ── Empresa cliente ─────────────────────────────────────── */}
           <section>
@@ -694,6 +721,23 @@ export function CotizadorPage() {
           </div>
         </div>
       </div>
+
+      {/* El sub-módulo. En diálogo y no en una columna más porque el panel del
+          formulario tiene 420px fijos y meterle una bandeja adentro obliga a
+          elegir cuál de las dos cosas se ve. Acá se abre, se resuelve lo que
+          haya, y se vuelve a lo que se estaba haciendo. */}
+      <Dialog open={verHuerfanas} onOpenChange={setVerHuerfanas}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Cotizaciones sin cliente</DialogTitle>
+            <DialogDescription>
+              Se cotizaron a alguien que todavía no estaba dado de alta. Asignales
+              el cliente cuando exista y pasan a su historial.
+            </DialogDescription>
+          </DialogHeader>
+          <CotizacionesHuerfanas onCerrar={() => setVerHuerfanas(false)} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
