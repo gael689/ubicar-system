@@ -72,6 +72,20 @@ class MovimientoCuentaCorriente(Base):
     condicion: Mapped[str | None] = mapped_column(String(20), nullable=True)
     fecha_vencimiento: Mapped[date | None] = mapped_column(Date(), nullable=True, index=True)
     saldo_posterior: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    # La fecha de vencimiento es **una estimación**, no una fecha pactada.
+    #
+    # Pasa cuando la condición de pago cuenta los días desde que el auto vuelve
+    # (D-41, `condicion_pago_ancla='checkin'`): al entregarlo no se sabe cuándo
+    # lo devuelven, así que se calcula desde la fecha de fin **pactada** y el
+    # check-in real la recalcula. Sin esta marca, la pantalla mostraría esa
+    # fecha con la misma cara que un vencimiento firme.
+    #
+    # No se confunde con `vencimiento_editado_*`, que marca el vencimiento que
+    # alguien corrió a mano: eso es lo contrario, una decisión y no una
+    # estimación.
+    vencimiento_provisorio: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
 
     alquiler_id: Mapped[int | None] = mapped_column(ForeignKey("alquileres.id"), nullable=True)
     reserva_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"), nullable=True)

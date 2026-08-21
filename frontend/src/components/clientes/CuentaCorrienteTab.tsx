@@ -90,7 +90,11 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
   const hoy = new Date();
   const aging = { d0_30: 0, d31_60: 0, d61_90: 0, d90mas: 0 };
   for (const m of movimientos) {
+    // Un vencimiento provisorio no cuenta para el aging: la fecha todavía
+    // puede correrse, y clasificar una deuda como "vencida hace 45 días"
+    // apoyándose en una estimación es peor que no clasificarla.
     if (m.tipo !== 'debito' || m.anulado || !m.fecha_vencimiento) continue;
+    if (m.vencimiento_provisorio) continue;
     const venc = new Date(m.fecha_vencimiento);
     const diasVencido = Math.floor((hoy.getTime() - venc.getTime()) / 86400000);
     if (diasVencido <= 0) continue;
@@ -292,7 +296,14 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
                       )}
                       {m.tipo === 'debito' && !m.anulado && (
                         m.fecha_vencimiento
-                          ? ` · Vence ${formatDate(m.fecha_vencimiento)}`
+                          ? ` · Vence ${formatDate(m.fecha_vencimiento)}${
+                              // La fecha existe pero es una estimación: se
+                              // calculó desde el fin pactado de la reserva y el
+                              // check-in la va a recalcular. Decirlo evita que
+                              // alguien reclame una deuda contra una fecha que
+                              // todavía puede correrse.
+                              m.vencimiento_provisorio ? ' (estimado, hasta que vuelva el auto)' : ''
+                            }`
                           : ' · Sin vencimiento todavía'
                       )}
                     </p>

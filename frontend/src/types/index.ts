@@ -213,6 +213,15 @@ export interface MovimientoCC {
   fecha: string;
   condicion?: CondicionPago | null;
   fecha_vencimiento?: string | null;
+  /**
+   * `true` = la fecha es una estimación, no algo pactado.
+   *
+   * Pasa cuando el plazo se cuenta desde que el auto vuelve (D-41): al
+   * entregarlo se calcula desde el fin pactado de la reserva, y el check-in
+   * real la recalcula. Sin esta marca, la pantalla la mostraría igual que un
+   * vencimiento firme.
+   */
+  vencimiento_provisorio?: boolean;
   saldo_posterior?: number;
   alquiler_id: number | null;
   reserva_id?: number | null;

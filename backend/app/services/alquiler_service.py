@@ -251,10 +251,22 @@ class AlquilerService:
                 # que el check-in lo complete (o alguien lo edite a mano).
                 ancla = reserva.condicion_pago_ancla
                 fecha_vencimiento_checkout = None
+                provisorio = False
                 if ancla == "fecha_especifica" and reserva.condicion_pago_fecha_ancla:
                     fecha_vencimiento_checkout = calcular_vencimiento(
                         reserva.condicion_pago_fecha_ancla, reserva.condicion_pago
                     )
+                elif ancla == "checkin":
+                    # **Nace con una fecha estimada, no sin fecha.** Se calcula
+                    # desde el fin **pactado** de la reserva, que es lo mejor que
+                    # se sabe al entregar el auto, y el check-in real la
+                    # recalcula. Antes quedaba en NULL, y un débito sin
+                    # vencimiento es invisible para los avisos de deuda: podían
+                    # ser $400.000 esperando a que alguien cargara el check-in.
+                    fecha_vencimiento_checkout = calcular_vencimiento(
+                        reserva.fecha_fin, reserva.condicion_pago
+                    )
+                    provisorio = True
                 debito_alquiler = self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="debito",
@@ -266,6 +278,7 @@ class AlquilerService:
                     condicion=reserva.condicion_pago,
                     fecha_vencimiento=fecha_vencimiento_checkout,
                     sin_vencimiento_automatico=(ancla == "checkin"),
+                    vencimiento_provisorio=provisorio,
                     alquiler_id=alquiler.id,
                     reserva_id=reserva.id,
                 )
@@ -500,18 +513,29 @@ class AlquilerService:
             # condición de pago legítima, y su vencimiento es el día del
             # check-in. Excluirlo dejaba ese débito sin fecha para siempre.
             if reserva.condicion_pago_ancla == "checkin":
-                debito_pendiente = (
+                # Se buscan los débitos **con fecha provisoria**, no los que
+                # están sin fecha: desde la Fase 5 nacen con una estimación, así
+                # que "sin fecha" ya no encuentra nada. El auto volvió: ahora sí
+                # se sabe contra qué contar el plazo.
+                #
+                # Los que alguien corrió a mano quedan afuera: `editar_vencimiento`
+                # apaga `vencimiento_provisorio`, y una fecha renegociada con el
+                # cliente no la puede pisar un automatismo.
+                provisorios = (
                     self.db.query(MovimientoCuentaCorriente)
                     .filter(
                         MovimientoCuentaCorriente.reserva_id == reserva.id,
                         MovimientoCuentaCorriente.tipo == "debito",
                         MovimientoCuentaCorriente.anulado == False,
-                        MovimientoCuentaCorriente.fecha_vencimiento.is_(None),
+                        MovimientoCuentaCorriente.vencimiento_provisorio == True,
                     )
-                    .first()
+                    .all()
                 )
-                if debito_pendiente:
-                    debito_pendiente.fecha_vencimiento = calcular_vencimiento(checkin_fecha, reserva.condicion_pago)
+                for debito in provisorios:
+                    debito.fecha_vencimiento = calcular_vencimiento(
+                        checkin_fecha, reserva.condicion_pago
+                    )
+                    debito.vencimiento_provisorio = False
 
             # Ledger completo: el excedente que efectivamente se decidió
             # cobrar (D-19) es un cargo adicional al alquiler — débito.

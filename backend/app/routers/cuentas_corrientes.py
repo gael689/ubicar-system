@@ -53,6 +53,8 @@ class MovimientoResponse(BaseModel):
     fecha: date
     condicion: str | None
     fecha_vencimiento: date | None
+    # `True` = es una estimación, no una fecha pactada. La pantalla lo dice.
+    vencimiento_provisorio: bool = False
     saldo_posterior: float
     alquiler_id: int | None
     reserva_id: int | None

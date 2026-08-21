@@ -107,6 +107,7 @@ class CuentaCorrienteService:
         condicion: str | None = None,
         fecha_vencimiento: date | None = None,
         sin_vencimiento_automatico: bool = False,
+        vencimiento_provisorio: bool = False,
         alquiler_id: int | None = None,
         reserva_id: int | None = None,
         pago_id: int | None = None,
@@ -128,11 +129,15 @@ class CuentaCorrienteService:
 
         cc = self.get_or_create(cliente_id)
         condicion_efectiva = condicion or cc.condicion_pago
-        # Ancla = check-in (D-?): todavía no sabemos cuándo vuelve el auto,
-        # así que no hay que calcular nada contra la fecha de este asiento
-        # (que sería la del checkout) — queda sin vencimiento hasta que el
-        # check-in real lo complete, o hasta que alguien lo edite a mano
-        # (ver editar_vencimiento).
+        # `sin_vencimiento_automatico` significa "no lo calcules contra la
+        # fecha de este asiento": con ancla en check-in, la fecha del asiento es
+        # la del check-out y contra ella el plazo daría cualquier cosa.
+        #
+        # **No significa "dejalo en None".** Eso era lo que pasaba antes, y un
+        # débito sin vencimiento no aparece en ningún aviso: `cc_vencida` y
+        # `cc_vencimiento_proximo` filtran por `fecha_vencimiento` y un NULL
+        # nunca entra. Ahora el llamador manda la fecha estimada —calculada
+        # desde el fin pactado de la reserva— y la marca provisoria.
         if sin_vencimiento_automatico:
             vencimiento = fecha_vencimiento
         else:
@@ -148,6 +153,7 @@ class CuentaCorrienteService:
             fecha=fecha,
             condicion=condicion_efectiva,
             fecha_vencimiento=vencimiento,
+            vencimiento_provisorio=vencimiento_provisorio,
             saldo_posterior=nuevo_saldo,
             alquiler_id=alquiler_id,
             reserva_id=reserva_id,
@@ -430,6 +436,9 @@ class CuentaCorrienteService:
             raise ValueError("El movimiento está anulado")
 
         antes = {"fecha_vencimiento": mov.fecha_vencimiento, "condicion": mov.condicion}
+        # Una fecha puesta a mano deja de ser una estimación: es una decisión, y
+        # el check-in no tiene que pisarla.
+        mov.vencimiento_provisorio = False
 
         if condicion is not None:
             mov.condicion = condicion
