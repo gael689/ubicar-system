@@ -10,6 +10,7 @@ from app.core.responses import ok
 from app.models.usuario import Usuario
 from app.models.cliente import Cliente
 from app.models.cuenta_corriente import CuentaCorriente, MovimientoCuentaCorriente
+from app.services.aging_service import AgingService
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 
 router = APIRouter(prefix="/cuentas-corrientes", tags=["Cuentas Corrientes"])
@@ -143,6 +144,40 @@ def _cc_response(cc: CuentaCorriente, db: Session, svc=None) -> dict:
         "observaciones": cc.observaciones,
         "cliente_nombre": cliente.nombre_completo if cliente else None,
     }
+
+
+@router.get("/aging/{cliente_id}")
+def aging_de_cliente(
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    El aging de un cliente: cuánto debe y desde hace cuánto.
+
+    **Se calcula acá y no en la pantalla.** Vivía en `CuentaCorrienteTab.tsx`,
+    que iteraba los movimientos de la página y sumaba por tramo. Eso rompía la
+    regla que gobierna todo el circuito —ninguna pantalla calcula un saldo por
+    su cuenta— y además daba mal por dos motivos que el frontend no podía ver:
+    contaba los débitos de alquileres ya cobrados, y contaba el monto bruto de
+    cada uno sin toparlo contra la deuda real.
+
+    Es **aproximado a propósito**: sin imputación crédito→débito el sistema sabe
+    cuánto debe un cliente, no qué débito suyo está impago. Ver `AgingService`.
+    """
+    return ok(_serializar_decimales(AgingService(db).de_cliente(cliente_id)))
+
+
+def _serializar_decimales(d):
+    from decimal import Decimal as _D
+
+    if isinstance(d, dict):
+        return {k: _serializar_decimales(v) for k, v in d.items()}
+    if isinstance(d, list):
+        return [_serializar_decimales(v) for v in d]
+    if isinstance(d, _D):
+        return float(d)
+    return d
 
 
 @router.get("/pendientes")

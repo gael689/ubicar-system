@@ -15,6 +15,9 @@ from app.models.pago import Pago
 from app.models.gasto import Gasto
 from app.models.categoria import Categoria
 from app.models.cliente import Cliente
+from app.models.cuenta_corriente import CuentaCorriente, MovimientoCuentaCorriente
+from app.services import cobranza_service as cobranza
+from app.services.aging_service import AgingService
 
 router = APIRouter(prefix="/reportes", tags=["Reportes"])
 
@@ -392,3 +395,218 @@ def demanda_no_atendida(
             for k, v in sorted(por_motivo.items(), key=lambda x: -x[1])
         ],
     })
+
+
+# ─── Las preguntas del objetivo del plan del dinero ──────────────────────────
+#
+# `PLAN_DINERO.md` §7 lista siete preguntas que el negocio se hace. Tres ya
+# tenían respuesta (ingresos por mes, gastos por vehículo, dónde está la plata),
+# y las cuatro que faltaban están acá.
+
+
+@router.get("/deuda")
+def reporte_deuda(
+    fecha: date | None = Query(None, description="Por default, hoy"),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Cuánto le deben a Ubicar, con aging, y quién tiene plata a favor.
+
+    **La primera pregunta del objetivo, y no existía.** Había un aging por
+    cliente calculado **en el frontend**, lo que rompía "ninguna pantalla
+    calcula un saldo por su cuenta", y para el total había que abrir las fichas
+    de a una y sumar a mano.
+
+    El aging es **aproximado y está topeado**: ver `AgingService`.
+    """
+    return ok(_serializar(AgingService(db).global_(fecha)))
+
+
+@router.get("/exposicion")
+def reporte_exposicion(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Cuánta plata hay afuera **ahora mismo**: alquileres en curso, lo que
+    facturan y lo que todavía no se cobró.
+
+    Es distinto de la deuda vencida y de la deuda total. Un alquiler en curso
+    puede no deber nada todavía —el plazo no venció— y ser igual la mayor
+    exposición del negocio: son autos circulando por los que no entró la plata.
+    """
+    alquileres = (
+        db.query(Alquiler)
+        .join(Reserva, Reserva.id == Alquiler.reserva_id)
+        .filter(Reserva.estado.in_(["activa", "vencida"]))
+        .all()
+    )
+
+    filas = []
+    for a in alquileres:
+        r = a.reserva
+        if r is None:
+            continue
+        pendiente = cobranza.saldo_pendiente(db, a)
+        filas.append({
+            "alquiler_id": a.id,
+            "reserva_id": r.id,
+            "cliente_nombre": r.cliente.nombre_completo if r.cliente else "?",
+            "vehiculo": r.vehiculo.patente if r.vehiculo else None,
+            "checkout_fecha": a.checkout_fecha,
+            "fecha_fin_pactada": r.fecha_fin,
+            "vencida": r.estado == "vencida",
+            "facturado": float(cobranza.monto_facturado(a)),
+            "cobrado": float(cobranza.monto_cobrado(db, a)),
+            "pendiente": float(pendiente),
+            "garantia_retenida": (
+                float(a.garantia_monto or 0)
+                if a.garantia_estado == "retenida" else 0.0
+            ),
+        })
+
+    # Lo que más plata tiene afuera, primero.
+    filas.sort(key=lambda f: -f["pendiente"])
+    return ok({
+        "alquileres": filas,
+        "total_facturado": sum(f["facturado"] for f in filas),
+        "total_cobrado": sum(f["cobrado"] for f in filas),
+        "total_pendiente": sum(f["pendiente"] for f in filas),
+        # Las que más urgen: el auto tendría que haber vuelto y no volvió.
+        "cantidad_vencidas": sum(1 for f in filas if f["vencida"]),
+        "pendiente_de_vencidas": sum(f["pendiente"] for f in filas if f["vencida"]),
+        "garantias_retenidas": sum(f["garantia_retenida"] for f in filas),
+    })
+
+
+@router.get("/bonificaciones")
+def reporte_bonificaciones(
+    desde: date | None = Query(None),
+    hasta: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Cuánta plata se regaló, y quién lo decidió.
+
+    Los datos estaban —`Alquiler.excedente_bonificado`, `motivo_bonificacion`,
+    la auditoría— y el reporte no existía, así que la pregunta *"¿cuánto
+    perdonamos este mes?"* no tenía respuesta. Es la decisión más discrecional
+    que se toma en el mostrador: el sistema calcula el cargo y una persona
+    decide no cobrarlo.
+
+    Dos fuentes, porque son dos cosas distintas:
+
+    - **Excedentes bonificados**: el cargo por devolver tarde que se decidió no
+      cobrar. Nunca llegó a ser un asiento — no hay deuda que perdonar si no se
+      facturó — así que sólo vive en el alquiler.
+    - **Asientos de naturaleza `bonificacion`**: deuda que **sí** se había
+      asentado y se revirtió. Multas condonadas, daños que se decide no cobrar,
+      notas de crédito.
+    """
+    q_alq = (
+        db.query(Alquiler)
+        .join(Reserva, Reserva.id == Alquiler.reserva_id)
+        .filter(Alquiler.excedente_bonificado.is_(True))
+    )
+    if desde:
+        q_alq = q_alq.filter(Alquiler.checkin_fecha >= desde)
+    if hasta:
+        q_alq = q_alq.filter(Alquiler.checkin_fecha <= hasta)
+
+    excedentes = []
+    for a in q_alq.all():
+        r = a.reserva
+        excedentes.append({
+            "alquiler_id": a.id,
+            "reserva_id": r.id if r else None,
+            "cliente_nombre": r.cliente.nombre_completo if r and r.cliente else "?",
+            "fecha": a.checkin_fecha,
+            "horas_excedidas": float(a.horas_excedidas or 0),
+            "motivo": a.motivo_bonificacion,
+            "decidido_por": a.decidido_por,
+        })
+
+    q_mov = (
+        db.query(MovimientoCuentaCorriente, Cliente)
+        .join(CuentaCorriente, CuentaCorriente.id == MovimientoCuentaCorriente.cuenta_corriente_id)
+        .join(Cliente, Cliente.id == CuentaCorriente.cliente_id)
+        .filter(
+            MovimientoCuentaCorriente.naturaleza == "bonificacion",
+            MovimientoCuentaCorriente.anulado.is_(False),
+        )
+    )
+    if desde:
+        q_mov = q_mov.filter(MovimientoCuentaCorriente.fecha >= desde)
+    if hasta:
+        q_mov = q_mov.filter(MovimientoCuentaCorriente.fecha <= hasta)
+
+    asientos = [
+        {
+            "movimiento_id": m.id,
+            "cliente_nombre": c.nombre_completo,
+            "fecha": m.fecha,
+            "monto": float(m.monto),
+            "concepto": m.concepto,
+            "creado_por": m.creado_por,
+        }
+        for m, c in q_mov.all()
+    ]
+
+    return ok({
+        "excedentes_bonificados": excedentes,
+        "cantidad_excedentes": len(excedentes),
+        "deuda_perdonada": asientos,
+        "total_deuda_perdonada": sum(a["monto"] for a in asientos),
+    })
+
+
+@router.get("/reservas-vencidas")
+def reporte_reservas_vencidas(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Autos que tendrían que haber vuelto y no volvieron.
+
+    La regla de notificación existe (`notificaciones_reglas`), pero una campana
+    no es un reporte: contesta "avisame hoy", no "cuántos hay y desde cuándo".
+    """
+    hoy = date.today()
+    reservas = (
+        db.query(Reserva)
+        .join(Alquiler, Alquiler.reserva_id == Reserva.id)
+        .filter(Reserva.estado == "vencida")
+        .all()
+    )
+    filas = []
+    for r in reservas:
+        a = r.alquiler
+        filas.append({
+            "reserva_id": r.id,
+            "alquiler_id": a.id if a else None,
+            "cliente_nombre": r.cliente.nombre_completo if r.cliente else "?",
+            "telefono": r.cliente.telefono if r.cliente else None,
+            "vehiculo": r.vehiculo.patente if r.vehiculo else None,
+            "fecha_fin_pactada": r.fecha_fin,
+            "dias_de_atraso": (hoy - r.fecha_fin).days,
+            "pendiente": float(cobranza.saldo_pendiente(db, a)) if a else 0.0,
+        })
+    filas.sort(key=lambda f: -f["dias_de_atraso"])
+    return ok({
+        "reservas": filas,
+        "cantidad": len(filas),
+        "pendiente_total": sum(f["pendiente"] for f in filas),
+    })
+
+
+def _serializar(d):
+    """Decimal -> float, recursivo. La API habla JSON."""
+    if isinstance(d, dict):
+        return {k: _serializar(v) for k, v in d.items()}
+    if isinstance(d, list):
+        return [_serializar(v) for v in d]
+    if isinstance(d, Decimal):
+        return float(d)
+    return d

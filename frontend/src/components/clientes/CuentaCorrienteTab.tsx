@@ -10,6 +10,7 @@ import {
   useMovimientosCC,
   useAgregarMovimiento,
   useEditarVencimiento,
+  useAgingCliente,
 } from '@/hooks/useCuentasCorrientes';
 import { NATURALEZA_LABEL, NATURALEZA_COLOR } from '@/lib/constants';
 import { formatCurrency, formatDate, extractError } from '@/lib/utils';
@@ -31,6 +32,7 @@ interface Props {
 export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
   const { data: cc, isLoading: loadingCC } = useCuentaCorrienteCliente(clienteId);
   const { data: movimientos = [], isLoading: loadingMovs } = useMovimientosCC(cc?.id);
+  const { data: agingData } = useAgingCliente(clienteId);
   const agregar = useAgregarMovimiento(cc?.id ?? 0);
   const editarVencimiento = useEditarVencimiento();
   const [showForm, setShowForm] = useState(false);
@@ -84,27 +86,14 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
   const anticipos = cc?.anticipos ?? 0;
   const deuda = cc?.deuda ?? saldo;
 
-  // Aging de deuda (FIN-09): sólo débitos vigentes (no anulados) con
-  // fecha_vencimiento pasada. Cada movimiento tiene su propio vencimiento
-  // (calculado según la condición de pago), no es un aging "por cliente".
+  // El aging (FIN-09) **lo calcula el backend**. Vivía acá, iterando los
+  // movimientos de la página y sumando por tramo, y daba mal por dos motivos
+  // que desde el navegador no se pueden ver: contaba los débitos de alquileres
+  // ya cobrados, y contaba el monto bruto de cada uno sin toparlo contra la
+  // deuda real — un cliente que debía $50.000 podía aparecer con $150.000
+  // vencidos. Ver `AgingService`.
   const hoy = new Date();
-  const aging = { d0_30: 0, d31_60: 0, d61_90: 0, d90mas: 0 };
-  for (const m of movimientos) {
-    // Un vencimiento provisorio no cuenta para el aging: la fecha todavía
-    // puede correrse, y clasificar una deuda como "vencida hace 45 días"
-    // apoyándose en una estimación es peor que no clasificarla.
-    if (m.tipo !== 'debito' || m.anulado || !m.fecha_vencimiento) continue;
-    if (m.vencimiento_provisorio) continue;
-    const venc = new Date(m.fecha_vencimiento);
-    const diasVencido = Math.floor((hoy.getTime() - venc.getTime()) / 86400000);
-    if (diasVencido <= 0) continue;
-    const monto = Number(m.monto);
-    if (diasVencido <= 30) aging.d0_30 += monto;
-    else if (diasVencido <= 60) aging.d31_60 += monto;
-    else if (diasVencido <= 90) aging.d61_90 += monto;
-    else aging.d90mas += monto;
-  }
-  const totalVencido = aging.d0_30 + aging.d31_60 + aging.d61_90 + aging.d90mas;
+  const totalVencido = agingData?.total_vencido ?? 0;
 
   // Seguimiento de lo que todavía no venció — el aging de arriba sólo mira
   // deuda vencida; esto es lo que se viene, para hacerle seguimiento antes
@@ -163,10 +152,10 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
         {totalVencido > 0 && (
           <div className="mt-4 pt-4 border-t border-border grid grid-cols-4 gap-2">
             {[
-              { label: '0-30 días', value: aging.d0_30, color: 'text-warning' },
-              { label: '31-60 días', value: aging.d31_60, color: 'text-orange-600' },
-              { label: '61-90 días', value: aging.d61_90, color: 'text-danger' },
-              { label: '+90 días', value: aging.d90mas, color: 'text-danger font-bold' },
+              { label: '0-30 días', value: agingData?.d0_30 ?? 0, color: 'text-warning' },
+              { label: '31-60 días', value: agingData?.d31_60 ?? 0, color: 'text-orange-600' },
+              { label: '61-90 días', value: agingData?.d61_90 ?? 0, color: 'text-danger' },
+              { label: '+90 días', value: agingData?.d90mas ?? 0, color: 'text-danger font-bold' },
             ].map(b => (
               <div key={b.label} className="rounded-lg bg-muted/40 p-2 text-center">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{b.label}</p>
@@ -174,6 +163,16 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Cuánto hubo que recortar para que el aging no superara la deuda
+            real. Se dice en vez de esconderse: si es grande, este cliente paga
+            a cuenta y el reparto por tramos hay que mirarlo con pinzas. */}
+        {!!agingData?.ajuste_por_pagos_sin_imputar && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Hay {formatCurrency(agingData.ajuste_por_pagos_sin_imputar)} en pagos que no
+            están imputados a un cargo puntual, así que el reparto por tramos es aproximado.
+          </p>
         )}
       </Card>
 

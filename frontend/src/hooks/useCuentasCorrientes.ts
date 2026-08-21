@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { CuentaCorriente, MovimientoCC, MovimientoCCCreate } from '@/types';
+import type { AgingCliente, CuentaCorriente, MovimientoCC, MovimientoCCCreate } from '@/types';
 
 const KEY = 'cuentas-corrientes';
 
@@ -81,5 +81,27 @@ export function useEditarVencimiento() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
     },
+  });
+}
+
+
+/**
+ * El aging de un cliente, calculado en el backend.
+ *
+ * **Antes lo calculaba la pantalla**, iterando los movimientos de la página y
+ * sumando por tramo. Eso rompía "ninguna pantalla calcula un saldo por su
+ * cuenta" y además daba mal por dos motivos que el frontend no podía ver:
+ * contaba los débitos de alquileres ya cobrados, y contaba el monto bruto de
+ * cada uno sin toparlo contra la deuda real.
+ */
+export function useAgingCliente(clienteId: number | undefined) {
+  return useQuery({
+    queryKey: ['cuentas-corrientes', 'aging', clienteId],
+    queryFn: async () => {
+      const res = await api.get<{ data: AgingCliente }>(`/cuentas-corrientes/aging/${clienteId}`);
+      return res.data.data;
+    },
+    enabled: !!clienteId,
+    staleTime: 30_000,
   });
 }

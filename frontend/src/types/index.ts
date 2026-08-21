@@ -243,6 +243,27 @@ export interface MovimientoCC {
   vencimiento_editado_en?: string | null;
 }
 
+/**
+ * Cuánto debe un cliente y desde hace cuánto.
+ *
+ * Es **aproximado a propósito**: el sistema no tiene imputación crédito→débito,
+ * así que sabe cuánto se debe pero no qué asiento está impago.
+ * `ajuste_por_pagos_sin_imputar` es lo que hubo que recortar para que el total
+ * no superara la deuda real — si es grande, ese cliente paga a cuenta y su
+ * aging hay que mirarlo con pinzas.
+ */
+export interface AgingCliente {
+  por_vencer: number;
+  d0_30: number;
+  d31_60: number;
+  d61_90: number;
+  d90mas: number;
+  total_vencido: number;
+  total: number;
+  deuda: number;
+  ajuste_por_pagos_sin_imputar: number;
+}
+
 export interface MovimientoCCCreate {
   tipo: 'debito' | 'credito';
   concepto: string;
