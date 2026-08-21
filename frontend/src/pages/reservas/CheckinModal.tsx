@@ -247,7 +247,18 @@ export function CheckinModal({
       motivo_bonificacion: decision === 'no_cobrar' ? motivo : null,
       registrado_en_tiempo_real: registradoEnTiempoReal,
       garantia_estado: garantiaTipo && garantiaTipo !== 'no_aplica' ? garantiaEstado : undefined,
-      garantia_monto_devuelto: garantiaEstado === 'ejecutada_parcial' ? parseFloat(garantiaMontoDevuelto as string) : undefined,
+      // **Se manda siempre, no sólo en la retención parcial.** El backend
+      // necesita el monto para registrar el egreso de caja: una garantía en
+      // efectivo que vuelve tiene que salir del cajón, y sin monto no puede.
+      // Con 'devuelta' es el total; con 'ejecutada_total' es cero.
+      garantia_monto_devuelto:
+        garantiaEstado === 'ejecutada_parcial'
+          ? parseFloat(garantiaMontoDevuelto as string)
+          : garantiaEstado === 'devuelta'
+            ? parseFloat(String(garantiaMonto ?? 0))
+            : garantiaEstado === 'ejecutada_total'
+              ? 0
+              : undefined,
       pago_inmediato: cobrarAhora && pagoMonto ? {
         monto: Number(pagoMonto),
         medio_pago: pagoMedio,
@@ -628,7 +639,12 @@ export function CheckinModal({
                 {[
                   { value: 'devuelta',          label: 'Devuelta',          icon: '✅' },
                   { value: 'ejecutada_parcial',  label: 'Retención parcial', icon: '⚠️' },
-                  { value: 'retenida',           label: 'Retenida',          icon: '🔒' },
+                  // Existía 'ejecutada_parcial' y no su hermana entera, así que
+                  // quedarse con toda la garantía había que anotarlo como
+                  // parcial con monto cero: un dato que dice lo contrario de lo
+                  // que pasó.
+                  { value: 'ejecutada_total',    label: 'Retención total',   icon: '⛔' },
+                  { value: 'retenida',           label: 'Sigue retenida',    icon: '🔒' },
                 ].map(g => (
                   <button
                     key={g.value}
@@ -652,10 +668,31 @@ export function CheckinModal({
                     value={garantiaMontoDevuelto}
                     onChange={e => setGarantiaMontoDevuelto(e.target.value)}
                     min={0}
+                    max={garantiaMonto ? parseFloat(garantiaMonto) : undefined}
                     placeholder="ej: 30000"
                     className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
+                  <p className="text-[11px] text-muted-foreground">
+                    Lo que se devuelve, no lo que se retiene. Tiene que ser menor
+                    a {garantiaMonto ? `$${parseFloat(garantiaMonto).toLocaleString('es-AR')}` : 'lo retenido'}.
+                  </p>
                 </div>
+              )}
+
+              {/* Qué va a pasar con la plata. Una garantía en efectivo o por
+                  transferencia sale de la caja al devolverse; una anotada en
+                  tarjeta nunca fue plata, así que no mueve nada. */}
+              {(garantiaTipo === 'efectivo' || garantiaTipo === 'transferencia') && (
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {garantiaEstado === 'devuelta' &&
+                    `Salen ${garantiaMonto ? `$${parseFloat(garantiaMonto).toLocaleString('es-AR')}` : 'los fondos'} de la caja de hoy.`}
+                  {garantiaEstado === 'ejecutada_parcial' &&
+                    'Sale de la caja sólo lo que se devuelve; lo retenido se queda.'}
+                  {garantiaEstado === 'ejecutada_total' &&
+                    'No sale nada de la caja: la garantía se retiene entera. El daño que lo justifica se cobra aparte.'}
+                  {garantiaEstado === 'retenida' &&
+                    'La plata sigue en la caja hasta que se resuelva.'}
+                </p>
               )}
             </div>
           )}

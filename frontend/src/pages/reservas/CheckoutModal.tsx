@@ -127,6 +127,16 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
                     {reserva.garantia_tarjeta_ultimos4 && ` · **** ${reserva.garantia_tarjeta_ultimos4}`}
                   </p>
                 )}
+                {/* Qué va a pasar con la plata. Antes el operador veía el monto
+                    pactado y nada más: la garantía en efectivo se guardaba en el
+                    cajón y el sistema no lo sabía, así que al cerrar el día ese
+                    efectivo estaba de más y nadie podía explicar por qué. */}
+                {(garantia === 'efectivo' || garantia === 'transferencia') && reserva.garantia_monto && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Entra a la caja de hoy como garantía retenida. No es un cobro:
+                    no le suma deuda al cliente y se le devuelve al cerrar el alquiler.
+                  </p>
+                )}
               </div>
             </div>
           )}

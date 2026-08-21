@@ -300,6 +300,9 @@ class AlquilerService:
             # alquiler no existía, encuentran el suyo.
             self._completar_pagos_de_la_reserva(reserva.id, alquiler.id)
 
+            # La garantía en plata entra a la caja de hoy. Nunca al ledger (D-27).
+            self._registrar_garantia_recibida(alquiler, reserva, checkout_fecha, usuario_id)
+
             # Si se pasó un pago inmediato en el modal de checkout
             if pago_inmediato and pago_inmediato.monto > 0:
                 pago_checkout = Pago(
@@ -429,6 +432,16 @@ class AlquilerService:
         )
 
         with self.db.begin_nested():
+            # Se valida y se registra **antes** de escribir el estado: si el
+            # monto devuelto no cierra, el check-in entero se cae y no queda un
+            # alquiler medio cerrado con una garantía mal anotada.
+            garantia_monto_devuelto = self._resolver_garantia(
+                alquiler, reserva, garantia_estado, garantia_monto_devuelto,
+                checkin_fecha, usuario_id,
+            )
+            if garantia_estado and garantia_estado != alquiler.garantia_estado:
+                alquiler.garantia_estado_en = datetime.utcnow()
+
             self.alquiler_repo.update(
                 alquiler,
                 checkin_fecha=checkin_fecha,
@@ -793,6 +806,140 @@ class AlquilerService:
         return alquiler
 
     # ── Helpers privados ──────────────────────────────────────────────────────
+
+    # ── Garantía ─────────────────────────────────────────────────────────────
+    #
+    # La garantía **nunca toca la cuenta corriente** (D-27): no es plata que el
+    # cliente deba ni que se le deba, es plata que se retiene. Lo que sí hace es
+    # entrar y salir de la **caja**, y sólo cuando es plata de verdad — una
+    # garantía "tarjeta" es un número anotado en un papel, no fondos reservados
+    # (ver `docs/ALTERNATIVAS_COBRO.md`), así que no mueve nada.
+
+    # Los tipos de garantía que efectivamente mueven plata.
+    GARANTIAS_QUE_SON_PLATA = ("efectivo", "transferencia")
+
+    def _registrar_garantia_recibida(self, alquiler, reserva, fecha: date, usuario_id: int) -> None:
+        """
+        La garantía entra a la caja del día del check-out.
+
+        Sin esto, una garantía de $300.000 en efectivo se guardaba en el cajón y
+        el sistema no lo sabía: al cerrar el día ese efectivo estaba de más y
+        nadie podía explicar por qué.
+        """
+        if alquiler.garantia_tipo not in self.GARANTIAS_QUE_SON_PLATA:
+            return
+        if not alquiler.garantia_monto or Decimal(str(alquiler.garantia_monto)) <= 0:
+            return
+        if alquiler.garantia_movimiento_caja_id is not None:
+            return  # ya registrada
+
+        from app.services.caja_service import CajaService
+
+        mov = CajaService(self.db).registrar(
+            tipo="garantia_recibida",
+            monto=Decimal(str(alquiler.garantia_monto)),
+            medio=alquiler.garantia_tipo,
+            motivo=f"Garantía del alquiler #{alquiler.id} — reserva #{reserva.id}",
+            fecha=fecha,
+            creado_por=usuario_id,
+            cliente_id=reserva.cliente_id,
+            reserva_id=reserva.id,
+            alquiler_id=alquiler.id,
+        )
+        alquiler.garantia_movimiento_caja_id = mov.id
+        alquiler.garantia_estado_en = datetime.utcnow()
+
+    def _resolver_garantia(
+        self, alquiler, reserva, estado: str | None,
+        monto_devuelto: Decimal | None, fecha: date, usuario_id: int,
+    ) -> Decimal | None:
+        """
+        La garantía se devuelve (entera o en parte) en el check-in.
+
+        Devuelve el monto efectivamente devuelto, ya validado. **Valida contra
+        lo retenido**, que era lo que faltaba (`PLAN_DINERO.md` §1.5.d): nada
+        impedía devolver más de lo que se había tomado, ni marcar `devuelta` con
+        un monto parcial — dos formas de que la caja quedara mal sin que ningún
+        error saltara.
+
+        `devuelta` implica el monto entero aunque el payload no lo mande: el
+        check-in del frontend sólo lo enviaba cuando el estado era
+        `ejecutada_parcial`, y para el egreso de caja hace falta siempre.
+        """
+        if estado is None:
+            return monto_devuelto
+
+        retenido = Decimal(str(alquiler.garantia_monto or 0))
+
+        if estado == "devuelta":
+            # Si no vino el monto, es el total: "devuelta" quiere decir eso.
+            devuelto = Decimal(str(monto_devuelto)) if monto_devuelto is not None else retenido
+            if devuelto != retenido:
+                raise BusinessRuleError(
+                    "garantia_devuelta_parcial",
+                    f"La garantía figura como devuelta entera pero el monto "
+                    f"(${devuelto}) no coincide con lo retenido (${retenido}). "
+                    f"Si se devolvió una parte, el estado es 'ejecutada_parcial'.",
+                )
+        elif estado == "ejecutada_total":
+            devuelto = Decimal("0")
+        elif estado == "ejecutada_parcial":
+            devuelto = Decimal(str(monto_devuelto or 0))
+            if devuelto <= 0:
+                raise BusinessRuleError(
+                    "garantia_parcial_sin_monto",
+                    "Una ejecución parcial tiene que decir cuánto se le devolvió "
+                    "al cliente. Si no se le devolvió nada, es 'ejecutada_total'.",
+                )
+            if devuelto >= retenido:
+                raise BusinessRuleError(
+                    "garantia_parcial_completa",
+                    f"Se devolvieron ${devuelto} de ${retenido} retenidos: eso es "
+                    f"la garantía entera, no una ejecución parcial.",
+                )
+        else:  # 'retenida'
+            devuelto = Decimal(str(monto_devuelto)) if monto_devuelto is not None else None
+            if devuelto:
+                raise BusinessRuleError(
+                    "garantia_retenida_con_devolucion",
+                    "No se puede devolver plata de una garantía que sigue retenida.",
+                )
+            return devuelto
+
+        if devuelto is not None and devuelto > retenido:
+            raise BusinessRuleError(
+                "garantia_devuelve_de_mas",
+                f"No se pueden devolver ${devuelto} de una garantía de ${retenido}.",
+            )
+
+        # El egreso de caja, sólo por lo que efectivamente vuelve y sólo si la
+        # garantía era plata. Lo que se ejecuta **no sale de la caja**: se queda,
+        # y el daño que lo justifica se cobra por su propio camino (D-27,
+        # patrón de tres pasos).
+        if (
+            alquiler.garantia_tipo in self.GARANTIAS_QUE_SON_PLATA
+            and devuelto
+            and devuelto > 0
+        ):
+            from app.services.caja_service import CajaService
+
+            CajaService(self.db).registrar(
+                tipo="garantia_devuelta",
+                monto=devuelto,
+                medio=alquiler.garantia_tipo,
+                motivo=(
+                    f"Garantía del alquiler #{alquiler.id} — "
+                    + ("devuelta entera" if estado == "devuelta"
+                       else f"devuelta en parte (se retienen ${retenido - devuelto})")
+                ),
+                fecha=fecha,
+                creado_por=usuario_id,
+                cliente_id=reserva.cliente_id,
+                reserva_id=reserva.id,
+                alquiler_id=alquiler.id,
+            )
+
+        return devuelto
 
     def _completar_pagos_de_la_reserva(self, reserva_id: int, alquiler_id: int) -> None:
         """

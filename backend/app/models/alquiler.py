@@ -46,14 +46,40 @@ class Alquiler(Base):
     )
 
     # ── Garantía / Depósito ───────────────────────────────────────────────────
+    #
+    # **Dónde vive la garantía, y por qué en dos lugares.** La *pactada* está en
+    # `Reserva` —es parte de lo que se acordó al reservar, junto con los datos de
+    # la tarjeta— y la *efectivamente recibida* está acá, que es donde tiene
+    # estado. El check-out copia una en la otra. No es duplicación por descuido:
+    # lo pactado y lo recibido pueden diferir, y cuando difieren hace falta
+    # saberlo.
+    #
+    # **No toca la cuenta corriente, nunca** (D-27). Una garantía no es plata que
+    # el cliente deba ni que se le deba: es plata que se retiene. Lo que sí hace
+    # desde la Fase 4 es entrar y salir de la **caja** cuando es efectivo o
+    # transferencia — ver `garantia_movimiento_caja_id`.
     garantia_tipo: Mapped[str | None] = mapped_column(
         SAEnum("efectivo", "tarjeta", "transferencia", "no_aplica", name="tipo_garantia"), nullable=True
     )
     garantia_monto: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     garantia_estado: Mapped[str | None] = mapped_column(
-        SAEnum("retenida", "devuelta", "ejecutada_parcial", name="estado_garantia"), nullable=True
+        SAEnum(
+            "retenida", "devuelta", "ejecutada_parcial", "ejecutada_total",
+            name="estado_garantia",
+        ),
+        nullable=True,
     )
     garantia_monto_devuelto: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Cuándo pasó a ese estado. Sin esto, "¿hace cuánto que retenemos esta
+    # garantía?" sólo se podía contestar mirando el check-in, que es otra cosa:
+    # una garantía puede ejecutarse parcialmente semanas después.
+    garantia_estado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # El movimiento de caja que registró la entrada (o la salida) de la plata.
+    # Sirve para llegar de un lado al otro y, sobre todo, para saber si ya se
+    # registró: sin esto, un check-out repetido la cargaría dos veces.
+    garantia_movimiento_caja_id: Mapped[int | None] = mapped_column(
+        ForeignKey("movimientos_caja.id"), nullable=True
+    )
 
     # ── Excedente (D6 cobro granular) ─────────────────────────────────────────
     # horas_excedidas: horas reales de excedente (floor, post-gracia)
