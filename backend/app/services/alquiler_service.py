@@ -217,6 +217,16 @@ class AlquilerService:
             # vínculo (mismo patrón que fecha_vencimiento en condicion_pago).
             self.echeq_service.completar_alquiler(reserva.id, alquiler.id)
 
+            # Lo mismo con el cobro online, que hasta acá era el único vínculo
+            # que nadie completaba. `PagoWebService._acreditar` crea el `Pago`
+            # con `alquiler_id=None` —correcto en ese momento, el alquiler no
+            # existe— y ningún código lo completaba después. Como todo lo que
+            # pregunta "cuánto se cobró de este alquiler" suma `alquiler.pagos`,
+            # **ese alquiler figuraba con saldo pendiente inflado por el monto
+            # de la seña online, para siempre**: plata ya cobrada que el sistema
+            # seguía reclamando, en la caja y en una notificación.
+            self._completar_pago_online(reserva.id, alquiler.id)
+
             # El contrato también puede haberse emitido antes de esta entrega
             # —es lo deseable, da tiempo a leerlo— así que acá se completa el
             # vínculo con la operación real y se refleja si estaba firmado.
@@ -703,6 +713,35 @@ class AlquilerService:
         return alquiler
 
     # ── Helpers privados ──────────────────────────────────────────────────────
+
+    def _completar_pago_online(self, reserva_id: int, alquiler_id: int) -> None:
+        """
+        Ata al alquiler recién creado el `Pago` que generó el cobro online.
+
+        **El puente es `PagoWeb.pago_id`**, y es el único que hay: a diferencia
+        del echeq (`Echeq.reserva_id`) y del contrato, `Pago` **no tiene**
+        `reserva_id`, así que desde el pago no se puede llegar a la reserva. Se
+        entra por `PagoWeb`, que sí conoce las dos puntas.
+
+        Eso deja este arreglo limitado al camino de Mercado Pago, que es el
+        único que crea un `Pago` antes del check-out. El caso general —cualquier
+        cobro anterior a la entrega— lo resuelve `Pago.reserva_id` en la Fase 2,
+        que ya trae migración. Ver `PLAN_DINERO.md` §1.5.a.
+        """
+        from app.models.pago_web import PagoWeb
+
+        pagos_web = (
+            self.db.query(PagoWeb)
+            .filter(PagoWeb.reserva_id == reserva_id, PagoWeb.pago_id.isnot(None))
+            .all()
+        )
+        for pw in pagos_web:
+            pago = self.db.get(Pago, pw.pago_id)
+            # Sólo si sigue suelto: si alguien ya lo ató a otro alquiler, ese
+            # dato es de una persona y no se pisa.
+            if pago is not None and pago.alquiler_id is None:
+                pago.alquiler_id = alquiler_id
+
 
     def _aplicar_decision_excedente(
         self,

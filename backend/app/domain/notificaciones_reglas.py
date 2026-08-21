@@ -454,14 +454,13 @@ def saldo_pendiente_al_finalizar(db: Session, hoy: date) -> list[dict]:
     items = []
     for a in alquileres:
         r = a.reserva
-        monto_total = (
-            float(r.precio_total or 0)
-            + float(r.cargo_late_checkout or 0)
-            + float(a.cargo_excedente or 0)
-            + float(r.total_adicionales)
-        )
-        monto_abonado = sum(float(p.monto) for p in a.pagos)
-        saldo_pendiente = monto_total - monto_abonado
+        # Un solo lugar calcula esto (`cobranza_service`). Antes esta fórmula
+        # estaba copiada acá y en `routers/pagos.py`, las dos veces sumando
+        # `a.pagos` — que **no incluye el cobro online**, porque ese `Pago` nace
+        # sin `alquiler_id`. Resultado: el alquiler pagado con tarjeta por la
+        # web reclamaba la seña que ya había cobrado. Ver `PLAN_DINERO.md`
+        # §1.5.a y §3.3b.
+        saldo_pendiente = float(cobranza.saldo_pendiente(db, a))
         if saldo_pendiente > 0 and r.fecha_fin < hoy:
             dias_vencido = (hoy - r.fecha_fin).days
             items.append({

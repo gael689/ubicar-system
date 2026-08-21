@@ -45,14 +45,48 @@ def monto_facturado(alquiler: Alquiler) -> Decimal:
     )
 
 
-def monto_cobrado(alquiler: Alquiler) -> Decimal:
+def pagos_de(db: Session, alquiler: Alquiler) -> list:
+    """
+    Los `Pago` que le entraron a este alquiler.
+
+    **No alcanza con `alquiler.pagos`.** El cobro online crea su `Pago` cuando
+    Mercado Pago acredita, o sea antes de que el alquiler exista, y por lo tanto
+    con `alquiler_id=None`. `AlquilerService.checkout` ahora completa ese
+    vínculo, pero la única llave para hacerlo es `PagoWeb.pago_id` — así que
+    acá se vuelve a mirar por ahí, y con eso el número sale bien también para
+    un alquiler creado antes de ese arreglo, o cuyo pago acreditó después de la
+    entrega.
+
+    Se deduplica por id: si el pago ya quedó atado, aparece por los dos lados.
+    """
+    from app.models.pago import Pago
+    from app.models.pago_web import PagoWeb
+
+    pagos = {p.id: p for p in alquiler.pagos}
+
+    ids_online = [
+        pw.pago_id
+        for pw in db.query(PagoWeb)
+        .filter(PagoWeb.reserva_id == alquiler.reserva_id, PagoWeb.pago_id.isnot(None))
+        .all()
+    ]
+    for pago_id in ids_online:
+        if pago_id not in pagos:
+            pago = db.get(Pago, pago_id)
+            if pago is not None:
+                pagos[pago_id] = pago
+
+    return list(pagos.values())
+
+
+def monto_cobrado(db: Session, alquiler: Alquiler) -> Decimal:
     """Lo que efectivamente entró por este alquiler."""
-    return sum((Decimal(str(p.monto)) for p in alquiler.pagos), Decimal("0"))
+    return sum((Decimal(str(p.monto)) for p in pagos_de(db, alquiler)), Decimal("0"))
 
 
-def saldo_pendiente(alquiler: Alquiler) -> Decimal:
+def saldo_pendiente(db: Session, alquiler: Alquiler) -> Decimal:
     """Lo facturado menos lo cobrado. Puede dar negativo (se cobró de más)."""
-    return monto_facturado(alquiler) - monto_cobrado(alquiler)
+    return monto_facturado(alquiler) - monto_cobrado(db, alquiler)
 
 
 def alquileres_con_saldo_pendiente(db: Session) -> set[int]:
@@ -65,7 +99,7 @@ def alquileres_con_saldo_pendiente(db: Session) -> set[int]:
     "contado"— deja de generar avisos para siempre.
     """
     alquileres = db.query(Alquiler).join(Reserva, Reserva.id == Alquiler.reserva_id).all()
-    return {a.id for a in alquileres if saldo_pendiente(a) > 0}
+    return {a.id for a in alquileres if saldo_pendiente(db, a) > 0}
 
 
 def clientes_con_deuda(db: Session) -> set[int]:

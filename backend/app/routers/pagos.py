@@ -17,6 +17,7 @@ from app.schemas.gasto import GastoResponse
 from app.schemas.recibo import ReciboDePagoRequest, ReciboResponse
 from app.services.recibo_service import ReciboService
 from app.services import auditoria_service
+from app.services import cobranza_service as cobranza
 from app.models.recibo import Recibo
 
 router = APIRouter(prefix="/pagos", tags=["Pagos"])
@@ -191,24 +192,25 @@ def get_pagos_pendientes(
     _: Usuario = Depends(get_current_user),
 ):
     pendientes = []
-    
+
     # 1. Alquileres con saldo deudor
     alquileres = db.query(Alquiler).all()
     for a in alquileres:
         reserva = a.reserva
         if not reserva:
             continue
-        
-        monto_total = (
-            float(reserva.precio_total or 0)
-            + float(reserva.cargo_late_checkout or 0)
-            + float(a.cargo_excedente or 0)
-            + float(reserva.total_adicionales)
-        )
-        # El anticipo ya se registra como Pago al hacer el checkout: no sumarlo aparte.
-        monto_abonado = sum(float(p.monto) for p in a.pagos)
+
+        # Lo facturado y lo cobrado los calcula `cobranza_service`, que es el
+        # único lugar donde vive esta fórmula. Antes estaba copiada acá y en
+        # `notificaciones_reglas.saldo_pendiente_al_finalizar`, las dos veces
+        # sumando `a.pagos` — que **no incluye el cobro online**: ese `Pago`
+        # nace con `alquiler_id=None` porque el alquiler todavía no existe. El
+        # alquiler pagado por la web figuraba pidiendo la seña que ya había
+        # cobrado. Ver `PLAN_DINERO.md` §1.5.a.
+        monto_total = float(cobranza.monto_facturado(a))
+        monto_abonado = float(cobranza.monto_cobrado(db, a))
         saldo_pendiente = monto_total - monto_abonado
-        
+
         if saldo_pendiente > 0:
             cliente = reserva.cliente.nombre_completo if reserva.cliente else "Desconocido"
             pendientes.append({
