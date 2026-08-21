@@ -260,12 +260,18 @@ class CuentaCorrienteService:
             alquiler_id=original.alquiler_id,
             reserva_id=original.reserva_id,
             # Se propagan las mismas FK que el original (menos pago_id, que se
-            # desvincula más abajo) para que el historial por multa/echeq/recibo
-            # incluya también el contra-asiento, no sólo el movimiento original.
+            # desvincula más abajo) para que el historial por multa/daño/echeq/
+            # recibo incluya también el contra-asiento, no sólo el movimiento
+            # original.
+            #
+            # `danio_id` faltaba, aunque este comentario decía "las mismas FK":
+            # bonificar un daño anulaba el débito y la reversión no aparecía en
+            # el historial de ese daño. Ver `PLAN_DINERO.md` §1.5.b.
             echeq_id=original.echeq_id,
             multa_id=original.multa_id,
             recibo_id=original.recibo_id,
             comprobante_id=original.comprobante_id,
+            danio_id=original.danio_id,
             creado_por=creado_por,
         )
         self.db.add(contra)
