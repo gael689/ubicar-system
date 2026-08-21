@@ -178,6 +178,13 @@ class CuentaCorrienteService:
     ) -> MovimientoCuentaCorriente:
         if monto is None or monto <= 0:
             raise ValueError("El monto del movimiento debe ser > 0")
+        # El concepto es lo único que explica un asiento cuando se lo lee seis
+        # meses después. `concepto: str` alcanzaba para Pydantic y `""` pasaba
+        # igual, así que un movimiento manual podía entrar por API sin decir de
+        # qué era. Ver `PLAN_DINERO.md` §1.5.c.
+        if not concepto or not concepto.strip():
+            raise ValueError("El movimiento necesita un concepto")
+        concepto = concepto.strip()
 
         cc = self.get_or_create(cliente_id)
         condicion_efectiva = condicion or cc.condicion_pago
@@ -240,6 +247,15 @@ class CuentaCorrienteService:
     def anular_movimiento(
         self, movimiento_id: int, motivo: str, creado_por: int | None
     ) -> MovimientoCuentaCorriente:
+        # Mismo criterio que `editar_vencimiento`: sin roles que restrinjan
+        # quién puede anular un asiento, el motivo **es** el control. Un motivo
+        # vacío queda escrito en el concepto del contra-asiento y en la
+        # auditoría, y convierte las dos cosas en ruido. El frontend ya lo
+        # exigía; un POST directo entraba igual. Ver `PLAN_DINERO.md` §1.5.c.
+        if not motivo or not motivo.strip():
+            raise ValueError("Anular un movimiento requiere un motivo")
+        motivo = motivo.strip()
+
         original = self.db.get(MovimientoCuentaCorriente, movimiento_id)
         if not original:
             raise ValueError(f"Movimiento {movimiento_id} no encontrado")

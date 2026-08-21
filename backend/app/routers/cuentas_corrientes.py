@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,8 @@ def _service(db: Session = Depends(get_db)) -> CuentaCorrienteService:
 
 class MovimientoCreate(BaseModel):
     tipo: str  # "debito" | "credito"
+    # `min_length=1` no alcanza: "   " lo pasa. El validator de abajo es el que
+    # corta. Ver `PLAN_DINERO.md` §1.5.c.
     concepto: str
     monto: float
     fecha: date
@@ -31,6 +33,13 @@ class MovimientoCreate(BaseModel):
     pago_id: int | None = None
     echeq_id: int | None = None
     multa_id: int | None = None
+
+    @field_validator("concepto")
+    @classmethod
+    def _concepto_no_vacio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("El movimiento necesita un concepto")
+        return v.strip()
 
 
 class MovimientoResponse(BaseModel):
@@ -60,10 +69,26 @@ class MovimientoResponse(BaseModel):
 class AnularRequest(BaseModel):
     motivo: str
 
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_no_vacio(cls, v: str) -> str:
+        # Sin roles que restrinjan quién anula un asiento, el motivo es el
+        # control. Vacío deja el contra-asiento y la auditoría sin explicación.
+        if not v or not v.strip():
+            raise ValueError("Anular un movimiento requiere un motivo")
+        return v.strip()
+
 
 class EditarVencimientoRequest(BaseModel):
     fecha_vencimiento: date | None
     motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_no_vacio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Editar el vencimiento requiere un motivo")
+        return v.strip()
     condicion: str | None = None  # opcional: renegociar también la condición
 
 
@@ -238,21 +263,24 @@ def add_movimiento(
     if payload.tipo not in ("debito", "credito"):
         raise HTTPException(status_code=422, detail="tipo debe ser 'debito' o 'credito'")
 
-    mov = svc.registrar_movimiento(
-        cliente_id=cc.cliente_id,
-        tipo=payload.tipo,
-        concepto=payload.concepto,
-        monto=Decimal(str(payload.monto)),
-        fecha=payload.fecha,
-        creado_por=current_user.id,
-        condicion=payload.condicion,
-        fecha_vencimiento=payload.fecha_vencimiento,
-        alquiler_id=payload.alquiler_id,
-        reserva_id=payload.reserva_id,
-        pago_id=payload.pago_id,
-        echeq_id=payload.echeq_id,
-        multa_id=payload.multa_id,
-    )
+    try:
+        mov = svc.registrar_movimiento(
+            cliente_id=cc.cliente_id,
+            tipo=payload.tipo,
+            concepto=payload.concepto,
+            monto=Decimal(str(payload.monto)),
+            fecha=payload.fecha,
+            creado_por=current_user.id,
+            condicion=payload.condicion,
+            fecha_vencimiento=payload.fecha_vencimiento,
+            alquiler_id=payload.alquiler_id,
+            reserva_id=payload.reserva_id,
+            pago_id=payload.pago_id,
+            echeq_id=payload.echeq_id,
+            multa_id=payload.multa_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     db.commit()
     db.refresh(mov)
     return ok(MovimientoResponse.model_validate(mov), "Movimiento registrado")
@@ -277,7 +305,10 @@ def anular_movimiento(
     if existente.anulado:
         raise HTTPException(status_code=409, detail="El movimiento ya está anulado")
 
-    contra = svc.anular_movimiento(movimiento_id, payload.motivo, current_user.id)
+    try:
+        contra = svc.anular_movimiento(movimiento_id, payload.motivo, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     db.commit()
     db.refresh(contra)
     return ok(MovimientoResponse.model_validate(contra), "Movimiento anulado")

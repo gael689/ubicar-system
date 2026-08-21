@@ -249,3 +249,28 @@ def hacer_pago(db, usuario):
         return p
 
     return _hacer
+
+
+@pytest.fixture()
+def client(db, usuario):
+    """
+    Un cliente HTTP contra la app real, con la base de prueba y la sesión del
+    test inyectadas.
+
+    **Hace falta para probar lo que valida el router y no el service** — un
+    payload que Pydantic tiene que rechazar antes de llegar a ninguna lógica.
+    `get_current_user` se reemplaza por el usuario de prueba: la auth ya está
+    cubierta en otro lado y acá sólo estorbaría.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.core.deps import get_current_user, get_db
+    from app.main import app
+
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: usuario
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        app.dependency_overrides.clear()
