@@ -1190,8 +1190,23 @@ class ReservaService:
         **No crea un `Pago`.** Se acumula en `anticipo_monto`, que es el mismo
         lugar donde el mostrador guarda una seña, y `AlquilerService.checkout`
         lo convierte en `Pago` + crédito en cuenta corriente cuando el auto
-        sale. Crear el `Pago` acá lo duplicaría en el checkout, y esa cuenta
-        doble se descubriría recién al cerrar la caja.
+        sale.
+
+        El motivo que decía este comentario —"crearlo acá lo duplicaría en el
+        checkout"— **ya no es cierto**: `tiene_credito_de_reserva` corta esa
+        duplicación desde que se arregló la seña contada dos veces. El motivo
+        que sí vale es otro, y es contable: el **débito** del alquiler tampoco
+        existe hasta el check-out, así que acreditar acá dejaría un crédito
+        suelto y el saldo del cliente en negativo —"tiene saldo a favor"—
+        durante todo el tiempo que va de la seña a la entrega.
+
+        **Esto ya pasa con las reservas web pagadas con tarjeta**, que sí
+        acreditan al instante (`PagoWebService._acreditar`). Los dos caminos no
+        se comportan igual, y unificarlos es una decisión de negocio pendiente,
+        no un detalle de implementación. Mientras tanto,
+        `CuentaCorrienteService.desglose` separa los anticipos del saldo para
+        que la ficha del cliente no lea "le debemos plata" cuando lo que hay es
+        un auto sin entregar.
 
         Se **suma** a lo ya cobrado: una reserva puede recibir la seña por
         transferencia y un refuerzo después, y pisar el monto perdería el
@@ -1289,6 +1304,8 @@ class ReservaService:
         confirmar: bool = False,
         upgrade_motivo: str | None = None,
         vehiculo_esperado=SIN_CHEQUEO,
+        precio_total: Decimal | None = None,
+        precio_motivo: str | None = None,
     ) -> tuple[Reserva, list[dict]]:
         """
         Le pone un auto concreto a una reserva que no lo tiene (o le cambia el
@@ -1313,6 +1330,20 @@ class ReservaService:
         contestar "¿cuántos upgrades regalamos este verano?", y lo que deja
         una marca si en algún momento se entregó una categoría **peor** que la
         pedida en vez de mejor.
+
+        **`precio_total` corrige el precio en el mismo paso**, igual que
+        `reasignar` (D-65). No cambia D-54: **el upgrade sigue siendo, por
+        default, al mismo precio** — si no se manda un precio, no se toca
+        ninguno. Lo que agrega es la salida para el caso en que el acuerdo con
+        el cliente fue otro: un upgrade que sí se cobra, o un downgrade que hay
+        que compensar bajando el precio, que es el que más importa porque hoy
+        obliga a entregar una categoría peor cobrando lo mismo.
+
+        Sigue el criterio del resto de la plata del sistema (regla 1.7): si el
+        precio nuevo difiere del que había, **el motivo es obligatorio** y queda
+        auditado en `descuento_motivo` / `descuento_autorizado_por`, el mismo
+        lugar que un descuento manual — es la misma decisión, y tenerla en dos
+        campos distintos partiría el reporte.
         """
         reserva = self.get(reserva_id)
 
@@ -1357,6 +1388,21 @@ class ReservaService:
 
         anterior = reserva.vehiculo_id
         estado_antes = reserva.estado
+        precio_anterior = reserva.precio_total
+
+        # Mismo criterio que `reasignar` (D-65): apartarse del precio pactado
+        # exige decir por qué. Se valida **antes** del lock para no sostenerlo
+        # mientras se rechaza algo que ya se sabía mal.
+        cambia_precio = (
+            precio_total is not None
+            and precio_anterior is not None
+            and Decimal(str(precio_total)) != Decimal(str(precio_anterior))
+        )
+        if cambia_precio and not (precio_motivo or "").strip():
+            raise BusinessRuleError(
+                "motivo_requerido",
+                "Cambiar el precio al asignar el auto exige un motivo.",
+            )
 
         self._lock_vehiculo(vehiculo_id)
         self.validar_disponibilidad_vehiculo(
@@ -1390,6 +1436,11 @@ class ReservaService:
 
         with self.db.begin_nested():
             reserva.vehiculo_id = vehiculo_id
+            if precio_total is not None:
+                reserva.precio_total = precio_total
+                if cambia_precio:
+                    reserva.descuento_motivo = precio_motivo.strip()
+                    reserva.descuento_autorizado_por = usuario_id
             if es_otra_categoria:
                 reserva.categoria_entregada_id = vehiculo.categoria_id
                 reserva.upgrade_motivo = motivo_final
@@ -1414,8 +1465,22 @@ class ReservaService:
                     f"Asignó {vehiculo.patente} a la reserva #{reserva.id}"
                     + (f" (antes: vehículo {anterior})" if anterior else " (no tenía auto)")
                 ),
-                datos_antes={"vehiculo_id": anterior, "estado": estado_antes},
-                datos_despues={"vehiculo_id": vehiculo_id, "estado": reserva.estado},
+                datos_antes={
+                    "vehiculo_id": anterior,
+                    "estado": estado_antes,
+                    "precio_total": (
+                        str(precio_anterior) if precio_anterior is not None else None
+                    ),
+                },
+                datos_despues={
+                    "vehiculo_id": vehiculo_id,
+                    "estado": reserva.estado,
+                    "precio_total": (
+                        str(reserva.precio_total)
+                        if reserva.precio_total is not None else None
+                    ),
+                    "motivo_precio": precio_motivo if cambia_precio else None,
+                },
             )
 
         # Asignar el auto es lo que resuelve "reserva web sin asignar" (C-1):

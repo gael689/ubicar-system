@@ -79,12 +79,32 @@ class CCResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-def _cc_response(cc: CuentaCorriente, db: Session) -> dict:
+def _cc_response(cc: CuentaCorriente, db: Session, svc=None) -> dict:
     cliente = db.get(Cliente, cc.cliente_id)
+    # El saldo partido en deuda y anticipos. Ver `CuentaCorrienteService.desglose`:
+    # un crédito de una reserva que todavía no salió no es plata que se deba,
+    # es un auto que se debe entregar, y mezclarlos hace que la ficha diga
+    # "saldo a favor" de un cliente que no tiene nada a favor.
+    desglose = None
+    if svc is not None:
+        try:
+            d = svc.desglose(cc.cliente_id)
+            desglose = {
+                "deuda": float(d["deuda"]),
+                "anticipos": float(d["anticipos"]),
+            }
+        except Exception:
+            # El desglose es informativo: que falle no puede dejar sin cuenta
+            # corriente a la pantalla que la necesita.
+            desglose = None
     return {
         "id": cc.id,
         "cliente_id": cc.cliente_id,
         "saldo": float(cc.saldo),
+        # `None` cuando no se pudo calcular: la pantalla cae al saldo de
+        # siempre en vez de mostrar un cero que sería mentira.
+        "deuda": desglose["deuda"] if desglose else None,
+        "anticipos": desglose["anticipos"] if desglose else None,
         "condicion_pago": cc.condicion_pago,
         "limite_credito": float(cc.limite_credito) if cc.limite_credito is not None else None,
         "bloqueada": cc.bloqueada,
@@ -182,7 +202,7 @@ def get_or_create_cuenta(
     cc = svc.get_or_create(cliente_id)
     db.commit()
     db.refresh(cc)
-    return ok(_cc_response(cc, db))
+    return ok(_cc_response(cc, db, svc))
 
 
 @router.get("/{cc_id}/movimientos")

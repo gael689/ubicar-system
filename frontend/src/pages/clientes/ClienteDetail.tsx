@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ArchiveRestore, ArchiveX, Pencil, Star, Users } from 'lucide-react';
+import {
+  ArrowLeft, ArchiveRestore, ArchiveX, Pencil, Star, Users, Phone, Mail, MessageCircle,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -23,6 +25,9 @@ import { EcheqsTab } from '@/components/clientes/EcheqsTab';
 import { ComprobantesTab } from '@/components/clientes/ComprobantesTab';
 
 import { useCliente, useDeactivateCliente, useReactivateCliente } from '@/hooks/useClientes';
+import { useCuentaCorrienteCliente } from '@/hooks/useCuentasCorrientes';
+import { BadgeCanal } from '@/components/reservas/BadgeCanal';
+import { cn, formatCurrency } from '@/lib/utils';
 import { formatDate } from '@/lib/utils';
 import { CONDICION_IVA_LABEL, CONDICION_PAGO_LABEL } from '@/lib/constants';
 
@@ -31,6 +36,9 @@ export function ClienteDetail() {
   const clienteId = id ? Number(id) : undefined;
 
   const { data: cliente, isLoading, isError } = useCliente(clienteId);
+  // La plata del cliente, arriba y no a dos clics: es el dato que más lo
+  // define y estaba escondido en la séptima solapa.
+  const { data: cc } = useCuentaCorrienteCliente(clienteId);
   const [editOpen, setEditOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
 
@@ -64,6 +72,11 @@ export function ClienteDetail() {
   }
 
   const inactivo = !cliente.activo;
+  // Ver `CuentaCorrienteService.desglose`: el saldo crudo mezcla lo que el
+  // cliente debe con lo que pagó por adelantado, y eso hacía que la ficha
+  // dijera "saldo a favor" de alguien que sólo está esperando su auto.
+  const anticipos = cc?.anticipos ?? 0;
+  const deuda = cc?.deuda ?? cc?.saldo ?? 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -86,6 +99,11 @@ export function ClienteDetail() {
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xl font-semibold text-foreground">{cliente.nombre_completo}</h2>
                 {cliente.es_frecuente && <Star className="h-4 w-4 text-warning fill-warning" />}
+                {/* De dónde vino y quién lo cargó (migración 077). Sin esto,
+                    alguien que se registró solo desde el sitio se veía igual
+                    que uno cargado a mano, y no había forma de contestar
+                    cuántos clientes trajo la web. */}
+                <BadgeCanal origen={cliente.origen} creadoPor={cliente.creado_por_nombre} />
                 {inactivo && (
                   <span className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                     Inactivo
@@ -98,6 +116,42 @@ export function ClienteDetail() {
                 {cliente.tipo === 'empresa' ? 'Empresa' : 'Particular'}
                 {' · '}
                 Alta: {formatDate(cliente.created_at.split('T')[0])}
+              </div>
+
+              {/* **El contacto va acá, y clickeable.** Estaba abajo como si
+                  fuera una métrica, ocupando el lugar de un número. Un
+                  teléfono no es una métrica: es algo que se aprieta. */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <a
+                  href={`tel:${cliente.telefono}`}
+                  className="inline-flex items-center gap-1 text-foreground hover:underline"
+                >
+                  <Phone className="h-3.5 w-3.5 text-muted-foreground" /> {cliente.telefono}
+                </a>
+                {(() => {
+                  // `wa.me` quiere sólo dígitos, y los números se cargan de mil
+                  // formas ("+54 9 291 …", "0291 15 …"): se limpia y listo, sin
+                  // intentar adivinar el formato correcto.
+                  const digitos = cliente.telefono?.replace(/\D/g, '') ?? '';
+                  return digitos.length >= 8 ? (
+                    <a
+                      href={`https://wa.me/${digitos}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md bg-success/10 px-1.5 py-0.5 font-medium text-success hover:bg-success/20"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                    </a>
+                  ) : null;
+                })()}
+                {cliente.email && (
+                  <a
+                    href={`mailto:${cliente.email}`}
+                    className="inline-flex items-center gap-1 truncate text-foreground hover:underline"
+                  >
+                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> {cliente.email}
+                  </a>
+                )}
               </div>
             </div>
           </div>
@@ -127,17 +181,31 @@ export function ClienteDetail() {
           </div>
         </div>
 
-        {/* Métricas rápidas */}
+        {/* **Métricas, ahora sí.** Acá había Teléfono, Email, Licencia y
+            Vence lic.: contacto repetido —ya está arriba y en la solapa
+            Datos— ocupando el lugar más caro de la pantalla. Una métrica es
+            un número que cambia y que decide algo. El contacto no lo es; la
+            deuda sí. */}
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Metric label="Teléfono" value={cliente.telefono} />
-          <Metric label="Email" value={cliente.email ?? '—'} />
+          <Metric
+            label="Debe"
+            value={formatCurrency(Math.abs(deuda))}
+            tono={deuda > 0 ? 'malo' : deuda < 0 ? 'bueno' : undefined}
+            nota={deuda < 0 ? 'a favor del cliente' : undefined}
+          />
+          <Metric
+            label="Cobrado por adelantado"
+            value={anticipos > 0 ? formatCurrency(anticipos) : '—'}
+            nota={anticipos > 0 ? 'reservas sin entregar' : undefined}
+          />
           {cliente.tipo === 'empresa' ? (
             <>
-              <Metric label="CUIT" value={cliente.dni_cuit} />
-              <Metric label="Tipo" value="Empresa" />
+              <Metric label="Condición IVA" value={cliente.condicion_iva ? CONDICION_IVA_LABEL[cliente.condicion_iva] : '—'} />
+              <Metric label="Razón social" value={cliente.razon_social ?? '—'} />
             </>
           ) : (
             <>
+              {/* La licencia sí es operativa: sin ella vigente no se entrega. */}
               <Metric label="Licencia" value={cliente.licencia_numero ?? '—'} />
               <Metric label="Vence lic." value={formatDate(cliente.licencia_vencimiento)} />
             </>
@@ -276,11 +344,28 @@ export function ClienteDetail() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label, value, tono, nota,
+}: {
+  label: string;
+  value: string;
+  /** Colorea el número. Sin tono queda neutro, que es el default. */
+  tono?: 'bueno' | 'malo';
+  /** Una línea que explica el número cuando el número solo no alcanza. */
+  nota?: string;
+}) {
   return (
     <div>
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="text-sm font-medium text-foreground truncate">{value}</div>
+      <div
+        className={cn(
+          'truncate text-sm font-medium',
+          tono === 'malo' ? 'text-danger' : tono === 'bueno' ? 'text-success' : 'text-foreground',
+        )}
+      >
+        {value}
+      </div>
+      {nota && <div className="text-[11px] text-muted-foreground">{nota}</div>}
     </div>
   );
 }

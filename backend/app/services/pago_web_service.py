@@ -764,6 +764,9 @@ class PagoWebService:
             condicion_iva=condicion_iva,
             razon_social=razon_social,
             notas="Alta automática desde una reserva web.",
+            # Migración 077. `creado_por` queda nulo: el alta la ejecuta el
+            # usuario "Sistema", y ese nombre en la ficha no informa nada.
+            origen="web",
         )
         self.db.add(cliente)
         self.db.flush()

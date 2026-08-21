@@ -25,12 +25,15 @@ class ClienteService:
             raise NotFoundError(f"Cliente con ID {id} no encontrado")
         return cliente
 
-    def create(self, data: ClienteCreate) -> Cliente:
+    def create(self, data: ClienteCreate, usuario_id: int | None = None) -> Cliente:
         # Validar DNI único
         if self.repo.get_by_dni(data.dni_cuit):
             raise ConflictError(f"Ya existe un cliente con el DNI/CUIT {data.dni_cuit}")
             
-        cliente = Cliente(**data.model_dump())
+        # Migración 077: todo lo que entra por acá es del mostrador — este
+        # service sólo lo alcanza alguien autenticado. El alta web tiene su
+        # propio camino (`PagoWebService`) y se marca `web` allá.
+        cliente = Cliente(**data.model_dump(), origen="mostrador", creado_por=usuario_id)
         return self.repo.create(cliente)
 
     def update(self, id: int, data: ClienteUpdate) -> Cliente:

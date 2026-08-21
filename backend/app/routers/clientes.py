@@ -39,9 +39,11 @@ def list_clientes(
 def create_cliente(
     payload: ClienteCreate,
     service: ClienteService = Depends(get_cliente_service),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
-    cliente = service.create(payload)
+    # Migración 077: queda registrado quién lo dio de alta. Todo lo que pasa
+    # por acá es del mostrador — este endpoint pide autenticación.
+    cliente = service.create(payload, usuario_id=current_user.id)
     return ok(ClienteResponse.model_validate(cliente), "Cliente creado")
 
 @router.get("/{cliente_id}")

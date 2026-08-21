@@ -130,6 +130,14 @@ class ClienteResponse(ClienteBase):
     id: int
     activo: bool
     created_at: datetime
+    # Migración 077: de dónde vino el cliente y quién lo dio de alta. Sin
+    # esto, alguien que se registró solo desde el sitio se ve en su ficha
+    # exactamente igual que uno cargado a mano.
+    origen: str = "mostrador"
+    # `None` cuando vino de la web, a propósito: el alta la ejecuta el usuario
+    # "Sistema" y ese nombre no le dice nada a nadie. La propiedad la resuelve
+    # el modelo.
+    creado_por_nombre: str | None = None
     conductores_adicionales: list[ConductorAdicionalResponse] = []
     contactos: list[ClienteContactoResponse] = []
     model_config = {"from_attributes": True}

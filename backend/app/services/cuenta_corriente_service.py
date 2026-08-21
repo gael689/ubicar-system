@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.domain.cuenta_corriente import aplicar_movimiento, calcular_vencimiento
@@ -56,6 +57,69 @@ class CuentaCorrienteService:
             self.db.add(cc)
             self.db.flush()
         return cc
+
+    def desglose(self, cliente_id: int) -> dict:
+        """
+        El saldo, partido en las dos cosas que hoy vienen sumadas en un solo
+        número.
+
+        **El problema que esto resuelve.** El libro mide *cuánto nos debe el
+        cliente* (D-01: positivo = debe). El débito de un alquiler se crea en el
+        **check-out**, pero la plata puede entrar mucho antes: una reserva web
+        pagada con tarjeta acredita en el momento en que Mercado Pago confirma,
+        y con la ventana comercial actual el auto puede retirarse hasta 120 días
+        después. En todo ese tiempo hay un crédito sin su débito, el saldo queda
+        negativo, y la ficha dice **"El cliente tiene saldo a favor"** en verde.
+
+        Eso no es un error de cuentas —plata cobrada por algo no entregado es un
+        anticipo, y un anticipo es una obligación real de la empresa— pero está
+        mal contado como si fueran dos cosas iguales. Quien abre la ficha lee
+        "le debemos plata" cuando lo que pasa es "nos pagó y todavía no le dimos
+        el auto". Son dos hechos distintos y merecen dos números.
+
+        - `anticipos`: créditos vivos atados a una reserva **que todavía no
+          salió**. Es lo que se debe entregar, no lo que se debe pagar.
+        - `deuda`: lo que el cliente debe de verdad, o sea el saldo **sin**
+          contar esos anticipos.
+        - `saldo`: el de siempre, sin tocar. Ninguna cuenta cambia — esto sólo
+          lee y explica.
+        """
+        from app.models.alquiler import Alquiler
+        from app.models.reserva import Reserva
+
+        cc = self.get_or_create(cliente_id)
+        saldo = Decimal(str(cc.saldo))
+
+        # Créditos con reserva, cuya reserva todavía no tiene alquiler: el auto
+        # no salió, así que el débito que los compensa todavía no existe.
+        # `outerjoin` + `is_(None)` y no un `NOT EXISTS` porque un alquiler por
+        # reserva es único (`ix_alquileres_reserva_id` es unique).
+        total = (
+            self.db.query(func.coalesce(func.sum(MovimientoCuentaCorriente.monto), 0))
+            .join(
+                CuentaCorriente,
+                CuentaCorriente.id == MovimientoCuentaCorriente.cuenta_corriente_id,
+            )
+            .join(Reserva, Reserva.id == MovimientoCuentaCorriente.reserva_id)
+            .outerjoin(Alquiler, Alquiler.reserva_id == Reserva.id)
+            .filter(
+                CuentaCorriente.cliente_id == cliente_id,
+                MovimientoCuentaCorriente.tipo == "credito",
+                MovimientoCuentaCorriente.anulado.is_(False),
+                MovimientoCuentaCorriente.reserva_id.isnot(None),
+                Alquiler.id.is_(None),
+            )
+            .scalar()
+        )
+        anticipos = Decimal(str(total or 0))
+
+        return {
+            "saldo": saldo,
+            # El saldo lleva los anticipos restados (son créditos): sumarlos de
+            # vuelta deja lo que el cliente debe ignorándolos.
+            "deuda": saldo + anticipos,
+            "anticipos": anticipos,
+        }
 
     def registrar_movimiento(
         self,

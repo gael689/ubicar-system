@@ -34,6 +34,29 @@ class Cliente(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # ── De dónde vino (migración 077) ────────────────────────────────────────
+    # Mismo vocabulario que `Reserva.origen`: son el mismo concepto. Sin esto,
+    # alguien que se registró solo desde el sitio se veía en su ficha igual que
+    # uno cargado a mano, y no había forma de contestar cuántos clientes trajo
+    # la web.
+    origen: Mapped[str] = mapped_column(
+        String(20), server_default="mostrador", default="mostrador",
+        nullable=False, index=True,
+    )
+    # **Nulo cuando vino de la web**, a propósito: el alta web la ejecuta el
+    # usuario "Sistema", y ese nombre en la ficha no le dice nada a nadie. Que
+    # entró solo ya lo dice `origen`.
+    creado_por: Mapped[int | None] = mapped_column(
+        ForeignKey("usuarios.id"), nullable=True
+    )
+    creado_por_usuario: Mapped["Usuario | None"] = relationship("Usuario")
+
+    @property
+    def creado_por_nombre(self) -> str | None:
+        """Quién lo dio de alta, para mostrarlo al lado del canal."""
+        u = self.creado_por_usuario
+        return getattr(u, "nombre", None) if u else None
+
     # Datos fiscales (Fase 1, sección 3.7). razon_social/condicion_iva
     # aplican sobre todo a tipo='empresa'; fecha_nacimiento a particular
     # (edad mínima de conductor). Todos nullable porque muchos clientes

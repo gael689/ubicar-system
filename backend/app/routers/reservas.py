@@ -71,6 +71,14 @@ class AsignarVehiculoRequest(BaseModel):
     # asigna deje una nota puntual ("cliente frecuente", "el compacto se
     # rompió") en vez de perder el porqué de la cortesía.
     upgrade_motivo: str | None = None
+    # D-65, ahora también acá: corregir el precio en el mismo paso. **No manda
+    # nada por default** — sin esto, el precio queda como estaba, que es lo que
+    # D-54 define para un upgrade. Sirve para el acuerdo distinto: un upgrade
+    # que sí se cobra, o un downgrade que hay que compensar.
+    precio_total: Decimal | None = Field(default=None, ge=0)
+    # Obligatorio sólo si el precio cambia; lo valida el service, que es quien
+    # conoce el precio anterior.
+    precio_motivo: str | None = None
 
 
 def _parse_conflicto(exc: ConflictError) -> dict:
@@ -585,6 +593,8 @@ def asignar_vehiculo(
             usuario_id=current_user.id,
             confirmar=payload.confirmar,
             upgrade_motivo=payload.upgrade_motivo,
+            precio_total=payload.precio_total,
+            precio_motivo=payload.precio_motivo,
             vehiculo_esperado=(
                 payload.vehiculo_actual
                 if "vehiculo_actual" in payload.model_fields_set

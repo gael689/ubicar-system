@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, TrendingUp, TrendingDown, CalendarClock, Pencil } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, CalendarClock, Pencil, Wallet } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -78,6 +78,10 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
   }
 
   const saldo = cc?.saldo ?? 0;
+  // El backend los manda desglosados; si no pudo calcularlos, se cae al saldo
+  // de siempre — que es exactamente el comportamiento anterior.
+  const anticipos = cc?.anticipos ?? 0;
+  const deuda = cc?.deuda ?? saldo;
 
   // Aging de deuda (FIN-09): sólo débitos vigentes (no anulados) con
   // fecha_vencimiento pasada. Cada movimiento tiene su propio vencimiento
@@ -112,15 +116,35 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground mb-1">Saldo actual de {clienteNombre}</p>
-            {/* D-01: saldo positivo = el cliente debe. Negativo = saldo a favor. */}
-            <p className={`text-3xl font-bold ${saldo > 0 ? 'text-danger' : saldo < 0 ? 'text-success' : 'text-foreground'}`}>
-              {formatCurrency(Math.abs(saldo))}
+            {/* **El número grande es la deuda, no el saldo crudo.**
+                D-01 dice que positivo = el cliente debe, y eso no cambió. Lo
+                que cambió es qué se muestra: el saldo trae restados los
+                anticipos —plata cobrada por un auto que todavía no se
+                entregó— y mezclarlos hacía que la ficha dijera "tiene saldo a
+                favor" de alguien que no tiene nada a favor. Son dos hechos
+                distintos y van en dos números. */}
+            <p className={`text-3xl font-bold ${deuda > 0 ? 'text-danger' : deuda < 0 ? 'text-success' : 'text-foreground'}`}>
+              {formatCurrency(Math.abs(deuda))}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {saldo > 0 && 'El cliente tiene una deuda pendiente'}
-              {saldo < 0 && 'El cliente tiene saldo a favor'}
-              {saldo === 0 && 'Saldo en cero'}
+              {deuda > 0 && 'El cliente tiene una deuda pendiente'}
+              {deuda < 0 && 'El cliente tiene saldo a favor'}
+              {deuda === 0 && 'Saldo en cero'}
             </p>
+
+            {anticipos > 0 && (
+              <div className="mt-2 inline-flex items-start gap-2 rounded-lg bg-primary/10 px-2.5 py-1.5">
+                <Wallet className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="text-xs text-foreground">
+                  <strong>{formatCurrency(anticipos)} cobrados por adelantado</strong>
+                  {' — de reservas que todavía no se entregaron. '}
+                  <span className="text-muted-foreground">
+                    No es deuda: es un auto que se debe entregar. Se cancela solo
+                    en el check-out.
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
           <button
             onClick={() => setShowForm(v => !v)}

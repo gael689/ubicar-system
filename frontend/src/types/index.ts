@@ -169,6 +169,22 @@ export interface CuentaCorriente {
   cliente_id: number;
   // D-01: saldo positivo = el cliente debe. Negativo = saldo a favor.
   saldo: number;
+  /**
+   * El saldo partido en dos, porque venía sumando cosas distintas.
+   *
+   * El débito de un alquiler se crea en el **check-out**, pero la plata puede
+   * entrar mucho antes: una reserva web con tarjeta acredita cuando Mercado
+   * Pago confirma, y el auto puede retirarse hasta 120 días después. En el
+   * medio hay un crédito sin su débito y el saldo queda negativo, así que la
+   * ficha decía "El cliente tiene saldo a favor" de alguien que no tiene nada
+   * a favor: nos pagó y todavía no le dimos el auto.
+   *
+   * `deuda` es lo que debe de verdad; `anticipos` es lo que hay cobrado y sin
+   * entregar. `null` si el backend no los pudo calcular — ahí se cae al
+   * `saldo` de siempre en vez de mostrar un cero que sería mentira.
+   */
+  deuda?: number | null;
+  anticipos?: number | null;
   condicion_pago?: CondicionPago | null;
   limite_credito?: number | null;
   bloqueada?: boolean;
@@ -538,6 +554,14 @@ export interface ClienteDatosFiscales {
 }
 
 export interface Cliente extends ClienteDatosFiscales {
+  /**
+   * De dónde vino (migración 077): `web` si se registró solo desde el sitio,
+   * `mostrador` si lo cargó alguien. Sin esto los dos se veían igual en la
+   * ficha, y no había forma de contestar cuántos clientes trajo la web.
+   */
+  origen?: 'web' | 'mostrador';
+  /** Quién lo dio de alta. `null` si vino de la web: ahí no lo cargó nadie. */
+  creado_por_nombre?: string | null;
   id: number;
   nombre_completo: string;
   dni_cuit: string;

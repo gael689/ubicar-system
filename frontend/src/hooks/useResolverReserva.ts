@@ -120,12 +120,25 @@ export function useAsignarVehiculo() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (
-      { id, vehiculo_id, confirmar, vehiculo_actual }: {
+      { id, vehiculo_id, confirmar, vehiculo_actual, precio_total, precio_motivo }: {
         id: number; vehiculo_id: number; confirmar?: boolean;
         vehiculo_actual?: number | null;
+        /**
+         * D-65, ahora también al asignar. **Sólo se manda si se toca**: sin
+         * esto el precio queda como estaba, que es lo que D-54 define para un
+         * upgrade ("mismo precio"). Sirve para el acuerdo distinto — un
+         * upgrade que sí se cobra, o un downgrade que hay que compensar.
+         */
+        precio_total?: number | null;
+        /** Obligatorio si el precio cambia. Lo valida el backend. */
+        precio_motivo?: string | null;
       },
     ) => {
       const body: Record<string, unknown> = { vehiculo_id, confirmar };
+      if (precio_total != null) {
+        body.precio_total = precio_total;
+        if (precio_motivo) body.precio_motivo = precio_motivo;
+      }
       // Sólo va si el llamador lo pasó: `null` significa "esperaba que no
       // tuviera auto", que es distinto de "no lo chequees".
       if (vehiculo_actual !== undefined) body.vehiculo_actual = vehiculo_actual;
