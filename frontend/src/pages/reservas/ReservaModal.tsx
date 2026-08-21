@@ -830,7 +830,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     if (n === 5) setPagoDetalladoAbierto(true);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent | React.MouseEvent) {
     e.preventDefault();
 
     // Enter dentro de un input dispara el submit del form. Estando a mitad del
@@ -2350,13 +2350,41 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             {enPasos && errorPaso && (
               <span className="text-xs font-medium text-amber-700">{errorPaso}</span>
             )}
-            {enPasos && paso < 6 ? (
-              <button type="button" onClick={siguientePaso}
+            {/* **Los dos botones van en posiciones distintas del JSX, con
+                `key` propia, y el de guardar no es de submit.**
+
+                Estaban los dos en la misma posición, uno u otro según el paso:
+
+                    {paso < 6 ? <button type="button" onClick={siguientePaso}/>
+                              : <button type="submit" form="reserva-form"/>}
+
+                Un click es un evento discreto: React aplica el `setPaso(6)` de
+                forma sincrónica, antes de devolverle el control al navegador. Y
+                como los dos son `<button>` en la misma posición, no reemplaza
+                el nodo del DOM — le muta `type="button"` por `type="submit"`.
+                Recién entonces el navegador ejecuta la acción por defecto del
+                click, sobre un botón que para ese momento ya es de submit: el
+                form se mandaba solo al llegar al paso 6.
+
+                El guard de `handleSubmit` no lo ataja, porque comprueba
+                `paso < 6` y el paso ya era 6. Se veía como "el resumen se
+                cierra apenas aparece" — en realidad `onSuccess` cerraba el
+                modal porque la reserva se había creado entera sin que nadie la
+                mirara, que es lo único para lo que existe el paso 6.
+
+                Dos candados independientes, cualquiera de los dos alcanza:
+                posiciones separadas con `key` distinta, así React descarta el
+                nodo viejo en vez de mutarlo; y `type="button"`, así no hay
+                ninguna acción por defecto que ejecutar. El `onSubmit` del form
+                queda para el Enter, que sí tiene que seguir andando. */}
+            {enPasos && paso < 6 && (
+              <button key="siguiente" type="button" onClick={siguientePaso}
                 className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors shadow-sm">
                 Siguiente →
               </button>
-            ) : (
-              <button type="submit" form="reserva-form" disabled={loading}
+            )}
+            {(!enPasos || paso === 6) && (
+              <button key="guardar" type="button" onClick={handleSubmit} disabled={loading}
                 className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2 shadow-sm">
                 {loading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
                 {isEdit ? 'Guardar cambios' : 'Crear reserva'}
