@@ -234,6 +234,15 @@ class PagoWebService:
         else:
             reserva = None
 
+        # Y si no hubo `PagoWeb` —porque este hold ya había generado una reserva
+        # **por transferencia**— igual se reusa. Sin esto, el mismo cliente
+        # probando los dos medios de pago terminaba con dos reservas.
+        if reserva is None:
+            reserva = self._reserva_pendiente_del_hold(hold)
+            if reserva is not None:
+                # Cambió de idea sobre el medio: la reserva es la misma.
+                reserva.forma_pago_prevista = "mercado_pago"
+
         if reserva is None:
             reserva, _warnings = ReservaService(self.db).create(
                 cliente_id=cliente.id,
@@ -265,6 +274,10 @@ class PagoWebService:
         reserva.web_contacto_nombre = nombre
         reserva.web_contacto_email = email
         reserva.web_contacto_telefono = telefono
+        # **El enganche que evita duplicar.** El hold queda apuntando a su
+        # reserva sin cambiar de estado: sigue `vigente` y sigue sosteniendo el
+        # cupo. Ver `_reserva_pendiente_del_hold`.
+        hold.reserva_id = reserva.id
         self.db.flush()
 
         pasarela_web = (url_base_web or "").rstrip("/")
@@ -413,6 +426,43 @@ class PagoWebService:
         }
 
     # ─── Piezas internas ─────────────────────────────────────────────────────
+
+    def _reserva_pendiente_del_hold(self, hold: Hold) -> Reserva | None:
+        """
+        La reserva que **este mismo hold** ya generó y que sigue esperando pago.
+
+        **Es la llave de idempotencia de los dos caminos de la web**, y antes no
+        existía ninguna que sirviera para los dos.
+
+        El camino de Mercado Pago se protegía mirando `PagoWeb` con estado
+        `iniciado`. Funciona mientras todo pase por ahí, pero **el camino de
+        transferencia no crea ningún `PagoWeb`** —no hay pasarela— así que:
+
+        - Volver atrás en el navegador y apretar "continuar" de nuevo creaba una
+          **segunda reserva** por transferencia, con el mismo hold y el mismo
+          contador corriendo.
+        - Y si después el mismo cliente probaba con Mercado Pago, ese camino no
+          encontraba ningún `PagoWeb` previo y creaba una **tercera**.
+
+        El resultado eran dos o tres reservas idénticas esperando que alguien
+        las asigne, sin forma de saber cuál era la buena.
+
+        `Hold.reserva_id` ya existía en el modelo y sólo se escribía al
+        **consumir** el hold, o sea después de que la plata entrara. Se escribe
+        ahora también al crear la reserva, dejando el hold `vigente` — el cupo
+        se sigue sosteniendo igual, y aparece el enganche que faltaba.
+
+        Sólo se reusa si sigue en `pendiente_pago`: una reserva ya confirmada,
+        cancelada o vencida no se toca.
+        """
+        if not hold.reserva_id:
+            return None
+        reserva = self.db.get(Reserva, hold.reserva_id)
+        if reserva is None:
+            return None
+        if reserva.estado != EstadoReserva.PENDIENTE_PAGO.value:
+            return None
+        return reserva
 
     def _validar_edad_minima(self, fecha_nacimiento: date | None, fecha_inicio: date) -> None:
         """
@@ -738,6 +788,22 @@ class PagoWebService:
         )
         usuario_sistema = self._usuario_sistema()
 
+        # **¿Este hold ya generó una reserva?** Pasa con el botón "atrás" del
+        # navegador: los datos quedan precargados, el contador sigue corriendo y
+        # apretar "continuar" de nuevo creaba una segunda reserva idéntica. Y si
+        # la anterior venía del camino de Mercado Pago, también.
+        #
+        # Este camino no crea ningún `PagoWeb`, así que la guarda de allá no lo
+        # cubría — por eso la llave es el hold y no la pasarela.
+        existente = self._reserva_pendiente_del_hold(hold)
+        if existente is not None:
+            existente.forma_pago_prevista = "transferencia"
+            # El precio se recalcula igual: pudo cambiar el porcentaje elegido.
+            existente.precio_total = precio_vehiculo - descuento_d30
+            existente.descuento_motivo = motivo_d30
+            self.db.flush()
+            return self._respuesta_transferencia(existente, anticipo)
+
         reserva, _ = ReservaService(self.db).create(
             cliente_id=cliente.id,
             categoria_id=categoria_id,
@@ -764,6 +830,10 @@ class PagoWebService:
         reserva.web_contacto_nombre = nombre
         reserva.web_contacto_email = email
         reserva.web_contacto_telefono = telefono
+        # **El enganche que evita duplicar.** El hold queda apuntando a su
+        # reserva sin cambiar de estado: sigue `vigente` y sigue sosteniendo el
+        # cupo. Ver `_reserva_pendiente_del_hold`.
+        hold.reserva_id = reserva.id
         self.db.flush()
 
         # Plan de conexión (13/08), cierra C-4: por transferencia no hay
@@ -783,6 +853,18 @@ class PagoWebService:
         except Exception:
             logger.exception("[Transferencia] falló el mail de la reserva #%s", reserva.id)
 
+        return self._respuesta_transferencia(reserva, anticipo)
+
+    @staticmethod
+    def _respuesta_transferencia(reserva: Reserva, anticipo) -> dict:
+        """
+        Lo que la web necesita para decirle al cliente qué transferir.
+
+        Está aparte porque lo devuelven **dos** caminos: la reserva recién
+        creada y la que se reusa cuando el cliente volvió atrás y apretó
+        continuar de nuevo. Si fueran dos returns distintos, un día uno de los
+        dos se olvidaría un campo y la pantalla mostraría un monto vacío.
+        """
         return {
             "reserva_id": reserva.id,
             "numero": getattr(reserva, "numero_formateado", None) or str(reserva.id),
@@ -795,7 +877,7 @@ class PagoWebService:
             # Lo que queda para el mostrador. Sin esto la pantalla de "ya
             # transferí" no puede decir cuánto falta al retirar el auto.
             "saldo": float(anticipo.saldo),
-            "porcentaje_anticipo": porcentaje_anticipo,
+            "porcentaje_anticipo": anticipo.porcentaje,
         }
 
     def _cliente_para(

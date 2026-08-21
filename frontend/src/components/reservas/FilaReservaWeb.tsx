@@ -38,6 +38,26 @@ export function FilaReservaWeb({
   const falta = total - cobrado;
   const espera = esperandoHace(reserva.created_at);
 
+  // **Por dónde iba a pagar, y qué pasó.**
+  //
+  // "Esperando el pago" no dice lo mismo en los dos caminos, y el equipo tiene
+  // que saber cuál es para poder llamar al cliente:
+  //
+  // - **Transferencia**: el cliente vio el CBU. Puede haber transferido y estar
+  //   esperando que alguien concilie el comprobante.
+  // - **Mercado Pago**: se generó el link y el cliente **no completó el pago**.
+  //   Si hubiera pagado, el webhook ya la habría confirmado sola. O sea que
+  //   acá no hay nada que conciliar: hay alguien que se quedó a mitad de camino
+  //   y al que conviene escribirle.
+  const detallePago =
+    reserva.estado !== 'pendiente_pago'
+      ? null
+      : reserva.forma_pago_prevista === 'mercado_pago'
+        ? 'Mercado Pago — se generó el link y el pago no se concretó'
+        : reserva.forma_pago_prevista === 'transferencia'
+          ? 'Transferencia — esperando el comprobante'
+          : null;
+
   // Lo que le falta a esta reserva, en la fila: sin esto hay que abrirla una
   // por una para saber cuál es la urgente.
   const pendientes: string[] = [];
@@ -75,6 +95,13 @@ export function FilaReservaWeb({
               </span>
             )}
           </div>
+
+          {/* Sin esto, "esperando el pago" se lee igual para el que transfirió
+              y para el que abrió el link de Mercado Pago y lo cerró. Son dos
+              llamadas distintas al cliente. */}
+          {detallePago && (
+            <p className="text-xs text-muted-foreground">{detallePago}</p>
+          )}
 
           <p className="text-sm text-foreground">
             {formatDate(reserva.fecha_inicio)} {reserva.hora_inicio?.slice(0, 5)}

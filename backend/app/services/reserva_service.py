@@ -998,11 +998,36 @@ class ReservaService:
                 "El responsable de la cancelación es 'cliente' o 'ubicar'",
             )
         reserva = self.get(id)
-        if reserva.estado not in (EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value):
+        # **`pendiente_pago` también se puede cancelar**, y antes no.
+        #
+        # Es el estado en el que queda una reserva de la web mientras espera la
+        # transferencia o el pago con tarjeta. Si el cliente no paga —o avisa
+        # que se arrepintió— no había forma de sacarla del listado: quedaba ahí
+        # para siempre esperando que alguien la asigne, mezclada con las que sí
+        # van a pagar. La única salida era editar la base a mano.
+        #
+        # Cancelarla no libera nada que estuviera tomado: `pendiente_pago` no
+        # ocupa calendario (el cupo lo sostiene el hold, que vence solo), así
+        # que esto es puramente sacarla de la vista dejando el rastro.
+        #
+        # `sin_disponibilidad` y `revision_sin_cupo` entran por lo mismo: son
+        # reservas web que quedaron esperando una decisión humana, y esa
+        # decisión puede ser que no va.
+        CANCELABLES = (
+            EstadoReserva.PENDIENTE.value,
+            EstadoReserva.CONFIRMADA.value,
+            EstadoReserva.PENDIENTE_PAGO.value,
+            EstadoReserva.SIN_DISPONIBILIDAD.value,
+            EstadoReserva.REVISION_SIN_CUPO.value,
+        )
+        if reserva.estado not in CANCELABLES:
             raise ConflictError(f"estado_invalido|No se puede cancelar una reserva en estado '{reserva.estado}'")
         if not motivo or not motivo.strip():
             raise BusinessRuleError("motivo_requerido", "Cancelar una reserva requiere un motivo")
 
+        # Sólo una reserva **confirmada** tenía el auto marcado: las de la web
+        # que esperan pago no ocupan calendario, así que no hay nada que
+        # devolver a "disponible".
         era_confirmada = reserva.estado == EstadoReserva.CONFIRMADA.value
 
         with self.db.begin_nested():
