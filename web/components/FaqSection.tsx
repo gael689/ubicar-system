@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { EscaleraFaq } from "@/components/faq/EscaleraFaq";
 import { PlazoFaq } from "@/components/faq/PlazoFaq";
+import { DescuentoPagoTotalFaq } from "@/components/faq/DescuentoPagoTotalFaq";
 import { PREGUNTAS_DESTACADAS, TODAS_LAS_PREGUNTAS } from "@/lib/faq";
 
 /**
@@ -78,6 +79,7 @@ export default function FaqSection() {
                 ))}
                 {p.conEscalera && <EscaleraFaq />}
                 {p.conPlazo && <PlazoFaq />}
+                {p.conPagoTotal && <DescuentoPagoTotalFaq />}
               </div>
             </details>
           ))}

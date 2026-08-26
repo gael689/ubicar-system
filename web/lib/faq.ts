@@ -33,6 +33,12 @@ export interface Pregunta {
    */
   conPlazo?: boolean;
   /**
+   * Marca la pregunta cuya respuesta lleva lo que se gana pagando el 100 %.
+   * También en vivo: el descuento por duración y el extra por pago total se
+   * cargan desde el sistema.
+   */
+  conPagoTotal?: boolean;
+  /**
    * Se muestra en el bloque de preguntas de la portada.
    *
    * La marca vive acá y no como una lista de ids en el componente: la portada
@@ -75,7 +81,12 @@ export const FAQ: GrupoFaq[] = [
         respuesta: [
           "Elegís cuánto adelantar: el 30%, el 50% o el 100% del total. El mínimo para que la reserva quede tomada es el 30%.",
           "El saldo se abona al retirar el vehículo.",
+          // **Los porcentajes no se escriben acá** (D-49 y
+          // `descuento_pago_total_pct`, los dos configurables). El texto dice
+          // qué se gana; `DescuentoPagoTotalFaq` trae cuánto es hoy.
+          "Pagar el 100% por el sitio conviene: es lo que habilita el descuento por cantidad de días. Con el 30% o el 50% se cobra el precio de lista.",
         ],
+        conPagoTotal: true,
         destacada: true,
       },
       {
@@ -146,8 +157,13 @@ export const FAQ: GrupoFaq[] = [
         id: "mas-dias",
         pregunta: "¿Sale más barato si lo alquilo más días?",
         respuesta: [
-          "Sí. El precio por día baja a medida que el alquiler es más largo, y el descuento se aplica solo: no hay que pedirlo ni usar ningún código.",
-          "Lo vas a ver reflejado en el total apenas elijas las fechas.",
+          // **Decía que el descuento "se aplica solo" y que se ve "apenas
+          // elijas las fechas".** En la web eso no es cierto: D-49 lo condiciona
+          // a pagar el 100%, así que quien reserva con el 30% de seña elige las
+          // fechas, no ve ningún descuento y la FAQ le queda debiendo una
+          // explicación. Peor: parece un error del sitio.
+          "Sí. El precio por día baja a medida que el alquiler es más largo, y no hay que pedirlo ni usar ningún código.",
+          "Reservando por el sitio, el descuento se aplica si abonás el 100% por adelantado; con el 30% o el 50% se cobra el precio de lista. Si arreglás el alquiler en el mostrador, corre siempre.",
         ],
         conEscalera: true,
       },
