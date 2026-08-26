@@ -6,7 +6,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { WHATSAPP_GENERAL } from "@/lib/constants";
 import {
-  MapPin, ChevronDown, CalendarDays, Check, ShieldCheck, MessageCircle, UserRound,
+  MapPin, ChevronDown, CalendarDays, MessageCircle, UserRound,
 } from "lucide-react";
 import { intencionDeReserva, contactoIniciado } from "@/lib/analitica";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -273,14 +273,10 @@ const Hero = () => {
                 ))}
               </ol>
 
-              <ul className="mt-6 flex flex-wrap gap-x-7 gap-y-2 text-sm text-white/60">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-[#7FB3E8]" /> Kilometraje libre
-                </li>
-                <li className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-[#7FB3E8]" /> Seguro incluido
-                </li>
-              </ul>
+              {/* Kilometraje libre y seguro se mudaron a `BeneficiosStrip`,
+                  justo debajo del hero. Acá eran dos íconos en `text-white/60`,
+                  o sea con el peso visual de la letra chica, siendo los dos
+                  diferenciales más fuertes del servicio. */}
             </div>
 
           </div>

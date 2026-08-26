@@ -102,22 +102,27 @@ export default function FinalCTA() {
         <div className="container" style={{ maxWidth: 640 }}>
 
           <h2 className="fc-h2 fc-item fc-d1">
-            ¿Listo para coordinar tu alquiler?
+            ¿Listo para reservar?
           </h2>
 
           <p className="fc-sub fc-item fc-d2">
-            Escribinos y coordinamos todo en minutos.
+            Elegí fechas y lugar, y mirá qué hay disponible. No hace falta llamar
+            a nadie.
           </p>
 
           <div className="fc-item fc-d3">
+            {/* **Vuelve al buscador de la portada, no a `/reservar`.** El flujo
+                necesita lugar, fechas y edad para poder cotizar, y entrar
+                directo a `/reservar` sin nada de eso rebota a la home — el
+                mismo motivo por el que `VehiclesSection` apunta a `/#reservar`.
+                Un CTA que devuelve al visitante al punto de partida es peor que
+                no tenerlo. */}
             <a
-              href={WHATSAPP_GENERAL}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => trackLeadEvent("cta-final:whatsapp")}
+              href="/#reservar"
+              onClick={() => trackLeadEvent("cta-final:reservar")}
               className="fc-btn"
             >
-              Contactar ahora
+              Ver disponibilidad
               <span className="fc-btn-icon">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="5" y1="12" x2="19" y2="12" />
@@ -125,7 +130,21 @@ export default function FinalCTA() {
                 </svg>
               </span>
             </a>
-            <p className="fc-note">Respondemos por WhatsApp</p>
+
+            {/* El canal humano sigue estando, pero como alternativa y no como
+                el movimiento principal. */}
+            <p className="fc-note">
+              ¿Preferís hablar con alguien?{" "}
+              <a
+                href={WHATSAPP_GENERAL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackLeadEvent("cta-final:whatsapp")}
+                style={{ color: "#5B9BD5", fontWeight: 600, textDecoration: "underline" }}
+              >
+                Escribinos por WhatsApp
+              </a>
+            </p>
           </div>
 
         </div>
