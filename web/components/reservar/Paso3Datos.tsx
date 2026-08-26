@@ -179,8 +179,8 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <span>
-          Para retirar el vehículo vas a necesitar tu DNI, licencia de conducir
-          vigente y una tarjeta de crédito a tu nombre para la garantía.
+          Para retirar el vehículo vas a necesitar tu DNI y tu licencia de
+          conducir vigente.
         </span>
       </p>
     </div>

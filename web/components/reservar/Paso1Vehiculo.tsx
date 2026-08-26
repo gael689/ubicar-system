@@ -289,8 +289,10 @@ export function Paso1Vehiculo({
             lugarRetiro: rango.lugarRetiro,
             lugarDevolucion: rango.lugarDevolucion,
             edad,
-            motivoTexto: "Me apareció que esa categoría está completa para esas fechas.",
-            preguntaFinal: "¿Tienen ese vehículo o alguno similar?",
+            // Lo escribe el cliente, así que va en primera persona y sin
+            // repetir un "está completo" que el cartel ya dejó de decir.
+            motivoTexto: "El sitio me pidió confirmarlo con un agente.",
+            preguntaFinal: "¿Tienen ese vehículo o alguno similar para esas fechas?",
           })}
           seguirWebLabel={SEGUIR_WEB_LABEL.sin_cupo}
           onSeguirWeb={() => setSinCupo(null)}

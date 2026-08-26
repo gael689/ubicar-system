@@ -74,12 +74,13 @@ export function DialogoSinCupo({ categoria, rango, onCerrar }: Props) {
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-bold text-[#1B3F6B]">
-              {listo ? "¡Listo!" : `${categoria.nombre} sin disponibilidad`}
+              {listo ? "¡Listo!" : `${categoria.nombre}: lo confirma un agente`}
             </h3>
             {!listo && (
               <p className="mt-1 text-sm text-muted-foreground">
                 Del {fechaCorta(rango.fechaInicio)} al {fechaCorta(rango.fechaFin)}.
-                Dejanos tus datos y te ofrecemos una alternativa.
+                Dejanos tus datos y te contactamos para confirmarte este vehículo
+                o uno similar.
               </p>
             )}
           </div>

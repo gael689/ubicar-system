@@ -117,7 +117,6 @@ export const FAQ: GrupoFaq[] = [
         pregunta: "¿Qué necesito para retirar el vehículo?",
         respuesta: [
           "Quien vaya a conducir tiene que presentar DNI o pasaporte vigente y licencia de conducir vigente, habilitante para la categoría del vehículo y válida en las jurisdicciones por donde vaya a circular.",
-          "Además pedimos una tarjeta de crédito a nombre del conductor, para la garantía.",
           "Si va a manejar más de una persona, necesitamos el nombre, el documento y el domicilio de cada conductor adicional: sólo pueden manejar los que quedan autorizados por escrito en el contrato.",
         ],
         destacada: true,

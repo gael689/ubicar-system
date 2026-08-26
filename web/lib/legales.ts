@@ -82,7 +82,6 @@ export const TERMINOS: SeccionLegal[] = [
     items: [
       "DNI o pasaporte vigente.",
       "Licencia de conducir vigente y habilitante para la categoría del vehículo, válida en las jurisdicciones por donde vaya a circular.",
-      "Una tarjeta de crédito a nombre del conductor, para la garantía.",
       "Los datos de todo conductor adicional (nombre, documento y domicilio), que debe ser autorizado expresamente para poder manejar.",
     ],
   },
