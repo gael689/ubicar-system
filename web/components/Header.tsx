@@ -15,6 +15,10 @@ const useNavItems = () => {
   const isHome = pathname === "/";
   return [
     { label: "Vehículos", href: isHome ? "#vehiculos" : "/#vehiculos" },
+    // Las preguntas frecuentes son el mejor contenido del sitio y hasta ahora
+    // estaban enlazadas **sólo desde el footer**. En la portada apunta al
+    // bloque; desde cualquier otra página, a la página completa.
+    { label: "Preguntas", href: isHome ? "#preguntas" : "/preguntas-frecuentes" },
     { label: "Empresas", href: isHome ? "#empresas" : "/#empresas" },
     { label: "Maquinaria", href: "/maquinaria" },
     { label: "Ubicación", href: isHome ? "#ubicacion" : "/#ubicacion" },

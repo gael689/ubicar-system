@@ -206,60 +206,19 @@ const JSON_LD = {
       inLanguage: "es-AR",
       publisher: { "@id": `${SITE}/#business` },
     },
-    {
-      "@type": "FAQPage",
-      "@id": `${SITE}/#faq`,
-      mainEntity: [
-        {
-          "@type": "Question",
-          name: "¿Alquilan autos en Bahía Blanca?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Sí, Ubicar Rent ofrece alquiler de autos sin chofer en Bahía Blanca. Contamos con una flota de automóviles, camionetas y 4x4 disponibles. Podés reservar por WhatsApp al +54 9 291 418-0554.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "¿Dónde queda Ubicar Rent en Bahía Blanca?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Ubicar Rent está en Paraguay 241, Bahía Blanca, Buenos Aires, Argentina. También entregamos en Alsina 350 y en el Aeropuerto Comandante Espora.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "¿Tienen camionetas 4x4 para alquilar?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Sí, disponemos de camionetas doble cabina con tracción 4x4 para alquiler en Bahía Blanca. Ideales para trabajo en campo, minería y empresas. Consultá disponibilidad al +54 9 291 418-0554.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "¿Alquilan maquinaria pesada en Bahía Blanca?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Sí, contamos con retroexcavadoras Caterpillar 416D, palas cargadoras 924 HZ, minicargadoras New Holland L318, camiones volcadores Ford Cargo 1722 y tanques de agua para obra en Bahía Blanca.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "¿Cómo reservo un auto o maquinaria?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Podés reservar online desde nuestra web en cuatro pasos, o por WhatsApp al +54 9 291 418-0554. También podés escribirnos a ubicar.rent@gmail.com.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "¿Hacen alquileres para empresas?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Sí, Ubicar Rent ofrece soluciones corporativas de movilidad: gestión de flota, vehículos de reemplazo y alquileres a largo plazo en Bahía Blanca y la zona. Contactanos al +54 9 291 418-0554.",
-          },
-        },
-      ],
-    },
+    // **El `FAQPage` vivía acá y se emitía en TODAS las páginas** — incluidas
+    // `/reservar`, `/terminos` y `/privacidad`, que no tienen una sola
+    // pregunta visible. Y en `/preguntas-frecuentes` chocaba con el `FAQPage`
+    // de la propia página: dos entidades del mismo tipo en un documento.
+    //
+    // Google trata el structured data que no refleja el contenido visible como
+    // una señal falsa, y ante dos que se contradicen lo habitual es ignorar
+    // los dos. O sea que este bloque no sumaba: restaba.
+    //
+    // El `FAQPage` del sitio es uno solo y vive donde están las preguntas:
+    // `app/preguntas-frecuentes/page.tsx`, armado del mismo `lib/faq.ts` que
+    // se renderiza. El bloque de preguntas de la portada (`FaqSection`) NO
+    // emite JSON-LD a propósito, por esta misma razón.
   ],
 };
 
