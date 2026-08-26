@@ -1,5 +1,5 @@
 """
-Clausulado del contrato de alquiler — versión 2.
+Clausulado del contrato de alquiler — versión 3.
 
 **Esto es el contenido de la plantilla v1, no la fuente de verdad en runtime.**
 Se carga una vez a `contrato_plantillas` (ver `ContratoService.asegurar_plantilla`)
@@ -18,9 +18,9 @@ o inaplicables:
 2. ~~Los productos de cobertura no se nombran.~~ **Revertido en la v2.**
    Cuando se escribió la v1, Ubicar no vendía coberturas con nombre y
    mencionarlas habría dejado reclamar una que no existía. Ahora sí las vende:
-   Mid Cover, Top Cover y Super Top Cover. La cláusula 5 las nombra y las
-   define, y el anverso las referencia con los mismos asteriscos —que es lo
-   que hace que un asterisco en el anverso lleve a algún lado.
+   Exención por Daños (LDW), Top Cover y Super Top Cover. La cláusula 5 las
+   nombra y las define, y el anverso las referencia con los mismos asteriscos
+   —que es lo que hace que un asterisco en el anverso lleve a algún lado.
 3. Jurisdicción: **Bahía Blanca**, no Capital Federal (cláusula 13).
 4. El pie fiscal es de Ubicar; se resuelve desde `configuracion`.
 5. La numeración rota de la cláusula 12 (un "4." huérfano) se corrige: pasa a
@@ -33,8 +33,15 @@ o inaplicables:
 **Qué cambió en la v2 (agosto 2026).** Todo en la cláusula 5:
 
 a. **Se nombran las tres coberturas** con sus marcas de nota al pie —
-   `Mid Cover*`, `Top Cover**`, `Super Top Cover***`— y se las define. El
-   anverso imprime el mismo asterisco al lado de la contratada.
+   `Exención por Daños (LDW)*`, `Top Cover**`, `Super Top Cover***`— y se las
+   define. El anverso imprime el mismo asterisco al lado de la contratada.
+
+   **En la v3 el escalón incluido dejó de llamarse "Mid Cover".** Ese nombre no
+   existe en el contrato modelo: ahí el escalón incluido figura como "Exención
+   Por Daños (LDW)" y no tiene nombre comercial. Inventarlo obligaba a definirlo
+   en la cláusula 5 para que el asterisco llevara a algún lado; usar el nombre
+   real ahorra la definición y dice qué es. Los otros dos sí son nombres del
+   modelo y se quedan.
 b. **El escalón de vuelco/airbag de Super Top Cover**, que la v1 no tenía: la
    franquicia se cuadriplica y Top Cover no aplica, pero con Super Top Cover
    el cliente pone el 75 % de esa franquicia cuadriplicada.
@@ -60,7 +67,7 @@ TITULO = "CLÁUSULAS, CONDICIONES Y NORMAS DE UTILIZACIÓN DEL VEHÍCULO"
 # este número habría que acordarse de publicar la versión a mano después de
 # cada deploy, y el día que alguien se olvide los contratos se siguen firmando
 # con el texto viejo sin que nada avise.
-VERSION = 2
+VERSION = 3
 
 # Marcador que el generador reemplaza por `empresa.locador_nombre`.
 LOCADOR = "{{LOCADOR}}"
@@ -83,7 +90,7 @@ LOCADOR = "{{LOCADOR}}"
 # que es lo correcto —un asterisco que no lleva a ninguna cláusula es peor que
 # ningún asterisco.
 MARCAS_COBERTURA: dict[str, str] = {
-    "cobertura_mid": "*",
+    "cobertura_mid": "*",   # el código no cambia: es estable y ya está en producción
     "cobertura_top": "**",
     "cobertura_super_top": "***",
 }
@@ -291,8 +298,8 @@ CLAUSULAS: list[dict] = [
             _ps(
                 "La cobertura contratada es la que se detalla en el anverso del presente con su "
                 "franquicia correspondiente. Las opciones de limitación de responsabilidad que "
-                f"ofrece {LOCADOR} son tres: (*) Mid Cover — Exención por Daños (LDW), incluida "
-                "en el canon locativo, que deja a cargo del CLIENTE la franquicia base de la "
+                f"ofrece {LOCADOR} son tres: (*) la Exención por Daños (LDW), incluida en el "
+                "canon locativo, que deja a cargo del CLIENTE la franquicia base de la "
                 "categoría del Vehículo; (**) Top Cover, cobertura adicional que reduce esa "
                 "franquicia en el monto indicado en el anverso; y (***) Super Top Cover, "
                 "cobertura adicional que la reduce en el monto mayor indicado en el anverso. "
@@ -307,14 +314,15 @@ CLAUSULAS: list[dict] = [
             _ps(
                 "Mediante la contratación de cualquiera de las opciones de limitación de "
                 "responsabilidad (Seguro de Responsabilidad Civil, Robo, Incendio y Daños / "
-                "LDW: Mid Cover*, Top Cover** y/o Super Top Cover***) queda excluida la "
+                "LDW*, Top Cover** y/o Super Top Cover***) queda excluida la "
                 "cobertura de \"Ruedas y Vidrios\", ya que el CLIENTE conoce que para estos "
                 "últimos existe la opción de \"Protección Ruedas y Vidrios\", que se contrata "
                 "por separado y, de haberse contratado, se detalla en el anverso.",
                 "queda excluida la cobertura de \"Ruedas y Vidrios\"",
             ),
             _p(
-                "Asimismo, no está incluido en Mid Cover*, Top Cover** ni Super Top Cover*** "
+                "Asimismo, no está incluido en la Exención por Daños (LDW)*, en Top Cover** ni "
+                "en Super Top Cover*** "
                 "cualquier daño que pueda ocasionar al Vehículo la o las mascotas transportadas."
             ),
         ],

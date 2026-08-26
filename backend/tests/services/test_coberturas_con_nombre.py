@@ -1,7 +1,8 @@
 """
 Las tres coberturas llegan al contrato con su nombre y su asterisco.
 
-El clausulado v2 define `Mid Cover*`, `Top Cover**` y `Super Top Cover***`, y el
+El clausulado define `Exención por Daños (LDW)*`, `Top Cover**` y
+`Super Top Cover***`, y el
 anverso imprime la contratada con **el mismo asterisco**. Ese par es todo el
 mecanismo: el cliente lee un nombre arriba y sabe a qué cláusula ir. Si el
 asterisco no viaja en el snapshot, el anverso imprime un nombre suelto y la
@@ -25,7 +26,7 @@ from app.services.contrato_service import ContratoService
 def catalogo(db):
     """Las tres coberturas con los códigos que siembra la migración 085."""
     mid = Adicional(
-        codigo="cobertura_mid", nombre="Mid Cover", grupo="cobertura",
+        codigo="cobertura_mid", nombre="Exención por Daños (LDW)", grupo="cobertura",
         precio=Decimal("0"), unidad_cobro="unico",
         porcentaje_sobre_alquiler=Decimal("0"), franquicia_descuento=None,
         incluido=True, activo=True,
@@ -73,7 +74,7 @@ class TestElAsteriscoLlegaAlPapel:
     @pytest.mark.parametrize(
         "clave, nombre, marca",
         [
-            ("mid", "Mid Cover", "*"),
+            ("mid", "Exención por Daños (LDW)", "*"),
             ("top", "Top Cover", "**"),
             ("super_top", "Super Top Cover", "***"),
         ],
@@ -108,13 +109,13 @@ class TestElAsteriscoLlegaAlPapel:
 class TestLoQueSeOfrecioYSeRechazo:
     def test_la_incluida_nunca_figura_como_rechazada(self, db, catalogo, armar):
         """
-        Mid Cover viene en el precio. "A pesar de la explicación no desea
-        contratar Mid Cover" en un contrato donde Mid Cover está incluida es
+        La exención viene en el precio. "A pesar de la explicación no desea
+        contratar la Exención por Daños" en un contrato donde está incluida es
         una contradicción escrita, y es la línea con la que un cliente discute
         que no tenía nada.
         """
         bloque = ContratoService(db)._bloque_coberturas(armar(catalogo["top"]))
-        assert "Mid Cover" not in bloque["rechazadas"]
+        assert "Exención por Daños (LDW)" not in bloque["rechazadas"]
         assert "Super Top Cover" in bloque["rechazadas"]
 
 
@@ -174,7 +175,7 @@ class TestElClausuladoNombraLoQueElAnversoImprime:
     def test_las_tres_coberturas_estan_definidas_en_la_clausula_5(self):
         c5 = [c for c in contrato_clausulado.CLAUSULAS if c["numero"] == 5][0]
         texto = " ".join(p["texto"] for p in c5["parrafos"])
-        for nombre in ("Mid Cover", "Top Cover", "Super Top Cover"):
+        for nombre in ("Exención por Daños (LDW)", "Top Cover", "Super Top Cover"):
             assert nombre in texto
 
     def test_ruedas_y_vidrios_se_excluye_y_se_ofrece_aparte(self):

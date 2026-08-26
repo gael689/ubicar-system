@@ -406,9 +406,9 @@ class ContratoService:
         ids_contratadas = {a.adicional_id for a in r.adicionales}
 
         # **Las coberturas incluidas no se ofrecen ni se rechazan: vienen.**
-        # Listar "no desea contratar Mid Cover" en un contrato donde Mid Cover
-        # está incluida en el precio es una contradicción escrita, y es la
-        # línea que un cliente usa para discutir que no tenía nada.
+        # Listar "no desea contratar la Exención por Daños" en un contrato donde
+        # esa exención está incluida en el precio es una contradicción escrita,
+        # y es la línea que un cliente usa para discutir que no tenía nada.
         no_contratadas = [
             a.nombre
             for a in self.db.query(Adicional)

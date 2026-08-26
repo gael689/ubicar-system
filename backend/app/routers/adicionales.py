@@ -65,7 +65,7 @@ def _validar_franquicia(db: Session, a: Adicional) -> None:
 
     # **Una cobertura incluida no descuenta nada: ES la base.**
     #
-    # Mid Cover viene en el canon y deja la franquicia base de la categoría;
+    # La Exención por Daños (LDW) viene en el canon y deja la franquicia base;
     # las que bajan la franquicia se contratan aparte y se cobran. Las dos
     # cosas a la vez no significan nada — y el estado existió en producción:
     # la migración 085 renombró la cobertura del +10 % a "Top Cover" sin tocar
