@@ -63,6 +63,7 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
         km_entre_services: vehiculo.km_entre_services,
         km_proximo_service: vehiculo.km_proximo_service,
         categoria_id: vehiculo.categoria_id,
+        destino: vehiculo.destino ?? 'alquiler',
         vtv_vencimiento: vehiculo.vtv_vencimiento,
         poliza_vencimiento: vehiculo.poliza_vencimiento,
         compania_seguro: vehiculo.compania_seguro,
@@ -176,6 +177,31 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
                   )}
                 />
               </Field>
+
+              {/* **El destino no reemplaza a la categoría, convive con ella.**
+                  Un auto de Uber sigue siendo una Pick-up: mantiene su
+                  categoría, su tarifa y su franquicia base. Lo único que cambia
+                  es que no se alquila. */}
+              <Field
+                label="Destino"
+                hint="Los afectados a Uber no cuentan para el cupo ni aparecen en la web."
+              >
+                <Controller
+                  control={form.control}
+                  name="destino"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="alquiler">Alquiler</SelectItem>
+                        <SelectItem value="uber">Uber — no se alquila</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </Field>
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
@@ -266,14 +292,17 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
 interface FieldProps {
   label: string;
   error?: string;
+  /** Aclaración debajo del campo, para lo que el label no alcanza a decir. */
+  hint?: string;
   children: React.ReactNode;
 }
 
-function Field({ label, error, children }: FieldProps) {
+function Field({ label, error, hint, children }: FieldProps) {
   return (
     <div className="grid gap-1.5">
       <Label className="text-xs">{label}</Label>
       {children}
+      {hint && !error && <p className="text-[11px] text-muted-foreground">{hint}</p>}
       {error && <p className="text-[11px] text-danger">{error}</p>}
     </div>
   );

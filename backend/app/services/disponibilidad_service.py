@@ -72,9 +72,22 @@ class DisponibilidadService:
         self.db = db
 
     def _cargar_flota(self) -> list[VehiculoDisponible]:
+        """
+        La flota que se puede alquilar.
+
+        **`destino != 'alquiler'` queda afuera** (migración 086): los vehículos
+        afectados a Uber son de la flota —se ven en el panel, tienen VTV,
+        póliza y gastos— pero no se alquilan. Contarlos acá los volvería cupo
+        en los tres lugares que cuelgan de esta consulta: la web, el cupo
+        interno y el selector de auto del paso 3.
+
+        Y el modo en que fallaría es el peor: no da error, da **más
+        disponibilidad de la que existe**. Se vende una unidad que no está, y
+        se descubre el día del retiro.
+        """
         vehiculos = (
             self.db.query(Vehiculo)
-            .filter(Vehiculo.activo.is_(True))
+            .filter(Vehiculo.activo.is_(True), Vehiculo.destino == "alquiler")
             .all()
         )
         return [VehiculoDisponible(id=v.id, categoria_id=v.categoria_id) for v in vehiculos]

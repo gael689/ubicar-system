@@ -87,6 +87,16 @@ export function FlotaList() {
   const vehiculos = data?.data ?? [];
   const total = data?.total ?? 0;
 
+  // **Los afectados a Uber van en su propio bloque, al final.**
+  //
+  // El backend ya los ordena último (`vehiculo_repo.list_filtered`), así que
+  // esto no reordena nada: sólo corta la lista donde el orden ya cambió, para
+  // poder poner un encabezado que diga por qué esos autos están aparte. Sin el
+  // encabezado, un auto de Uber en el listado se lee como uno más de la flota
+  // que casualmente nunca se alquila.
+  const deAlquiler = vehiculos.filter((v) => v.destino !== 'uber');
+  const enUber = vehiculos.filter((v) => v.destino === 'uber');
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
@@ -140,14 +150,38 @@ export function FlotaList() {
           />
         ) : (
           <>
-            <VehiculoTable
-              vehiculos={vehiculos}
-              onEdit={(v) => setEditing(v)}
-              onDeactivate={(v) => setDeactivating(v)}
-              onReactivate={(v) => reactivate.mutate(v.id)}
-            />
+            {deAlquiler.length > 0 && (
+              <VehiculoTable
+                vehiculos={deAlquiler}
+                onEdit={(v) => setEditing(v)}
+                onDeactivate={(v) => setDeactivating(v)}
+                onReactivate={(v) => reactivate.mutate(v.id)}
+              />
+            )}
+
+            {enUber.length > 0 && (
+              <>
+                <div className="border-t border-border bg-muted/30 px-4 py-2.5">
+                  <div className="text-sm font-medium text-foreground">
+                    Afectados a Uber · {enUber.length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    No se alquilan: no cuentan para el cupo ni aparecen en la web.
+                    Siguen acá con sus vencimientos, services y gastos.
+                  </div>
+                </div>
+                <VehiculoTable
+                  vehiculos={enUber}
+                  onEdit={(v) => setEditing(v)}
+                  onDeactivate={(v) => setDeactivating(v)}
+                  onReactivate={(v) => reactivate.mutate(v.id)}
+                />
+              </>
+            )}
+
             <div className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
               {total} {total === 1 ? 'vehículo' : 'vehículos'}
+              {enUber.length > 0 && ` · ${deAlquiler.length} en alquiler, ${enUber.length} en Uber`}
             </div>
           </>
         )}

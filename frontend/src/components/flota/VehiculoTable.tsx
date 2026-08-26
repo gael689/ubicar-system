@@ -49,6 +49,7 @@ export function VehiculoTable({ vehiculos, onEdit, onDeactivate, onReactivate }:
       <TableBody>
         {vehiculos.map((v) => {
           const inactivo = !v.activo;
+          const enUber = v.destino === 'uber';
           return (
             <TableRow
               key={v.id}
@@ -79,7 +80,16 @@ export function VehiculoTable({ vehiculos, onEdit, onDeactivate, onReactivate }:
               </TableCell>
               <TableCell>
                 <div className="flex flex-wrap items-center gap-1">
-                  {v.estado === 'alquilado' ? (
+                  {/* **Un auto de Uber no se muestra como "Disponible".**
+                      Disponible acá significa "se puede alquilar", y éste no:
+                      está fuera del cupo por `destino`, no por `estado`.
+                      Dejar el badge verde sería la contradicción exacta que
+                      hace que alguien lo ofrezca por teléfono. */}
+                  {enUber ? (
+                    <span className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      Uber · no se alquila
+                    </span>
+                  ) : v.estado === 'alquilado' ? (
                     <span className="inline-flex items-center rounded-md border border-primary/30 bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
                       En uso
                     </span>

@@ -32,11 +32,24 @@ def dashboard_stats(
     # today fallback for stat blocks
     real_today = date.today()
 
-    disponibles = db.query(Vehiculo).filter(Vehiculo.estado == "disponible", Vehiculo.activo == True).count()
-    alquilados = db.query(Vehiculo).filter(Vehiculo.estado == "alquilado", Vehiculo.activo == True).count()
-    reservados = db.query(Vehiculo).filter(Vehiculo.estado == "reservado", Vehiculo.activo == True).count()
-    fuera = db.query(Vehiculo).filter(Vehiculo.estado == "fuera_de_servicio", Vehiculo.activo == True).count()
-    total_activos = db.query(Vehiculo).filter(Vehiculo.activo == True).count()
+    # **Los stats de flota son de la flota que se alquila** (migración 086).
+    #
+    # Un vehículo afectado a Uber no se alquila nunca, así que sumarlo al
+    # denominador hunde el porcentaje de ocupación sin que nada lo explique: 8
+    # de 16 alquilados con 4 autos en Uber no es 50 % de ocupación, es 66 %. El
+    # número que se mira todos los días tiene que medir la flota sobre la que
+    # se puede hacer algo.
+    de_alquiler = db.query(Vehiculo).filter(
+        Vehiculo.activo == True, Vehiculo.destino == "alquiler"
+    )
+    disponibles = de_alquiler.filter(Vehiculo.estado == "disponible").count()
+    alquilados = de_alquiler.filter(Vehiculo.estado == "alquilado").count()
+    reservados = de_alquiler.filter(Vehiculo.estado == "reservado").count()
+    fuera = de_alquiler.filter(Vehiculo.estado == "fuera_de_servicio").count()
+    total_activos = de_alquiler.count()
+    en_uber = db.query(Vehiculo).filter(
+        Vehiculo.activo == True, Vehiculo.destino == "uber"
+    ).count()
 
     ocupacion_pct = round((alquilados / total_activos * 100) if total_activos > 0 else 0, 1)
 
@@ -162,6 +175,10 @@ def dashboard_stats(
         "vehiculos_reservados": reservados,
         "vehiculos_fuera_servicio": fuera,
         "total_vehiculos_activos": total_activos,
+        # Se devuelve aparte para que el panel pueda decir "16 autos, 4 en
+        # Uber" en vez de mostrar 12 y que alguien se pregunte dónde están los
+        # otros cuatro.
+        "vehiculos_en_uber": en_uber,
         "ocupacion_porcentaje": ocupacion_pct,
         "flujo_del_dia": flujo_del_dia,
     })

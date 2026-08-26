@@ -86,6 +86,26 @@ class VehiculoService:
         vehiculo = self.get(vehiculo_id)
 
         cambios = payload.model_dump(exclude_unset=True)
+
+        # **Pasar un auto a Uber lo saca de la disponibilidad** (migración
+        # 086), y si tiene reservas vivas las deja huérfanas: la reserva sigue
+        # existiendo con ese auto asignado, pero el auto ya no es cupo de nada.
+        # Es el mismo peligro que la baja lógica, y se trata igual — con la
+        # diferencia de que acá no hay `forzar`: para sacarlo igual, primero se
+        # mueven las reservas.
+        nuevo_destino = cambios.get("destino")
+        if (
+            nuevo_destino is not None
+            and nuevo_destino != vehiculo.destino
+            and nuevo_destino != "alquiler"
+        ):
+            bloqueantes = self.reservas_que_bloquean(vehiculo_id)
+            if bloqueantes:
+                raise ConflictError(
+                    f"{vehiculo.patente} tiene {len(bloqueantes)} reserva(s) sin cerrar. "
+                    f"Reasignalas a otro vehículo antes de afectarlo a Uber."
+                )
+
         nuevo_estado = cambios.get("estado")
         if nuevo_estado is not None and nuevo_estado != vehiculo.estado:
             from datetime import datetime

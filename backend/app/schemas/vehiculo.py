@@ -6,6 +6,11 @@ from typing import Literal
 EstadoVehiculo = Literal["disponible", "alquilado", "reservado", "en_transicion", "fuera_de_servicio"]
 TipoVehiculo = Literal["auto", "camioneta"]
 
+# A qué está afectado el vehículo (migración 086). `uber` sigue siendo flota
+# —se ve en el panel, tiene VTV, póliza y gastos— pero no se alquila y no
+# cuenta para el cupo ni aparece en la web.
+DestinoVehiculo = Literal["alquiler", "uber"]
+
 
 class VehiculoBase(BaseModel):
     patente: str
@@ -17,6 +22,7 @@ class VehiculoBase(BaseModel):
     km_actual: int
     km_entre_services: int
     categoria_id: int | None = None
+    destino: DestinoVehiculo = "alquiler"
 
 
 class VehiculoCreate(VehiculoBase):
@@ -35,6 +41,7 @@ class VehiculoUpdate(BaseModel):
     km_entre_services: int | None = None
     km_proximo_service: int | None = None
     categoria_id: int | None = None
+    destino: DestinoVehiculo | None = None
     vtv_vencimiento: date | None = None
     poliza_vencimiento: date | None = None
     compania_seguro: str | None = None

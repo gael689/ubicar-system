@@ -9,6 +9,11 @@ export type EstadoVehiculo =
 
 export type TipoVehiculo = 'auto' | 'camioneta';
 
+/** A qué está afectado el vehículo (migración 086). `uber` sigue siendo
+ *  flota —se ve en el panel, tiene VTV, póliza y gastos— pero no se alquila:
+ *  no cuenta para el cupo y no aparece en la web. */
+export type DestinoVehiculo = 'alquiler' | 'uber';
+
 export type EstadoReserva =
   | 'pendiente'
   | 'confirmada'
@@ -458,6 +463,7 @@ export interface Vehiculo {
   km_entre_services: number;
   categoria_id: number | null;
   categoria?: CategoriaResumen | null;
+  destino: DestinoVehiculo;
   activo: boolean;
   foto_url: string | null;
   created_at: string;
@@ -477,6 +483,7 @@ export interface VehiculoCreate {
   km_actual: number;
   km_entre_services: number;
   categoria_id?: number | null;
+  destino?: DestinoVehiculo;
   vtv_vencimiento?: string | null;
   poliza_vencimiento?: string | null;
   compania_seguro?: string | null;
@@ -487,6 +494,7 @@ export interface VehiculoUpdate {
   marca?: string;
   modelo?: string;
   color?: string;
+  destino?: DestinoVehiculo;
   estado?: EstadoVehiculo;
   km_actual?: number;
   km_entre_services?: number;

@@ -2,7 +2,7 @@
 Repositorio de Vehículos.
 Solo queries SQLAlchemy — sin lógica de negocio.
 """
-from sqlalchemy import select, func, or_
+from sqlalchemy import case, select, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.vehiculo import Vehiculo
@@ -47,7 +47,21 @@ class VehiculoRepository(BaseRepository[Vehiculo]):
             select(func.count()).select_from(stmt.subquery())
         ).scalar_one()
 
-        stmt = stmt.order_by(Vehiculo.orden.asc(), Vehiculo.marca, Vehiculo.modelo).offset(skip).limit(limit)
+        # **Los que no se alquilan van al final** (migración 086). Va en el
+        # ORDER BY y no ordenando la página en el cliente: con paginado del
+        # servidor, ordenar después de paginar sólo ordena los 50 que tocaron
+        # en esa página y los autos de Uber aparecerían salteados por el medio
+        # del listado.
+        #
+        # `destino` es texto y 'alquiler' < 'uber' alfabéticamente, pero no se
+        # confía en eso: si mañana se agrega un destino que empiece con "a" se
+        # mezclaría con la flota que se vende sin que nadie lo note.
+        orden_destino = case((Vehiculo.destino == "alquiler", 0), else_=1)
+        stmt = (
+            stmt.order_by(orden_destino, Vehiculo.orden.asc(), Vehiculo.marca, Vehiculo.modelo)
+            .offset(skip)
+            .limit(limit)
+        )
         items = list(self.db.execute(stmt).scalars().all())
         return items, total
 

@@ -31,6 +31,20 @@ class Vehiculo(Base):
     # Categoría (D-08): compacto/sedán/sedán superior/SUV/pick-up/furgón.
     # Nullable: los 16 vehículos ya cargados antes de esto se categorizan a mano.
     categoria_id: Mapped[int | None] = mapped_column(ForeignKey("categorias.id"), nullable=True)
+
+    # A qué está afectado el vehículo (migración 086).
+    #
+    # **`alquiler` es lo que se vende; `uber` es flota que no se alquila.** Un
+    # auto afectado a Uber sigue acá con sus vencimientos, sus services y sus
+    # gastos —darlo de baja con `activo = false` para sacarlo del cupo se
+    # llevaría todo eso—, pero queda fuera de `DisponibilidadService`, y por lo
+    # tanto de la web, del cupo interno y del paso 3 del wizard.
+    #
+    # No es una `Categoria` porque un auto de Uber sigue siendo una Pick-up:
+    # lo que cambia es a qué está afectado, no qué es.
+    destino: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="alquiler", server_default="alquiler"
+    )
     km_actual: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     km_proximo_service: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     km_entre_services: Mapped[int] = mapped_column(Integer, nullable=False, default=10000)
