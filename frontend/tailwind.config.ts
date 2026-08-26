@@ -48,13 +48,27 @@ const config: Config = {
         },
         // Ubicar Rent design system — usables directamente como clases Tailwind
         'ubicar-primary': '#407EC9',
+        // El azul oscuro de la marca. Estaba hardcodeado 30 veces en el sitio
+        // público y no existía en el panel — por eso los dos no matcheaban.
+        // Con texto blanco encima da 10,7 de contraste.
+        'ubicar-dark': '#1B3F6B',
         'ubicar-secondary': '#8BB8E8',
         surface: '#F0F6FD',
         'ubicar-border': '#D0E4F5',
         'ubicar-text': '#1A2A3A',
         'ubicar-muted': '#6B8CAE',
         success: { DEFAULT: '#059669', bg: '#D1FAE5' },
-        warning: { DEFAULT: '#D97706', bg: '#FEF3C7' },
+        // **El naranja se oscureció de #D97706 a #B45309.**
+        //
+        // No es un cambio estético: el anterior daba 3,19 de contraste contra
+        // el texto blanco que lleva encima, y el mínimo legible es 4,5. Todo
+        // bloque `bg-warning` con texto blanco —que son varios— se leía con
+        // esfuerzo, más todavía en la pantalla del mostrador con luz de día.
+        // Este da 5,02.
+        //
+        // El `bg` claro (#FEF3C7) no se toca: se usa como fondo con texto
+        // oscuro encima, donde nunca hubo problema.
+        warning: { DEFAULT: '#B45309', bg: '#FEF3C7' },
         danger: { DEFAULT: '#DC2626', bg: '#FEE2E2' },
       },
       borderRadius: {

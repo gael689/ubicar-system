@@ -339,7 +339,7 @@ export function CheckinModal({
               </div>
               {cargoLate > 0 && (
                 <div className="flex justify-between text-sm">
-                  <span className="text-amber-600">Cargo late checkout</span>
+                  <span className="text-ubicar-dark">Cargo late checkout</span>
                   <span className="text-amber-600">+{formatMoney(cargoLate)}</span>
                 </div>
               )}

@@ -1708,9 +1708,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             </div>
           </div>
 
-          {/* Late checkout (solo crear) */}
+          {/* Late checkout (solo crear).
+
+              **Va en azul y no en el naranja de advertencia.** Acordar un late
+              checkout es una venta: el cliente devuelve más tarde y paga un
+              cargo extra. Estaba pintado con `bg-warning` por arrastre, así que
+              la pantalla mostraba como problema algo que es plata que entra. */}
           {!isEdit && (
-            <div className="rounded-xl bg-warning p-4 space-y-3 shadow-sm">
+            <div className="rounded-xl bg-ubicar-dark p-4 space-y-3 shadow-sm">
               <div className="flex items-center gap-3">
                 <input id="late-checkout" type="checkbox" checked={lateCheckout}
                   onChange={e => setLateCheckout(e.target.checked)}

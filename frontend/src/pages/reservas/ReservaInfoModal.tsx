@@ -262,7 +262,7 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
                 {fmtFecha(fechaFin)} {fmtHora(reserva.hora_fin)}
               </p>
               {reserva.late_checkout && (
-                <p className="text-xs text-amber-600 mt-0.5">Late checkout</p>
+                <p className="text-xs text-ubicar-dark mt-0.5">Late checkout</p>
               )}
             </div>
           </div>
