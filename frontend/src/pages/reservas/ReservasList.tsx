@@ -8,7 +8,7 @@ import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import api from '@/lib/api';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { extractError, cn } from '@/lib/utils';
-import { ESTADO_RESERVA_LABEL } from '@/lib/constants';
+import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
 import { useAppStore, type CanalReserva } from '@/store/useAppStore';
 import { BadgeCanal } from '@/components/reservas/BadgeCanal';
 import type { Reserva, EstadoReserva, PaginatedResponse } from '@/types';
@@ -61,17 +61,6 @@ const CANALES: { value: CanalReserva; label: string; icon?: typeof Globe }[] = [
 // Los tres que faltaban acá se veían como una etiqueta gris sin borde, porque
 // el lookup caía en el `?? ''`: al poderse filtrar ahora aparecen en tandas, y
 // una columna entera de badges apagados no dice nada.
-const ESTADO_COLORS: Record<string, string> = {
-  pendiente: 'bg-slate-100 text-slate-700 border-slate-300',
-  confirmada: 'bg-blue-100 text-blue-800 border-blue-200',
-  revision_sin_cupo: 'bg-rose-100 text-rose-800 border-rose-300',
-  sin_disponibilidad: 'bg-orange-100 text-orange-800 border-orange-200',
-  activa: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  vencida: 'bg-red-100 text-red-800 border-red-300 animate-pulse',
-  pendiente_pago: 'bg-amber-100 text-amber-800 border-amber-200',
-  finalizada: 'bg-slate-200 text-slate-800 border-slate-300',
-  cancelada: 'bg-red-100 text-red-800 border-red-200',
-};
 
 const ESTADO_ICONS: Record<string, React.ReactNode> = {
   pendiente: <Hourglass className="w-3.5 h-3.5" />,
@@ -545,7 +534,7 @@ export function ReservasList() {
                     )}
                   </td>
                   <td className={cn(cellPad, 'border-r border-slate-200')}>
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase border ${ESTADO_COLORS[r.estado] ?? ''}`}>
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase border ${ESTADO_RESERVA_COLOR[r.estado] ?? ''}`}>
                       {ESTADO_ICONS[r.estado]} {ESTADO_RESERVA_LABEL[r.estado] ?? r.estado}
                     </span>
                     {/* Estado del contrato, siempre visible.

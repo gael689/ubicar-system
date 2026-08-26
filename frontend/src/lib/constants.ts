@@ -26,11 +26,28 @@ export const ESTADO_VEHICULO_LABEL: Record<EstadoVehiculo, string> = {
   fuera_de_servicio: 'Fuera de servicio',
 };
 
+/**
+ * Los colores de estado, por nivel de urgencia.
+ *
+ * **La mayoría de lo que estaba en naranja era informativo.** "Auto reservado",
+ * "reserva pendiente", "echeq en cartera", "daño imputado" — ninguno es un
+ * problema: el color sólo clasifica. Pintarlos con el color de advertencia
+ * hacía que el panel gritara todo el tiempo, y un panel que grita siempre
+ * enseña a no mirarlo.
+ *
+ * La escala está en `tailwind.config.ts`:
+ *
+ *   inactivo  gris   no arrancó, fuera de juego
+ *   info      azul   dato, estado normal, algo en curso
+ *   success   verde  cerrado, cobrado, al día
+ *   warning   ámbar  hay un reloj corriendo
+ *   danger    rojo   frena la operación o ya falló
+ */
 export const ESTADO_VEHICULO_COLOR: Record<EstadoVehiculo, string> = {
   disponible: 'bg-success/15 text-success border-success/30',
   alquilado: 'bg-primary/15 text-primary border-primary/30',
-  reservado: 'bg-warning/15 text-warning border-warning/30',
-  en_transicion: 'bg-amber-100 text-amber-700 border-amber-200',
+  reservado: 'bg-info/15 text-info border-info/30',
+  en_transicion: 'bg-info/10 text-info border-info/25',
   fuera_de_servicio: 'bg-danger/15 text-danger border-danger/30',
 };
 
@@ -54,16 +71,16 @@ export const ESTADO_RESERVA_LABEL: Record<EstadoReserva, string> = {
 };
 
 export const ESTADO_RESERVA_COLOR: Record<EstadoReserva, string> = {
-  pendiente: 'bg-warning/15 text-warning border-warning/30',
-  confirmada: 'bg-primary/15 text-primary border-primary/30',
+  pendiente: 'bg-info/15 text-info border-info/30',
+  confirmada: 'bg-info/15 text-info border-info/30',
   activa: 'bg-success/15 text-success border-success/30',
   vencida: 'bg-danger/15 text-danger border-danger/30 animate-pulse',
-  finalizada: 'bg-muted/40 text-muted-foreground border-border',
+  finalizada: 'bg-success/15 text-success border-success/30',
   cancelada: 'bg-danger/15 text-danger border-danger/30',
   // Sólidos: son estados que requieren que alguien haga algo, no información
   // pasiva. `pendiente_pago` sí es pasivo — espera al cliente, no a nosotros.
-  pendiente_pago: 'bg-muted/40 text-muted-foreground border-border',
-  sin_disponibilidad: 'bg-warning text-white border-warning',
+  pendiente_pago: 'bg-inactivo/15 text-inactivo border-inactivo/30',
+  sin_disponibilidad: 'bg-info text-white border-info',
   revision_sin_cupo: 'bg-danger text-white border-danger animate-pulse',
 };
 
@@ -98,9 +115,9 @@ export const ESTADO_ECHEQ_LABEL: Record<EstadoEcheq, string> = {
 };
 
 export const ESTADO_ECHEQ_COLOR: Record<EstadoEcheq, string> = {
-  en_cartera: 'bg-warning/15 text-warning border-warning/30',
-  depositado: 'bg-primary/15 text-primary border-primary/30',
-  endosado: 'bg-secondary/40 text-primary border-secondary',
+  en_cartera: 'bg-info/15 text-info border-info/30',
+  depositado: 'bg-info/15 text-info border-info/30',
+  endosado: 'bg-info/10 text-info border-info/25',
   rechazado: 'bg-danger/15 text-danger border-danger/30',
   cobrado: 'bg-success/15 text-success border-success/30',
   vencido: 'bg-muted/40 text-muted-foreground border-border',
@@ -165,11 +182,11 @@ export const ESTADO_DANIO_LABEL: Record<EstadoDanio, string> = {
 };
 
 export const ESTADO_DANIO_COLOR: Record<EstadoDanio, string> = {
-  detectado: 'bg-muted text-muted-foreground border-border',
-  valorizado: 'bg-primary/15 text-primary border-primary/30',
-  imputado: 'bg-warning/15 text-warning border-warning/30',
+  detectado: 'bg-inactivo/15 text-inactivo border-inactivo/30',
+  valorizado: 'bg-info/15 text-info border-info/30',
+  imputado: 'bg-success/15 text-success border-success/30',
   reparado: 'bg-success/15 text-success border-success/30',
-  bonificado: 'bg-secondary/40 text-primary border-secondary',
+  bonificado: 'bg-info/10 text-info border-info/25',
 };
 
 export const RESPONSABLE_DANIO_LABEL: Record<ResponsableDanio, string> = {
@@ -453,21 +470,45 @@ export const NATURALEZA_LABEL: Record<NaturalezaMovimiento, string> = {
 };
 
 export const NATURALEZA_COLOR: Record<NaturalezaMovimiento, string> = {
-  alquiler: 'bg-muted text-muted-foreground',
-  extension: 'bg-muted text-muted-foreground',
-  excedente: 'bg-warning/15 text-warning',
-  cargo_cierre: 'bg-warning/15 text-warning',
+  alquiler: 'bg-inactivo/15 text-inactivo',
+  extension: 'bg-inactivo/15 text-inactivo',
+  excedente: 'bg-info/15 text-info',
+  cargo_cierre: 'bg-info/15 text-info',
   multa: 'bg-danger/15 text-danger',
   danio: 'bg-danger/15 text-danger',
   // La seña se ve distinta del cobro a propósito: no es plata que baje una
   // deuda, es plata que todavía se debe entregar en forma de auto.
-  anticipo: 'bg-primary/15 text-primary',
+  anticipo: 'bg-info/15 text-info',
   pago: 'bg-success/15 text-success',
   // Un cheque en cartera no es plata: puede rebotar. Se ve distinto de un cobro.
-  echeq_en_cartera: 'bg-primary/10 text-primary',
-  sena_retenida: 'bg-warning/15 text-warning',
-  reembolso: 'bg-warning/15 text-warning',
+  echeq_en_cartera: 'bg-info/10 text-info',
+  sena_retenida: 'bg-info/15 text-info',
+  reembolso: 'bg-info/15 text-info',
   bonificacion: 'bg-success/10 text-success',
-  anulacion: 'bg-muted text-muted-foreground line-through',
-  manual: 'bg-muted text-muted-foreground',
+  anulacion: 'bg-inactivo/15 text-inactivo line-through',
+  manual: 'bg-inactivo/15 text-inactivo',
+};
+
+
+/**
+ * El color de cada medio de pago.
+ *
+ * **Estaba escrito tres veces** —`CobrosPage`, `CajaPage` y `PagosTab`— con los
+ * mismos valores y ninguna fuente común: el día que uno cambiara, los otros dos
+ * quedaban distintos para el mismo dato.
+ *
+ * El color acá **clasifica, no advierte**: un cheque no es más urgente que una
+ * transferencia. Por eso van todos en la familia informativa, separados por
+ * intensidad, salvo `cuenta_corriente` — que es gris porque no es plata que
+ * entró (ver `caja_service.es_plata_que_entro` en el backend).
+ */
+export const MEDIO_PAGO_COLOR: Record<string, string> = {
+  efectivo: 'bg-success/15 text-success',
+  transferencia: 'bg-info/15 text-info',
+  tarjeta: 'bg-info/15 text-info',
+  mercado_pago: 'bg-info/15 text-info',
+  wapa: 'bg-info/15 text-info',
+  cheque: 'bg-info/10 text-info',
+  echeq: 'bg-info/10 text-info',
+  cuenta_corriente: 'bg-inactivo/15 text-inactivo',
 };

@@ -7,7 +7,7 @@ import { usePagos, type FiltrosCobros } from '@/hooks/usePagos';
 import { useClientes } from '@/hooks/useClientes';
 import { useEmitirReciboDePago } from '@/hooks/useRecibos';
 import { formatCurrency, extractError } from '@/lib/utils';
-import { METODO_PAGO_LABEL } from '@/lib/constants';
+import { METODO_PAGO_LABEL , MEDIO_PAGO_COLOR } from '@/lib/constants';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import type { MetodoPago } from '@/types';
@@ -16,14 +16,6 @@ const MEDIOS: MetodoPago[] = [
   'efectivo', 'transferencia', 'tarjeta', 'cheque', 'echeq', 'cuenta_corriente', 'wapa',
 ];
 
-const MEDIO_COLOR: Record<string, string> = {
-  efectivo: 'bg-emerald-100 text-emerald-700',
-  transferencia: 'bg-blue-100 text-blue-700',
-  tarjeta: 'bg-purple-100 text-purple-700',
-  cheque: 'bg-amber-100 text-amber-700',
-  echeq: 'bg-orange-100 text-orange-700',
-  cuenta_corriente: 'bg-slate-100 text-slate-700',
-};
 
 const VACIO: FiltrosCobros = { page: 1, page_size: 50 };
 
@@ -237,7 +229,7 @@ export function CobrosPage() {
                     <td className="px-3 py-2">{p.cliente_nombre ?? '—'}</td>
                     <td className="px-3 py-2 text-muted-foreground">{p.vehiculo_patente ?? '—'}</td>
                     <td className="px-3 py-2">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${MEDIO_COLOR[p.medio_pago] ?? 'bg-muted'}`}>
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${MEDIO_PAGO_COLOR[p.medio_pago] ?? 'bg-muted'}`}>
                         {METODO_PAGO_LABEL[p.medio_pago] ?? p.medio_pago}
                       </span>
                       {p.con_factura && (

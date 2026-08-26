@@ -57,7 +57,31 @@ const config: Config = {
         'ubicar-border': '#D0E4F5',
         'ubicar-text': '#1A2A3A',
         'ubicar-muted': '#6B8CAE',
-        success: { DEFAULT: '#059669', bg: '#D1FAE5' },
+        // ─── La escala de urgencia ────────────────────────────────────
+        //
+        // Cinco niveles, todos como bloque sólido con texto blanco, ordenados
+        // por qué tan urgente es lo que señalan. No son colores elegidos por
+        // gusto: son los significados que la gente ya trae aprendidos de
+        // cualquier aplicación (gris = no arrancó, azul = información y
+        // progreso, verde = correcto, ámbar = prestá atención, rojo = error).
+        // Lo único propio es el azul, que es el de Ubicar.
+        //
+        // **Los cinco pasan el contraste con texto blanco** (mínimo 4,5 según
+        // WCAG). Los de antes NO: #D97706 daba 3,19 · #F59E0B 2,15 ·
+        // #059669 3,77 · #407EC9 4,16. Sólo el rojo estaba bien.
+        //
+        // 1 · inactivo     #475569  7,6   no arrancó, fuera de juego
+        // 2 · info         #1B5FA8  6,5   dato, estado normal, en curso
+        // 3 · success      #047857  5,5   cerrado, cobrado, al día
+        // 4 · warning      #B45309  5,0   hay un reloj corriendo
+        // 5 · danger       #B91C1C  6,5   frena la operación o ya falló
+        //
+        // Gris y azul comparten tono a propósito: los separa la saturación
+        // (32% contra 84%). El gris se ve lavado, que es lo que "inactivo"
+        // tiene que transmitir — la misma señal de un botón deshabilitado.
+        inactivo: { DEFAULT: '#475569', bg: '#F1F5F9' },
+        info: { DEFAULT: '#1B5FA8', bg: '#E8F1FB' },
+        success: { DEFAULT: '#047857', bg: '#D1FAE5' },
         // **El naranja se oscureció de #D97706 a #B45309.**
         //
         // No es un cambio estético: el anterior daba 3,19 de contraste contra
@@ -69,7 +93,7 @@ const config: Config = {
         // El `bg` claro (#FEF3C7) no se toca: se usa como fondo con texto
         // oscuro encima, donde nunca hubo problema.
         warning: { DEFAULT: '#B45309', bg: '#FEF3C7' },
-        danger: { DEFAULT: '#DC2626', bg: '#FEE2E2' },
+        danger: { DEFAULT: '#B91C1C', bg: '#FEE2E2' },
       },
       borderRadius: {
         lg: 'var(--radius)',

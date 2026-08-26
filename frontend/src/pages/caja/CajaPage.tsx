@@ -12,7 +12,7 @@ import { useCajaDia, useCrearPago, useAnularPago } from '@/hooks/usePagos';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { DondeEstaLaPlata } from '@/components/pagos/DondeEstaLaPlata';
 import { formatCurrency, extractError } from '@/lib/utils';
-import { METODO_PAGO_LABEL } from '@/lib/constants';
+import { METODO_PAGO_LABEL , MEDIO_PAGO_COLOR } from '@/lib/constants';
 import type { Pago, Gasto, MetodoPago } from '@/types';
 import { PendientesSection } from './PendientesSection';
 
@@ -36,14 +36,6 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-const MEDIO_COLOR: Record<string, string> = {
-  efectivo: 'bg-emerald-100 text-emerald-700',
-  transferencia: 'bg-blue-100 text-blue-700',
-  tarjeta: 'bg-purple-100 text-purple-700',
-  cheque: 'bg-amber-100 text-amber-700',
-  echeq: 'bg-orange-100 text-orange-700',
-  cuenta_corriente: 'bg-slate-100 text-slate-700',
-};
 
 function PagoRow({ p, onDelete }: { p: Pago; onDelete: (id: number) => void }) {
   const navigate = useNavigate();
@@ -52,7 +44,7 @@ function PagoRow({ p, onDelete }: { p: Pago; onDelete: (id: number) => void }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-foreground">{formatCurrency(p.monto)}</span>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${MEDIO_COLOR[p.medio_pago] ?? 'bg-muted text-muted-foreground'}`}>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${MEDIO_PAGO_COLOR[p.medio_pago] ?? 'bg-muted text-muted-foreground'}`}>
             {METODO_PAGO_LABEL[p.medio_pago] ?? p.medio_pago}
           </span>
           {p.con_factura && (
@@ -247,7 +239,7 @@ export function CajaPage() {
               {Object.entries(caja.por_medio_pago).map(([medio, monto]) => (
                 <div
                   key={medio}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${MEDIO_COLOR[medio] ?? 'bg-muted text-muted-foreground'}`}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${MEDIO_PAGO_COLOR[medio] ?? 'bg-muted text-muted-foreground'}`}
                 >
                   {METODO_PAGO_LABEL[medio] ?? medio}: <span className="font-bold">{formatCurrency(monto)}</span>
                 </div>
