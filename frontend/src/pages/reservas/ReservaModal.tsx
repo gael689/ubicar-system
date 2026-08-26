@@ -111,6 +111,30 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     return valores.length ? valores : LUGARES_FALLBACK;
   }, [configItems]);
   const esLugarPersonalizado = (v: string) => !!v && !lugares.includes(v);
+
+  /**
+   * Si el mostrador está pidiendo garantía/depósito al armar una reserva.
+   *
+   * **Sale de `configuracion` y no de una constante acá.** Es una decisión
+   * comercial —se apagó mientras se define la política— y el día que vuelva no
+   * tiene que hacer falta un deploy: se prende desde la pantalla de
+   * Configuración.
+   *
+   * La misma clave la lee el semáforo del backend
+   * (`domain/bloqueos.py::_pide_garantia`). Si sólo se escondiera el bloque, la
+   * advertencia "no tiene garantía/depósito definido" saldría en **todas** las
+   * reservas y sin forma de resolverla.
+   *
+   * `true` por default: es el comportamiento histórico, y quien no tenga la
+   * fila cargada sigue viendo el bloque como antes.
+   */
+  const pideGarantia = useMemo(() => {
+    const item = configItems?.find(c => c.clave === 'reservas.pide_garantia');
+    if (!item) return true;
+    return ['true', '1', 'si', 'sí', 'yes', 'on'].includes(
+      (item.valor ?? '').trim().toLowerCase(),
+    );
+  }, [configItems]);
   const [entregaEsOtro, setEntregaEsOtro]         = useState(esLugarPersonalizado(reserva?.lugar_entrega ?? ''));
   const [devolucionEsOtro, setDevolucionEsOtro]   = useState(esLugarPersonalizado(reserva?.lugar_devolucion ?? ''));
   // Los dos flags de arriba se calculan en el primer render, cuando la
@@ -2296,8 +2320,13 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           </div>
 
           {/* Garantía / Depósito — va en el mismo paso que el pago: las dos
-              cosas son "cómo se cubre la plata de este alquiler". */}
-          {!isEdit && (
+              cosas son "cómo se cubre la plata de este alquiler".
+
+              Oculto mientras `reservas.pide_garantia` esté apagado. El sistema
+              sigue soportando garantías enteras —la caja, la devolución, la
+              ejecución parcial, los últimos cuatro dígitos de la tarjeta—; lo
+              único que se apaga es que el formulario las pida. */}
+          {!isEdit && pideGarantia && (
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-3">
               <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-primary" /> Garantía / Depósito

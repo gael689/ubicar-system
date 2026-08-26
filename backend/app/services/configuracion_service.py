@@ -58,6 +58,21 @@ class ConfiguracionService:
         except ValueError:
             return default
 
+    def get_bool(self, clave: str, default: bool) -> bool:
+        """
+        Un interruptor guardado como texto.
+
+        Acepta las formas con las que alguien puede escribirlo a mano en la
+        pantalla de Configuración —`true`, `1`, `si`, `sí`— y cualquier otra
+        cosa la toma como apagado. **Un valor irreconocible NO cae al default**:
+        si alguien escribió algo, quiso decir algo, y devolver el default lo
+        haría parecer que la fila no existe.
+        """
+        conf = self.db.query(Configuracion).filter(Configuracion.clave == clave).first()
+        if not conf or not (conf.valor or "").strip():
+            return default
+        return conf.valor.strip().lower() in {"true", "1", "si", "sí", "yes", "on"}
+
     def get_decimal(self, clave: str, default: Decimal) -> Decimal:
         conf = self.db.query(Configuracion).filter(Configuracion.clave == clave).first()
         if not conf:

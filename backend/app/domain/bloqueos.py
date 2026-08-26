@@ -58,6 +58,26 @@ def _deuda_cliente(db: Session, cliente_id: int) -> BloqueoItem | None:
     return BloqueoItem("deuda_previa", f"El cliente tiene un saldo pendiente de ${saldo:,.2f}", "advertencia")
 
 
+# Si el mostrador está pidiendo garantía/depósito al armar una reserva.
+#
+# Es una decisión comercial que se prende y apaga desde Configuración, no una
+# constante: se apagó en agosto de 2026 mientras se define la política, y el
+# día que vuelva no tiene que hacer falta un deploy.
+CLAVE_PIDE_GARANTIA = "reservas.pide_garantia"
+
+
+def _pide_garantia(db: Session) -> bool:
+    """
+    Lee la clave, con `True` por default.
+
+    El default es el comportamiento histórico: quien no tenga la fila cargada
+    —una instalación vieja, los tests— sigue viendo la advertencia como antes.
+    """
+    from app.services.configuracion_service import ConfiguracionService
+
+    return ConfiguracionService(db).get_bool(CLAVE_PIDE_GARANTIA, True)
+
+
 def evaluar_datos_pre_checkout(
     db: Session,
     *,
@@ -114,9 +134,18 @@ def evaluar_datos_pre_checkout(
         if deuda:
             items.append(deuda)
 
+    # **Sólo se reclama la garantía si el negocio la está pidiendo.**
+    #
+    # `reservas.pide_garantia` apagado esconde el bloque del formulario, y
+    # entonces ninguna reserva puede tener una: reclamarla igual pondría esta
+    # advertencia en **todas**, para siempre y sin forma de resolverla. Una
+    # advertencia que está siempre encendida no avisa de nada — enseña a
+    # ignorar la lista entera, que es justo lo que el semáforo evita separando
+    # bloqueantes de avisos.
+    #
     # `no_aplica` es el valor con el que arranca el formulario, así que en la
     # práctica significa "todavía no se definió" igual que el vacío.
-    if not garantia_tipo or garantia_tipo == "no_aplica":
+    if _pide_garantia(db) and (not garantia_tipo or garantia_tipo == "no_aplica"):
         items.append(BloqueoItem("sin_garantia", "La reserva no tiene garantía/depósito definido", "advertencia"))
 
     if contrato_firmado is False:
