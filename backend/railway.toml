@@ -77,10 +77,18 @@ dockerfilePath = "Dockerfile"
 # reinicia en bucle y el dominio devuelve "Application not found" — con el
 # build en verde y sin una sola linea de error en el log.
 #
-# `;` y no `&&` entre alembic y uvicorn: la base se migra por fuera del deploy,
-# asi que un fallo de alembic no tiene por que impedir que el servidor levante.
+# **`&&` y no `;`.** Estuvo con `;` y eso contradecia el comentario de arriba:
+# una migracion que fallaba no frenaba nada — la API levantaba igual contra el
+# esquema viejo y devolvia 500 en las pantallas que tocaban la columna nueva,
+# con el deploy en verde y sin una linea de error.
+#
+# Con `&&`, si alembic falla el contenedor muere, el healthcheck no pasa y
+# **Railway deja sirviendo la version anterior**, que es exactamente lo que el
+# comentario de arriba promete. Una migracion rota se ve como un deploy que no
+# sale, que es como tiene que verse.
+#
 # `exec` para que uvicorn reemplace al shell y reciba las senales de Railway.
-startCommand = "sh -c 'alembic upgrade head; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}'"
+startCommand = "sh -c 'alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}'"
 
 healthcheckPath = "/health"
 # 30 segundos no alcanzaban. El arranque hace, en este orden: conectar a

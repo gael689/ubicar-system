@@ -43,6 +43,7 @@ from app.models.tarifa import Tarifa
 from app.repositories.reserva_repo import ReservaRepo
 from app.repositories.alquiler_repo import AlquilerRepo
 from app.services import auditoria_service
+from app.services.caja_service import es_plata_que_entro
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 from app.services.echeq_service import EcheqService
 from app.services.precio_service import PrecioService
@@ -1391,17 +1392,20 @@ class ReservaService:
             self.db.add(pago)
             self.db.flush()
 
-            self.cc_service.registrar_movimiento(
-                cliente_id=reserva.cliente_id,
-                tipo="credito",
-                naturaleza="anticipo",
-                concepto=f"Seña de reserva #{reserva.id} ({medio_pago})",
-                monto=monto,
-                fecha=fecha,
-                creado_por=usuario_id,
-                reserva_id=reserva.id,
-                pago_id=pago.id,
-            )
+            # Una seña "anotada en la cuenta" no es una seña: no entró plata.
+            # Ver `caja_service.es_plata_que_entro`.
+            if es_plata_que_entro(medio_pago):
+                self.cc_service.registrar_movimiento(
+                    cliente_id=reserva.cliente_id,
+                    tipo="credito",
+                    naturaleza="anticipo",
+                    concepto=f"Seña de reserva #{reserva.id} ({medio_pago})",
+                    monto=monto,
+                    fecha=fecha,
+                    creado_por=usuario_id,
+                    reserva_id=reserva.id,
+                    pago_id=pago.id,
+                )
 
             # `anticipo_monto` se sigue escribiendo, y no es redundancia
             # descuidada: lo leen dieciocho lugares entre backend, PDFs y

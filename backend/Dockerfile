@@ -4,6 +4,23 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# **La hora del contenedor es la de Bahía Blanca, no UTC.**
+#
+# `python:3.11-slim` corre en UTC, y el sistema compara `datetime.now()` contra
+# fechas y horas que se cargan en hora argentina. Con tres horas de diferencia:
+#
+#   · un auto que vuelve a las 10:00 pasaba a "vencida" a las 07:00;
+#   · la alerta CRÍTICA de "devolución vencida" —que tiene una hora de gracia—
+#     saltaba a las 08:00, con las horas de atraso infladas en 3;
+#   · un cobro de las 22:00 caía en la caja del día siguiente.
+#
+# Todos los días, con cada alquiler. Que `main.py` fije la zona a mano sólo
+# para el scheduler era la señal de que el proceso no estaba en hora argentina.
+#
+# `tzdata` hace falta de verdad: en las imágenes slim la variable sola no
+# alcanza porque no hay base de zonas horarias que consultar.
+ENV TZ=America/Argentina/Buenos_Aires
+
 WORKDIR /app
 
 # Dependencias del sistema (psycopg2 necesita libpq)

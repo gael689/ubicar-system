@@ -30,6 +30,29 @@ from app.services import auditoria_service
 # no entró: sumarlo a los ingresos del día infla la caja sin que nadie lo note.
 MEDIOS_QUE_NO_SON_PLATA = {"cuenta_corriente"}
 
+
+def es_plata_que_entro(medio_pago: str | None) -> bool:
+    """
+    Si este cobro representa plata que efectivamente entró.
+
+    **`cuenta_corriente` no lo es, y por eso no cancela la deuda.** El operador
+    elige ese medio para decir *"todavía no me pagó, anotámelo en la cuenta"* —
+    es el nombre más intuitivo para exactamente eso. Pero el sistema le asentaba
+    igual un `credito` en la cuenta corriente, o sea que **borraba el saldo que
+    venía a registrar**.
+
+    El efecto no se veía enseguida y era doble: el alquiler salía de
+    `alquileres_con_saldo_pendiente` y **dejaba de generar avisos de deuda para
+    siempre**, y la ficha del cliente mostraba la cuenta en cero. La plata
+    quedaba sin reclamar y sin que nada lo señalara.
+
+    Se usa en los cuatro caminos que cobran (cobro suelto, check-out, check-in y
+    seña) y en `cobranza_service.monto_cobrado`. La fila de `Pago` **sí se crea**
+    en todos los casos: deja constancia de que alguien tomó esa decisión y
+    cuándo, que es lo que después permite explicar por qué el saldo sigue ahí.
+    """
+    return medio_pago not in MEDIOS_QUE_NO_SON_PLATA
+
 # Lo que efectivamente pasa por el cajón. Una transferencia o un cobro con
 # tarjeta entran a una cuenta, no al cajón, y por eso no cuentan para "cuánto
 # tendría que haber acá".

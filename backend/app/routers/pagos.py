@@ -549,20 +549,24 @@ def create_pago(
         if payload.alquiler_id is not None
         else f"Cobro a cuenta ({payload.medio_pago})"
     )
-    CuentaCorrienteService(db).registrar_movimiento(
-        cliente_id=cliente_id,
-        tipo="credito",
-        # Un cobro suelto siempre es contra una deuda que ya existe: es un
-        # `pago`, no un `anticipo`. La seña de una reserva sin alquiler entra
-        # por `ReservaService.registrar_cobro`, que sí la asienta como anticipo.
-        naturaleza="pago",
-        concepto=concepto,
-        monto=Decimal(str(payload.monto)),
-        fecha=payload.fecha,
-        creado_por=current_user.id,
-        alquiler_id=payload.alquiler_id,
-        pago_id=pago.id,
-    )
+    # `cuenta_corriente` no cancela la deuda: significa "se lo anotamos en la
+    # cuenta", o sea que la plata no entró. El `Pago` queda como constancia de
+    # la decisión; el saldo, sin tocar. Ver `caja_service.es_plata_que_entro`.
+    if es_plata_que_entro(payload.medio_pago):
+        CuentaCorrienteService(db).registrar_movimiento(
+            cliente_id=cliente_id,
+            tipo="credito",
+            # Un cobro suelto siempre es contra una deuda que ya existe: es un
+            # `pago`, no un `anticipo`. La seña de una reserva sin alquiler entra
+            # por `ReservaService.registrar_cobro`, que sí la asienta como anticipo.
+            naturaleza="pago",
+            concepto=concepto,
+            monto=Decimal(str(payload.monto)),
+            fecha=payload.fecha,
+            creado_por=current_user.id,
+            alquiler_id=payload.alquiler_id,
+            pago_id=pago.id,
+        )
 
     db.commit()
     db.refresh(pago)

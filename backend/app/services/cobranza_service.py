@@ -82,8 +82,20 @@ def pagos_de(db: Session, alquiler: Alquiler) -> list:
 
 
 def monto_cobrado(db: Session, alquiler: Alquiler) -> Decimal:
-    """Lo que efectivamente entró por este alquiler."""
-    return sum((Decimal(str(p.monto)) for p in pagos_de(db, alquiler)), Decimal("0"))
+    """
+    Lo que efectivamente entró por este alquiler.
+
+    **Los cobros con medio `cuenta_corriente` no cuentan.** Ese medio significa
+    "se lo anotamos en la cuenta", o sea que la plata no entró; contarlo hacía
+    que el alquiler saliera de `alquileres_con_saldo_pendiente` y dejara de
+    reclamarse para siempre. Ver `caja_service.es_plata_que_entro`.
+    """
+    from app.services.caja_service import es_plata_que_entro
+
+    return sum(
+        (Decimal(str(p.monto)) for p in pagos_de(db, alquiler) if es_plata_que_entro(p.medio_pago)),
+        Decimal("0"),
+    )
 
 
 def saldo_pendiente(db: Session, alquiler: Alquiler) -> Decimal:

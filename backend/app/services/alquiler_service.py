@@ -33,6 +33,7 @@ from app.repositories.alquiler_repo import AlquilerRepo
 from app.repositories.reserva_repo import ReservaRepo
 from app.schemas.alquiler import PagoInmediato
 from app.services import auditoria_service
+from app.services.caja_service import es_plata_que_entro
 from app.services.configuracion_service import ConfiguracionService
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 from app.services.echeq_service import EcheqService
@@ -330,18 +331,23 @@ class AlquilerService:
                 )
                 self.db.add(pago_checkout)
                 self.db.flush()
-                self.cc_service.registrar_movimiento(
-                    cliente_id=reserva.cliente_id,
-                    tipo="credito",
-                    naturaleza="pago",
-                    concepto=f"Cobro en checkout — alquiler #{reserva.id} ({pago_checkout.medio_pago})",
-                    monto=pago_inmediato.monto,
-                    fecha=pago_inmediato.fecha,
-                    creado_por=usuario_id,
-                    alquiler_id=alquiler.id,
-                    reserva_id=reserva.id,
-                    pago_id=pago_checkout.id,
-                )
+                # `cuenta_corriente` no cancela la deuda: significa "se lo
+                # anotamos en la cuenta", o sea que la plata no entró. El `Pago`
+                # queda como constancia de la decisión; el saldo, sin tocar.
+                # Ver `caja_service.es_plata_que_entro`.
+                if es_plata_que_entro(pago_checkout.medio_pago):
+                    self.cc_service.registrar_movimiento(
+                        cliente_id=reserva.cliente_id,
+                        tipo="credito",
+                        naturaleza="pago",
+                        concepto=f"Cobro en checkout — alquiler #{reserva.id} ({pago_checkout.medio_pago})",
+                        monto=pago_inmediato.monto,
+                        fecha=pago_inmediato.fecha,
+                        creado_por=usuario_id,
+                        alquiler_id=alquiler.id,
+                        reserva_id=reserva.id,
+                        pago_id=pago_checkout.id,
+                    )
 
             # Cambiar estado de la reserva
             self.reserva_repo.update(reserva, estado=EstadoReserva.ACTIVA.value)
@@ -588,18 +594,23 @@ class AlquilerService:
                 )
                 self.db.add(pago_checkin)
                 self.db.flush()
-                self.cc_service.registrar_movimiento(
-                    cliente_id=reserva.cliente_id,
-                    tipo="credito",
-                    naturaleza="pago",
-                    concepto=f"Cobro en check-in — alquiler #{reserva.id} ({pago_checkin.medio_pago})",
-                    monto=pago_inmediato.monto,
-                    fecha=pago_inmediato.fecha,
-                    creado_por=usuario_id,
-                    alquiler_id=alquiler_id,
-                    reserva_id=reserva.id,
-                    pago_id=pago_checkin.id,
-                )
+                # `cuenta_corriente` no cancela la deuda: significa "se lo
+                # anotamos en la cuenta", o sea que la plata no entró. El `Pago`
+                # queda como constancia de la decisión; el saldo, sin tocar.
+                # Ver `caja_service.es_plata_que_entro`.
+                if es_plata_que_entro(pago_checkin.medio_pago):
+                    self.cc_service.registrar_movimiento(
+                        cliente_id=reserva.cliente_id,
+                        tipo="credito",
+                        naturaleza="pago",
+                        concepto=f"Cobro en check-in — alquiler #{reserva.id} ({pago_checkin.medio_pago})",
+                        monto=pago_inmediato.monto,
+                        fecha=pago_inmediato.fecha,
+                        creado_por=usuario_id,
+                        alquiler_id=alquiler_id,
+                        reserva_id=reserva.id,
+                        pago_id=pago_checkin.id,
+                    )
 
             vehiculo = reserva.vehiculo
             vehiculo.estado = nuevo_estado_vehiculo.value
