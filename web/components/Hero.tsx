@@ -6,7 +6,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { WHATSAPP_GENERAL } from "@/lib/constants";
 import {
-  MapPin, ChevronDown, CalendarDays, MessageCircle, UserRound,
+  MapPin, ChevronDown, CalendarDays, UserRound,
 } from "lucide-react";
 import { intencionDeReserva, contactoIniciado } from "@/lib/analitica";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { api, textoPlazo } from "@/lib/api";
 import type { ConfigPublica } from "@/lib/types";
 import { LUGAR_OTRO } from "@/lib/lugares";
+import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, "0");
@@ -483,7 +484,7 @@ const Hero = () => {
                   onClick={() => contactoIniciado("hero:whatsapp")}
                   className="flex items-center justify-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
                 >
-                  <MessageCircle className="h-4 w-4" />
+                  <IconoWhatsApp className="h-4 w-4" />
                   ¿Preferís hablar con alguien? Escribinos por WhatsApp
                 </a>
               </div>

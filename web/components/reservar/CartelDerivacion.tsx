@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  MessageCircle, ArrowRight, Copy, Check, CalendarClock, Phone, Mail, PhoneCall,
+  ArrowRight, Copy, Check, CalendarClock, Phone, Mail, PhoneCall,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { CONTACTO, whatsappLink, telefonoHref, emailHref } from "@/lib/contacto";
 import * as analitica from "@/lib/analitica";
 import type { MotivoVentana } from "@/lib/ventanaVenta";
+import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 
 /** Los tres motivos de ventana (`anticipacion`/`horizonte`/`duracion`) salen
  *  de `@/lib/ventanaVenta`, que es donde se calculan — acá se suman los dos
@@ -163,7 +164,7 @@ export function CartelDerivacion({
                 : "w-full gap-2"
             }
           >
-            <MessageCircle className="h-4 w-4" /> {copy.botonWhatsapp}
+            <IconoWhatsApp className="h-4 w-4" /> {copy.botonWhatsapp}
           </Button>
         </a>
         <p className="text-center text-[11px] text-muted-foreground">
@@ -232,16 +233,23 @@ export function CartelDerivacion({
 
 function copiar(motivo: MotivoDerivacion, detalle?: string) {
   switch (motivo) {
-    case "sin_cupo":
-      return {
-        titulo: "Esta categoría está completa para esas fechas",
-        cuerpo: "Podemos seguir por WhatsApp para ver la posibilidad de ofrecerte este vehículo o uno similar.",
-        botonWhatsapp: "Sí, seguir por WhatsApp",
-      };
     // D-60: el copy no dice que no se puede — se puede, sólo que no lo cierra
     // la web sola. El sujeto de la limitación es el sitio, nunca el cliente ni
     // el negocio, y cierra prometiendo lo que la persona vino a buscar
     // (disponibilidad y precio).
+    //
+    // **`sin_cupo` era el único que rompía esa regla**: decía "esta categoría
+    // está completa para esas fechas", que es el negocio diciendo que no. El
+    // que lee eso ya cerró la pestaña — la invitación a escribir queda abajo
+    // de una puerta que el propio cartel acaba de cerrar. Y encima no es
+    // cierto: la unidad puede liberarse, puede haber una similar, o puede
+    // resolverse moviendo una hora. Nada de eso lo sabe el sitio.
+    case "sin_cupo":
+      return {
+        titulo: "Para esas fechas lo confirma un agente",
+        cuerpo: "El sitio no puede cerrar esta reserva solo, pero un agente puede: te busca este vehículo o uno similar para las fechas que elegiste. Escribinos y te confirma disponibilidad y precio en el momento — el mensaje ya te va con todos los datos.",
+        botonWhatsapp: "Consultar por WhatsApp",
+      };
     case "anticipacion":
       return {
         titulo: "Para esa fecha contactá a un agente",
@@ -270,7 +278,7 @@ function copiar(motivo: MotivoDerivacion, detalle?: string) {
 }
 
 export const SEGUIR_WEB_LABEL: Record<MotivoDerivacion, string> = {
-  sin_cupo: "Ver los que sí hay",
+  sin_cupo: "Ver otras opciones",
   anticipacion: "Elegir otras fechas",
   horizonte: "Elegir otras fechas",
   duracion: "Acortar el alquiler",

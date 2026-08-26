@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  CreditCard, Landmark, MessageCircle, ShieldCheck, Loader2, Car, User, MapPin,
+  CreditCard, Landmark, ShieldCheck, Loader2, Car, User, MapPin,
   Copy, Check, LifeBuoy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import type {
   ReservaPorTransferencia,
 } from "@/lib/types";
 import type { RangoBusqueda } from "./BuscadorRango";
+import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 
 /** D-30: el cliente elige cuánto adelanta, con un piso del 30%. */
 const BAJADAS: Record<number, string> = {
@@ -529,7 +530,7 @@ function TransferenciaPendiente({
             )
           }
         >
-          <MessageCircle className="h-4 w-4" /> Enviar el comprobante por WhatsApp
+          <IconoWhatsApp className="h-4 w-4" /> Enviar el comprobante por WhatsApp
         </Button>
         <p className="text-center text-xs text-muted-foreground">
           Mandalo al {formatearTelefono(b.whatsapp_comprobante)}. Te confirmamos

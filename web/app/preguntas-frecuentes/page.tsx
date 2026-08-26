@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { MessageCircle } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { EscaleraFaq } from "@/components/faq/EscaleraFaq";
@@ -8,6 +7,7 @@ import { PlazoFaq } from "@/components/faq/PlazoFaq";
 import { DescuentoPagoTotalFaq } from "@/components/faq/DescuentoPagoTotalFaq";
 import { FAQ, TODAS_LAS_PREGUNTAS } from "@/lib/faq";
 import { WHATSAPP_GENERAL } from "@/lib/constants";
+import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 
 export const metadata: Metadata = {
   title: "Preguntas frecuentes | Ubicar Rent",
@@ -129,7 +129,7 @@ export default function PreguntasFrecuentesPage() {
               rel="noopener noreferrer"
               className="mt-4 inline-flex items-center gap-2 rounded-md bg-[hsl(var(--ubicar-green))] px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
             >
-              <MessageCircle className="h-4 w-4" /> Escribinos por WhatsApp
+              <IconoWhatsApp className="h-4 w-4" /> Escribinos por WhatsApp
             </a>
           </div>
         </div>

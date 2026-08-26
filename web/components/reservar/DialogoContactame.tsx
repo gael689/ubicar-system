@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, X, MessageCircle } from "lucide-react";
+import { CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { solicitudContacto } from "@/lib/analitica";
@@ -9,6 +9,7 @@ import { fechaCorta } from "@/lib/api";
 import { whatsappLink } from "@/lib/contacto";
 import { cn } from "@/lib/utils";
 import type { MotivoSolicitud } from "@/lib/types";
+import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 
 interface Props {
   motivo: MotivoSolicitud;
@@ -137,7 +138,7 @@ export function DialogoContactame({
                 className="mt-5 block"
               >
                 <Button className="w-full gap-2">
-                  <MessageCircle className="h-4 w-4" /> Seguir por WhatsApp
+                  <IconoWhatsApp className="h-4 w-4" /> Seguir por WhatsApp
                 </Button>
               </a>
             )}

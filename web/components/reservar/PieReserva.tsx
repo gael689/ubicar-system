@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { MessageCircle, Mail, ShieldCheck, Clock, MapPin } from "lucide-react";
+import { Mail, ShieldCheck, Clock, MapPin } from "lucide-react";
 import { WHATSAPP_GENERAL, EMAIL } from "@/lib/constants";
+import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 
 /**
  * Pie del flujo de reserva.
@@ -61,7 +62,7 @@ export function PieReserva() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#1B3F6B] transition-colors hover:text-[#407EC9]"
             >
-              <MessageCircle className="h-4 w-4" /> WhatsApp
+              <IconoWhatsApp className="h-4 w-4" /> WhatsApp
             </a>
             <a
               href={EMAIL}

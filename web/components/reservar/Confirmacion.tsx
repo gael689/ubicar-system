@@ -3,11 +3,12 @@
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  CheckCircle2, Clock, XCircle, MessageCircle, IdCard, CreditCard, CalendarCheck,
+  CheckCircle2, Clock, XCircle, IdCard, CreditCard, CalendarCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WHATSAPP_GENERAL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 
 type Estado = "recibida" | "aprobado" | "pendiente" | "rechazado";
 
@@ -69,10 +70,6 @@ export function Confirmacion() {
               <ul className="space-y-2.5">
                 <Requisito icono={IdCard} texto="DNI y licencia de conducir vigente" />
                 <Requisito
-                  icono={CreditCard}
-                  texto="Tarjeta de crédito a tu nombre, para la garantía"
-                />
-                <Requisito
                   icono={CalendarCheck}
                   texto="Si hay conductor adicional, sus datos y su licencia"
                 />
@@ -83,7 +80,7 @@ export function Confirmacion() {
           <div className="mt-7 flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Button asChild variant={estado === "rechazado" ? "default" : "outline"}>
               <a href={WHATSAPP_GENERAL} target="_blank" rel="noopener noreferrer">
-                <MessageCircle className="h-4 w-4" /> Escribinos por WhatsApp
+                <IconoWhatsApp className="h-4 w-4" /> Escribinos por WhatsApp
               </a>
             </Button>
             <Button asChild variant={estado === "rechazado" ? "outline" : "default"}>
