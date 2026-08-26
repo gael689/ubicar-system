@@ -10,6 +10,17 @@ Uso:
     python -m scripts.reset_datos_operativos              # dry-run: sólo cuenta
     python -m scripts.reset_datos_operativos --confirmar   # borra de verdad
 
+**Contra producción se corre adentro del contenedor**, no desde acá: el proxy
+TCP de Railway (`DATABASE_PUBLIC_URL`) da timeout desde la máquina de Gael, así
+que ningún `DATABASE_URL` apuntando afuera llega. El camino que funciona sale
+por el API de Railway en 443:
+
+    railway ssh --service ubicar-system "cd /app && python -m scripts.reset_datos_operativos"
+
+Requiere, una sola vez: `railway ssh keys add --key ~/.ssh/id_ed25519.pub` y
+`ssh-keyscan ssh.railway.com >> ~/.ssh/known_hosts` (sin lo segundo el CLI
+corta con `Host key verification failed` y no explica por qué).
+
 **Dry-run por default a propósito.** Esto no es un script de demo (como
 `seed_demo_web.py`): toca la base real, en una sola pasada, sin vuelta atrás
 salvo restaurar un backup. `--confirmar` es la única forma de que borre algo.
@@ -20,10 +31,11 @@ Qué se borra — de hoja a raíz, en una sola transacción (§4.2):
   corriente, cuentas corrientes, echeqs, multas, gastos, presupuestos) ·
   operación (daños, fotos de daño, bloqueos de vehículo) · clientes (y
   conductores adicionales, contactos, tarjetas, documentos de cliente) ·
-  avisos (notificaciones, emails enviados) · estadística de demanda
-  insatisfecha · tarifas y tarifas_calendario (sólo tienen la tarifa
-  genérica de demo — migración 058; el aviso `categoria_precio_generico`
-  sigue sonando hasta que se cargue la real).
+  pedidos de que los llamen (`solicitudes_contacto`) · avisos
+  (notificaciones, emails enviados) · estadística de demanda insatisfecha ·
+  tarifas y tarifas_calendario, **salvo que se pase `--conservar-tarifas`**
+  (el aviso `categoria_precio_generico` sigue sonando hasta que se cargue la
+  tarifa real).
 
 Qué se conserva siempre: vehículos, categorías, usuarios, configuración,
 plantillas de contrato, descuentos por duración, fechas especiales,
@@ -37,6 +49,22 @@ flota, no de las pruebas — el plan recomienda **preguntar antes** (§5, punto
 4), así que acá es opt-in:
 
     python -m scripts.reset_datos_operativos --confirmar --incluir-servicios
+
+Y al revés, dos cosas que el default decide y que en la limpieza del
+21/08/2026 se decidieron distinto:
+
+    --conservar-tarifas    no toca `tarifas` ni `tarifas_calendario`. Los
+                           precios son lo único que el sistema no puede
+                           reconstruir solo, y sin ellos la web deja de vender
+                           en silencio (ver `_verificar_operabilidad`). Si los
+                           precios cargados son los de verdad, este flag es lo
+                           que hay que pasar.
+
+    --incluir-auditoria    vacía también el log de auditoría. Por default se
+                           conserva —es la prueba de que el sistema audita—
+                           pero cuando todo lo auditado fueron pruebas, el log
+                           es ruido y conviene que lo primero que aparezca sea
+                           trabajo real.
 
 Después de borrar, el script arregla las tres cosas que el borrado solo
 rompe (§4.3):
@@ -73,6 +101,12 @@ from app.models.usuario import AUTH_SUB_SISTEMA, Usuario
 # romperlos primero, cualquier orden lineal de DELETE choca contra una FK en
 # algún punto.
 TABLAS_EN_ORDEN = [
+    # Primera de la lista y no por orden alfabético: `solicitudes_contacto`
+    # apunta a categorías, a clientes y a reservas, así que borrarla antes que
+    # nada la saca del camino sin importar qué se toque después. Faltaba en
+    # esta lista hasta el 21/08/2026 — es la tabla de "que me llamen" de la
+    # web (D-61), o sea operación diaria pura, y la limpieza la dejaba viva.
+    "solicitudes_contacto",
     "fotos_danio",
     "danios",
     "reserva_adicionales",
@@ -109,13 +143,31 @@ TABLAS_EN_ORDEN = [
     "notificaciones",
     "emails_enviados",
     "busquedas_sin_resultado",
-    # Sólo tienen la tarifa genérica de demo (migración 058) — van después de
-    # `reservas`, que las referencia por `tarifa_aplicada_id`.
-    "tarifas_calendario",
-    "tarifas",
 ]
 
+# Los precios. Van al final y **aparte**, detrás de `--conservar-tarifas`: son
+# lo único de esta limpieza que no se puede reconstruir mirando el sistema, y
+# borrarlos rompe la venta sin dar error. Cuando se borran, van después de
+# `reservas`, que las referencia por `tarifa_aplicada_id`.
+TABLAS_TARIFAS = ["tarifas_calendario", "tarifas"]
+
+# El log de auditoría, detrás de `--incluir-auditoria`. Último de todos: sólo
+# referencia `usuarios`, que se conserva, así que no condiciona a nadie.
+TABLA_AUDITORIA = "auditoria"
+
 TABLA_SERVICIOS = "servicios"
+
+
+def tablas_a_borrar(conservar_tarifas: bool, incluir_auditoria: bool) -> list[str]:
+    """La secuencia final, ya resueltos los flags. Una sola fuente de verdad
+    entre lo que el dry-run cuenta y lo que el borrado ejecuta: cuando eran dos
+    listas separadas, el dry-run mentía apenas alguien tocaba una sola."""
+    tablas = list(TABLAS_EN_ORDEN)
+    if not conservar_tarifas:
+        tablas += TABLAS_TARIFAS
+    if incluir_auditoria:
+        tablas.append(TABLA_AUDITORIA)
+    return tablas
 
 
 def _romper_ciclos(db: Session) -> None:
@@ -167,11 +219,12 @@ def _nombre_tabla(entrada: str) -> str:
     return entrada.split(" WHERE ")[0]
 
 
-def dry_run(db: Session, incluir_servicios: bool) -> None:
+def dry_run(db: Session, incluir_servicios: bool, conservar_tarifas: bool,
+            incluir_auditoria: bool) -> None:
     print(f"DRY-RUN contra: {engine.url.render_as_string(hide_password=True)}\n")
     print("No se borra nada. Para borrar de verdad: --confirmar\n")
     total = 0
-    for entrada in TABLAS_EN_ORDEN:
+    for entrada in tablas_a_borrar(conservar_tarifas, incluir_auditoria):
         n = _contar(db, entrada)
         total += n
         print(f"  {_nombre_tabla(entrada):32} {n:>6} fila(s)")
@@ -183,6 +236,14 @@ def dry_run(db: Session, incluir_servicios: bool) -> None:
         n = _contar(db, TABLA_SERVICIOS)
         print(f"  {TABLA_SERVICIOS:32} {n:>6} fila(s)  (NO se toca, pasa --incluir-servicios)")
 
+    if conservar_tarifas:
+        for t in TABLAS_TARIFAS:
+            n = _contar(db, t)
+            print(f"  {t:32} {n:>6} fila(s)  (SE CONSERVA, --conservar-tarifas)")
+    if not incluir_auditoria:
+        n = _contar(db, TABLA_AUDITORIA)
+        print(f"  {TABLA_AUDITORIA:32} {n:>6} fila(s)  (NO se toca, pasa --incluir-auditoria)")
+
     n_vehiculos = db.execute(text(
         "SELECT COUNT(*) FROM vehiculos WHERE estado IN ('alquilado','reservado','en_transicion')"
     )).scalar() or 0
@@ -190,12 +251,13 @@ def dry_run(db: Session, incluir_servicios: bool) -> None:
     print(f"\nTotal de filas a borrar: {total}")
 
 
-def limpiar(db: Session, incluir_servicios: bool) -> int:
+def limpiar(db: Session, incluir_servicios: bool, conservar_tarifas: bool,
+            incluir_auditoria: bool) -> int:
     print(f"Limpiando contra: {engine.url.render_as_string(hide_password=True)}\n")
 
     _romper_ciclos(db)
 
-    for entrada in TABLAS_EN_ORDEN:
+    for entrada in tablas_a_borrar(conservar_tarifas, incluir_auditoria):
         n = db.execute(text(f"DELETE FROM {entrada}")).rowcount
         print(f"  {_nombre_tabla(entrada):32} {n:>6} borrada(s)")
 
@@ -341,18 +403,31 @@ def _resetear_vehiculos(db: Session) -> None:
 def main() -> None:
     confirmar = "--confirmar" in sys.argv
     incluir_servicios = "--incluir-servicios" in sys.argv
+    conservar_tarifas = "--conservar-tarifas" in sys.argv
+    incluir_auditoria = "--incluir-auditoria" in sys.argv
+
+    # Un flag mal escrito no puede pasar por "no lo pediste": `--conservar-tarifa`
+    # en singular borraría los precios en silencio, que es exactamente el
+    # accidente que este script ya tuvo una vez.
+    conocidos = {"--confirmar", "--incluir-servicios", "--conservar-tarifas",
+                 "--incluir-auditoria"}
+    desconocidos = [a for a in sys.argv[1:] if a not in conocidos]
+    if desconocidos:
+        print(f"Flag desconocido: {' '.join(desconocidos)}")
+        print(f"Los que existen: {' '.join(sorted(conocidos))}")
+        sys.exit(2)
 
     db = SessionLocal()
     try:
         if confirmar:
-            problemas = limpiar(db, incluir_servicios)
+            problemas = limpiar(db, incluir_servicios, conservar_tarifas, incluir_auditoria)
             # Código de salida distinto de cero si la base quedó sin poder
             # vender: es lo que hace que un deploy automatizado se frene en vez
             # de seguir contento hasta que un cliente no pueda reservar.
             if problemas:
                 sys.exit(1)
         else:
-            dry_run(db, incluir_servicios)
+            dry_run(db, incluir_servicios, conservar_tarifas, incluir_auditoria)
     except Exception:
         db.rollback()
         raise

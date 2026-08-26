@@ -17,9 +17,21 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
-# Tests y utilidades: no se ejecutan en produccion
+# Tests: no se ejecutan en produccion
 tests/
-scripts/
+
+# Los scripts SI viajan. Estaban excluidos enteros hasta el 21/08/2026, y el
+# dia que hubo que limpiar la base real no habia con que: el contenedor tiene
+# `app/` y nada mas, `python -m scripts.reset_datos_operativos` muere con
+# `No module named 'scripts'`, y la unica salida fue mandar el script por
+# stdin en base64 a traves de `railway ssh`. Son herramientas de
+# mantenimiento: su lugar es al lado de la base que mantienen.
+#
+# Menos los seeders, que cargan datos de demo. Un `seed_demo_web.py` a mano en
+# produccion ensucia la base real con la flota inventada, y no hay ninguna
+# razon para tenerlo a tiro.
+scripts/seed.py
+scripts/seed_demo_web.py
 
 # Bases y archivos locales
 *.db

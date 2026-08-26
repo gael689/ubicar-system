@@ -122,3 +122,6 @@ web/hero*.png
 # comparte a mano; el repo queda con el codigo y nada mas.
 docs/
 frontend/VERCEL.md
+
+# Backups de la base: datos reales de clientes, nunca al repo.
+backend/backups/
