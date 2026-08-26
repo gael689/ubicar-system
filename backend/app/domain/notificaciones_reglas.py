@@ -1437,11 +1437,11 @@ def datos_empresa_sin_cargar(db: Session, hoy: date) -> list[dict]:
 
 # ── Catálogo completo ────────────────────────────────────────────────────────
 
-# El texto que deja el alta rápida en los campos que no se cargaron. Es una
-# constante y no un literal suelto porque lo escribe el frontend y lo busca
-# esta regla: si cambia de un lado y no del otro, la campana deja de reclamar
-# y nadie se entera.
-MARCA_PENDIENTE = "A COMPLETAR"
+# El texto que deja el alta rápida en los campos que no se cargaron. Vive en
+# `domain/enums.py` porque también lo necesita `ClienteService`, que tiene que
+# saber que no es un DNI. Se reexporta acá para no romper lo que ya la importa
+# desde este módulo.
+from app.domain.enums import MARCA_PENDIENTE  # noqa: E402
 
 
 def cliente_sin_completar(db: Session, hoy: date) -> list[dict]:

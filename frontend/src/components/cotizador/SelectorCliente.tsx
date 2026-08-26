@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
+import { extractError } from '@/lib/utils';
 import type { Cliente } from '@/types';
 
 export interface ClienteElegido {
@@ -131,8 +132,9 @@ export function SelectorCliente({ valor, onCambiar }: Props) {
       onCambiar({ ...valor, id: creado.id });
       setCreando(false);
       toast.success('Cliente creado. Completá DNI y teléfono en su ficha.');
-    } catch {
-      toast.error('No pudimos crear el cliente. Probá desde la pantalla de Clientes.');
+    } catch (err) {
+      // El motivo real, no un "no pudimos": es lo único que dice qué hacer.
+      toast.error(extractError(err) || 'No pudimos crear el cliente. Probá desde la pantalla de Clientes.');
     } finally {
       setGuardando(false);
     }

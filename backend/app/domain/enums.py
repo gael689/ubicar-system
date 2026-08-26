@@ -5,6 +5,17 @@ Sin dependencias externas — importables desde cualquier capa.
 from enum import Enum
 
 
+# El texto que deja el alta rápida en los campos que todavía no se cargaron.
+#
+# **No es un valor: es la ausencia de uno.** Lo escribe el formulario de
+# reserva, lo busca la campana `cliente_sin_completar` para reclamarlo, y
+# `ClienteService` tiene que saber que NO es un DNI —dos clientes con el DNI sin
+# cargar no son un duplicado—. Tres módulos de tres capas distintas: por eso
+# vive acá, que es el único lugar que los tres pueden importar sin arrastrar
+# nada.
+MARCA_PENDIENTE = "A COMPLETAR"
+
+
 class EstadoVehiculo(str, Enum):
     DISPONIBLE = "disponible"
     ALQUILADO = "alquilado"

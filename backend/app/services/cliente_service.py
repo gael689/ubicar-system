@@ -1,8 +1,27 @@
 from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
+from app.domain.enums import MARCA_PENDIENTE
 from app.models.cliente import Cliente, ConductorAdicional, ClienteContacto
 from app.repositories.cliente_repo import ClienteRepository
 from app.schemas.cliente import ClienteCreate, ClienteUpdate, ConductorAdicionalCreate, ClienteContactoCreate
+
+
+def _es_dni_real(dni: str | None) -> bool:
+    """
+    Si este valor es un documento contra el que tiene sentido buscar duplicados.
+
+    **`A COMPLETAR` no es un DNI: es la ausencia de uno**, y lo mismo un campo
+    vacío. Tratarlos como documentos rompía el alta rápida del mostrador: la
+    primera funcionaba y la segunda moría con *"Ya existe un cliente con el
+    DNI/CUIT A COMPLETAR"*, porque el marcador que deja el formulario es
+    siempre el mismo. Dos fichas sin documento cargado no son un duplicado.
+
+    El marcador se conserva tal cual —no se guarda vacío— porque es lo que hace
+    que la campana `cliente_sin_completar` las siga reclamando hasta que
+    alguien las complete. Sin DNI no se puede emitir un contrato, y eso se
+    descubre el día de la entrega si nadie avisa antes.
+    """
+    return bool(dni) and dni.strip() != MARCA_PENDIENTE
 
 
 class ClienteService:
@@ -26,10 +45,11 @@ class ClienteService:
         return cliente
 
     def create(self, data: ClienteCreate, usuario_id: int | None = None) -> Cliente:
-        # Validar DNI único
-        if self.repo.get_by_dni(data.dni_cuit):
+        # Validar DNI único — sólo si hay un DNI.
+        if _es_dni_real(data.dni_cuit) and self.repo.get_by_dni(data.dni_cuit):
             raise ConflictError(f"Ya existe un cliente con el DNI/CUIT {data.dni_cuit}")
-            
+
+
         # Migración 077: todo lo que entra por acá es del mostrador — este
         # service sólo lo alcanza alguien autenticado. El alta web tiene su
         # propio camino (`PagoWebService`) y se marca `web` allá.
@@ -41,9 +61,10 @@ class ClienteService:
 
         update_data = data.model_dump(exclude_none=True)
 
-        # Validar DNI/CUIT único si lo están cambiando
+        # Validar DNI/CUIT único si lo están cambiando. Volver a poner el
+        # marcador de pendiente —o dejarlo— no es cambiar a un DNI ocupado.
         nuevo_dni = update_data.get("dni_cuit")
-        if nuevo_dni and nuevo_dni != cliente.dni_cuit:
+        if _es_dni_real(nuevo_dni) and nuevo_dni != cliente.dni_cuit:
             existente = self.repo.get_by_dni(nuevo_dni)
             if existente and existente.id != cliente.id:
                 raise ConflictError(f"Ya existe un cliente con el DNI/CUIT {nuevo_dni}")
