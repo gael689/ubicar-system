@@ -118,6 +118,39 @@ class TestLoQueSeOfrecioYSeRechazo:
         assert "Super Top Cover" in bloque["rechazadas"]
 
 
+class TestSoloLaIncluidaNoSeOfrece:
+    """
+    La 085 renombró la cobertura del +10 % a "Top Cover" sin tocar `incluido`,
+    que en producción venía en `true`. `incluido` saca la cobertura de la lista
+    de rechazadas del contrato, así que un cliente que decía que no a Top Cover
+    firmaba un papel **sin constancia de que se le ofreció** — la línea que se
+    mira cuando alguien choca y sostiene que nunca le ofrecieron nada.
+
+    El precio seguía bien, que es lo que lo hacía difícil de ver.
+    """
+
+    def test_top_cover_rechazada_figura_en_el_contrato(self, db, catalogo, armar):
+        bloque = ContratoService(db)._bloque_coberturas(armar(catalogo["super_top"]))
+        assert "Top Cover" in bloque["rechazadas"]
+
+    def test_una_cobertura_incluida_no_puede_bajar_la_franquicia(self, db, catalogo):
+        """
+        Las dos cosas a la vez no significan nada: la incluida ES la base. Es
+        la validación que hubiera atajado el error antes de que llegara a un
+        contrato firmado.
+        """
+        from app.routers.adicionales import _validar_franquicia
+        from fastapi import HTTPException
+
+        top = catalogo["top"]
+        top.incluido = True
+        db.flush()
+
+        with pytest.raises(HTTPException) as e:
+            _validar_franquicia(db, top)
+        assert e.value.status_code == 422
+
+
 class TestLaFranquiciaNoEsUnCargo:
     def test_no_baja_de_500000_ni_con_la_mas_cara(self, db, catalogo, armar):
         """

@@ -60,7 +60,32 @@ def _validar_franquicia(db: Session, a: Adicional) -> None:
        una unidad de precio compatible (ver `_precio_comparable`): mezclar
        porcentaje con monto fijo no da una comparación real.
     """
-    if a.grupo != "cobertura" or a.franquicia_descuento is None:
+    if a.grupo != "cobertura":
+        return
+
+    # **Una cobertura incluida no descuenta nada: ES la base.**
+    #
+    # Mid Cover viene en el canon y deja la franquicia base de la categoría;
+    # las que bajan la franquicia se contratan aparte y se cobran. Las dos
+    # cosas a la vez no significan nada — y el estado existió en producción:
+    # la migración 085 renombró la cobertura del +10 % a "Top Cover" sin tocar
+    # `incluido`, que venía en `true`.
+    #
+    # Lo que rompía no era el precio sino el contrato: `incluido` saca la
+    # cobertura de la lista de rechazadas, así que un cliente que decía que no
+    # a Top Cover firmaba un papel que no dejaba constancia de que se le
+    # ofreció. La 087 arregló los datos; esto impide volver a cargarlo así.
+    if a.incluido and a.franquicia_descuento is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Una cobertura incluida en el precio no puede además bajar la "
+                "franquicia: la incluida es la que deja la franquicia base. "
+                "Sacale el descuento, o destildá 'incluido' si se cobra aparte."
+            ),
+        )
+
+    if a.franquicia_descuento is None:
         return
 
     from app.domain.franquicia import FRANQUICIA_MINIMA
