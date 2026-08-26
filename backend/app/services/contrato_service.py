@@ -53,9 +53,28 @@ class ContratoService:
 
     def plantilla_vigente(self) -> ContratoPlantilla:
         """
-        La versión activa del clausulado. Si no hay ninguna, siembra la v1
-        desde `domain/contrato_clausulado.py` — así el módulo funciona desde
-        el primer arranque sin que nadie tenga que cargar 13 cláusulas a mano.
+        La versión activa del clausulado.
+
+        Si no hay ninguna, siembra la del código desde
+        `domain/contrato_clausulado.py` — así el módulo funciona desde el primer
+        arranque sin que nadie tenga que cargar 13 cláusulas a mano.
+
+        **Y si el código trae una versión más nueva que la activa, la publica.**
+        El clausulado vive versionado en la base porque un contrato firmado
+        tiene que reimprimirse como se firmó; pero el texto *nuevo* se escribe
+        en el código y se revisa en un commit, no pegándolo en un formulario.
+        Sin este paso habría que acordarse de publicarlo a mano después de cada
+        deploy, y el día que alguien se olvide los contratos se siguen firmando
+        con el texto viejo **sin que nada avise** — que es la clase de error que
+        recién se descubre cuando hay un reclamo.
+
+        Publicar no pisa nada: `nueva_version` desactiva la anterior y la deja
+        entera para los contratos que la usaron.
+
+        Las versiones publicadas **a mano** desde el ABM (`POST
+        /contratos/plantillas`) quedan por encima del número del código, así que
+        no se las pisa: si alguien publicó una v5 corrigiendo una coma con
+        urgencia, un deploy con `VERSION = 2` no se la vuelve atrás.
         """
         vigente = (
             self.db.query(ContratoPlantilla)
@@ -63,11 +82,19 @@ class ContratoService:
             .order_by(ContratoPlantilla.version.desc())
             .first()
         )
-        if vigente:
+        if vigente and vigente.version >= contrato_clausulado.VERSION:
             return vigente
 
+        if vigente:
+            return self.nueva_version(
+                titulo=contrato_clausulado.TITULO,
+                clausulas=contrato_clausulado.CLAUSULAS,
+                usuario_id=None,
+                version=contrato_clausulado.VERSION,
+            )
+
         plantilla = ContratoPlantilla(
-            version=1,
+            version=contrato_clausulado.VERSION,
             titulo=contrato_clausulado.TITULO,
             clausulas=contrato_clausulado.CLAUSULAS,
             vigente_desde=date.today(),
@@ -77,10 +104,23 @@ class ContratoService:
         self.db.flush()
         return plantilla
 
-    def nueva_version(self, titulo: str, clausulas: list, usuario_id: int | None) -> ContratoPlantilla:
+    def nueva_version(
+        self,
+        titulo: str,
+        clausulas: list,
+        usuario_id: int | None,
+        version: int | None = None,
+    ) -> ContratoPlantilla:
         """
         Publica una versión nueva del clausulado. **Nunca edita la anterior**:
         los contratos ya firmados siguen apuntando a la suya.
+
+        `version` explícita la usa `plantilla_vigente` para publicar la del
+        código con su propio número. Sin eso, sembrar la v2 del código sobre una
+        base que ya tiene la v1 la publicaría como "v2" por casualidad —y sobre
+        una que tuviera una v2 hecha a mano, como v3, dejando dos textos
+        distintos con el mismo nombre en dos bases. El número del clausulado es
+        parte del clausulado, no un contador.
         """
         ultima = (
             self.db.query(ContratoPlantilla)
@@ -92,7 +132,7 @@ class ContratoService:
         ).update({"activa": False})
 
         plantilla = ContratoPlantilla(
-            version=(ultima.version + 1) if ultima else 1,
+            version=version if version is not None else ((ultima.version + 1) if ultima else 1),
             titulo=titulo,
             clausulas=clausulas,
             vigente_desde=date.today(),
@@ -342,6 +382,18 @@ class ContratoService:
         contratadas = [
             {
                 "nombre": a.nombre,
+                # La marca de nota al pie (`*`, `**`, `***`) que une este
+                # nombre con su definición en la cláusula 5.
+                #
+                # **Se congela acá y no se deriva al imprimir.** Si mañana se
+                # publica un clausulado que numera distinto las coberturas, la
+                # reimpresión de un contrato viejo tiene que seguir mostrando
+                # el asterisco que llevaba a *su* cláusula. Derivarlo en el
+                # generador haría que el anverso de un contrato firmado apunte
+                # a una cláusula que ese contrato no tiene.
+                "marca": contrato_clausulado.marca_cobertura(
+                    a.adicional.codigo if a.adicional else None
+                ),
                 # Cuánto baja esta cobertura en particular. Sirve para explicar
                 # el número de abajo, que es el que importa.
                 "descuento": (
@@ -353,10 +405,18 @@ class ContratoService:
         ]
         ids_contratadas = {a.adicional_id for a in r.adicionales}
 
+        # **Las coberturas incluidas no se ofrecen ni se rechazan: vienen.**
+        # Listar "no desea contratar Mid Cover" en un contrato donde Mid Cover
+        # está incluida en el precio es una contradicción escrita, y es la
+        # línea que un cliente usa para discutir que no tenía nada.
         no_contratadas = [
             a.nombre
             for a in self.db.query(Adicional)
-            .filter(Adicional.activo.is_(True), Adicional.grupo == "cobertura")
+            .filter(
+                Adicional.activo.is_(True),
+                Adicional.grupo == "cobertura",
+                Adicional.incluido.is_(False),
+            )
             .all()
             if a.id not in ids_contratadas
         ]

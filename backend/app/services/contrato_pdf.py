@@ -338,8 +338,21 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
     if cargos.get("incluye_kilometraje"):
         c.drawString(izq, y, "El precio incluye kilometraje libre.")
         y -= 3.6 * mm
+
+    # Las dos líneas que van siempre, como en el contrato modelo: lo que el
+    # canon incluye pase lo que pase. **La exención y el seguro son cosas
+    # distintas y por eso son dos líneas**: el seguro cubre a terceros, la
+    # exención limita lo que se le puede reclamar al CLIENTE por el Vehículo.
+    # Juntarlas en una sola línea es lo que hace que alguien entienda "estoy
+    # cubierto".
+    c.drawString(izq, y, "Exención por Daños (LDW)")
+    y -= 3.6 * mm
+    c.drawString(izq, y, "Seguro a terceros")
+    y -= 3.6 * mm
+
     for contratada in cob.get("contratadas", []):
-        txt = f"Cobertura contratada: {contratada['nombre']}"
+        # El asterisco viene congelado del snapshot y remite a la cláusula 5.
+        txt = f"Cobertura contratada: {contratada['nombre']}{contratada.get('marca') or ''}"
         # **Se imprime cuánto BAJA, no cuánto queda** (migración 084).
         #
         # El número que queda es uno solo para toda la operación y va abajo, en
@@ -381,7 +394,12 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
     franquicia_final = cob.get("franquicia")
     c.setFont("Helvetica-Bold", 9)
     if franquicia_final is not None:
-        c.drawString(izq, y, f"SEGURO CON FRANQUICIA DE $ {_money(franquicia_final)}")
+        # **La franquicia no entra en el total y no es un cargo.** Es lo que el
+        # CLIENTE pone si rompe el auto, no lo que paga hoy: por eso se imprime
+        # acá abajo, fuera de la tabla de cargos y después del Valor Estimado,
+        # igual que en el contrato modelo. Meterla como una línea más de la
+        # tabla la sumaría al alquiler, que es exactamente lo que no es.
+        c.drawString(izq, y, f"FRANQUICIA: $ {_money(franquicia_final)} (responsabilidad del cliente)")
         y -= 8 * mm
 
     # ── Aceptación y firma ────────────────────────────────────────────────

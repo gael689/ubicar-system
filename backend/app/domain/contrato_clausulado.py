@@ -1,5 +1,5 @@
 """
-Clausulado del contrato de alquiler — versión 1.
+Clausulado del contrato de alquiler — versión 2.
 
 **Esto es el contenido de la plantilla v1, no la fuente de verdad en runtime.**
 Se carga una vez a `contrato_plantillas` (ver `ContratoService.asegurar_plantilla`)
@@ -15,11 +15,12 @@ o inaplicables:
 1. `{{LOCADOR}}` reemplaza al nombre de la persona física del original. Es un
    placeholder y no un literal para que cambiar de persona física a sociedad
    sea un valor de configuración, no reescribir 13 cláusulas.
-2. Los productos de cobertura de la otra empresa (Top Cover, Super Top Cover,
-   LDW, Protección Ruedas y Vidrios) **no se nombran**: Ubicar no los vende, y
-   mencionarlos deja que un cliente reclame una cobertura inexistente. La
-   cláusula 5 remite a "la cobertura contratada, si la hubiere", que es lo que
-   el anverso detalla con los adicionales reales.
+2. ~~Los productos de cobertura no se nombran.~~ **Revertido en la v2.**
+   Cuando se escribió la v1, Ubicar no vendía coberturas con nombre y
+   mencionarlas habría dejado reclamar una que no existía. Ahora sí las vende:
+   Mid Cover, Top Cover y Super Top Cover. La cláusula 5 las nombra y las
+   define, y el anverso las referencia con los mismos asteriscos —que es lo
+   que hace que un asterisco en el anverso lleve a algún lado.
 3. Jurisdicción: **Bahía Blanca**, no Capital Federal (cláusula 13).
 4. El pie fiscal es de Ubicar; se resuelve desde `configuracion`.
 5. La numeración rota de la cláusula 12 (un "4." huérfano) se corrige: pasa a
@@ -29,6 +30,22 @@ o inaplicables:
    existe en Ubicar: la obligación se reformula como comunicación por escrito
    por los medios de contacto (D-C5).
 
+**Qué cambió en la v2 (agosto 2026).** Todo en la cláusula 5:
+
+a. **Se nombran las tres coberturas** con sus marcas de nota al pie —
+   `Mid Cover*`, `Top Cover**`, `Super Top Cover***`— y se las define. El
+   anverso imprime el mismo asterisco al lado de la contratada.
+b. **El escalón de vuelco/airbag de Super Top Cover**, que la v1 no tenía: la
+   franquicia se cuadriplica y Top Cover no aplica, pero con Super Top Cover
+   el cliente pone el 75 % de esa franquicia cuadriplicada.
+c. **Ruedas y vidrios, explícito**: contratar cualquiera de las tres las
+   excluye, y existe "Protección Ruedas y Vidrios" aparte.
+d. **No se copia "Reducción de la Franquicia a CERO"** del contrato modelo.
+   Sería falso: `domain/franquicia.py::FRANQUICIA_MINIMA` no deja bajar de
+   $500.000, y ninguna cobertura de Ubicar lleva la franquicia a cero.
+   Por lo mismo tampoco se copia "Cobertura a todo riesgo" — no existe la
+   cobertura total, y el papel no puede sugerir que sí.
+
 Los `subrayados` son pares [inicio, fin] de índices sobre el texto del párrafo.
 Marcan los pasajes de exención de responsabilidad y penalidades que en el
 original van subrayados — que estén marcados es parte de la validez.
@@ -36,12 +53,73 @@ original van subrayados — que estén marcados es parte de la validez.
 
 TITULO = "CLÁUSULAS, CONDICIONES Y NORMAS DE UTILIZACIÓN DEL VEHÍCULO"
 
+# **La versión del clausulado que contiene este módulo.**
+#
+# `ContratoService.plantilla_vigente()` la compara con la que está activa en
+# `contrato_plantillas` y publica una nueva si el código quedó adelante. Sin
+# este número habría que acordarse de publicar la versión a mano después de
+# cada deploy, y el día que alguien se olvide los contratos se siguen firmando
+# con el texto viejo sin que nada avise.
+VERSION = 2
+
 # Marcador que el generador reemplaza por `empresa.locador_nombre`.
 LOCADOR = "{{LOCADOR}}"
 
 
+# ─── Las marcas de nota al pie de las coberturas ──────────────────────────────
+#
+# El anverso imprime `Top Cover**` y la cláusula 5 define `Top Cover**`. Ese
+# asterisco es todo el mecanismo: el cliente lee un nombre arriba y sabe dónde
+# buscar qué significa.
+#
+# **Va acá y no en la tabla `adicionales` a propósito.** El asterisco no es un
+# dato del producto —en la web "Top Cover**" se leería como un error de
+# tipeo—, es una referencia interna a *este* texto. Vive con el texto que
+# referencia, y se versiona con él.
+#
+# La clave es el `codigo` del adicional, que es estable y único; el `nombre` lo
+# pueden editar desde el ABM. Si alguien carga una cobertura con otro código,
+# `marca_cobertura` devuelve cadena vacía: el nombre se imprime sin asterisco,
+# que es lo correcto —un asterisco que no lleva a ninguna cláusula es peor que
+# ningún asterisco.
+MARCAS_COBERTURA: dict[str, str] = {
+    "cobertura_mid": "*",
+    "cobertura_top": "**",
+    "cobertura_super_top": "***",
+}
+
+
+def marca_cobertura(codigo: str | None) -> str:
+    """La marca de nota al pie de una cobertura, o `""` si no tiene."""
+    return MARCAS_COBERTURA.get(codigo or "", "")
+
+
 def _p(texto: str, subrayados: list[list[int]] | None = None) -> dict:
     return {"texto": texto, "subrayados": subrayados or []}
+
+
+def _ps(texto: str, *frases: str) -> dict:
+    """
+    Igual que `_p`, pero los subrayados se dan **por la frase a subrayar** en
+    vez de por índices.
+
+    Los índices a mano son imposibles de mantener: corregir una coma cinco
+    palabras antes corre todo el rango, y el error no se ve hasta que alguien
+    mira un PDF y encuentra un subrayado que empieza a mitad de una palabra.
+    Eso ya pasó acá.
+
+    Falla al importar si la frase no está en el texto. Es a propósito: un
+    subrayado que no engancha es un pasaje de exención de responsabilidad que
+    dejó de estar marcado, y eso es parte de la validez del documento — mejor
+    que no arranque a que salga un contrato mal marcado.
+    """
+    subrayados: list[list[int]] = []
+    for frase in frases:
+        inicio = texto.find(frase)
+        if inicio < 0:
+            raise ValueError(f"El subrayado {frase[:40]!r} no está en el párrafo")
+        subrayados.append([inicio, inicio + len(frase)])
+    return {"texto": texto, "subrayados": subrayados}
 
 
 CLAUSULAS: list[dict] = [
@@ -194,23 +272,50 @@ CLAUSULAS: list[dict] = [
                 "responsable por la totalidad de las infracciones a leyes y/o reglamentaciones "
                 "de tránsito nacionales, provinciales y/o municipales."
             ),
-            _p(
+            _ps(
                 "Asimismo, y en particular, el CLIENTE es responsable por la totalidad de los "
                 "daños que sufra el vehículo alquilado en caso de accidentes que ocurran en "
                 "caminos vecinales y en caminos de ripio y/o tierra a más de 50 km por hora, no "
                 "resultando de aplicación en estos supuestos la franquicia. En caso de VUELCO "
                 "y/o rotura de airbags del vehículo alquilado, el monto de la franquicia se "
-                "cuadriplica en forma automática, no resultando aplicable en ese supuesto "
-                "ninguna cobertura adicional que se hubiere contratado.",
-                [[0, 260]],
+                "cuadriplica en forma automática, no resultando de aplicación en este supuesto "
+                "la cobertura adicional Top Cover**. Para Super Top Cover***, el valor a cargo "
+                "del CLIENTE por VUELCO y/o rotura de airbag es el 75 % del valor de la "
+                "franquicia cuadriplicada.",
+                "el CLIENTE es responsable por la totalidad de los daños que sufra el vehículo "
+                "alquilado en caso de accidentes que ocurran en caminos vecinales y en caminos "
+                "de ripio y/o tierra a más de 50 km por hora, no resultando de aplicación en "
+                "estos supuestos la franquicia",
+                "el monto de la franquicia se cuadriplica en forma automática",
+            ),
+            _ps(
+                "La cobertura contratada es la que se detalla en el anverso del presente con su "
+                "franquicia correspondiente. Las opciones de limitación de responsabilidad que "
+                f"ofrece {LOCADOR} son tres: (*) Mid Cover — Exención por Daños (LDW), incluida "
+                "en el canon locativo, que deja a cargo del CLIENTE la franquicia base de la "
+                "categoría del Vehículo; (**) Top Cover, cobertura adicional que reduce esa "
+                "franquicia en el monto indicado en el anverso; y (***) Super Top Cover, "
+                "cobertura adicional que la reduce en el monto mayor indicado en el anverso. "
+                "Ninguna de las tres reduce la franquicia a cero: cualquiera sea la contratada, "
+                "el CLIENTE conserva la responsabilidad por el monto de franquicia que consta "
+                "en el anverso.",
+                # Se subraya que la franquicia nunca es cero. Es exactamente lo
+                # que un cliente cree haber comprado cuando paga el escalón más
+                # caro, y el reclamo empieza ahí.
+                "Ninguna de las tres reduce la franquicia a cero",
+            ),
+            _ps(
+                "Mediante la contratación de cualquiera de las opciones de limitación de "
+                "responsabilidad (Seguro de Responsabilidad Civil, Robo, Incendio y Daños / "
+                "LDW: Mid Cover*, Top Cover** y/o Super Top Cover***) queda excluida la "
+                "cobertura de \"Ruedas y Vidrios\", ya que el CLIENTE conoce que para estos "
+                "últimos existe la opción de \"Protección Ruedas y Vidrios\", que se contrata "
+                "por separado y, de haberse contratado, se detalla en el anverso.",
+                "queda excluida la cobertura de \"Ruedas y Vidrios\"",
             ),
             _p(
-                "La cobertura contratada, si la hubiere, es la que se detalla en el anverso del "
-                "presente con su franquicia correspondiente. Toda contratación de una opción de "
-                "limitación de responsabilidad excluye la cobertura de ruedas y vidrios, salvo "
-                "que se haya contratado expresamente una protección específica para ellos. "
-                "Tampoco se encuentra incluido en ninguna cobertura el daño que pudiera "
-                "ocasionar al vehículo la o las mascotas transportadas."
+                "Asimismo, no está incluido en Mid Cover*, Top Cover** ni Super Top Cover*** "
+                "cualquier daño que pueda ocasionar al Vehículo la o las mascotas transportadas."
             ),
         ],
     },
