@@ -27,6 +27,20 @@ export interface Pregunta {
   respuesta: string[];
   /** Marca la pregunta cuya respuesta lleva la escalera de precios en vivo. */
   conEscalera?: boolean;
+  /**
+   * Marca la pregunta cuya respuesta lleva el plazo de anticipación en vivo.
+   * Mismo criterio que `conEscalera`: el número sale de `/public/config`.
+   */
+  conPlazo?: boolean;
+  /**
+   * Se muestra en el bloque de preguntas de la portada.
+   *
+   * La marca vive acá y no como una lista de ids en el componente: la portada
+   * no tiene por qué saber cuáles son las preguntas que más frenan una
+   * reserva, y una lista de ids en otro archivo se desincroniza el día que se
+   * renombra una.
+   */
+  destacada?: boolean;
 }
 
 export interface GrupoFaq {
@@ -42,9 +56,18 @@ export const FAQ: GrupoFaq[] = [
         id: "anticipacion",
         pregunta: "¿Con cuánta anticipación tengo que reservar?",
         respuesta: [
-          "Las reservas por el sitio se toman con un mínimo de 24 horas de anticipación.",
-          "Si lo necesitás para hoy o para mañana temprano, escribinos por WhatsApp y lo coordinamos a mano: casi siempre se puede.",
+          // **El plazo NO se escribe acá.** Decía "24 horas" y el sistema
+          // rechaza por debajo de `web.anticipacion_minima_horas`, que es
+          // configurable y hoy vale 240 (10 días): la FAQ prometía diez veces
+          // menos de lo que el buscador acepta, y el visitante se enteraba
+          // recién cuando el formulario le rebotaba las fechas. Mismo criterio
+          // que los porcentajes de descuento — el texto explica el mecanismo,
+          // el número lo trae `PlazoFaq` de `/public/config`.
+          "Las reservas por el sitio se toman con una anticipación mínima, que ves debajo.",
+          "Si lo necesitás para antes, escribinos por WhatsApp y lo coordinamos a mano: casi siempre se puede.",
         ],
+        conPlazo: true,
+        destacada: true,
       },
       {
         id: "cuanto-adelanto",
@@ -53,6 +76,7 @@ export const FAQ: GrupoFaq[] = [
           "Elegís cuánto adelantar: el 30%, el 50% o el 100% del total. El mínimo para que la reserva quede tomada es el 30%.",
           "El saldo se abona al retirar el vehículo.",
         ],
+        destacada: true,
       },
       {
         id: "que-auto",
@@ -70,6 +94,7 @@ export const FAQ: GrupoFaq[] = [
           "La única excepción es que el que no pueda cumplir seamos nosotros. En ese caso te ofrecemos otro vehículo sin costo adicional o te devolvemos el 100% de lo abonado.",
           "Cambiar fechas, horarios o el lugar de devolución hay que avisarlo con anticipación: puede generar cargos o no ser posible según la disponibilidad.",
         ],
+        destacada: true,
       },
     ],
   },
@@ -84,6 +109,7 @@ export const FAQ: GrupoFaq[] = [
           "Además pedimos una tarjeta de crédito a nombre del conductor, para la garantía.",
           "Si va a manejar más de una persona, necesitamos el nombre, el documento y el domicilio de cada conductor adicional: sólo pueden manejar los que quedan autorizados por escrito en el contrato.",
         ],
+        destacada: true,
       },
       {
         id: "edad",
@@ -92,6 +118,7 @@ export const FAQ: GrupoFaq[] = [
           "Sí: el conductor tiene que tener 21 años cumplidos al momento de retirar el vehículo.",
           "No hay recargos por edad: la tarifa es la misma para todos los conductores habilitados. Te pedimos la fecha de nacimiento al reservar para verificar ese requisito.",
         ],
+        destacada: true,
       },
       {
         id: "otro-conductor",
@@ -113,6 +140,7 @@ export const FAQ: GrupoFaq[] = [
           "Los precios están en pesos argentinos, con impuestos incluidos, e incluyen el kilometraje libre y el seguro de responsabilidad civil que exige la normativa.",
           "No incluye combustible, peajes, multas ni estacionamiento: eso corre por tu cuenta.",
         ],
+        destacada: true,
       },
       {
         id: "mas-dias",
@@ -139,6 +167,7 @@ export const FAQ: GrupoFaq[] = [
           "Cada cobertura muestra su franquicia junto a la opción, antes de que elijas.",
           "Ojo: la franquicia no aplica —y la responsabilidad pasa a ser total— cuando el daño tiene origen en impericia, culpa, negligencia o dolo del conductor, o cuando se incumplen las condiciones de uso del contrato.",
         ],
+        destacada: true,
       },
     ],
   },
@@ -152,6 +181,7 @@ export const FAQ: GrupoFaq[] = [
           "Sí. Todos nuestros alquileres incluyen kilometraje libre, sin límite ni cargo por kilómetro recorrido.",
           "Registramos los kilómetros al entregar y al recibir el vehículo, pero es para el control de mantenimiento de la unidad, no para cobrarte.",
         ],
+        destacada: true,
       },
       {
         id: "combustible",
@@ -213,3 +243,19 @@ export const FAQ: GrupoFaq[] = [
 
 /** Aplanado, para el JSON-LD y para el buscador interno de la página. */
 export const TODAS_LAS_PREGUNTAS: Pregunta[] = FAQ.flatMap((g) => g.preguntas);
+
+/**
+ * Las que van en la portada.
+ *
+ * **Son las que frenan una reserva**, no las más lindas: qué necesito para
+ * retirar, desde qué edad, qué incluye el precio, qué es la franquicia, si el
+ * kilometraje es libre, si puedo cancelar, cuánto hay que adelantar y con
+ * cuánta anticipación. Cada una de esas dudas sin responder antes del
+ * formulario es una reserva que no se hace.
+ *
+ * Se derivan del propio catálogo y conservan su orden, así que la portada y la
+ * página completa no se pueden contradecir: es el mismo texto.
+ */
+export const PREGUNTAS_DESTACADAS: Pregunta[] = TODAS_LAS_PREGUNTAS.filter(
+  (p) => p.destacada,
+);

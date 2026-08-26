@@ -4,6 +4,7 @@ import { MessageCircle } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { EscaleraFaq } from "@/components/faq/EscaleraFaq";
+import { PlazoFaq } from "@/components/faq/PlazoFaq";
 import { FAQ, TODAS_LAS_PREGUNTAS } from "@/lib/faq";
 import { WHATSAPP_GENERAL } from "@/lib/constants";
 
@@ -103,6 +104,7 @@ export default function PreguntasFrecuentesPage() {
                         </p>
                       ))}
                       {p.conEscalera && <EscaleraFaq />}
+                      {p.conPlazo && <PlazoFaq />}
                     </article>
                   ))}
                 </div>
