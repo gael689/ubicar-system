@@ -97,8 +97,8 @@ export function DialogoSinCupo({ categoria, rango, onCerrar }: Props) {
           <div className="py-4 text-center">
             <CheckCircle2 className="mx-auto h-12 w-12 text-[hsl(var(--ubicar-green))]" />
             <p className="mt-3 text-sm text-muted-foreground">
-              Recibimos tu solicitud. Te vamos a contactar para ofrecerte otra
-              categoría o proponerte otras fechas.
+              Tu pedido quedó tomado. Te contactamos para confirmarte si se
+              libera una unidad, o para ofrecerte otra categoría u otras fechas.
             </p>
             <Button onClick={onCerrar} className="mt-5 w-full">
               Seguir mirando
@@ -121,10 +121,17 @@ export function DialogoSinCupo({ categoria, rango, onCerrar }: Props) {
               disabled={!valido || enviando}
               className="w-full"
             >
-              {enviando ? "Enviando…" : "Avisarme cuando haya"}
+              {/* **No es una lista de espera.** El pedido entra al sistema
+                  como una reserva real —estado `sin_disponibilidad`, sin
+                  ocupar calendario y sin cobrar— y dispara un aviso en el
+                  acto. "Avisarme cuando haya" prometía menos de lo que
+                  realmente pasa: alguien lee eso y se va a buscar a otro lado,
+                  cuando en los hechos ya tiene un pedido tomado y va a recibir
+                  un llamado. */}
+              {enviando ? "Enviando…" : "Pedirlo igual y que me contacten"}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
-              No te compromete a nada ni te pedimos pagar.
+              No te compromete a nada ni te pedimos pagar ahora.
             </p>
           </div>
         )}
