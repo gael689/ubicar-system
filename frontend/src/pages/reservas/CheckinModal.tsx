@@ -309,7 +309,7 @@ export function CheckinModal({
           <div>
             <div className="flex items-center gap-2">
               <Flag className="h-5 w-5 text-amber-600" />
-              <h2 className="text-lg font-semibold text-foreground">Registrar Check-in</h2>
+              <h2 className="text-lg font-semibold text-foreground">Registrar la devolución</h2>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">{vehiculoInfo} · {clienteNombre}</p>
           </div>
@@ -898,7 +898,7 @@ export function CheckinModal({
               className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2"
             >
               {alquilerLoading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
-              <Flag className="h-4 w-4" /> Registrar Check-in
+              <Flag className="h-4 w-4" /> Registrar la devolución
             </button>
           </div>
         )}

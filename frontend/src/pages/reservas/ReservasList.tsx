@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import api from '@/lib/api';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
-import { extractError, cn } from '@/lib/utils';
+import { extractError, cn , formatDate } from '@/lib/utils';
 import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
 import { useAppStore, type CanalReserva } from '@/store/useAppStore';
 import { BadgeCanal } from '@/components/reservas/BadgeCanal';
@@ -417,7 +417,7 @@ export function ReservasList() {
                     <Wrench className="h-3 w-3" />
                     #{r.id} · {r.cliente?.nombre_completo ?? r.web_contacto_nombre ?? `Cliente ${r.cliente_id}`}
                     {' · '}{r.categoria?.nombre ?? 'sin categoría'}
-                    {' · '}{r.fecha_inicio}
+                    {' · '}{formatDate(r.fecha_inicio)}
                   </button>
                 ))}
               </div>
@@ -433,7 +433,7 @@ export function ReservasList() {
             <AlertTriangle className="h-5 w-5 text-white shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-white">
-                {pendingCheckouts.length} vehículo{pendingCheckouts.length !== 1 ? 's' : ''} con check-in pendiente
+                {pendingCheckouts.length} vehículo{pendingCheckouts.length !== 1 ? 's' : ''} sin devolver
               </p>
               <p className="text-xs text-amber-50 mt-0.5">La fecha de devolución ha pasado y el auto no fue devuelto.</p>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -516,7 +516,7 @@ export function ReservasList() {
                   </td>
                   <td className={cn(cellPad, 'border-r border-slate-200')}>
                     <div className="text-slate-800 text-xs font-medium">
-                      {r.fecha_inicio} <span className="text-slate-400">→</span> {r.fecha_fin}
+                      {formatDate(r.fecha_inicio)} <span className="text-slate-400">→</span> {formatDate(r.fecha_fin)}
                     </div>
                     {r.late_checkout && !compacta && (
                       <div className="text-xs text-amber-600 mt-1 font-medium bg-amber-50 inline-block px-1.5 py-0.5 rounded">
@@ -608,7 +608,14 @@ export function ReservasList() {
                         </>
                       )}
 
-                      {/* Check-out (entregar auto al cliente) */}
+                      {/* **El botón dice "Entregar", no "Check-out".**
+                          En una rentadora el check-out es la ENTREGA y el
+                          check-in es la DEVOLUCIÓN — al revés de la intuición
+                          de hotel, que es la que trae todo el mundo. Llega un
+                          cliente a retirar el auto, el botón decía "Check-out",
+                          y el de al lado —"Check-in"— cierra el alquiler y
+                          dispara el cobro. Equivocarse de botón el primer día
+                          era casi inevitable. */}
                       {!r.alquiler_id && r.estado !== 'cancelada' && (
                         <div className="flex items-center gap-1.5">
                           <SemaforoDot reservaId={r.id} momento="checkout" />
@@ -616,7 +623,7 @@ export function ReservasList() {
                             onClick={() => setCheckoutReserva(r)}
                             className="px-3 py-1.5 rounded bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-colors"
                           >
-                            Check-out
+                            Entregar
                           </button>
                         </div>
                       )}
@@ -641,7 +648,7 @@ export function ReservasList() {
                             onClick={() => setCheckinReserva(r)}
                             className="px-3 py-1.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold transition-colors"
                           >
-                            Check-in
+                            Registrar devolución
                           </button>
                         </>
                       )}

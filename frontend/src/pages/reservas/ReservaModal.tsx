@@ -12,7 +12,7 @@ import { useDisponibilidadInterna, useVehiculosLibres } from '@/hooks/useDisponi
 import { useBorradorReserva, haceCuanto } from '@/hooks/useBorradorReserva';
 import { usePreCheckoutPrevio } from '@/hooks/useSemaforo';
 import api from '@/lib/api';
-import { extractError } from '@/lib/utils';
+import { extractError , formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Adicional, CategoriaConCupo, Reserva, ReservaCreate, ReservaUpdate, Semaforo, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
 
@@ -1986,6 +1986,16 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                               corresponda al auto elegido. */}
                           {grupo === 'cobertura' && (
                             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                              {/* **La franquicia no se explicaba en ninguna
+                                  pantalla.** Es el número más grande del
+                                  resumen y el que el cliente pregunta siempre;
+                                  quien atiende tiene que poder contestarlo sin
+                                  buscarlo en el contrato. */}
+                              <p className="mb-1.5 text-[11px] leading-snug text-slate-500">
+                                Lo máximo que paga el cliente de su bolsillo si
+                                rompe el auto. No es un cargo: no se cobra ahora
+                                y no se suma al alquiler.
+                              </p>
                               {franquiciaCobertura != null ? (
                                 <>
                                   <p className="text-[11px] font-medium text-slate-500">
@@ -2632,7 +2642,7 @@ function ResumenReserva({
             ? `${vehiculo.patente} · ${vehiculo.marca} ${vehiculo.modelo}`
             : (categoriaNombre ? `${categoriaNombre} — sin asignar` : '—')}
         />
-        <Fila k="Período" v={`${fechaInicio} → ${fechaFin} · ${duracionDias} día${duracionDias !== 1 ? 's' : ''} · ${horaInicio}`} />
+        <Fila k="Período" v={`${formatDate(fechaInicio)} → ${formatDate(fechaFin)} · ${duracionDias} día${duracionDias !== 1 ? 's' : ''} · ${horaInicio}`} />
         <Fila k="Retiro" v={lugarEntrega || '—'} />
         <Fila k="Devolución" v={lugarDevolucion || '—'} />
         <Fila
@@ -2649,7 +2659,7 @@ function ResumenReserva({
           />
         )}
         <Fila
-          k="Franquicia del cliente"
+          k="Franquicia del cliente (lo que paga si rompe el auto)"
           v={franquicia !== null ? `$${franquicia.toLocaleString('es-AR')}` : 'sin cargar'}
         />
         <Fila k="Condición de pago" v={condicionPago} />

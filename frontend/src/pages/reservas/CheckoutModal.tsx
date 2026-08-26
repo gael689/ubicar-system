@@ -97,7 +97,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
           <div>
             <div className="flex items-center gap-2">
               <Car className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold text-foreground">Registrar Check-out</h2>
+              <h2 className="text-lg font-semibold text-foreground">Entregar el vehículo</h2>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
               Reserva #{reserva.id} · {reserva.vehiculo?.patente} · {reserva.cliente?.nombre_completo}
@@ -299,7 +299,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
               className="w-4 h-4 accent-primary"
             />
             <label htmlFor="tiempo-real" className="text-sm text-muted-foreground">
-              Registrado en tiempo real (no carga retroactiva)
+              Se está entregando ahora (no es una carga de algo que ya pasó)
             </label>
           </div>
 
@@ -323,7 +323,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
             className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2"
           >
             {loading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
-            <Car className="h-4 w-4" /> Registrar Check-out
+            <Car className="h-4 w-4" /> Entregar el vehículo
           </button>
         </div>
       </div>
