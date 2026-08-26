@@ -5,8 +5,11 @@ import { useCategorias } from '@/hooks/useCategorias';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { useQuery } from '@tanstack/react-query';
 import { useOcupacion, useResumenAnual } from '@/hooks/useOcupacion';
+import { useReservas } from '@/hooks/useReservas';
+import { CancelarReservaDialog } from '@/components/reservas/CancelarReservaDialog';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, extractError } from '@/lib/utils';
 import { CalendarioAnual } from '@/components/shared/CalendarioAnual';
 import type { VehiculoOcupacion, EventoOcupacion, Reserva, ApiResponse, DiaResumenAnual } from '@/types';
 import { ReservaModal } from '../reservas/ReservaModal';
@@ -234,6 +237,9 @@ export function OcupacionPage() {
   const [initialFecha, setInitialFecha] = useState<string | undefined>();
 
   const [checkoutPrompt, setCheckoutPrompt] = useState<{ id: number, fecha: string, hora: string } | null>(null);
+  /** La reserva que se está por cancelar desde el calendario, si hay alguna. */
+  const [cancelando, setCancelando] = useState<number | null>(null);
+  const { cancelarReserva, loading: cancelando_loading } = useReservas();
   const [activeCheckout, setActiveCheckout] = useState<{ id: number, defaultTime?: string, defaultDate?: string } | null>(null);
   const [reservaInfoId, setReservaInfoId] = useState<number | null>(null);
 
@@ -1169,15 +1175,21 @@ export function OcupacionPage() {
                 No, se atrasó (Cargar ahora)
               </button>
               
+              {/* **Antes esto hacía `PATCH /reservas/{id}/estado` a mano.**
+                  Tres problemas en cuatro líneas: se salteaba `cancelarReserva`,
+                  o sea toda la lógica de la seña (D-11) — no se podía devolver
+                  la plata ni aunque el que no pudiera cumplir fuera Ubicar; no
+                  preguntaba motivo; y si el backend rechazaba, el error iba a
+                  la consola, el diálogo se cerraba igual y la persona quedaba
+                  creyendo que había cancelado.
+
+                  Ahora abre `CancelarReservaDialog`, que es el que pregunta
+                  quién no pudo cumplir y dice qué pasa con la plata antes de
+                  confirmar. Ya existía y sólo estaba enchufado en la ficha. */}
               <button
-                onClick={async () => {
-                  if (confirm('¿Estás seguro de cancelar esta reserva?')) {
-                    try {
-                      await api.patch(`/reservas/${checkoutPrompt.id}/estado`, { estado: 'cancelada' });
-                      loadData();
-                    } catch (e) { console.error(e); }
-                    setCheckoutPrompt(null);
-                  }
+                onClick={() => {
+                  setCancelando(checkoutPrompt.id);
+                  setCheckoutPrompt(null);
                 }}
                 className="w-full py-2 text-sm text-red-600 hover:text-red-800 font-medium mt-2"
               >
@@ -1216,6 +1228,30 @@ export function OcupacionPage() {
           onActionComplete={() => loadData()}
         />
       )}
+
+      {/* Cancelar desde el calendario, por el mismo camino que desde la ficha:
+          pregunta quién no pudo cumplir y dice qué pasa con la seña antes de
+          confirmar. Y si el backend rechaza, se ve — antes el error moría en
+          la consola y el diálogo se cerraba igual. */}
+      <CancelarReservaDialog
+        open={cancelando !== null}
+        onOpenChange={(abierto) => { if (!abierto) setCancelando(null); }}
+        loading={cancelando_loading}
+        onConfirm={async (datos) => {
+          if (cancelando === null) return;
+          try {
+            await cancelarReserva(cancelando, datos.motivo, {
+              responsable: datos.responsable,
+              reembolso_medio: datos.reembolso_medio,
+            });
+            toast.success('Reserva cancelada');
+            setCancelando(null);
+            loadData();
+          } catch (err) {
+            toast.error(extractError(err));
+          }
+        }}
+      />
 
       {/* Soltar una reserva sobre un auto abre el panel de asignación de
           siempre. El arrastre es un atajo para llegar acá, no una segunda

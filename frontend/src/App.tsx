@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { PuertaDeEntrada } from '@/components/auth/PuertaDeEntrada';
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/pages/Dashboard';
 import { FlotaList } from '@/pages/flota/FlotaList';
@@ -25,6 +26,10 @@ import { AuditoriaPage } from '@/pages/auditoria/AuditoriaPage';
 export default function App() {
   return (
     <PuertaDeEntrada>
+    {/* La red debajo de todo: sin esto, un campo nulo inesperado deja la
+        pantalla en blanco, sin menú y sin mensaje. Va adentro de la puerta de
+        entrada para que un error de render no parezca un problema de sesión. */}
+    <ErrorBoundary>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Navigate to="/ocupacion" replace />} />
@@ -96,6 +101,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/ocupacion" replace />} />
       </Routes>
     </BrowserRouter>
+    </ErrorBoundary>
     </PuertaDeEntrada>
   );
 }

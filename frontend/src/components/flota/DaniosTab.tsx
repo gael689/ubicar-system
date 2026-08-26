@@ -16,6 +16,7 @@ import {
   ESTADO_DANIO_LABEL, ESTADO_DANIO_COLOR, RESPONSABLE_DANIO_LABEL, ZONAS_DANIO,
 } from '@/lib/constants';
 import { resolveAssetUrl } from '@/lib/api';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { cn, formatCurrency, formatDate, extractError } from '@/lib/utils';
 import type { Danio, TipoDanio, SeveridadDanio, MomentoDanio } from '@/types';
 
@@ -54,6 +55,8 @@ export function DaniosTab({
   const darDeBaja = useDarDeBajaDanio();
   const subirFoto = useSubirFotoDanio();
   const eliminarFoto = useEliminarFotoDanio();
+  /** La foto que se está por borrar. El borrado es real y no hay vuelta atrás. */
+  const [fotoAEliminar, setFotoAEliminar] = useState<number | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(FORM_VACIO);
@@ -282,9 +285,14 @@ export function DaniosTab({
                         alt={f.descripcion ?? 'Foto del daño'}
                         className="h-20 w-20 object-cover rounded-lg border border-border"
                       />
+                      {/* **La foto del rayón es la prueba con la que se le
+                          cobra al cliente**, el borrado es real (no baja
+                          lógica) y el botón aparece al pasar el mouse por una
+                          miniatura de 80px. Un click de más y no está más.
+                          Ahora pregunta. */}
                       <button
                         type="button"
-                        onClick={() => eliminarFoto.mutate(f.id)}
+                        onClick={() => setFotoAEliminar(f.id)}
                         className="absolute -top-1.5 -right-1.5 bg-danger text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Eliminar foto"
                       >
@@ -395,6 +403,21 @@ export function DaniosTab({
         confirmLabel="Bonificar"
         loading={bonificar.isPending}
         onConfirm={handleBonificar}
+      />
+
+      <ConfirmDialog
+        open={fotoAEliminar !== null}
+        onOpenChange={(abierto) => { if (!abierto) setFotoAEliminar(null); }}
+        title="Eliminar la foto del daño"
+        description="Esta foto es la constancia del daño y se elimina de verdad: no se puede recuperar. Si el daño todavía no se le cobró al cliente, es la prueba con la que se le cobra."
+        confirmLabel="Eliminar la foto"
+        destructive
+        loading={eliminarFoto.isPending}
+        onConfirm={async () => {
+          if (fotoAEliminar === null) return;
+          await eliminarFoto.mutateAsync(fotoAEliminar);
+          setFotoAEliminar(null);
+        }}
       />
     </div>
   );

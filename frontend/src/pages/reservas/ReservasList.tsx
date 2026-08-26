@@ -8,6 +8,7 @@ import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import api from '@/lib/api';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { extractError, cn } from '@/lib/utils';
+import { ESTADO_RESERVA_LABEL } from '@/lib/constants';
 import { useAppStore, type CanalReserva } from '@/store/useAppStore';
 import { BadgeCanal } from '@/components/reservas/BadgeCanal';
 import type { Reserva, EstadoReserva, PaginatedResponse } from '@/types';
@@ -545,7 +546,7 @@ export function ReservasList() {
                   </td>
                   <td className={cn(cellPad, 'border-r border-slate-200')}>
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase border ${ESTADO_COLORS[r.estado] ?? ''}`}>
-                      {ESTADO_ICONS[r.estado]} {r.estado}
+                      {ESTADO_ICONS[r.estado]} {ESTADO_RESERVA_LABEL[r.estado] ?? r.estado}
                     </span>
                     {/* Estado del contrato, siempre visible.
                         D-34: el que reclama acción va sólido y no

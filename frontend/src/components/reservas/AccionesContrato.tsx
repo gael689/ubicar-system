@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { FileText, Link2, RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { extractError } from '@/lib/utils';
 
 interface Props {
   reservaId: number;
@@ -57,8 +58,13 @@ export function AccionesContrato({
       await api.post('/contratos', { reserva_id: reservaId });
       toast.success('Contrato emitido. Ya podés mandarlo a firmar.');
       onCambio?.();
-    } catch {
-      toast.error('No pudimos emitir el contrato. Revisá los datos de la reserva.');
+    } catch (err) {
+      // El motivo real: "faltan los datos fiscales del locador" es accionable,
+      // "revisá los datos" manda a mirar campos que están bien.
+      toast.error(
+        extractError(err) ||
+        'No pudimos emitir el contrato. Revisá los datos de la reserva.',
+      );
     } finally {
       setOcupado(null);
     }
@@ -74,8 +80,11 @@ export function AccionesContrato({
       if (!url) throw new Error('sin url');
       await navigator.clipboard.writeText(url);
       toast.success('Link copiado. Vence a las 72 horas.');
-    } catch {
-      toast.error('No pudimos generar el link. Abrí la reserva y probá desde ahí.');
+    } catch (err) {
+      toast.error(
+        extractError(err) ||
+        'No pudimos generar el link. Abrí la reserva y probá desde ahí.',
+      );
     } finally {
       setOcupado(null);
     }
@@ -102,16 +111,27 @@ export function AccionesContrato({
     }
     setOcupado('regenerar');
     try {
+      // **El orden importa: primero se emite el nuevo, después se anula el
+      // viejo.** Al revés —que es como estaba— si el POST del contrato nuevo
+      // fallaba, el viejo ya estaba anulado: la reserva quedaba **sin contrato
+      // válido** y el mensaje decía "no pudimos regenerar", que se lee como
+      // "no pasó nada". Se entregaba el auto con un contrato anulado en la
+      // mano.
+      //
+      // Con este orden, si algo falla el contrato original sigue vigente.
+      await api.post('/contratos', { reserva_id: reservaId });
       if (contrato) {
         await api.post(`/contratos/${contrato.id}/anular`, {
           motivo: 'Regenerado desde el listado de reservas',
         });
       }
-      await api.post('/contratos', { reserva_id: reservaId });
       toast.success('Contrato regenerado con los datos actuales.');
       onCambio?.();
-    } catch {
-      toast.error('No pudimos regenerar el contrato. Abrí la reserva y probá desde ahí.');
+    } catch (err) {
+      toast.error(
+        extractError(err) ||
+        'No pudimos regenerar el contrato. Abrí la reserva y probá desde ahí.',
+      );
     } finally {
       setOcupado(null);
     }

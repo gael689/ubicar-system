@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Flag, Wrench } from 'lucide-react';
+import { Flag, Wrench, AlertTriangle } from 'lucide-react';
 import { useAlquileres } from '@/hooks/useAlquileres';
+import { extractError } from '@/lib/utils';
 import { useCreateGasto } from '@/hooks/useGastos';
 import type { CheckinCreate, DecisionExcedente, PreviewExcedente, Reserva } from '@/types';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -119,13 +120,33 @@ export function CheckinModal({
     });
   }, [alquilerId, getAlquiler]);
 
+  /**
+   * Si el cálculo del excedente falló. **No es lo mismo que "todavía no elegiste
+   * fecha".**
+   *
+   * Antes el `catch` estaba vacío y `preview` quedaba en
+   * `null`, que es el mismo estado que "falta completar la fecha". Entonces la
+   * pantalla mostraba *"Seleccioná fecha/hora para ver el preview"* con la fecha
+   * y la hora ya puestas, el selector de decisión de cobro no se renderizaba, y
+   * `excedentePorCobrar` quedaba en 0.
+   *
+   * Resultado: el auto volvía con seis horas de más y **el alquiler se cerraba
+   * sin cobrarlas**, sin que nada quedara registrado. Es plata que se pierde en
+   * silencio, que es la peor forma de perderla.
+   */
+  const [errorPreview, setErrorPreview] = useState<string | null>(null);
+
   const fetchPreview = useCallback(async () => {
     if (!debouncedFecha || !debouncedHora) return;
     setLoadingPreview(true);
+    setErrorPreview(null);
     try {
       const result = await previewExcedente(alquilerId, debouncedFecha, debouncedHora);
       setPreview(result);
-    } catch { /* non-blocking */ } finally {
+    } catch (err) {
+      setPreview(null);
+      setErrorPreview(extractError(err) || 'No pudimos calcular el excedente.');
+    } finally {
       setLoadingPreview(false);
     }
   }, [alquilerId, debouncedFecha, debouncedHora, previewExcedente]);
@@ -440,10 +461,10 @@ export function CheckinModal({
             )}
           </div>
 
-          {/* Preview excedente */}
+          {/* Horas de más */}
           <div className="rounded-xl bg-muted/50 border border-border p-4 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Preview excedente</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Horas de más</span>
               {loadingPreview && (
                 <div className="animate-spin w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full" />
               )}
@@ -481,8 +502,32 @@ export function CheckinModal({
                   </div>
                 </div>
               )
+            ) : errorPreview ? (
+              /* **Un fallo del cálculo no puede parecer un campo sin llenar.**
+                 Con este mismo estado la pantalla decía "seleccioná fecha/hora"
+                 aunque estuvieran puestas, y el alquiler se cerraba sin cobrar
+                 las horas de más. */
+              <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 space-y-2">
+                <p className="text-xs font-semibold text-danger flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  No pudimos calcular las horas de más
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {errorPreview} Si el auto volvió tarde, <strong>revisá el cargo a mano
+                  antes de cerrar</strong>: así como está, se cierra sin cobrar el excedente.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => fetchPreview()}
+                  className="text-xs font-semibold text-primary hover:underline"
+                >
+                  Reintentar
+                </button>
+              </div>
             ) : (
-              <div className="text-xs text-muted-foreground">Selecciona fecha/hora para ver el preview</div>
+              <div className="text-xs text-muted-foreground">
+                Elegí la fecha y la hora de devolución para ver si hay horas de más.
+              </div>
             )}
           </div>
 

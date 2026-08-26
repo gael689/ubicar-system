@@ -1,8 +1,25 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import { extractError } from '@/lib/utils';
 import type { Contrato, ContratoPreparado, ContratoSnapshot, ContratoPlantilla } from '@/types';
 
 const KEY = 'contratos';
+
+/**
+ * El error de una mutación de contratos, a la vista.
+ *
+ * **Ninguna de las siete mutaciones de este archivo tenía `onError`**, y los
+ * llamadores tampoco lo pasaban. El caso concreto: el cliente firma en la
+ * tablet del mostrador, se aprieta "Confirmar firma", el backend rechaza — y el
+ * diálogo se queda abierto tal cual, sin mensaje y sin spinner. Se aprieta de
+ * nuevo. Y de nuevo.
+ *
+ * `useClientes` y `useVehiculos` ya toastean el error en todas las suyas; esto
+ * las empareja.
+ */
+const avisar = (porDefecto: string) => (err: unknown) =>
+  toast.error(extractError(err) || porDefecto);
 
 /**
  * El anverso precargado y editable. No persiste nada — lo que el operador
@@ -48,6 +65,7 @@ export function useCrearContrato() {
       qc.invalidateQueries({ queryKey: ['alquileres'] });
       qc.invalidateQueries({ queryKey: ['reservas'] });
     },
+    onError: avisar('No pudimos emitir el contrato.'),
   });
 }
 
@@ -69,6 +87,7 @@ export function useFirmarContrato() {
       qc.invalidateQueries({ queryKey: ['alquileres'] });
       qc.invalidateQueries({ queryKey: ['reservas'] });
     },
+    onError: avisar('No pudimos registrar la firma.'),
   });
 }
 
@@ -82,6 +101,7 @@ export function useAnularContrato() {
       qc.invalidateQueries({ queryKey: ['alquileres'] });
       qc.invalidateQueries({ queryKey: ['reservas'] });
     },
+    onError: avisar('No pudimos anular el contrato.'),
   });
 }
 
@@ -109,6 +129,7 @@ export function useGenerarLinkFirma() {
       return res.data.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+    onError: avisar('No pudimos generar el link de firma.'),
   });
 }
 
@@ -117,6 +138,7 @@ export function useRevocarLinkFirma() {
   return useMutation({
     mutationFn: (id: number) => api.delete(`/contratos/${id}/link`),
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+    onError: avisar('No pudimos revocar el link.'),
   });
 }
 
@@ -130,6 +152,7 @@ export function useSubirEscaneoContrato() {
       return api.post<{ data: Contrato }>(`/contratos/${id}/escaneo`, form);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+    onError: avisar('No pudimos subir el escaneo.'),
   });
 }
 

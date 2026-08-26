@@ -229,7 +229,7 @@ export function CobrosPage() {
                   <tr
                     key={p.id}
                     className="cursor-pointer border-b border-border/50 last:border-0 hover:bg-muted/30"
-                    onClick={() => p.reserva_id && navigate(`/reservas/${p.reserva_id}`)}
+                    onClick={() => p.reserva_id && navigate('/reservas')}
                   >
                     <td className="whitespace-nowrap px-3 py-2">
                       {new Date(`${p.fecha}T00:00:00`).toLocaleDateString('es-AR')}
