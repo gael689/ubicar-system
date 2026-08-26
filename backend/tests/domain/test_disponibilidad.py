@@ -180,6 +180,48 @@ class TestValidarRangoWeb:
             anticipacion_minima_horas=2,
         )
 
+    def test_diez_dias_de_calendario_alcanzan_aunque_falten_horas(self):
+        """
+        El caso que lo motivó: son las 12:00 del 1 de septiembre y se quiere
+        retirar el 11 a las 10:00. En horas exactas son 238 contra un mínimo de
+        240, y el sitio derivaba a WhatsApp **por dos horas**.
+
+        Para quien reserva eso es inexplicable: el 11 está a diez días del 1,
+        lo diga el calendario o el sentido común.
+        """
+        self._validar(datetime(2026, 9, 11, 10, 0), datetime(2026, 9, 14, 10, 0))
+
+    def test_la_hora_del_retiro_no_cambia_nada(self):
+        """A cualquier hora del décimo día se puede: es el día lo que cuenta."""
+        for hora in (0, 8, 12, 23):
+            self._validar(
+                datetime(2026, 9, 11, hora, 0), datetime(2026, 9, 14, 10, 0)
+            )
+
+    def test_nueve_dias_sigue_sin_alcanzar(self):
+        """
+        Contar por día no es aflojar el tope: el día anterior no entra ni a las
+        23:59, que es cuando más cerca está de las 240 horas.
+        """
+        with pytest.raises(ValueError, match="anticipación"):
+            self._validar(datetime(2026, 9, 10, 23, 59), datetime(2026, 9, 14))
+
+    def test_un_minimo_que_no_es_multiplo_de_24_se_cuenta_en_horas(self):
+        """
+        36 horas es una intención sub-diaria: redondearla a "2 días" le
+        cambiaría el valor a quien la cargó. Son las 12:00 del 1, así que el
+        2 a las 20:00 (32 h) no alcanza y el 3 a las 00:30 (36,5 h) sí.
+        """
+        with pytest.raises(ValueError, match="anticipación"):
+            self._validar(
+                datetime(2026, 9, 2, 20, 0), datetime(2026, 9, 5),
+                anticipacion_minima_horas=36,
+            )
+        self._validar(
+            datetime(2026, 9, 3, 0, 30), datetime(2026, 9, 5),
+            anticipacion_minima_horas=36,
+        )
+
     def test_duracion_maxima(self):
         # Retiro a más de 10 días (anticipación) y a menos de 4 meses
         # (horizonte), para aislar el chequeo de duración de los otros dos.

@@ -55,11 +55,27 @@ export function motivoVentanaVenta(
   const ahora = new Date();
   const inicio = new Date(`${rango.fechaInicio}T${rango.horaInicio || "10:00"}:00`);
 
-  // Se compara en horas, no en días, igual que el backend
-  // (`app/domain/disponibilidad.py`). Elegir "dentro de 10 días exactos" a las
-  // 08:00 cuando son las 20:00 da 228h < 240h y deriva — es correcto, no un bug.
-  const horasHastaRetiro = (inicio.getTime() - ahora.getTime()) / 3_600_000;
-  if (horasHastaRetiro < limites.anticipacionHoras) return "anticipacion";
+  // **Días de calendario, no horas exactas** — igual que el backend
+  // (`app/domain/disponibilidad.py::validar_rango_web`).
+  //
+  // Acá decía lo contrario, y con un comentario que afirmaba que estaba bien:
+  // el 1 de septiembre a las 14:00 no dejaba reservar para el 11 a las 10:00
+  // porque son 236 horas contra 240. Para quien reserva eso es inexplicable —
+  // el 11 está a diez días del 1— y el sitio lo derivaba a WhatsApp por cuatro
+  // horas. El tope de horizonte, más abajo, ya contaba en días.
+  //
+  // Un mínimo que no sea múltiplo de 24 se compara en horas: ahí la intención
+  // es sub-diaria. Misma regla que el backend, para que no vuelvan a divergir.
+  const hoyMedianoche = medianocheLocal(
+    `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`,
+  );
+  const alcanza =
+    limites.anticipacionHoras % 24 === 0
+      ? Math.round(
+          (medianocheLocal(rango.fechaInicio).getTime() - hoyMedianoche.getTime()) / 86_400_000,
+        ) >= limites.anticipacionHoras / 24
+      : (inicio.getTime() - ahora.getTime()) / 3_600_000 >= limites.anticipacionHoras;
+  if (!alcanza) return "anticipacion";
 
   if (limites.horizonteMaximoDias) {
     const hoy = medianocheLocal(

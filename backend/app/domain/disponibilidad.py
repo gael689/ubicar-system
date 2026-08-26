@@ -336,8 +336,28 @@ def validar_rango_web(
     if inicio < ahora:
         raise ValueError("No se puede reservar para una fecha que ya pasó")
 
-    horas_hasta_retiro = (inicio - ahora).total_seconds() / 3600
-    if horas_hasta_retiro < anticipacion_minima_horas:
+    # **La anticipación se cuenta en días de calendario, no en horas exactas.**
+    #
+    # Con horas, el 1 de septiembre a las 14:00 no se podía reservar para el 11
+    # a las 10:00: son 236 horas y el mínimo son 240. Para quien reserva eso es
+    # inexplicable —el 11 está a diez días del 1, lo diga el calendario o el
+    # sentido común— y el sitio lo mandaba a WhatsApp por cuatro horas.
+    #
+    # Además el tope de horizonte, tres líneas más abajo, **ya se contaba en
+    # días de calendario**. Los dos bordes de la misma ventana medían con
+    # varas distintas.
+    #
+    # Si alguien configura un mínimo que no es múltiplo de 24 —36 horas, por
+    # ejemplo— la intención es claramente sub-diaria y ahí sí se comparan
+    # horas. No es un caso hipotético caro de sostener: son tres líneas, y
+    # redondear 36 horas a "2 días" sería cambiarle el valor a quien lo cargó.
+    if anticipacion_minima_horas % 24 == 0:
+        dias_minimos = anticipacion_minima_horas // 24
+        alcanza = (inicio.date() - ahora.date()).days >= dias_minimos
+    else:
+        alcanza = (inicio - ahora).total_seconds() / 3600 >= anticipacion_minima_horas
+
+    if not alcanza:
         raise ValueError(
             f"{_texto_anticipacion(anticipacion_minima_horas)} Para retirar antes, "
             "escribinos por WhatsApp."
