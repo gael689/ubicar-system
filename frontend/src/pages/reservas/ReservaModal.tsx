@@ -12,6 +12,7 @@ import { useDisponibilidadInterna, useVehiculosLibres } from '@/hooks/useDisponi
 import { useBorradorReserva, haceCuanto } from '@/hooks/useBorradorReserva';
 import { usePreCheckoutPrevio } from '@/hooks/useSemaforo';
 import api from '@/lib/api';
+import { extractError } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Adicional, CategoriaConCupo, Reserva, ReservaCreate, ReservaUpdate, Semaforo, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
 
@@ -211,8 +212,12 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       const creado = data?.data ?? data;
       selectCliente({ id: creado.id, nombre_completo: creado.nombre_completo });
       toast.success('Cliente creado. Falta cargarle DNI y teléfono.');
-    } catch {
-      toast.error('No pudimos crear el cliente. Probá desde la pantalla de Clientes.');
+    } catch (err) {
+      // **Se muestra el motivo, no un "no pudimos".** El alta rápida falló
+      // durante meses con "Ya existe un cliente con el DNI/CUIT A COMPLETAR" y
+      // desde el mostrador se veía como que el botón no andaba: el mensaje que
+      // explicaba el problema se estaba tirando en este catch vacío.
+      toast.error(extractError(err) || 'No pudimos crear el cliente. Probá desde la pantalla de Clientes.');
     } finally {
       setCreandoCliente(false);
     }
@@ -454,6 +459,21 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    */
   const [verTodaLaFlota, setVerTodaLaFlota] = useState(false);
 
+  /**
+   * Si el paso 3 tiene que volver a preguntar por el vehículo.
+   *
+   * **Entrar por la fila de un auto en el calendario ya es elegirlo.** Quien
+   * clickeó la celda del AH762UL el 12 de marzo eligió ese auto y esa fecha: el
+   * click *fue* la decisión. Volver a mostrarle la grilla de categorías y el
+   * desplegable de patentes le pide que decida de nuevo algo que ya decidió, y
+   * peor: deja lugar a elegir otro auto sin querer y descubrirlo en el resumen.
+   *
+   * Así que en ese caso el paso 3 confirma en vez de preguntar. El selector
+   * completo sigue estando a un click —a veces se entra por la fila equivocada—
+   * pero cuesta ese click en vez de ser lo primero que aparece.
+   */
+  const [cambiandoVehiculo, setCambiandoVehiculo] = useState(false);
+
   /** Los ids libres, para poder marcar los que no lo están. */
   const idsLibres = useMemo(
     () => new Set((libres?.vehiculos ?? []).map(v => v.id)),
@@ -503,6 +523,17 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * backend revalida y devuelve el solape como advertencia, que es la regla de
    * siempre ("el sistema informa, la persona decide").
    */
+  /**
+   * Se abrió desde la fila de un auto en el calendario y ese auto sigue siendo
+   * el elegido. Si la persona lo cambió a mano, esto se apaga solo y el paso 3
+   * vuelve a ser el de siempre.
+   */
+  const vehiculoYaElegido =
+    !isEdit
+    && !cambiandoVehiculo
+    && !!initialVehiculoId
+    && vehiculoId === String(initialVehiculoId);
+
   const vehiculoOcupadoEnElRango = Boolean(
     !isEdit && vehiculoId && libres && !idsLibres.has(Number(vehiculoId))
   );
@@ -975,8 +1006,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           const creado = data?.data ?? data;
           idCliente = creado.id;
           toast.success(`Cliente "${creado.nombre_completo}" creado. Falta cargarle DNI y teléfono.`);
-        } catch {
-          errorEnPaso('No pudimos crear el cliente. Elegí uno existente o cargalo desde Clientes.', 1);
+        } catch (err) {
+          errorEnPaso(
+            extractError(err) || 'No pudimos crear el cliente. Elegí uno existente o cargalo desde Clientes.',
+            1,
+          );
           return;
         }
       }
@@ -1297,7 +1331,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 Va primero porque es como se vende: el sistema vende categorias
                 (D-02) y el auto puntual es un detalle posterior. Antes esto era
                 un desplegable de patentes que no miraba el rango elegido. */}
-            {!isEdit && (
+            {!isEdit && !vehiculoYaElegido && (
               <div className="space-y-2">
                 <div className="flex items-baseline justify-between gap-2">
                   <label className="text-sm font-semibold text-slate-700">Categoría</label>
@@ -1403,6 +1437,50 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </div>
             )}
 
+            {/* **Se entró por la fila de este auto: el paso 3 confirma, no
+                pregunta.** El click en la celda del calendario ya fue la
+                decisión; repetir la grilla y el desplegable es pedirla otra
+                vez, y da lugar a cambiar de auto sin querer. */}
+            {vehiculoYaElegido && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-slate-700">Vehículo</label>
+                <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-mono text-sm font-bold text-slate-800">
+                        {vehiculoSeleccionado?.patente}
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        {vehiculoSeleccionado?.marca} {vehiculoSeleccionado?.modelo}
+                        {categoriaNombreElegida && ` · ${categoriaNombreElegida}`}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-slate-500">
+                        Viene elegido desde el calendario.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCambiandoVehiculo(true)}
+                      className="shrink-0 text-[11px] font-medium text-primary hover:underline"
+                    >
+                      Cambiar
+                    </button>
+                  </div>
+                  {vehiculoOcupadoEnElRango && (
+                    <p className="mt-2 flex items-start gap-1.5 rounded bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      Este auto está comprometido en estas fechas. Se puede reservar igual —
+                      el solape queda marcado y hay que resolverlo antes de entregar.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Se desmonta en vez de esconderse con `hidden`: un `<select>`
+                invisible pero enfocable se alcanza con Tab y se puede cambiar
+                el auto sin verlo. */}
+            {!vehiculoYaElegido && (
             <div className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <label className="text-sm font-semibold text-slate-700">
@@ -1453,6 +1531,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 </p>
               )}
             </div>
+            )}
           </div>
           )}
 

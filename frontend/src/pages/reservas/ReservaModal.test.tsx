@@ -150,6 +150,54 @@ beforeEach(() => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe('Entrar desde la fila de un auto del calendario', () => {
+  /**
+   * **El click en la celda del calendario ya es la elección del auto.**
+   *
+   * Se entra por la fila del AH762UL en una fecha: eso es elegir ese auto y esa
+   * fecha. El paso 3 igual mostraba la grilla de categorías y el desplegable de
+   * patentes, así que pedía decidir de nuevo algo ya decidido — y dejaba lugar a
+   * cambiar de auto sin querer y enterarse en el resumen.
+   */
+  it('el paso 3 confirma el auto en vez de volver a preguntarlo', async () => {
+    const user = userEvent.setup();
+    abrir({ initialVehiculoId: AUTO_COMPACTO.id });
+
+    await avanzarHasta(user, 3);
+
+    // El auto que se clickeó, a la vista y ya elegido.
+    expect(screen.getByText('AA111AA')).toBeInTheDocument();
+    expect(screen.getByText(/Viene elegido desde el calendario/)).toBeInTheDocument();
+
+    // Y nada que volver a elegir: ni grilla de categorías ni desplegable.
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'SUV' })).not.toBeInTheDocument();
+  });
+
+  it('"Cambiar" devuelve el selector completo', async () => {
+    // A veces se entra por la fila equivocada. El selector sigue estando —
+    // cuesta un click en vez de ser lo primero que aparece.
+    const user = userEvent.setup();
+    abrir({ initialVehiculoId: AUTO_COMPACTO.id });
+
+    await avanzarHasta(user, 3);
+    await user.click(screen.getByRole('button', { name: 'Cambiar' }));
+
+    expect(selectDeVehiculo()).toBeInTheDocument();
+    expect(screen.queryByText(/Viene elegido desde el calendario/)).not.toBeInTheDocument();
+  });
+
+  it('sin auto precargado el paso 3 sigue preguntando como siempre', async () => {
+    const user = userEvent.setup();
+    abrir();
+
+    await avanzarHasta(user, 3);
+
+    expect(selectDeVehiculo()).toBeInTheDocument();
+    expect(screen.queryByText(/Viene elegido desde el calendario/)).not.toBeInTheDocument();
+  });
+});
+
 describe('El orden de los pasos', () => {
   it('abre en el paso 1 y pide al menos el nombre del cliente', async () => {
     const user = userEvent.setup();
