@@ -83,7 +83,7 @@ def snapshot_de_muestra(empresa: dict) -> dict:
             ],
             "descuento": 0,
             "valor_estimado": 507_500,
-            "incluye_kilometraje": True,
+            "kilometraje_segun_contrato": True,
             "discrimina_iva": True,
         },
         "coberturas": {

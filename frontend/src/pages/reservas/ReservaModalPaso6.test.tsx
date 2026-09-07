@@ -83,7 +83,7 @@ async function llegarAlPaso5(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /Compacto/ }));
   await user.click(siguiente());
   // 4 — el precio.
-  const total = screen.getByPlaceholderText('Ej: 140000');
+  const total = screen.getByPlaceholderText('140.000');
   await user.clear(total);
   await user.type(total, '140000');
   await user.click(siguiente());

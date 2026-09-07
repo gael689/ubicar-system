@@ -253,7 +253,11 @@ class PagoWebService:
                 hora_fin=hold.hora_fin,
                 lugar_entrega=lugar_entrega,
                 lugar_devolucion=lugar_devolucion or lugar_entrega,
-                notas=notas,
+                # **Va a `observaciones`, no a `notas`** (migración 091). Esto
+                # lo escribe el cliente en el sitio: es suyo y lo tiene que ver
+                # en su comprobante. `notas` pasó a ser el campo interno del
+                # mostrador, el que nunca sale impreso.
+                observaciones=notas,
                 precio_total=precio_reserva,
                 descuento_motivo=motivo_d30,
                 forma_pago_prevista="mercado_pago",
@@ -813,7 +817,9 @@ class PagoWebService:
             hora_fin=hold.hora_fin,
             lugar_entrega=lugar_entrega,
             lugar_devolucion=lugar_devolucion or lugar_entrega,
-            notas=notas,
+            # Igual que arriba: lo que escribe el cliente es una observación
+            # suya, no una nota interna.
+            observaciones=notas,
             precio_total=precio_vehiculo - descuento_d30,
             descuento_motivo=motivo_d30,
             forma_pago_prevista="transferencia",

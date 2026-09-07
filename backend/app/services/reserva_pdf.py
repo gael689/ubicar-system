@@ -199,13 +199,32 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
         y = _tabla_dos_columnas(c, filas, margin, y, width)
 
     # ── Bloque: período del alquiler ─────────────────────────────────────
-    y = _seccion(c, "PERÍODO DEL ALQUILER", margin, y, width)
-    y = _tabla_dos_columnas(c, [
+    #
+    # **La devolución que se imprime es la acordada, no la del período que se
+    # factura.** Son dos cosas distintas y pueden diferir: se vende medio día
+    # más, el alquiler se cobra hasta el 06 y el auto vuelve el 07 a las 08:30.
+    # El cliente necesita leer la segunda —es la hora a la que tiene que estar
+    # ahí—, y hasta ahora el documento sólo mostraba la primera. Reportado
+    # desde el mostrador: *"el late check-in no sale en el PDF que se le da al
+    # cliente al momento de reservar"*.
+    fecha_dev = getattr(reserva, "fecha_devolucion_acordada", None) or reserva.fecha_fin
+    hora_dev = reserva.hora_devolucion_acordada or reserva.hora_fin
+    filas_periodo = [
         ("Retiro", f"{_fecha_larga(reserva.fecha_inicio)} · {_hora(reserva.hora_inicio)} hs"),
         ("Lugar de retiro", reserva.lugar_entrega or "—"),
-        ("Devolución", f"{_fecha_larga(reserva.fecha_fin)} · {_hora(reserva.hora_fin)} hs"),
+        ("Devolución", f"{_fecha_larga(fecha_dev)} · {_hora(hora_dev)} hs"),
         ("Lugar de devolución", reserva.lugar_devolucion or "—"),
-    ], margin, y, width, ancho_label=42 * mm)
+    ]
+    # Cuando la devolución acordada no coincide con el fin del período que se
+    # cobra, se dice: sin esta línea el cliente vería una fecha de devolución
+    # que no cierra con la cantidad de días que le facturamos, y esa es
+    # justamente la conversación incómoda que el papel tiene que evitar.
+    if fecha_dev != reserva.fecha_fin or hora_dev != reserva.hora_fin:
+        filas_periodo.append(
+            ("Período facturado",
+             f"hasta el {_fecha_larga(reserva.fecha_fin)} · {_hora(reserva.hora_fin)} hs"),
+        )
+    y = _tabla_dos_columnas(c, filas_periodo, margin, y, width, ancho_label=42 * mm)
 
     dias = (reserva.fecha_fin - reserva.fecha_inicio).days or 1
     c.setFont("Helvetica-Oblique", 9)
@@ -281,7 +300,9 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
         if total_adic:
             filas_pago.append(("Adicionales", _money(total_adic)))
         if cargo_late:
-            filas_pago.append(("Devolución fuera de horario", _money(cargo_late)))
+            # "Fuera de horario" se lee como una multa, y no lo es: es el rato
+            # de más que se vendió y que el cliente aceptó pagar.
+            filas_pago.append(("Devolución más tarde (acordada)", _money(cargo_late)))
     filas_pago += [
         ("Forma de pago", _FORMA_PAGO_LABEL.get(reserva.forma_pago_prevista, reserva.forma_pago_prevista or "A convenir")),
         ("Condición de pago", _CONDICION_PAGO_LABEL.get(reserva.condicion_pago, reserva.condicion_pago or "Contado")),
@@ -295,13 +316,24 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     y = _tabla_dos_columnas(c, filas_pago, margin, y, width, ancho_label=42 * mm)
 
     # ── Observaciones ────────────────────────────────────────────────────
-    if reserva.notas:
+    #
+    # **`observaciones`, nunca `notas`** (migración 091). Acá se imprimía
+    # `reserva.notas`, que es el campo rotulado "Notas internas" en la pantalla
+    # de reservas — y este PDF viaja adjunto al mail de confirmación. O sea que
+    # "al brasilero no se le entiende, que lo atienda Franco" le llegaba al
+    # brasilero. Peor: `ReservaService.registrar_cobro` le agrega a ese mismo
+    # campo la referencia interna del cobro, que también salía impresa.
+    #
+    # Si algún día vuelve a hacer falta mostrar algo interno en un documento,
+    # que sea explícito y en otro documento. Este lo lee el cliente.
+    observaciones = getattr(reserva, "observaciones", None)
+    if observaciones:
         y = _seccion(c, "OBSERVACIONES", margin, y, width)
         c.setFont("Helvetica", 10)
         c.setFillColor(_TINTA)
         texto = c.beginText(margin, y)
         texto.setLeading(13)
-        for linea in _wrap(reserva.notas, 95):
+        for linea in _wrap(observaciones, 95):
             texto.textLine(linea)
             y -= 13
         c.drawText(texto)

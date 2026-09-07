@@ -12,7 +12,7 @@ import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 export const metadata: Metadata = {
   title: "Preguntas frecuentes | Ubicar Rent",
   description:
-    "Requisitos para alquilar un auto en Bahía Blanca, edad del conductor, seña y cancelación, kilometraje libre, franquicia, formas de pago y cómo se firma el contrato.",
+    "Requisitos para alquilar un auto en Bahía Blanca, edad del conductor, seña y cancelación, kilometraje, franquicia, formas de pago y cómo se firma el contrato.",
   alternates: { canonical: "/preguntas-frecuentes" },
 };
 

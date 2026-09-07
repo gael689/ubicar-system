@@ -335,8 +335,17 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
     cob = snap.get("coberturas", {})
     c.setFont("Helvetica", 7)
     c.setFillColor(_TINTA)
-    if cargos.get("incluye_kilometraje"):
-        c.drawString(izq, y, "El precio incluye kilometraje libre.")
+    # **Dice "según contrato" y no "kilometraje libre".** El contrato es el
+    # documento que fija el régimen; afirmar acá que es libre, y que la web
+    # prometa lo mismo, es lo que convierte un desacuerdo en un reclamo con
+    # respaldo escrito. Se cambió junto con el sitio, en la misma tanda.
+    #
+    # La clave del snapshot se renombró con el texto (`incluye_kilometraje` →
+    # `kilometraje_segun_contrato`): un contrato viejo, reimpreso, no trae la
+    # clave nueva y por lo tanto **no imprime esta línea**, que es lo correcto
+    # — se firmó con otro texto y el snapshot está congelado a propósito.
+    if cargos.get("kilometraje_segun_contrato"):
+        c.drawString(izq, y, "El kilometraje se rige por lo pactado en este contrato.")
         y -= 3.6 * mm
 
     # Las dos líneas que van siempre, como en el contrato modelo: lo que el

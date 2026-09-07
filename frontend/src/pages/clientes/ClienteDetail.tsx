@@ -27,7 +27,7 @@ import { ComprobantesTab } from '@/components/clientes/ComprobantesTab';
 import { useCliente, useDeactivateCliente, useReactivateCliente } from '@/hooks/useClientes';
 import { useCuentaCorrienteCliente } from '@/hooks/useCuentasCorrientes';
 import { BadgeCanal } from '@/components/reservas/BadgeCanal';
-import { cn, formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency, formatDocumento } from '@/lib/utils';
 import { formatDate } from '@/lib/utils';
 import { CONDICION_IVA_LABEL, CONDICION_PAGO_LABEL } from '@/lib/constants';
 
@@ -111,7 +111,7 @@ export function ClienteDetail() {
                 )}
               </div>
               <div className="text-sm text-muted-foreground mt-0.5">
-                <span className="font-mono font-semibold text-foreground">{cliente.dni_cuit}</span>
+                <span className="font-mono font-semibold text-foreground">{formatDocumento(cliente.dni_cuit)}</span>
                 {' · '}
                 {cliente.tipo === 'empresa' ? 'Empresa' : 'Particular'}
                 {' · '}
@@ -240,7 +240,7 @@ export function ClienteDetail() {
               <Field label="Nombre completo" value={cliente.nombre_completo} />
               <Field
                 label={cliente.tipo === 'empresa' ? 'CUIT' : 'DNI / CUIT'}
-                value={<span className="font-mono">{cliente.dni_cuit}</span>}
+                value={<span className="font-mono">{formatDocumento(cliente.dni_cuit)}</span>}
               />
               <Field label="Teléfono" value={cliente.telefono} />
               <Field label="Email" value={cliente.email ?? '—'} />

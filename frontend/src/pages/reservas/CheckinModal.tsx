@@ -158,7 +158,13 @@ export function CheckinModal({
   const cargoLate = parseFloat(reserva.cargo_late_checkout as string) || 0;
   const anticipoPagado = parseFloat(reserva.anticipo_monto as string) || 0;
   const pagoPendiente = pagosPendientes?.find(p => p.tipo === 'alquiler_checkout' && p.id_origen === alquilerId);
-  const saldoBase = pagoPendiente?.saldo_pendiente || Math.max(0, precioAlquiler + cargoLate - anticipoPagado);
+  // `??` y no `||`: un saldo de **cero es una respuesta**, y con `||` caía al
+  // cálculo local como si el backend no hubiera contestado. (En la práctica un
+  // alquiler saldado no aparece en la lista de pendientes, así que el que manda
+  // sigue siendo el cálculo local — pero el operador `||` acá era una trampa
+  // esperando a que eso cambiara.)
+  const saldoBase = pagoPendiente?.saldo_pendiente
+    ?? Math.max(0, precioAlquiler + cargoLate - anticipoPagado);
 
   // Excedente estimado según la decisión actual
   const excedentePorCobrar = (() => {
@@ -360,7 +366,10 @@ export function CheckinModal({
               </div>
               {cargoLate > 0 && (
                 <div className="flex justify-between text-sm">
-                  <span className="text-ubicar-dark">Cargo late checkout</span>
+                  {/* "Late check-in", no "late checkout": lo que se cobra
+                      acá es que el auto **vuelve** más tarde. Check-out es
+                      cuando lo entregamos. */}
+                  <span className="text-ubicar-dark">Cargo por late check-in</span>
                   <span className="text-amber-600">+{formatMoney(cargoLate)}</span>
                 </div>
               )}
@@ -370,10 +379,16 @@ export function CheckinModal({
                   <span className="text-success">-{formatMoney(anticipoPagado)}</span>
                 </div>
               )}
+              {/* **Cuando no falta nada, se dice.** Antes esta fila
+                  mostraba "$0" con la misma cara que un saldo impago, y en el
+                  caso reportado —una reserva ya cobrada entera— mostraba el
+                  total de vuelta. Ese bug era del backend (la seña no generaba
+                  `Pago`, ver migración 093); acá lo que se arregla es que el
+                  cero se lea como lo que es: no hay nada que cobrar. */}
               <div className="flex justify-between text-sm font-semibold text-foreground pt-2 border-t border-border">
-                <span>Saldo base pendiente</span>
+                <span>{saldoBase > 0 ? 'Saldo base pendiente' : 'Alquiler'}</span>
                 <span className={saldoBase > 0 ? 'text-danger' : 'text-success'}>
-                  {formatMoney(saldoBase)}
+                  {saldoBase > 0 ? formatMoney(saldoBase) : 'Sin saldo pendiente'}
                 </span>
               </div>
               {excedentePorCobrar > 0 && (

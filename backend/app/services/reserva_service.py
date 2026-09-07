@@ -237,7 +237,22 @@ class ReservaService:
         for adicional_id, cantidad in pedidos.items():
             actual = existentes.get(adicional_id)
             if actual is not None and actual.cantidad == cantidad:
-                continue  # sin cambios: conserva su precio congelado
+                # Sin cambios: conserva su precio congelado. **Salvo si es una
+                # cobertura por porcentaje y el precio del alquiler se movió.**
+                #
+                # Congelar tiene sentido cuando el precio es propio del
+                # adicional: si mañana sube la cobertura full, la reserva vieja
+                # sigue valiendo lo que se pactó. Pero un "30% del alquiler" no
+                # es un precio, es una fórmula — y su resultado deja de ser
+                # cierto en cuanto el alquiler cambia. Editar una reserva de
+                # $100.000 a $140.000 dejaba la cobertura cobrando el 30% de la
+                # cifra vieja, sin que nada lo señalara.
+                a_actual = catalogo.get(adicional_id)
+                if a_actual is None or getattr(a_actual, "porcentaje_sobre_alquiler", None) is None:
+                    continue
+                unitario_hoy = self._precio_unitario_adicional(a_actual, reserva)
+                if unitario_hoy == Decimal(str(actual.precio_unitario)):
+                    continue
             if actual is not None:
                 reserva.adicionales.remove(actual)
             a = catalogo[adicional_id]
@@ -310,13 +325,50 @@ class ReservaService:
         Si el alquiler se extiende de 5 a 8 días, el seguro cubre esos 3 días
         más y hay que cobrarlos. **El precio unitario congelado no se toca**:
         lo que cambia es la cantidad de días, no lo que se pactó por día.
+
+        **`es_porcentaje` se pasa, y antes no.** Sin ese flag el default es
+        `False`, así que una cobertura por porcentaje marcada `por_dia` se
+        multiplicaba por los días acá: un 30% pasaba a cobrar 120% en un
+        alquiler de cuatro. Hoy ninguna de las tres coberturas cargadas es
+        `por_dia`, pero el formulario de Adicionales arranca justamente en
+        "Por día", así que la primera que carguen desde la pantalla lo
+        dispararía. Es el mismo criterio que ya aplica `sincronizar_adicionales`
+        y el cotizador.
         """
         duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
         for ra in reserva.adicionales:
             if ra.unidad_cobro == "por_dia":
                 ra.subtotal = self._subtotal_adicional(
-                    Decimal(str(ra.precio_unitario)), ra.unidad_cobro, ra.cantidad, duracion
+                    Decimal(str(ra.precio_unitario)), ra.unidad_cobro, ra.cantidad, duracion,
+                    es_porcentaje=(
+                        ra.adicional is not None
+                        and ra.adicional.porcentaje_sobre_alquiler is not None
+                    ),
                 )
+
+    def recalcular_adicionales_por_porcentaje(self, reserva: Reserva) -> None:
+        """
+        Reajusta las coberturas que se cobran como % del alquiler cuando el
+        precio del alquiler cambia.
+
+        **Congelar el precio de un adicional tiene sentido; congelar el
+        resultado de una fórmula no.** Si mañana sube la cobertura full, una
+        reserva vieja sigue valiendo lo que se pactó — eso es lo que protege
+        `ReservaAdicional.precio_unitario`. Pero "30% del alquiler" no es un
+        precio: es una regla, y su resultado deja de ser cierto en cuanto el
+        alquiler cambia. Corregir una reserva de $100.000 a $140.000 dejaba la
+        cobertura cobrando el 30% de la cifra vieja, en silencio.
+        """
+        duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        for ra in reserva.adicionales:
+            a = ra.adicional
+            if a is None or a.porcentaje_sobre_alquiler is None:
+                continue
+            unitario = self._precio_unitario_adicional(a, reserva)
+            ra.precio_unitario = unitario
+            ra.subtotal = self._subtotal_adicional(
+                unitario, ra.unidad_cobro, ra.cantidad, duracion, es_porcentaje=True,
+            )
 
     def _nacimiento_del_conductor(
         self, cliente_id: int, conductor_id: int | None
@@ -368,7 +420,9 @@ class ReservaService:
         vehiculo_id: int | None = None,
         categoria_id: int | None = None,
         notas: str | None = None,
+        observaciones: str | None = None,
         hora_devolucion_acordada: time | None = None,
+        fecha_devolucion_acordada: date | None = None,
         late_checkout: bool = False,
         cargo_late_checkout: Decimal = Decimal("0"),
         precio_total: Decimal | None = None,
@@ -477,8 +531,19 @@ class ReservaService:
             for v in resultado.conflictos_advertencia
         ]
 
-        # 5. Hora de devolución acordada: default = hora_inicio (mismo horario del checkout)
+        # 5. La devolución acordada.
+        #
+        # Default: la misma hora del retiro, el día de fin — que es la regla de
+        # siempre (D-18, se devuelve a la hora en que se entregó). Cuando se
+        # pacta otra cosa, **van las dos**: la fecha y la hora.
+        #
+        # La fecha no es un adorno. Un "lo devuelve a las 08:30" sobre un
+        # alquiler que termina a las 16:30 sólo tiene sentido si es del día
+        # siguiente, y sin fecha el sistema lo leía como ocho horas *antes* del
+        # horario pactado: `control_24hs` veía una diferencia negativa, la
+        # tomaba como dentro de la gracia y no cobraba nada. Ver migración 092.
         hora_dev = hora_devolucion_acordada or hora_inicio
+        fecha_dev = fecha_devolucion_acordada or fecha_fin
 
         # Calcular el precio de lista (el que sale de la tarifa) SIEMPRE que
         # haya una tarifa configurada, exista o no un precio_total manual —
@@ -557,14 +622,31 @@ class ReservaService:
                 "Falta la fecha a partir de la cual se cuenta el plazo de pago.",
             )
 
+        # **Sólo el descuento necesita explicación; el recargo no.**
+        #
+        # Esto pedía motivo ante *cualquier* diferencia con el precio de lista,
+        # para arriba y para abajo. Del mostrador llegó así: *"el cartel no me
+        # deja continuar si no le aclaro por la diferencia del precio sugerido.
+        # Está bueno cuando es un monto menor, pero en casos como estos que
+        # Martín le cobró más para hacer unos pesos no debería preguntar
+        # demasiado"*. Y tienen razón: cobrar de más no es una decisión que haya
+        # que justificar ante el sistema, cobrar de menos sí — es plata que sale
+        # de la empresa y por eso `precio_lista` existe (ítem 22).
+        #
+        # La auditoría no se pierde: `precio_lista` vs `precio_total` sigue
+        # guardando la diferencia, y `descuento_autorizado_por` sigue diciendo
+        # quién la autorizó. Lo que se saca es la puerta, no el registro.
         descuento_autorizado_por = None
         if precio_lista is not None and precio_total is not None and precio_total != precio_lista:
-            if not descuento_motivo or not descuento_motivo.strip():
+            es_descuento = precio_total < precio_lista
+            if es_descuento and (not descuento_motivo or not descuento_motivo.strip()):
                 raise BusinessRuleError(
                     "descuento_sin_motivo",
-                    f"El precio cargado (${precio_total}) difiere del precio de lista "
+                    f"El precio cargado (${precio_total}) es menor al precio de lista "
                     f"(${precio_lista}) — hace falta un motivo para la diferencia",
                 )
+            if not es_descuento and (not descuento_motivo or not descuento_motivo.strip()):
+                descuento_motivo = "Precio acordado por encima del de lista"
             descuento_autorizado_por = usuario_id
 
         # 5.bis Recargo por edad del conductor (D-38). No rechaza a nadie:
@@ -588,7 +670,9 @@ class ReservaService:
                 lugar_entrega=lugar_entrega,
                 lugar_devolucion=lugar_devolucion,
                 notas=notas,
+                observaciones=observaciones,
                 hora_devolucion_acordada=hora_dev,
+                fecha_devolucion_acordada=fecha_dev,
                 late_checkout=late_checkout,
                 cargo_late_checkout=cargo_late_checkout,
                 precio_total=precio_total,
@@ -645,6 +729,37 @@ class ReservaService:
                         generar_credito=hubo_cobro_ahora,
                     )
 
+            # ── La seña declarada acá también es plata que entró ─────────
+            #
+            # **Esta era la única puerta del sistema que no asentaba nada.** La
+            # tabla del `PLAN_DINERO.md` §2.6 lista cuatro formas de cobrar
+            # —mostrador, transferencia, Mercado Pago y check-out— y las cuatro
+            # crean su `Pago` y su crédito `anticipo` en el momento. El alta de
+            # la reserva no está en esa tabla, y hacía sólo la mitad: escribía
+            # `Reserva.anticipo_monto` y nada más.
+            #
+            # Como todo lo que contesta "¿cuánto falta cobrar?" mira los `Pago`
+            # (`cobranza_service.monto_cobrado`), una reserva cobrada íntegra al
+            # armarla figuraba con el saldo entero pendiente, la plata no
+            # aparecía en la caja del día, y el check-out no encontraba ningún
+            # anticipo que aplicar contra su débito. Reportado desde el
+            # mostrador: *"ahí ya había registrado el pago y sale como pendiente
+            # 160 mil de vuelta"*.
+            #
+            # Con echeq el `Pago` se crea igual —la constancia y la caja lo
+            # necesitan— pero sin el crédito: ese ya lo asentó `crear_recibido`
+            # arriba, con naturaleza `echeq_en_cartera`, que es lo correcto
+            # porque un cheque todavía no es plata.
+            if hubo_cobro_ahora and anticipo_monto and Decimal(str(anticipo_monto)) > 0:
+                self._asentar_sena(
+                    reserva,
+                    Decimal(str(anticipo_monto)),
+                    anticipo_medio_pago or "efectivo",
+                    anticipo_fecha or date.today(),
+                    usuario_id,
+                    con_credito=not es_echeq,
+                )
+
             # Adicionales contratados (coberturas y extras). Van fuera de
             # precio_total: se suman recién al facturar, igual que
             # cargo_late_checkout. Ver Reserva.total_adicionales.
@@ -699,7 +814,14 @@ class ReservaService:
         lugar_entrega: str | None = None,
         lugar_devolucion: str | None = None,
         notas: str | None = None,
+        observaciones: str | None = None,
         precio_total: Decimal | None = None,
+        # La devolución acordada. Antes no se podía tocar después de crear la
+        # reserva: los tres campos vivían sólo en `ReservaCreate`.
+        late_checkout: bool | None = None,
+        hora_devolucion_acordada: time | None = None,
+        fecha_devolucion_acordada: date | None = None,
+        cargo_late_checkout: Decimal | None = None,
         # Pago
         forma_pago_prevista: str | None = None,
         estado_pago: str | None = None,
@@ -803,8 +925,40 @@ class ReservaService:
                 kwargs["lugar_devolucion"] = lugar_devolucion
             if notas is not None:
                 kwargs["notas"] = notas
+            if observaciones is not None:
+                kwargs["observaciones"] = observaciones
             if precio_total is not None:
                 kwargs["precio_total"] = precio_total
+
+            # ── La devolución acordada ───────────────────────────────────
+            #
+            # `late_checkout=False` es la **señal de apagado**, y por eso se
+            # mira primero: el router filtra el payload con `exclude_none=True`,
+            # así que mandar `hora_devolucion_acordada: null` para borrarla no
+            # llegaría nunca. Apagar el acuerdo devuelve la reserva a la regla
+            # de siempre (se devuelve a la hora en que se entregó) y borra el
+            # cargo, que si no quedaría cobrándose sin nada que lo justifique.
+            if late_checkout is not None:
+                kwargs["late_checkout"] = late_checkout
+                if not late_checkout:
+                    kwargs["hora_devolucion_acordada"] = h_inicio
+                    kwargs["fecha_devolucion_acordada"] = f_fin
+                    kwargs["cargo_late_checkout"] = Decimal("0")
+            if late_checkout is not False:
+                if hora_devolucion_acordada is not None:
+                    kwargs["hora_devolucion_acordada"] = hora_devolucion_acordada
+                if fecha_devolucion_acordada is not None:
+                    kwargs["fecha_devolucion_acordada"] = fecha_devolucion_acordada
+                if cargo_late_checkout is not None:
+                    kwargs["cargo_late_checkout"] = cargo_late_checkout
+
+            # Si se movió el fin del alquiler y no se pactó otra devolución, la
+            # acordada acompaña. Sin esto quedaría apuntando a la fecha vieja y
+            # el excedente se calcularía contra un momento que ya no existe —
+            # es el mismo error que tenía `AlquilerService.extender`.
+            if (fecha_fin is not None or hora_inicio is not None) and not reserva.late_checkout:
+                kwargs.setdefault("fecha_devolucion_acordada", f_fin)
+                kwargs.setdefault("hora_devolucion_acordada", h_inicio)
             if forma_pago_prevista is not None:
                 kwargs["forma_pago_prevista"] = forma_pago_prevista
             if estado_pago is not None:
@@ -823,6 +977,13 @@ class ReservaService:
             self.sincronizar_adicionales(reserva, adicionales)
             if (fecha_inicio is not None or fecha_fin is not None) and reserva.adicionales:
                 self.recalcular_adicionales_por_duracion(reserva)
+            # Una cobertura por porcentaje se calcula **contra el precio del
+            # alquiler**, así que cambiarlo la cambia. Va acá y no dentro de
+            # `sincronizar_adicionales` porque un PATCH que sólo corrige el
+            # precio no menciona los adicionales, y ese método arranca con un
+            # `if solicitados is None: return`.
+            if precio_total is not None and reserva.adicionales:
+                self.recalcular_adicionales_por_porcentaje(reserva)
 
         # D-48: si se cambió el auto de una reserva que ya tiene contrato
         # firmado, ese contrato quedó nombrando un vehículo que no es. Se anula
@@ -1296,6 +1457,70 @@ class ReservaService:
     def saldo_pendiente(self, reserva: Reserva) -> Decimal:
         return self.total_a_cobrar(reserva) - Decimal(str(reserva.anticipo_monto or 0))
 
+    def _asentar_sena(
+        self,
+        reserva: Reserva,
+        monto: Decimal,
+        medio_pago: str,
+        fecha: date,
+        usuario_id: int,
+        referencia: str | None = None,
+        con_credito: bool = True,
+    ) -> Pago:
+        """
+        Deja asentada plata que entró por una reserva que todavía no tiene
+        alquiler: el `Pago` —el hecho económico— y su crédito en la cuenta.
+
+        **Existe para que haya un solo lugar donde se escribe una seña.** Lo
+        llaman `registrar_cobro()` (la transferencia que alguien vio en el
+        extracto) y `create()` (la seña que se declara al armar la reserva en
+        el mostrador). Esos dos caminos hacían cosas distintas: el primero
+        asentaba todo, el segundo **no asentaba nada** — sólo escribía
+        `Reserva.anticipo_monto`, que ningún cálculo de saldo mira. Por eso una
+        reserva cobrada al retirar el auto volvía a reclamar el total entero al
+        registrar la devolución (ver migración 093).
+
+        `con_credito=False` es para el echeq: `EcheqService.crear_recibido` ya
+        asienta su crédito con naturaleza `echeq_en_cartera`, y esa distinción
+        importa —un cheque es un papel que puede rebotar, no plata—. Duplicarlo
+        como `anticipo` haría que el check-out lo marcara aplicado como si fuera
+        una seña cobrada.
+
+        El caller decide la transacción: acá no hay `begin_nested`, porque los
+        dos que lo usan ya están adentro de una.
+        """
+        pago = Pago(
+            cliente_id=reserva.cliente_id,
+            alquiler_id=None,   # todavía no hay alquiler: es la seña
+            reserva_id=reserva.id,
+            monto=monto,
+            medio_pago=medio_pago,
+            con_factura=False,
+            cobrado_por=usuario_id,
+            fecha=fecha,
+            notas=f"Seña de reserva #{reserva.id}"
+                  + (f" (ref: {referencia})" if referencia else ""),
+        )
+        self.db.add(pago)
+        self.db.flush()
+
+        # Una seña "anotada en la cuenta" no es una seña: no entró plata.
+        # Ver `caja_service.es_plata_que_entro`.
+        if con_credito and es_plata_que_entro(medio_pago):
+            self.cc_service.registrar_movimiento(
+                cliente_id=reserva.cliente_id,
+                tipo="credito",
+                naturaleza="anticipo",
+                concepto=f"Seña de reserva #{reserva.id} ({medio_pago})",
+                monto=monto,
+                fecha=fecha,
+                creado_por=usuario_id,
+                reserva_id=reserva.id,
+                pago_id=pago.id,
+            )
+
+        return pago
+
     def registrar_cobro(
         self,
         reserva_id: int,
@@ -1376,36 +1601,9 @@ class ReservaService:
         estado_antes = reserva.estado
 
         with self.db.begin_nested():
-            # El hecho económico primero: entró plata, y entró hoy.
-            pago = Pago(
-                cliente_id=reserva.cliente_id,
-                alquiler_id=None,   # todavía no hay alquiler: es la seña
-                reserva_id=reserva.id,
-                monto=monto,
-                medio_pago=medio_pago,
-                con_factura=False,
-                cobrado_por=usuario_id,
-                fecha=fecha,
-                notas=f"Seña de reserva #{reserva.id}"
-                      + (f" (ref: {referencia})" if referencia else ""),
+            self._asentar_sena(
+                reserva, monto, medio_pago, fecha, usuario_id, referencia=referencia,
             )
-            self.db.add(pago)
-            self.db.flush()
-
-            # Una seña "anotada en la cuenta" no es una seña: no entró plata.
-            # Ver `caja_service.es_plata_que_entro`.
-            if es_plata_que_entro(medio_pago):
-                self.cc_service.registrar_movimiento(
-                    cliente_id=reserva.cliente_id,
-                    tipo="credito",
-                    naturaleza="anticipo",
-                    concepto=f"Seña de reserva #{reserva.id} ({medio_pago})",
-                    monto=monto,
-                    fecha=fecha,
-                    creado_por=usuario_id,
-                    reserva_id=reserva.id,
-                    pago_id=pago.id,
-                )
 
             # `anticipo_monto` se sigue escribiendo, y no es redundancia
             # descuidada: lo leen dieciocho lugares entre backend, PDFs y

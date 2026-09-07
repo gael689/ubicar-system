@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
-import { extractError } from '@/lib/utils';
+import { extractError, formatDocumento } from '@/lib/utils';
 import type { Cliente } from '@/types';
 
 export interface ClienteElegido {
@@ -182,7 +182,7 @@ export function SelectorCliente({ valor, onCambiar }: Props) {
                       {c.razon_social || c.nombre_completo}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {c.dni_cuit}{c.email ? ` · ${c.email}` : ''}
+                      {formatDocumento(c.dni_cuit)}{c.email ? ` · ${c.email}` : ''}
                     </span>
                   </button>
                 ))

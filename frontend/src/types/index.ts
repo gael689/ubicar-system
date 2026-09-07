@@ -799,7 +799,10 @@ export interface Reserva {
   hora_fin: string;
   lugar_entrega: string;
   lugar_devolucion: string;
+  /** Interna: no sale en ningún papel ni mail del cliente (migración 091). */
   notas: string | null;
+  /** Lo que sí ve el cliente: sale en el PDF de confirmación y en el mail. */
+  observaciones?: string | null;
   estado: EstadoReserva;
   usuario_id: number;
   created_at: string;
@@ -817,8 +820,11 @@ export interface Reserva {
   web_contacto_nombre?: string | null;
   web_contacto_email?: string | null;
   web_contacto_telefono?: string | null;
-  // D1 late checkout
+  // D1 — la devolución acordada. **La fecha puede no ser `fecha_fin`**: se
+  // vende medio día más y el auto vuelve a las 08:30 del día siguiente
+  // (migración 092). `fecha_fin`/`hora_fin` es el período que se factura.
   hora_devolucion_acordada: string | null;
+  fecha_devolucion_acordada?: string | null;
   late_checkout: boolean;
   cargo_late_checkout: string;
   // Precio y tarifa
@@ -889,7 +895,9 @@ export interface ReservaCreate {
   lugar_entrega: string;
   lugar_devolucion: string;
   notas?: string | null;
+  observaciones?: string | null;
   hora_devolucion_acordada?: string | null;
+  fecha_devolucion_acordada?: string | null;
   late_checkout?: boolean;
   cargo_late_checkout?: number;
   precio_total?: number | null;
@@ -927,7 +935,14 @@ export interface ReservaUpdate {
   lugar_entrega?: string;
   lugar_devolucion?: string;
   notas?: string | null;
+  observaciones?: string | null;
   precio_total?: number | null;
+  // La devolución acordada, editable. Antes sólo existía en el alta, y por eso
+  // "no nos deja modificar el late check-in ni el adicional que se cobra".
+  late_checkout?: boolean;
+  hora_devolucion_acordada?: string | null;
+  fecha_devolucion_acordada?: string | null;
+  cargo_late_checkout?: number;
   forma_pago_prevista?: string | null;
   estado_pago?: string | null;
   anticipo_monto?: number | null;
@@ -1066,6 +1081,10 @@ export interface VehiculoOcupacion {
   /** Para agrupar las filas del calendario y filtrar por gama. */
   categoria_id: number | null;
   categoria_nombre: string | null;
+  /** El orden manual de la flota, el que se define arrastrando las filas. */
+  orden?: number;
+  /** `uber` no se alquila: va en su propio grupo, al final (migración 086). */
+  destino?: 'alquiler' | 'uber';
 }
 
 export interface EventoOcupacion {
@@ -1084,6 +1103,15 @@ export interface EventoOcupacion {
   precio_total?: number | null;
   notas?: string | null;
   tiene_alquiler?: boolean;
+  /**
+   * La devolución que se pactó, que puede no coincidir con `fecha_fin`/`hora_fin`
+   * —ese es el período que se factura—. Es lo que la barra tiene que mostrar
+   * como horario de devolución; antes el evento no lo transportaba y el late
+   * check-in era invisible en el calendario.
+   */
+  late_checkout?: boolean;
+  hora_devolucion_acordada?: string | null;
+  fecha_devolucion_acordada?: string | null;
   /**
    * De dónde vino. Los bloqueos llegan como `'mostrador'`: no tienen canal, y
    * es lo correcto para algo que carga una persona.

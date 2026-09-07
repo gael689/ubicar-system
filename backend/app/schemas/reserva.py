@@ -96,9 +96,14 @@ class ReservaCreate(BaseModel):
     hora_fin: time
     lugar_entrega: str
     lugar_devolucion: str
+    # Interna: no sale en ningún papel ni mail del cliente (migración 091).
     notas: str | None = None
-    # D1 late checkout
+    # Lo que sí ve el cliente: sale en el PDF de confirmación y en el mail.
+    observaciones: str | None = None
+    # D1 — la devolución acordada. La fecha puede ser distinta de `fecha_fin`:
+    # ver el comentario del modelo.
     hora_devolucion_acordada: time | None = None
+    fecha_devolucion_acordada: date | None = None
     late_checkout: bool = False
     cargo_late_checkout: Decimal = Decimal("0")
     precio_total: Decimal | None = None
@@ -145,7 +150,23 @@ class ReservaUpdate(BaseModel):
     lugar_entrega: str | None = None
     lugar_devolucion: str | None = None
     notas: str | None = None
+    observaciones: str | None = None
     precio_total: Decimal | None = None
+
+    # **La devolución acordada se puede editar, y antes no.** Los tres campos
+    # sólo existían en `ReservaCreate`, así que una vez guardada la reserva no
+    # había forma de corregir ni la hora pactada ni el cargo — reportado desde
+    # el mostrador como *"a la hora de editar una reserva ya hecha no nos deja
+    # modificar el late checkIn ni el adicional que se cobra por el mismo"*.
+    #
+    # `late_checkout=False` es la señal de apagado: el service limpia la fecha,
+    # la hora y el cargo. Hace falta porque el router filtra con
+    # `exclude_none=True` y un `None` explícito no viajaría.
+    late_checkout: bool | None = None
+    hora_devolucion_acordada: time | None = None
+    fecha_devolucion_acordada: date | None = None
+    cargo_late_checkout: Decimal | None = None
+
     # `None` = no tocar los adicionales; `[]` = sacarlos todos.
     adicionales: list[AdicionalSolicitadoRequest] | None = None
     # Pago
@@ -208,11 +229,13 @@ class ReservaResponse(BaseModel):
     lugar_entrega: str
     lugar_devolucion: str
     notas: str | None
+    observaciones: str | None = None
     estado: EstadoReservaLiteral
     usuario_id: int
     created_at: datetime
-    # D1 late checkout
+    # D1 — la devolución acordada, con su fecha (migración 092).
     hora_devolucion_acordada: time | None
+    fecha_devolucion_acordada: date | None = None
     late_checkout: bool
     cargo_late_checkout: Decimal
     # Precio y tarifa

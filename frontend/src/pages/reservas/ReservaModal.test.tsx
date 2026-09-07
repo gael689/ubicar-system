@@ -444,7 +444,7 @@ describe('Paso 6 — el semáforo lo trae el backend', () => {
     await avanzarHasta(user, 3);
     await user.click(screen.getByText('Compacto'));
     await user.click(screen.getByRole('button', { name: /Siguiente/ })); // → 4
-    await user.type(screen.getByPlaceholderText('Ej: 140000'), '100000');
+    await user.type(screen.getByPlaceholderText('140.000'), '100000');
     await user.click(screen.getByRole('button', { name: /Siguiente/ })); // → 5
     // El ancla es lo único obligatorio del paso 5 al crear.
     await user.click(screen.getByRole('button', { name: /Al entregar el auto/ }));

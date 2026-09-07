@@ -10,9 +10,12 @@ import { CancelarReservaDialog } from '@/components/reservas/CancelarReservaDial
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { cn, extractError } from '@/lib/utils';
+import { abreviarLugar } from '@/lib/lugares';
 import { CalendarioAnual } from '@/components/shared/CalendarioAnual';
 import type { VehiculoOcupacion, EventoOcupacion, Reserva, ApiResponse, DiaResumenAnual } from '@/types';
 import { ReservaModal } from '../reservas/ReservaModal';
+import { ContratoRapidoModal } from '../reservas/ContratoRapidoModal';
+import { MenuNuevaOperacion } from '@/components/reservas/MenuNuevaOperacion';
 import { CheckoutModal } from '../reservas/CheckoutModal';
 import { ReservaInfoModal } from '../reservas/ReservaInfoModal';
 
@@ -148,6 +151,27 @@ function AsyncCheckoutModal({
 }
 
 /**
+ * La hora a la que vuelve el auto, que **no siempre es `hora_fin`**.
+ *
+ * `fecha_fin`/`hora_fin` es el período que se factura. Cuando se vende medio
+ * día más, la devolución acordada cae después —incluso al día siguiente— y es
+ * ese el horario al que hay que estar en el mostrador. El evento no
+ * transportaba el dato, así que el calendario mostraba el otro: *"ese cambio de
+ * horario no figura cuando haces la reserva en el calendario"* y *"aparecen mal
+ * los horarios de devolución"*.
+ *
+ * El `+1` no es decoración: sin él, una barra que termina el 06 mostrando
+ * "08:30" se lee como una devolución más temprano, que es justo al revés.
+ */
+function horaDevolucion(ev: EventoOcupacion): string {
+  const hora = (ev.hora_devolucion_acordada || ev.hora_fin).slice(0, 5);
+  const fecha = ev.fecha_devolucion_acordada;
+  if (!fecha || fecha === ev.fecha_fin) return hora;
+  const dias = daysBetween(parseDate(ev.fecha_fin), parseDate(fecha));
+  return dias > 0 ? `${hora} +${dias}` : hora;
+}
+
+/**
  * Lo que se lee al pasar el mouse por un bloque del calendario.
  *
  * Hasta ahora **sólo los bloqueos tenían tooltip**: una reserva no tenía
@@ -162,8 +186,18 @@ function tooltipEvento(ev: EventoOcupacion): string {
   const lineas = [ev.cliente_nombre];
   lineas.push(ev.origen === 'web' ? 'Reservó por el sitio web' : 'Cargada en el mostrador');
   if (ev.creado_por && ev.origen !== 'web') lineas.push(`Por ${ev.creado_por}`);
+  // En el tooltip van los nombres **completos**: acá no hay problema de
+  // espacio, y es donde se confirma qué quiere decir la abreviatura de la barra.
   if (ev.lugar_entrega) lineas.push(`Entrega: ${ev.lugar_entrega} ${ev.hora_inicio.slice(0, 5)}`);
-  if (ev.lugar_devolucion) lineas.push(`Devolución: ${ev.lugar_devolucion} ${ev.hora_fin.slice(0, 5)}`);
+  if (ev.lugar_devolucion) {
+    const fechaDev = ev.fecha_devolucion_acordada && ev.fecha_devolucion_acordada !== ev.fecha_fin
+      ? ` (${ev.fecha_devolucion_acordada.split('-').reverse().join('/')})` : '';
+    lineas.push(
+      `Devolución: ${ev.lugar_devolucion} `
+      + `${(ev.hora_devolucion_acordada || ev.hora_fin).slice(0, 5)}${fechaDev}`,
+    );
+  }
+  if (ev.late_checkout) lineas.push('Late check-in acordado');
   if (ev.notas) lineas.push(ev.notas);
   return lineas.join('\n');
 }
@@ -233,6 +267,8 @@ export function OcupacionPage() {
   const [draggingVehiculoId, setDraggingVehiculoId] = useState<number | null>(null);
 
   const [showReservaModal, setShowReservaModal] = useState(false);
+  // El camino corto del `+`: crea la reserva y emite el contrato de una.
+  const [showContratoRapido, setShowContratoRapido] = useState(false);
   const [initialVehiculoId, setInitialVehiculoId] = useState<number | undefined>();
   const [initialFecha, setInitialFecha] = useState<string | undefined>();
 
@@ -340,11 +376,22 @@ export function OcupacionPage() {
     else setCurrentMonth(m => m - 1);
   };
 
-  const openReserva = (vehiculoId: number, fecha: string) => {
-    setInitialVehiculoId(vehiculoId);
+  /**
+   * Deja anotado el auto y el día de la celda en la que se hizo click, y abre
+   * el modal que se haya elegido en el menú.
+   *
+   * Se separó del `setShow…` porque ahora hay dos destinos posibles: la reserva
+   * completa y el contrato rápido. El contexto (qué auto, qué día) es el mismo
+   * para los dos.
+   */
+  const abrirOperacion = (vehiculoId: number, fecha: string, cual: 'reserva' | 'contrato') => {
+    setInitialVehiculoId(vehiculoId || undefined);
     setInitialFecha(fecha);
-    setShowReservaModal(true);
+    if (cual === 'reserva') setShowReservaModal(true);
+    else setShowContratoRapido(true);
   };
+  const openReserva = (vehiculoId: number, fecha: string) =>
+    abrirOperacion(vehiculoId, fecha, 'reserva');
 
   const handleDragStart = (e: React.DragEvent, id: number) => {
     setDraggingVehiculoId(id);
@@ -529,15 +576,33 @@ export function OcupacionPage() {
    */
   const gruposDeFilas = useMemo(() => {
     if (!agrupar) return [{ id: 'todos' as const, nombre: '', vehiculos: vehiculosVisibles }];
+
+    // **Los de Uber salen de las categorías y van a un grupo propio, al final.**
+    //
+    // Pedido del mostrador: *"la categoría Uber de un auto se debe ver en el
+    // calendario de ocupación, pero los autos debajo del todo, no entre medio
+    // de los otros, sino que aparte"*.
+    //
+    // No es una categoría y no puede serlo: un auto de Uber sigue siendo una
+    // Pick-up, con su tarifa y su franquicia (migración 086 lo argumenta). Es
+    // `destino`, y lo que corresponde es que no se mezcle con lo que sí se
+    // alquila — mirando la grilla, un auto de Uber "libre" no es un auto que se
+    // pueda vender.
+    const seAlquilan = vehiculosVisibles.filter(v => v.destino !== 'uber');
+    const enUber = vehiculosVisibles.filter(v => v.destino === 'uber');
+
     const orden = (categoriasData ?? []).map(c => ({ id: c.id as number | string, nombre: c.nombre }));
     const grupos = orden
-      .map(c => ({ ...c, vehiculos: vehiculosVisibles.filter(v => v.categoria_id === c.id) }))
+      .map(c => ({ ...c, vehiculos: seAlquilan.filter(v => v.categoria_id === c.id) }))
       .filter(g => g.vehiculos.length > 0);
-    const sinCategoria = vehiculosVisibles.filter(
+    const sinCategoria = seAlquilan.filter(
       v => !v.categoria_id || !(categoriasData ?? []).some(c => c.id === v.categoria_id)
     );
     if (sinCategoria.length) {
       grupos.push({ id: 'sin-categoria', nombre: 'Sin categoría', vehiculos: sinCategoria });
+    }
+    if (enUber.length) {
+      grupos.push({ id: 'uber', nombre: 'Uber — no se alquilan', vehiculos: enUber });
     }
     return grupos;
   }, [agrupar, vehiculosVisibles, categoriasData]);
@@ -653,12 +718,11 @@ export function OcupacionPage() {
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {renderControls()}
-          <button
-            onClick={() => setShowReservaModal(true)}
-            className="px-4 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" /> Nueva Reserva
-          </button>
+          {/* Dos opciones, no una. Ver `MenuNuevaOperacion`. */}
+          <MenuNuevaOperacion
+            onNuevaReserva={() => { setInitialVehiculoId(undefined); setInitialFecha(undefined); setShowReservaModal(true); }}
+            onNuevoContrato={() => { setInitialVehiculoId(undefined); setInitialFecha(undefined); setShowContratoRapido(true); }}
+          />
         </div>
       </div>
 
@@ -994,7 +1058,11 @@ export function OcupacionPage() {
                                 onClick={() => openReserva(vehiculo.id, formatDate(day))}
                               >
                                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity z-0">
-                                  <Plus className="w-5 h-5 text-primary/35" />
+                                  <MenuNuevaOperacion
+                                    variante="celda"
+                                    onNuevaReserva={() => abrirOperacion(vehiculo.id, formatDate(day), 'reserva')}
+                                    onNuevoContrato={() => abrirOperacion(vehiculo.id, formatDate(day), 'contrato')}
+                                  />
                                 </div>
                                 {eventsToRender.map(ev => {
                                   const { leftPercent, widthPercent } = getEventSpan(ev, day, vehiculoEvents);
@@ -1037,8 +1105,32 @@ export function OcupacionPage() {
                                           <AlertTriangle className="w-4 h-4" />
                                         </button>
                                       )}
+                                      {/* **Entrega y devolución arriba; el
+                                          nombre, abajo.**
+
+                                          Estaba al revés, y con "Aeropuerto
+                                          Comandante Espora" el nombre del
+                                          cliente empujaba el horario fuera del
+                                          recuadro. Del mostrador: *"ya entendí
+                                          qué está pasando con la del
+                                          aeropuerto: el nombre es tan largo que
+                                          no me deja ver el horario"* y *"es más
+                                          importante entrega/devolución (lugar y
+                                          horario) que el nombre"*.
+
+                                          El lugar se abrevia (`AERO`) y la hora
+                                          de devolución es la **acordada**, no
+                                          el fin del período facturado. */}
                                       <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full gap-0">
-                                        <div className="font-bold text-[11px] truncate flex items-center gap-1 leading-tight w-full">
+                                        <div className="flex items-center justify-between text-[10px] font-bold drop-shadow-sm leading-tight w-full gap-1">
+                                          <span className="truncate">
+                                            <span className="opacity-75">E:</span> {ev.lugar_entrega ? `${abreviarLugar(ev.lugar_entrega)} ` : ''}{ev.hora_inicio.slice(0, 5)}
+                                          </span>
+                                          <span className="shrink-0">
+                                            <span className="opacity-75">D:</span> {ev.lugar_devolucion ? `${abreviarLugar(ev.lugar_devolucion)} ` : ''}{horaDevolucion(ev)}
+                                          </span>
+                                        </div>
+                                        <div className="text-[10px] truncate flex items-center gap-1 leading-tight w-full opacity-95">
                                           {ESTADO_ICONS[ev.estado]}
                                           <span className="truncate drop-shadow-sm flex-1">
                                             {ev.notas || ev.cliente_nombre}
@@ -1055,14 +1147,6 @@ export function OcupacionPage() {
                                             {ev.cliente_nombre}
                                           </div>
                                         )}
-                                        <div className="flex items-center justify-between text-[9.5px] drop-shadow-sm opacity-95 leading-tight w-full gap-1">
-                                          <span className="truncate">
-                                            <span className="font-bold">E:</span> {ev.lugar_entrega ? `${ev.lugar_entrega} ` : ''}{ev.hora_inicio.slice(0, 5)}
-                                          </span>
-                                          <span className="shrink-0">
-                                            <span className="font-bold">D:</span> {ev.lugar_devolucion ? `${ev.lugar_devolucion} ` : ''}{ev.hora_fin.slice(0, 5)}
-                                          </span>
-                                        </div>
                                       </div>
                                     </div>
                                   );
@@ -1073,11 +1157,14 @@ export function OcupacionPage() {
                           return (
                             <td
                               key={dayIdx}
-                              className={`border-r border-slate-200 group/cell cursor-pointer p-0 h-[60px] ${bgClass}`}
-                              onClick={() => openReserva(vehiculo.id, formatDate(day))}
+                              className={`border-r border-slate-200 group/cell p-0 h-[60px] ${bgClass}`}
                             >
-                              <div className="w-full h-full flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity">
-                                <Plus className="w-5 h-5 text-primary/35" />
+                              <div className="w-full h-full flex items-center justify-center opacity-0 group-hover/cell:opacity-100 focus-within:opacity-100 transition-opacity">
+                                <MenuNuevaOperacion
+                                  variante="celda"
+                                  onNuevaReserva={() => abrirOperacion(vehiculo.id, formatDate(day), 'reserva')}
+                                  onNuevoContrato={() => abrirOperacion(vehiculo.id, formatDate(day), 'contrato')}
+                                />
                               </div>
                             </td>
                           );
@@ -1134,6 +1221,15 @@ export function OcupacionPage() {
           initialFechaInicio={initialFecha}
           onClose={() => { setShowReservaModal(false); setInitialVehiculoId(undefined); setInitialFecha(undefined); }}
           onSuccess={() => { setShowReservaModal(false); setInitialVehiculoId(undefined); setInitialFecha(undefined); loadData(); }}
+        />
+      )}
+
+      {showContratoRapido && (
+        <ContratoRapidoModal
+          initialVehiculoId={initialVehiculoId}
+          initialFecha={initialFecha}
+          onClose={() => { setShowContratoRapido(false); setInitialVehiculoId(undefined); setInitialFecha(undefined); }}
+          onCreada={() => loadData()}
         />
       )}
 
@@ -1476,11 +1572,11 @@ function AgendaView({
                   <div className="mt-2 flex gap-4 text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      Entrega: {ev.hora_inicio.slice(0, 5)} {ev.lugar_entrega ? `— ${ev.lugar_entrega}` : ''}
+                      Entrega: {ev.hora_inicio.slice(0, 5)} {ev.lugar_entrega ? `— ${abreviarLugar(ev.lugar_entrega)}` : ''}
                     </span>
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      Devol: {ev.hora_fin.slice(0, 5)} {ev.lugar_devolucion ? `— ${ev.lugar_devolucion}` : ''}
+                      Devol: {horaDevolucion(ev)} {ev.lugar_devolucion ? `— ${abreviarLugar(ev.lugar_devolucion)}` : ''}
                     </span>
                   </div>
                   <div className="mt-1 text-xs text-slate-400">

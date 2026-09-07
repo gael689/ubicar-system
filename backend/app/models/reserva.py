@@ -33,7 +33,19 @@ class Reserva(Base):
     hora_fin: Mapped[time] = mapped_column(Time(), nullable=False)
     lugar_entrega: Mapped[str] = mapped_column(String(255), nullable=False)
     lugar_devolucion: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # **`notas` es interna y `observaciones` es lo que ve el cliente**
+    # (migración 091). Antes había un solo campo, rotulado "Notas internas" en
+    # la pantalla, y el PDF de confirmación lo imprimía bajo el título
+    # "OBSERVACIONES" — un PDF que además viaja adjunto al mail de confirmación.
+    # O sea: el campo prometía privacidad y publicaba. "Al brasilero no se le
+    # entiende, que lo atienda Franco" salía impreso.
+    #
+    # `notas` no se muestra en ningún documento ni mail del cliente. Es también
+    # donde `registrar_cobro` deja la referencia interna del cobro.
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Lo que sí se comparte: sale en el PDF de confirmación y en el mail.
+    observaciones: Mapped[str | None] = mapped_column(Text, nullable=True)
     estado: Mapped[str] = mapped_column(
         Enum(
             "pendiente", "confirmada", "activa", "vencida", "finalizada", "cancelada",
@@ -55,9 +67,28 @@ class Reserva(Base):
     # quien paga/firma no es quien retira el auto.
     conductor_id: Mapped[int | None] = mapped_column(ForeignKey("conductores_adicionales.id"), nullable=True)
 
-    # ── Fase 3 — campos nuevos ────────────────────────────────────────────────
-    # D1 late checkout
+    # ── D1 — la devolución acordada ───────────────────────────────────────────
+    #
+    # **`fecha_fin`/`hora_fin` es el período que se factura; esto es cuándo
+    # vuelve el auto de verdad.** Los dos pueden diferir, y esa diferencia es el
+    # negocio: el cargo por el rato de más vive aparte, en `cargo_late_checkout`.
+    #
+    # `fecha_devolucion_acordada` se agregó en la migración 092 y no es un
+    # adorno. Sin ella, "lo devuelve a las 08:30" se combinaba con `fecha_fin` y
+    # el sistema entendía 08:30 del día de devolución — o sea *antes* del
+    # horario pactado. `domain/control_24hs.py` veía una diferencia negativa,
+    # la tomaba como dentro de los 40 minutos de gracia y **cobraba cero**. El
+    # medio día vendido se perdía sin que nada avisara.
+    #
+    # Puede ser anterior al fin pactado: "acordamos que lo trae antes" es tan
+    # válido como el late check-in, y hasta ahora tampoco se podía escribir.
     hora_devolucion_acordada: Mapped[time | None] = mapped_column(Time(), nullable=True)
+    fecha_devolucion_acordada: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    # El nombre de la columna quedó de cuando el sistema llamaba "checkout" a la
+    # devolución. Es al revés: **check-out es cuando entregamos el auto,
+    # check-in cuando nos lo devuelven**, y toda la pantalla ya dice late
+    # check-in. Renombrar la columna cuesta una migración sobre la tabla más
+    # consultada del sistema para no cambiar ningún comportamiento.
     late_checkout: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     cargo_late_checkout: Mapped[Decimal] = mapped_column(Numeric(12, 2), server_default="0", nullable=False)
 

@@ -431,7 +431,7 @@ export function Paso4Pago({
       <ul className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
         <li className="flex items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 text-[hsl(var(--ubicar-green))]" />
-          Kilometraje libre incluido
+          Kilometraje según contrato
         </li>
         <li className="flex items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 text-[hsl(var(--ubicar-green))]" />

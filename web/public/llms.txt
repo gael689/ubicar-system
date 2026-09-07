@@ -14,8 +14,8 @@ llamar por teléfono. El proceso tiene cuatro pasos:
 3. Sumar coberturas y extras (silla para bebé, cadenas, portaequipaje).
 4. Cargar los datos y confirmar la reserva.
 
-El precio que se muestra es el precio final, con impuestos incluidos y
-kilometraje libre. La reserva se hace **por categoría de vehículo**, no por un
+El precio que se muestra es el precio final, con impuestos incluidos. El
+régimen de kilometraje se pacta en el contrato de alquiler. La reserva se hace **por categoría de vehículo**, no por un
 modelo puntual: se garantiza un vehículo de la categoría elegida o de una
 superior.
 
@@ -72,7 +72,7 @@ Bahía Blanca y la zona sur de la Provincia de Buenos Aires.
 
 ## Condiciones
 
-- **Kilometraje libre** en todos los alquileres, sin límite ni cargo por kilómetro.
+- **Kilometraje según contrato**: qué incluye cada alquiler queda escrito en el contrato que se firma al retirar.
 - **Seguro de responsabilidad civil incluido**, con coberturas adicionales opcionales.
 - **Edad mínima 21 años** cumplidos al retirar el vehículo. No hay recargos por edad: la tarifa es la misma para todos los conductores habilitados.
 - Para retirar hace falta DNI, licencia de conducir vigente y una tarjeta de crédito a nombre del conductor.

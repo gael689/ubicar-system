@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { useMultas } from '@/hooks/useMultas';
 import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR, ESTADO_MULTA_COLOR_OUTLINE } from '@/lib/constants';
 import type { Multa, EstadoMultaEditable } from '@/types';
-import { cn, extractError } from '@/lib/utils';
+import { cn, extractError, formatMiles } from '@/lib/utils';
 
 interface Props {
   clienteId: number;
@@ -20,8 +20,11 @@ function formatDate(iso: string) {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
 }
+// Vía `formatMiles`: un `toLocaleString('es-AR')` sin `maximumFractionDigits`
+// muestra hasta **tres** decimales por default, así que un importe que no da
+// exacto aparecía escrito como `$33.333,333`.
 function formatMoney(v: string | number) {
-  return `$${parseFloat(String(v)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
+  return `$${formatMiles(Number(v))}`;
 }
 
 // "cobrada"/"bonificada" no se setean a mano acá: van por los botones de

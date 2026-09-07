@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AccionesContrato } from '@/components/reservas/AccionesContrato';
-import { CheckCircle2, Car, Flag, XCircle, Plus, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2, Clock, Globe, Store, Wrench, Check, Hourglass } from 'lucide-react';
+import { CheckCircle2, Car, Flag, XCircle, FileText, Search, X, Calendar, AlertTriangle, AlarmClockOff, SlidersHorizontal, ChevronDown, Rows3, Rows2, Clock, Globe, Store, Wrench, Check, Hourglass } from 'lucide-react';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -13,6 +13,8 @@ import { useAppStore, type CanalReserva } from '@/store/useAppStore';
 import { BadgeCanal } from '@/components/reservas/BadgeCanal';
 import type { Reserva, EstadoReserva, PaginatedResponse } from '@/types';
 import { ReservaModal } from './ReservaModal';
+import { ContratoRapidoModal } from './ContratoRapidoModal';
+import { MenuNuevaOperacion } from '@/components/reservas/MenuNuevaOperacion';
 import { CheckoutModal } from './CheckoutModal';
 import { CheckinModal } from './CheckinModal';
 import { ExtenderModal } from './ExtenderModal';
@@ -120,6 +122,7 @@ export function ReservasList() {
   const [search, setSearch] = useState('');
   const [fechaFiltro, setFechaFiltro] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showContratoRapido, setShowContratoRapido] = useState(false);
   // Fase 3 §5.2: filtros colapsables (arrancan cerrados para recuperar
   // espacio) y densidad de tabla persistida.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -263,13 +266,14 @@ export function ReservasList() {
               )}
               <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', filtersOpen && 'rotate-180')} />
             </button>
-            <button
-              onClick={() => setShowCreateModal(true)}
+            {/* Las dos puertas, igual que en el calendario: el paso a paso
+                completo y el contrato de último momento. Ver
+                `MenuNuevaOperacion`. */}
+            <MenuNuevaOperacion
+              onNuevaReserva={() => setShowCreateModal(true)}
+              onNuevoContrato={() => setShowContratoRapido(true)}
               className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              Nueva Reserva
-            </button>
+            />
           </div>
         </div>
 
@@ -698,6 +702,12 @@ export function ReservasList() {
           onSuccess={(_r, _w) => { setShowCreateModal(false); loadReservas(); }}
         />
       )}
+      {showContratoRapido && (
+        <ContratoRapidoModal
+          onClose={() => setShowContratoRapido(false)}
+          onCreada={() => { loadReservas(); }}
+        />
+      )}
       {editReserva && (
         <ReservaModal
           reserva={editReserva}
@@ -728,6 +738,7 @@ export function ReservasList() {
       {extenderReserva && extenderReserva.alquiler_id && (
         <ExtenderModal
           alquilerId={extenderReserva.alquiler_id}
+          reservaId={extenderReserva.id}
           vehiculoInfo={extenderReserva.vehiculo ? `${extenderReserva.vehiculo.marca} ${extenderReserva.vehiculo.modelo} (${extenderReserva.vehiculo.patente})` : `Veh. ${extenderReserva.vehiculo_id}`}
           clienteNombre={extenderReserva.cliente?.nombre_completo ?? `Cliente ${extenderReserva.cliente_id}`}
           fechaInicioActual={extenderReserva.fecha_inicio}

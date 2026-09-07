@@ -402,9 +402,9 @@ function Grupo({
 
               <div className="shrink-0 text-right">
                 <p className="text-sm font-semibold tabular-nums text-foreground">
-                  {Number(a.precio) === 0 ? 'Sin cargo' : formatCurrency(a.precio)}
+                  {precioLegible(a)}
                 </p>
-                {Number(a.precio) > 0 && (
+                {Number(a.precio) > 0 && a.porcentaje_sobre_alquiler == null && (
                   <p className="text-[10px] text-muted-foreground">
                     {a.unidad_cobro === 'por_dia' ? 'por día' : 'única vez'}
                   </p>
@@ -434,6 +434,32 @@ function Grupo({
 }
 
 /**
+ * Cuánto cuesta este adicional, dicho de forma que no mienta.
+ *
+ * **"Sin cargo" era una respuesta falsa.** Acá había un
+ * `Number(a.precio) === 0 ? 'Sin cargo' : …`, y las coberturas que se cobran
+ * como porcentaje del alquiler tienen `precio = 0` a propósito: su importe sale
+ * de `porcentaje_sobre_alquiler` y `PrecioService` ni siquiera mira `precio`.
+ * O sea que Top Cover y Super Top Cover —10% y 30% del alquiler— figuraban en
+ * la pantalla como gratis. De ahí la pregunta del mostrador: *"¿qué significa
+ * que diga Sin cargo?"*.
+ *
+ * El orden de las respuestas es el orden en que la plata se decide:
+ * primero el porcentaje (que gana sobre `precio`), después "viene incluida",
+ * después el monto fijo, y recién al final el "sin cargo" de verdad.
+ *
+ * `!= null` y no truthiness: una cobertura al **0%** existe (es Mid Cover, que
+ * viene incluida) y no es lo mismo que una sin porcentaje cargado.
+ */
+function precioLegible(a: Adicional): string {
+  const pct = a.porcentaje_sobre_alquiler;
+  if (pct != null && Number(pct) > 0) return `${Number(pct)}% del alquiler`;
+  if (a.incluido) return 'Incluida en la tarifa';
+  if (Number(a.precio) > 0) return formatCurrency(a.precio);
+  return 'Sin cargo';
+}
+
+/**
  * La escalera franquicia↔precio (D-53, plan §3.8b).
  *
  * El backend ya rechaza guardar una cobertura que rompa el orden — acá se ve
@@ -460,12 +486,15 @@ function EscaleraFranquicia({ items }: { items: Adicional[] }) {
             <span className="truncate text-foreground">{a.nombre}</span>
             <span className="flex shrink-0 items-center gap-3 tabular-nums text-muted-foreground">
               <span>baja {formatCurrency(a.franquicia_descuento!)}</span>
+              {/* La misma respuesta que la lista de arriba, para que las dos
+                  digan lo mismo del mismo adicional. Antes esto usaba
+                  truthiness (`a.porcentaje_sobre_alquiler ? …`), así que una
+                  cobertura al 0% caía en "incluida" por casualidad — acertaba
+                  con Mid Cover y habría mentido con cualquier otra. */}
               <span className="font-medium text-foreground">
-                {a.porcentaje_sobre_alquiler
-                  ? `${a.porcentaje_sobre_alquiler}% del alquiler`
-                  : Number(a.precio) === 0
-                  ? 'incluida'
-                  : `${formatCurrency(a.precio)}${a.unidad_cobro === 'por_dia' ? '/día' : ''}`}
+                {precioLegible(a).toLowerCase()}
+                {a.porcentaje_sobre_alquiler == null && Number(a.precio) > 0
+                  && a.unidad_cobro === 'por_dia' ? '/día' : ''}
               </span>
             </span>
           </div>

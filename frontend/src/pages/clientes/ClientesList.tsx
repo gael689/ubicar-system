@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { LicenciaBadge } from '@/components/clientes/LicenciaBadge';
 import { ClienteFormDialog } from '@/components/clientes/ClienteFormDialog';
 
+import { formatDocumento } from '@/lib/utils';
 import { useClientes, type ClienteFilters } from '@/hooks/useClientes';
 import { useClientesConPagoPendiente } from '@/hooks/useCuentasCorrientes';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -195,7 +196,7 @@ function ClienteRow({ cliente, pagoPendiente }: { cliente: Cliente; pagoPendient
           </span>
         </div>
         <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
-          <span className="font-mono">{cliente.dni_cuit}</span>
+          <span className="font-mono">{formatDocumento(cliente.dni_cuit)}</span>
           {cliente.telefono && (
             <span className="flex items-center gap-1">
               <Phone className="h-3 w-3" /> {cliente.telefono}

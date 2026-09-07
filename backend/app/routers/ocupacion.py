@@ -6,6 +6,7 @@ GET /api/v1/ocupacion — devuelve vehículos + eventos para el timeline.
 from datetime import date, time, timedelta
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import case
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_db, get_current_user
@@ -45,7 +46,23 @@ def get_ocupacion(
     )
     if vehiculo_ids:
         q = q.filter(Vehiculo.id.in_(vehiculo_ids))
-    vehiculos = q.order_by(Vehiculo.patente).all()
+
+    # **El mismo ORDER BY que `vehiculo_repo.list_filtered`**, y no `patente`.
+    #
+    # Acá estaba `order_by(Vehiculo.patente)`, que ignoraba `Vehiculo.orden` —
+    # o sea, ignoraba el orden manual que se define arrastrando las filas en
+    # esta misma pantalla. El arrastre sí se persistía (`PUT /vehiculos/reorder`
+    # escribe la columna, y la pantalla de Flota lo respeta), pero el calendario
+    # lo descartaba en cada carga. Reportado como *"cuando muevo los autos de
+    # fila, al otro día abro el programa y se volvieron a cambiar de lugar"*.
+    #
+    # El `case` de `destino` viene del mismo lugar y arregla lo segundo:
+    # **los autos de Uber no se alquilan**, así que van al final y no salteados
+    # entre los que sí. `destino` es texto y 'alquiler' < 'uber' alfabéticamente,
+    # pero no se confía en eso — un destino nuevo que empiece con "a" se
+    # mezclaría sin que nadie lo note.
+    orden_destino = case((Vehiculo.destino == "alquiler", 0), else_=1)
+    vehiculos = q.order_by(orden_destino, Vehiculo.orden.asc(), Vehiculo.patente).all()
     vehiculo_ids_activos = [v.id for v in vehiculos]
 
     # **El calendario no escribe.** Acá se llamaba a
@@ -87,6 +104,12 @@ def get_ocupacion(
             precio_total=float(r.precio_total) if r.precio_total else None,
             notas=r.notas,
             tiene_alquiler=r.alquiler is not None,
+            # La devolución que se pactó, que puede no ser el fin del período
+            # facturado. Es lo que la barra tiene que mostrar como horario de
+            # devolución — ver el comentario del schema.
+            late_checkout=r.late_checkout,
+            hora_devolucion_acordada=r.hora_devolucion_acordada,
+            fecha_devolucion_acordada=r.fecha_devolucion_acordada,
             origen=r.origen,
             # Sólo para las de mostrador: en una reserva web el `usuario` es el
             # usuario "Sistema", que no le dice nada a nadie. Ahí el front
@@ -148,6 +171,8 @@ def get_ocupacion(
                 estado=v.estado, activo=v.activo,
                 categoria_id=v.categoria_id,
                 categoria_nombre=v.categoria.nombre if v.categoria else None,
+                orden=v.orden,
+                destino=v.destino,
             )
             for v in vehiculos
         ],

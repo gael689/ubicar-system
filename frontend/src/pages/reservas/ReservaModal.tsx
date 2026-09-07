@@ -12,7 +12,8 @@ import { useDisponibilidadInterna, useVehiculosLibres } from '@/hooks/useDisponi
 import { useBorradorReserva, haceCuanto } from '@/hooks/useBorradorReserva';
 import { usePreCheckoutPrevio } from '@/hooks/useSemaforo';
 import api from '@/lib/api';
-import { extractError , formatDate } from '@/lib/utils';
+import { extractError, formatDate, formatDocumento, formatMiles, redondear2 } from '@/lib/utils';
+import { InputMoneda } from '@/components/shared/InputMoneda';
 import { toast } from 'sonner';
 import type { Adicional, CategoriaConCupo, Reserva, ReservaCreate, ReservaUpdate, Semaforo, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
 
@@ -71,7 +72,13 @@ function sumarDias(iso: string, dias: number): string {
 // acotan el calendario a la ventana en la que se opera, y llegan hasta el fin
 // del año que viene para que una reserva de la próxima temporada entre igual.
 const ANIO_ACTUAL = new Date().getFullYear();
-const FECHA_MIN = `${ANIO_ACTUAL}-01-01`;
+// **Arranca el año pasado, no el corriente.** Del mostrador: *"¿me deja hacer
+// ahora una reserva pasada? Porque quiero que Martín le haga firmar un contrato
+// a un loco, pero es de hace 2 meses hasta hoy el contrato."* Pasa: el alquiler
+// existió, el papel se firma después. El backend nunca lo impidió —ni `create`,
+// ni `update`, ni el check-out, ni el semáforo miran si la fecha ya pasó—, así
+// que el único que lo bloqueaba era este `min` del calendario del navegador.
+const FECHA_MIN = `${ANIO_ACTUAL - 1}-01-01`;
 const FECHA_MAX = `${ANIO_ACTUAL + 1}-12-31`;
 
 export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, onClose, onSuccess }: Props) {
@@ -152,11 +159,20 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configItems]);
   const [notas, setNotas]                     = useState(reserva?.notas ?? '');
+  const [observaciones, setObservaciones]     = useState(reserva?.observaciones ?? '');
   const [lateCheckout, setLateCheckout]       = useState(reserva?.late_checkout ?? false);
   const [horaDevolucionAcordada, setHoraDevolucionAcordada] = useState(
     reserva?.hora_devolucion_acordada ? formatTime(reserva.hora_devolucion_acordada) : ''
   );
-  const [cargoLateCheckout, setCargoLateCheckout] = useState(reserva ? parseFloat(reserva.cargo_late_checkout) : 0);
+  // La fecha de la devolución acordada. **Es lo que faltaba** para poder
+  // escribir "lo devuelve a las 08:30 del día siguiente": sin ella el sistema
+  // entendía 08:30 del día de fin, o sea antes del horario pactado.
+  const [fechaDevolucionAcordada, setFechaDevolucionAcordada] = useState(
+    reserva?.fecha_devolucion_acordada ?? ''
+  );
+  const [cargoLateCheckout, setCargoLateCheckout] = useState<number | ''>(
+    reserva ? parseFloat(reserva.cargo_late_checkout) : ''
+  );
 
   // Garantía
   const [garantiaTipo, setGarantiaTipo]                   = useState(reserva?.garantia_tipo ?? 'no_aplica');
@@ -262,7 +278,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   // Precio
   const initialPrecioTotal  = reserva?.precio_total ? parseFloat(reserva.precio_total as string) : 0;
-  const initialPrecioPorDia = duracionDias > 0 && initialPrecioTotal ? initialPrecioTotal / duracionDias : 0;
+  // Redondeado: la división casi nunca da exacta y ese float crudo terminaba
+  // escrito en el campo como `33333.333333333336`.
+  const initialPrecioPorDia = duracionDias > 0 && initialPrecioTotal
+    ? redondear2(initialPrecioTotal / duracionDias) : 0;
 
   const [precioTotal, setPrecioTotal]   = useState<number | ''>(initialPrecioTotal || '');
   const [precioPorDia, setPrecioPorDia] = useState<number | ''>(initialPrecioPorDia || '');
@@ -721,9 +740,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   useEffect(() => {
     if (duracionDias > 0) {
       if (lastEditedRef.current === 'dia' && precioPorDia !== '') {
-        setPrecioTotal(precioPorDia * duracionDias);
+        setPrecioTotal(redondear2(precioPorDia * duracionDias));
       } else if (lastEditedRef.current === 'total' && precioTotal !== '') {
-        setPrecioPorDia(precioTotal / duracionDias);
+        // Redondeado: `100000 / 3` es `33333.333333333336` en punto flotante, y
+        // ese número se escribía tal cual en el campo.
+        setPrecioPorDia(redondear2(precioTotal / duracionDias));
       }
     } else {
       setPrecioTotal('');
@@ -764,8 +785,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     if (n === 4 && (precioTotal === '' || Number(precioTotal) <= 0)) {
       return 'Falta el precio.';
     }
-    if (n === 4 && hayDescuentoManual && !descuentoMotivo.trim()) {
-      return 'El precio difiere del sugerido: escribí el motivo.';
+    if (n === 4 && esDescuento && !descuentoMotivo.trim()) {
+      return 'El precio es menor al de lista: escribí el motivo.';
     }
     if (n === 5 && !isEdit && !condicionPagoAncla) {
       return 'Elegí en qué momento se cobra.';
@@ -780,27 +801,28 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     setPaso(p => Math.min(6, p + 1));
   }
 
-  const handlePrecioPorDiaChange = (val: string) => {
+  // Los dos campos se derivan uno del otro, y **las dos derivaciones redondean
+  // a dos decimales**. Sin eso, tipear un total que no divide exacto por los
+  // días llenaba el campo de al lado con `33333.333333333336`.
+  const handlePrecioPorDiaChange = (val: number | '') => {
     lastEditedRef.current = 'dia';
     if (val === '') { setPrecioPorDia(''); setPrecioTotal(''); return; }
-    const num = parseFloat(val);
-    setPrecioPorDia(num);
-    if (duracionDias > 0) setPrecioTotal(num * duracionDias);
+    setPrecioPorDia(val);
+    if (duracionDias > 0) setPrecioTotal(redondear2(val * duracionDias));
   };
 
-  const handlePrecioTotalChange = (val: string) => {
+  const handlePrecioTotalChange = (val: number | '') => {
     lastEditedRef.current = 'total';
     if (val === '') { setPrecioTotal(''); setPrecioPorDia(''); return; }
-    const num = parseFloat(val);
-    setPrecioTotal(num);
-    if (duracionDias > 0) setPrecioPorDia(num / duracionDias);
+    setPrecioTotal(val);
+    if (duracionDias > 0) setPrecioPorDia(redondear2(val / duracionDias));
   };
 
   const aplicarTarifa = (tarifa: Tarifa) => {
     const montoDia = parseFloat(tarifa.monto);
     lastEditedRef.current = 'dia';
     setPrecioPorDia(montoDia);
-    if (duracionDias > 0) setPrecioTotal(montoDia * duracionDias);
+    if (duracionDias > 0) setPrecioTotal(redondear2(montoDia * duracionDias));
   };
 
   const tipoRecomendado = duracionDias > 0
@@ -877,7 +899,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       ? ` Ya tiene aplicado el descuento por duración (−${Number(cotizacionLista.descuento_porcentaje)}%).`
       : '';
 
-    return { total, porDia: total / duracionDias, explicacion: explicacion + conDescuento };
+    return {
+      total,
+      porDia: redondear2(total / duracionDias),
+      explicacion: explicacion + conDescuento,
+    };
   }, [cotizacionLista, duracionDias]);
 
   /**
@@ -896,7 +922,28 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     return partes.join(' · ');
   }, [conFactura, formaPagoPrevista, estadoPago, anticipoMonto]);
 
-  const hayDescuentoManual = precioListaEstimado !== null && precioTotal !== '' && Math.round(precioTotal) !== Math.round(precioListaEstimado);
+  /**
+   * La diferencia contra el precio de lista, partida en dos.
+   *
+   * **Cobrar de menos hay que explicarlo; cobrar de más, no.** Del mostrador:
+   * *"el cartel no me deja continuar si no le aclaro por la diferencia del
+   * precio sugerido. Está bueno cuando es un monto menor, pero en casos como
+   * estos que Martín le cobró más para hacer unos pesos no debería preguntar
+   * demasiado — más plata mejor."*
+   *
+   * `precio_lista` existe para auditar el **descuento** (ítem 22): plata que
+   * sale de la empresa. Un recargo no es eso, y frenar la carga de una reserva
+   * con el cliente enfrente para que alguien escriba "le cobré más" es una
+   * puerta sin nada del otro lado. La diferencia se sigue guardando igual.
+   */
+  const hayDiferenciaDePrecio = precioListaEstimado !== null && precioTotal !== ''
+    && Math.round(precioTotal) !== Math.round(precioListaEstimado);
+  const esDescuento = hayDiferenciaDePrecio
+    && Math.round(precioTotal as number) < Math.round(precioListaEstimado as number);
+  const esRecargo = hayDiferenciaDePrecio && !esDescuento;
+  const diferenciaPrecio = hayDiferenciaDePrecio
+    ? Math.abs(Math.round(precioTotal as number) - Math.round(precioListaEstimado as number))
+    : 0;
   const requiereDatosEcheq = formaPagoPrevista === 'echeq' || (estadoPago !== 'pendiente' && anticipoMedioPago === 'echeq');
 
   /**
@@ -972,8 +1019,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       errorEnPaso('La cotización es obligatoria. Ingrese el precio total o por día.', 4);
       return;
     }
-    if (!isEdit && hayDescuentoManual && !descuentoMotivo.trim()) {
-      errorEnPaso(`El precio cargado difiere del precio de lista ($${precioListaEstimado?.toLocaleString('es-AR')}) — indique el motivo de la diferencia.`, 4);
+    if (!isEdit && esDescuento && !descuentoMotivo.trim()) {
+      errorEnPaso(`El precio cargado es menor al de lista ($${formatMiles(precioListaEstimado)}) — indique el motivo de la diferencia.`, 4);
       return;
     }
     if (garantiaTipo !== 'no_aplica' && !garantiaMonto) {
@@ -1050,7 +1097,18 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           lugar_entrega: lugarEntrega,
           lugar_devolucion: lugarDevolucion,
           notas: notas || null,
+          observaciones: observaciones || null,
           precio_total: precioTotal || null,
+          // La devolución acordada ahora se puede corregir después de guardar.
+          // `late_checkout: false` es la señal de apagado que el backend usa
+          // para limpiar la fecha, la hora y el cargo — un `null` no viajaría,
+          // porque el router filtra el payload con `exclude_none`.
+          late_checkout: lateCheckout,
+          ...(lateCheckout ? {
+            hora_devolucion_acordada: horaDevolucionAcordada ? horaDevolucionAcordada + ':00' : null,
+            fecha_devolucion_acordada: fechaDevolucionAcordada || null,
+            cargo_late_checkout: cargoLateCheckout === '' ? 0 : Number(cargoLateCheckout),
+          } : {}),
           // Sólo se mandan si se pueden cambiar: después del check-out el
           // backend los rechaza, y mandarlos igual rompería la edición.
           ...(adicionalesBloqueados ? {} : {
@@ -1087,9 +1145,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           lugar_entrega: lugarEntrega,
           lugar_devolucion: lugarDevolucion,
           notas: notas || null,
+          observaciones: observaciones || null,
           late_checkout: lateCheckout,
           hora_devolucion_acordada: lateCheckout && horaDevolucionAcordada ? horaDevolucionAcordada + ':00' : null,
-          cargo_late_checkout: lateCheckout ? cargoLateCheckout : 0,
+          fecha_devolucion_acordada: lateCheckout ? (fechaDevolucionAcordada || null) : null,
+          cargo_late_checkout: lateCheckout && cargoLateCheckout !== '' ? Number(cargoLateCheckout) : 0,
           precio_total: precioTotal || null,
           adicionales: Object.entries(adicionales).map(([id, cantidad]) => ({
             adicional_id: Number(id), cantidad,
@@ -1105,7 +1165,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           anticipo_fecha: estadoPago !== 'pendiente' ? anticipoFecha : null,
           anticipo_medio_pago: estadoPago !== 'pendiente' ? anticipoMedioPago : null,
           con_factura: conFactura,
-          descuento_motivo: hayDescuentoManual ? descuentoMotivo.trim() : null,
+          descuento_motivo: hayDiferenciaDePrecio ? (descuentoMotivo.trim() || null) : null,
           condicion_pago: condicionPago,
           // El ancla se manda siempre, también en contado: "en el momento" no
           // dice cuál momento, y entre la entrega y la devolución puede haber
@@ -1178,23 +1238,24 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     vehiculoId, categoriaManualId,
     fechaInicio, horaInicio, fechaFin,
     lugarEntrega, lugarDevolucion, entregaEsOtro, devolucionEsOtro,
-    lateCheckout, horaDevolucionAcordada, cargoLateCheckout,
+    lateCheckout, horaDevolucionAcordada, fechaDevolucionAcordada, cargoLateCheckout,
     precioTotal, precioPorDia, descuentoMotivo, adicionales, conFactura,
     garantiaTipo, garantiaMonto,
     formaPagoPrevista, estadoPago, anticipoMonto, anticipoFecha, anticipoMedioPago,
     condicionPago, condicionPagoAncla, condicionPagoFechaAncla,
     tipoFactura, facturaANombreDe,
     echeqBanco, echeqNumeroCheque, echeqFechaCobro,
-    notas,
+    notas, observaciones,
   }), [
     paso, clienteId, clientSearch, conductorId, vehiculoId, categoriaManualId,
     fechaInicio, horaInicio, fechaFin, lugarEntrega, lugarDevolucion,
     entregaEsOtro, devolucionEsOtro, lateCheckout, horaDevolucionAcordada,
+    fechaDevolucionAcordada,
     cargoLateCheckout, precioTotal, precioPorDia, descuentoMotivo, adicionales,
     conFactura, garantiaTipo, garantiaMonto, formaPagoPrevista, estadoPago,
     anticipoMonto, anticipoFecha, anticipoMedioPago, condicionPago,
     condicionPagoAncla, condicionPagoFechaAncla, tipoFactura, facturaANombreDe,
-    echeqBanco, echeqNumeroCheque, echeqFechaCobro, notas,
+    echeqBanco, echeqNumeroCheque, echeqFechaCobro, notas, observaciones,
   ]);
 
   const { pendiente: borrador, marcarRetomado, descartar: descartarBorrador } =
@@ -1220,6 +1281,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     // pisaría los dos flags de arriba; acá se da por hecha.
     lugaresSincronizados.current = true;
     setLateCheckout(d.lateCheckout); setHoraDevolucionAcordada(d.horaDevolucionAcordada);
+    setFechaDevolucionAcordada(d.fechaDevolucionAcordada);
     setCargoLateCheckout(d.cargoLateCheckout);
     setPrecioTotal(d.precioTotal); setPrecioPorDia(d.precioPorDia);
     setDescuentoMotivo(d.descuentoMotivo); setAdicionales(d.adicionales);
@@ -1234,6 +1296,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     setEcheqBanco(d.echeqBanco); setEcheqNumeroCheque(d.echeqNumeroCheque);
     setEcheqFechaCobro(d.echeqFechaCobro);
     setNotas(d.notas);
+    setObservaciones(d.observaciones);
     setPaso(d.paso);
     marcarRetomado();
     if (d.garantiaTipo === 'tarjeta') {
@@ -1612,7 +1675,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                             onClick={() => selectCliente(c)}
                           >
                             <div className="font-medium">{c.nombre_completo}</div>
-                            {c.dni_cuit && <div className="text-xs text-slate-500">DNI/CUIT: {c.dni_cuit}</div>}
+                            {c.dni_cuit && <div className="text-xs text-slate-500">DNI/CUIT: {formatDocumento(c.dni_cuit)}</div>}
                           </li>
                         ))}
                       </ul>
@@ -1708,40 +1771,110 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             </div>
           </div>
 
-          {/* Late checkout (solo crear).
+          {/* Reserva retroactiva: se avisa, no se bloquea.
 
-              **Va en azul y no en el naranja de advertencia.** Acordar un late
-              checkout es una venta: el cliente devuelve más tarde y paga un
-              cargo extra. Estaba pintado con `bg-warning` por arrastre, así que
-              la pantalla mostraba como problema algo que es plata que entra. */}
-          {!isEdit && (
-            <div className="rounded-xl bg-ubicar-dark p-4 space-y-3 shadow-sm">
-              <div className="flex items-center gap-3">
-                <input id="late-checkout" type="checkbox" checked={lateCheckout}
-                  onChange={e => setLateCheckout(e.target.checked)}
-                  className="w-4 h-4 accent-white" />
-                <label htmlFor="late-checkout" className="text-sm text-white font-semibold flex items-center gap-2 cursor-pointer">
-                  <Clock className="w-5 h-5" /> Late Checkout acordado
-                </label>
-              </div>
-              {lateCheckout && (
-                <div className="grid grid-cols-2 gap-4 pt-2">
+              El alquiler ya pasó y el papel se firma después — es un caso real
+              y el sistema lo soporta entero. Pero cargar una fecha vieja sin
+              querer también existe, así que se dice en voz alta. */}
+          {fechaInicio && fechaInicio < today() && (
+            <p className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Estás cargando una reserva <strong>que ya empezó</strong> ({formatFecha(fechaInicio)}).
+              Se puede guardar igual: sirve para documentar un alquiler que ya ocurrió.
+            </p>
+          )}
+
+          {/* Devolución en otro horario — el "late check-in".
+
+              **Tres cosas cambiaron acá, y las tres salieron del mostrador.**
+
+              1. *Se llamaba "Late Checkout", y está al revés.* Check-out es
+                 cuando **entregamos** el auto; check-in es cuando nos lo
+                 devuelven. Lo que se acuerda acá es una devolución más tarde,
+                 o sea un late check-in.
+
+              2. *Ahora tiene fecha.* Sin ella no se podía escribir el caso más
+                 común: se vende medio día más y el auto vuelve a las 08:30 del
+                 día siguiente. Con la hora sola el sistema leía 08:30 del día
+                 de fin —ocho horas antes del horario pactado— y terminaba sin
+                 cobrar nada. Textual: *"el sistema piensa que son las 8:30 hs
+                 del mismo día que devuelve"*.
+
+              3. *Ya no está detrás de `!isEdit`.* Se puede corregir después de
+                 guardar: *"a la hora de editar una reserva ya hecha no nos deja
+                 modificar el late check-in ni el adicional que se cobra por el
+                 mismo"*.
+
+              **Va en azul y no en el naranja de advertencia.** Acordar una
+              devolución más tarde es una venta: el cliente paga un cargo extra.
+              Estaba pintado con `bg-warning` por arrastre, así que la pantalla
+              mostraba como problema algo que es plata que entra. */}
+          <div className="rounded-xl bg-ubicar-dark p-4 space-y-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <input id="late-checkin" type="checkbox" checked={lateCheckout}
+                onChange={e => {
+                  const activo = e.target.checked;
+                  setLateCheckout(activo);
+                  // Al prender, los campos arrancan en la devolución normal:
+                  // así se corrige lo que cambió en vez de tipearlo entero.
+                  if (activo) {
+                    if (!fechaDevolucionAcordada) setFechaDevolucionAcordada(fechaFin);
+                    if (!horaDevolucionAcordada) setHoraDevolucionAcordada(horaInicio);
+                  }
+                }}
+                className="w-4 h-4 accent-white" />
+              <label htmlFor="late-checkin" className="text-sm text-white font-semibold flex items-center gap-2 cursor-pointer">
+                <Clock className="w-5 h-5" /> Devuelve en otro horario (late check-in)
+              </label>
+            </div>
+            {!lateCheckout ? (
+              <p className="text-[11px] leading-snug text-white/70">
+                Sin esto, el auto se devuelve el {fechaFin ? formatFecha(fechaFin) : 'día de fin'} a
+                las {horaInicio} — la misma hora en que se retira.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/90">Hora de devolución acordada</label>
+                    <label className="text-xs font-medium text-white/90">Día en que lo devuelve</label>
+                    <input type="date" value={fechaDevolucionAcordada}
+                      min={fechaInicio || undefined}
+                      onChange={e => setFechaDevolucionAcordada(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-white/40 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-white/60" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-white/90">Hora acordada</label>
                     <input type="time" value={horaDevolucionAcordada} onChange={e => setHoraDevolucionAcordada(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-white/40 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-white/60" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/90">Cargo adicional ($)</label>
-                    <input type="number" value={cargoLateCheckout}
-                      onChange={e => setCargoLateCheckout(parseFloat(e.target.value) || 0)}
-                      min={0} step={100}
+                    <label className="text-xs font-medium text-white/90">Cargo adicional</label>
+                    <InputMoneda value={cargoLateCheckout} onChange={setCargoLateCheckout}
+                      placeholder="25.000"
                       className="w-full px-3 py-2 rounded-lg border border-white/40 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-white/60" />
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+                {/* El resumen en una línea. Son dos fechas distintas, y
+                    confundirlas es exactamente lo que pasó. */}
+                <p className="text-[11px] leading-snug text-white/80">
+                  Se factura hasta el <strong>{fechaFin ? formatFecha(fechaFin) : '—'} {horaInicio}</strong>
+                  {' '}y el auto vuelve el{' '}
+                  <strong>
+                    {fechaDevolucionAcordada ? formatFecha(fechaDevolucionAcordada) : '—'}{' '}
+                    {horaDevolucionAcordada || '—'}
+                  </strong>
+                  {cargoLateCheckout !== '' && Number(cargoLateCheckout) > 0
+                    ? `, con un cargo de $${formatMiles(cargoLateCheckout)}.`
+                    : '.'}
+                </p>
+                {fechaDevolucionAcordada && fechaFin && fechaDevolucionAcordada < fechaFin && (
+                  <p className="text-[11px] leading-snug text-amber-200">
+                    Lo devuelve antes de que termine el período facturado. Los días
+                    pactados se cobran igual — si hay que cobrar menos, corregí el precio.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
 
           {/* Lugares */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1880,10 +2013,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   <span className="text-sm text-slate-700">
                     Sugerido:{' '}
                     <strong className="tabular-nums text-primary">
-                      ${precioSugerido.total.toLocaleString('es-AR')}
+                      ${formatMiles(precioSugerido.total)}
                     </strong>
                     <span className="text-xs text-slate-500">
-                      {' '}· ${precioSugerido.porDia.toLocaleString('es-AR')}/día
+                      {' '}· ${formatMiles(precioSugerido.porDia)}/día
                     </span>
                   </span>
                   {precioTotal !== Math.round(precioSugerido.total) && (
@@ -1891,7 +2024,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                       type="button"
                       onClick={() => {
                         setPrecioTotal(Math.round(precioSugerido.total));
-                        setPrecioPorDia(Math.round(precioSugerido.porDia));
+                        setPrecioPorDia(redondear2(Math.round(precioSugerido.total) / duracionDias));
                         lastEditedRef.current = 'total';
                       }}
                       className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primary/90"
@@ -1905,27 +2038,27 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             )}
 
             <div className="grid grid-cols-2 gap-4">
+              {/* `InputMoneda` y no `type="number"`: es lo que permite el
+                  punto de los miles (*"200.000, así"*) y lo que evita que el
+                  precio por día derivado se pinte como `33333.333333333336`.
+                  Ver el comentario del componente. */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-600">Precio x Día ($) *</label>
-                <input
-                  type="number"
-                  value={precioPorDia === '' ? '' : precioPorDia}
-                  onChange={e => handlePrecioPorDiaChange(e.target.value)}
-                  min={0} step={100}
-                  placeholder="Ej: 35000"
+                <label className="text-xs font-medium text-slate-600">Precio x Día *</label>
+                <InputMoneda
+                  value={precioPorDia}
+                  onChange={handlePrecioPorDiaChange}
+                  placeholder="35.000"
                   className={`w-full px-3 py-2 rounded-lg border text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                     localError?.includes('cotización') && precioTotal === '' ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white'
                   }`}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-600">Precio Total ($) *</label>
-                <input
-                  type="number"
-                  value={precioTotal === '' ? '' : precioTotal}
-                  onChange={e => handlePrecioTotalChange(e.target.value)}
-                  min={0} step={100}
-                  placeholder="Ej: 140000"
+                <label className="text-xs font-medium text-slate-600">Precio Total *</label>
+                <InputMoneda
+                  value={precioTotal}
+                  onChange={handlePrecioTotalChange}
+                  placeholder="140.000"
                   className={`w-full px-3 py-2 rounded-lg border text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                     localError?.includes('cotización') && precioTotal === '' ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white'
                   }`}
@@ -2082,10 +2215,31 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 )}
               </div>
             )}
-            {!isEdit && hayDescuentoManual && (
+            {/* **Cobrar de más avisa; cobrar de menos pregunta.**
+
+                Antes era un solo cartel ámbar con un campo obligatorio para
+                cualquier diferencia, en los dos sentidos. Del mostrador: *"el
+                cartel no me deja continuar si no le aclaro por la diferencia
+                del precio sugerido. Está bueno cuando es un monto menor, pero
+                en casos como estos que Martín le cobró más para hacer unos
+                pesos no debería preguntar demasiado — más plata mejor."*
+
+                Tienen razón: `precio_lista` existe para auditar el descuento
+                (ítem 22), que es plata que sale de la empresa. Un recargo se
+                informa y se sigue. La diferencia queda registrada igual en los
+                dos casos. */}
+            {!isEdit && esRecargo && (
+              <p className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-slate-700">
+                Estás cobrando <strong>${formatMiles(diferenciaPrecio)} más</strong> que el
+                precio de lista (${formatMiles(precioListaEstimado)}). Se guarda así —
+                queda registrado quién lo autorizó.
+              </p>
+            )}
+            {!isEdit && esDescuento && (
               <div className="space-y-1.5">
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  ⚠ El precio cargado difiere del precio de lista (${precioListaEstimado?.toLocaleString('es-AR')}). Indicá el motivo — queda auditado.
+                  ⚠ Estás cobrando <strong>${formatMiles(diferenciaPrecio)} menos</strong> que el
+                  precio de lista (${formatMiles(precioListaEstimado)}). Indicá el motivo — queda auditado.
                 </p>
                 <textarea
                   value={descuentoMotivo}
@@ -2269,15 +2423,18 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                   {estadoPago === 'anticipo' && (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-600">Monto anticipo ($) *</label>
-                      <input type="number" value={anticipoMonto} onChange={e => setAnticipoMonto(e.target.value)} min={0}
+                      <label className="text-xs font-medium text-slate-600">Monto anticipo *</label>
+                      <InputMoneda
+                        value={anticipoMonto === '' || anticipoMonto == null ? '' : Number(anticipoMonto)}
+                        onChange={v => setAnticipoMonto(v === '' ? '' : String(v))}
+                        placeholder="50.000"
                         className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
                     </div>
                   )}
                   {estadoPago === 'pagado' && (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-600">Monto total ($)</label>
-                      <input type="text" value={precioTotal || 0} disabled
+                      <label className="text-xs font-medium text-slate-600">Monto total</label>
+                      <input type="text" value={`$${formatMiles(precioTotal || 0)}`} disabled
                         className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-500 text-sm" />
                     </div>
                   )}
@@ -2366,13 +2523,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               {garantiaTipo !== 'no_aplica' && (
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-600">Monto retenido ($) *</label>
-                    <input
-                      type="number"
-                      value={garantiaMonto}
-                      onChange={e => setGarantiaMonto(e.target.value)}
-                      min={0}
-                      placeholder="ej: 50000"
+                    <label className="text-xs font-medium text-slate-600">Monto retenido *</label>
+                    <InputMoneda
+                      value={garantiaMonto === '' || garantiaMonto == null ? '' : Number(garantiaMonto)}
+                      onChange={v => setGarantiaMonto(v === '' ? '' : String(v))}
+                      placeholder="50.000"
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                     />
                   </div>
@@ -2464,12 +2619,37 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             semaforo={semaforoPrevio ?? null}
           />
           )}
-          {/* Notas */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-slate-700">Notas internas</label>
-            <textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2}
-              className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-              placeholder="Observaciones, acuerdos especiales..." />
+          {/* Dos campos, y no uno.
+
+              **El de una sola casilla era peligroso.** Se llamaba "Notas
+              internas" y se imprimía en el PDF de confirmación —que además va
+              adjunto al mail que recibe el cliente— bajo el título
+              "OBSERVACIONES". Textual: *"este cartel dice Notas internas… pero
+              le llega al cliente en la confirmación de reserva. Peligroso.
+              Porque por ahí en la nota interna pongo 'al brasilero no se le
+              entiende, que lo atienda Franco'."*
+
+              Ahora son dos campos con dos destinos, y cada uno lo dice. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Notas internas</label>
+              <textarea value={notas} onChange={e => setNotas(e.target.value)} rows={3}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                placeholder="Para el equipo: acuerdos, avisos, quién lo atendió..." />
+              <p className="text-[11px] leading-snug text-slate-500">
+                Sólo las ve el equipo. <strong>No salen</strong> en el PDF ni en
+                ningún mail al cliente.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Observaciones para el cliente</label>
+              <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={3}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                placeholder="Ej: retirar por Paraguay 241, tocar el timbre del fondo" />
+              <p className="text-[11px] leading-snug text-slate-500">
+                Salen impresas en el PDF de confirmación y en el mail que recibe.
+              </p>
+            </div>
           </div>
 
           </div>
@@ -2659,7 +2839,7 @@ function ResumenReserva({
           />
         )}
         <Fila
-          k="Franquicia del cliente (lo que paga si rompe el auto)"
+          k="Franquicia del cliente"
           v={franquicia !== null ? `$${franquicia.toLocaleString('es-AR')}` : 'sin cargar'}
         />
         <Fila k="Condición de pago" v={condicionPago} />

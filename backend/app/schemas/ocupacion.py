@@ -20,6 +20,15 @@ class VehiculoOcupacionItem(BaseModel):
     # una segunda consulta sólo para poner un encabezado.
     categoria_id: int | None = None
     categoria_nombre: str | None = None
+    # El orden manual de la flota, el que se define arrastrando las filas.
+    # **Viajaba a ninguna parte**: el endpoint ordenaba por patente y el schema
+    # ni siquiera lo transportaba, así que el front no tenía con qué reordenar
+    # ni para detectar que el orden guardado se estaba ignorando.
+    orden: int = 0
+    # `alquiler` | `uber` (migración 086). Un auto afectado a Uber sigue siendo
+    # de la flota y hay que verlo en el calendario, pero **no se alquila**: va
+    # aparte y al final, no mezclado entre los que sí se venden.
+    destino: str = "alquiler"
     model_config = {"from_attributes": True}
 
 
@@ -38,6 +47,21 @@ class EventoOcupacion(BaseModel):
     precio_total: float | None = None
     notas: str | None = None
     tiene_alquiler: bool = False
+
+    # ── La devolución acordada ───────────────────────────────────────────────
+    # **El evento no las transportaba**, así que un late check-in cargado en la
+    # reserva era invisible en el calendario: la barra seguía mostrando
+    # `hora_fin`, que es el fin del período que se factura y no la hora a la que
+    # el auto vuelve. Reportado desde el mostrador como *"ese cambio de horario
+    # no figura cuando haces la reserva en el calendario"* y *"aparecen mal los
+    # horarios de devolución"*.
+    #
+    # La fecha viaja además de la hora porque la devolución puede caer al día
+    # siguiente, y una barra que dice "08:30" sin decir que es del otro día
+    # miente más que no decir nada.
+    late_checkout: bool = False
+    hora_devolucion_acordada: time | None = None
+    fecha_devolucion_acordada: date | None = None
 
     # ── Canal (Fase 1 de la reestructuración) ────────────────────────────────
     # `origen` ya existía en `Reserva` desde la migración 047, indexado, y

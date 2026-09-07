@@ -12,7 +12,7 @@ import {
 
 import { useCreateCliente, useUpdateCliente } from '@/hooks/useClientes';
 import api from '@/lib/api';
-import { extractError } from '@/lib/utils';
+import { extractError, formatDocumento } from '@/lib/utils';
 import type { ApiResponse, Cliente } from '@/types';
 
 const schema = z.object({
@@ -239,9 +239,26 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
                 <input {...register('nombre_completo')} placeholder="Juan Pérez"
                   className="input-base" />
               </Field>
+              {/* **Se puede editar siempre**, y antes no: estaba
+                  `disabled` en cuanto el cliente tuviera un documento cargado.
+                  Del mostrador: *"en los clientes la parte de DNI/CUIT no la
+                  puedo cargar"*. El caso real es cargar un número mal de
+                  apuro, o dejarlo para después y completarlo cuando la persona
+                  está enfrente — y el candado convertía un error de tipeo en
+                  una ficha inservible para siempre.
+
+                  El backend siempre lo permitió y valida que no se pise el
+                  documento de otro cliente (`cliente_service.update`). El
+                  candado era sólo de pantalla. */}
               <Field label="DNI / CUIT" error={errors.dni_cuit?.message}>
-                <input {...register('dni_cuit')} placeholder="12345678"
-                  className="input-base" disabled={isEdit && !!cliente?.dni_cuit} />
+                <input
+                  {...register('dni_cuit')}
+                  placeholder="12.345.678"
+                  className="input-base"
+                  // Los puntos se ponen al salir del campo, no mientras se
+                  // tipea: formatear con el cursor adentro lo hace saltar.
+                  onBlur={e => setValue('dni_cuit', formatDocumento(e.target.value))}
+                />
               </Field>
               <Field label="Teléfono" error={errors.telefono?.message}>
                 <input {...register('telefono')} placeholder="2914123456"

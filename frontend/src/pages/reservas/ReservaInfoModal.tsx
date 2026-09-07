@@ -5,7 +5,7 @@ import { Car, User, Calendar, MapPin, Clock, DollarSign, Pencil, XCircle, Flag, 
 import { api } from '@/lib/api';
 import { useReservas } from '@/hooks/useReservas';
 import { CancelarReservaDialog, type DatosDeCancelacion } from '@/components/reservas/CancelarReservaDialog';
-import { extractError } from '@/lib/utils';
+import { extractError, formatMiles } from '@/lib/utils';
 import type { Reserva, ApiResponse } from '@/types';
 import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
 import { ReservaModal } from './ReservaModal';
@@ -131,6 +131,7 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
     return (
       <ExtenderModal
         alquilerId={reserva.alquiler_id}
+        reservaId={reserva.id}
         vehiculoInfo={reserva.vehiculo ? `${reserva.vehiculo.marca} ${reserva.vehiculo.modelo} (${reserva.vehiculo.patente})` : `Veh. ${reserva.vehiculo_id}`}
         clienteNombre={reserva.cliente?.nombre_completo ?? `Cliente ${reserva.cliente_id}`}
         fechaInicioActual={reserva.fecha_inicio}
@@ -261,8 +262,20 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
                 <span className="text-muted-foreground mx-2">→</span>
                 {fmtFecha(fechaFin)} {fmtHora(reserva.hora_fin)}
               </p>
+              {/* **La devolución acordada, con su fecha.** Antes decía sólo
+                  "Late checkout" —el nombre además estaba al revés— y no
+                  mostraba a qué hora ni qué día vuelve el auto, que es
+                  justamente el dato por el que se abre esta ficha. */}
               {reserva.late_checkout && (
-                <p className="text-xs text-ubicar-dark mt-0.5">Late checkout</p>
+                <p className="text-xs font-medium text-ubicar-dark mt-0.5">
+                  Late check-in: vuelve el{' '}
+                  {reserva.fecha_devolucion_acordada
+                    ? new Date(`${reserva.fecha_devolucion_acordada}T12:00:00`).toLocaleDateString('es-AR')
+                    : fmtFecha(fechaFin)}
+                  {' '}a las {(reserva.hora_devolucion_acordada ?? reserva.hora_fin).slice(0, 5)}
+                  {Number(reserva.cargo_late_checkout ?? 0) > 0
+                    && ` · cargo $${formatMiles(Number(reserva.cargo_late_checkout))}`}
+                </p>
               )}
             </div>
           </div>

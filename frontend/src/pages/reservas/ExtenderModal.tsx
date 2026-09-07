@@ -1,10 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Calendar, DollarSign, CalendarClock } from 'lucide-react';
 import { useAlquileres } from '@/hooks/useAlquileres';
+import { toast } from 'sonner';
+import api from '@/lib/api';
+import { extractError, formatMiles, redondear2 } from '@/lib/utils';
+import { InputMoneda } from '@/components/shared/InputMoneda';
 import type { ExtenderResponse } from '@/types';
 
 interface Props {
   alquilerId: number;
+  /**
+   * La reserva del alquiler. Hace falta para poder regenerar el contrato con
+   * las fechas nuevas — el contrato cuelga de la reserva, no del alquiler.
+   */
+  reservaId: number;
   vehiculoInfo: string;
   clienteNombre: string;
   fechaInicioActual: string;
@@ -15,9 +24,13 @@ interface Props {
   onSuccess: () => void;
 }
 
+// `formatMiles` y no un `toLocaleString` suelto: sin `maximumFractionDigits`
+// el default del `Intl` son **tres decimales**, y la tarifa por día de una
+// extensión se deriva de una división que casi nunca da exacta — por eso salía
+// escrita `$33.333,333`.
 function formatMoney(v: string | number | null | undefined) {
   if (v == null) return '—';
-  return `$${parseFloat(String(v)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
+  return `$${formatMiles(Number(v))}`;
 }
 
 function formatDate(iso: string) {
@@ -32,6 +45,7 @@ function diasEntre(desde: string, hasta: string) {
 
 export function ExtenderModal({
   alquilerId,
+  reservaId,
   vehiculoInfo,
   clienteNombre,
   fechaInicioActual,
@@ -46,6 +60,35 @@ export function ExtenderModal({
   const [nuevaFecha, setNuevaFecha] = useState(fechaFinActual);
   const [nuevaHora, setNuevaHora] = useState(horaFinActual.slice(0, 5));
   const [resultado, setResultado] = useState<ExtenderResponse | null>(null);
+  const [regenerando, setRegenerando] = useState(false);
+  const [contratoRegenerado, setContratoRegenerado] = useState(false);
+
+  /**
+   * Anula el contrato vigente y emite uno con las fechas nuevas.
+   *
+   * Si la reserva todavía no tenía contrato, esto simplemente lo emite — que
+   * también es lo correcto: recién ahora se sabe hasta cuándo va el alquiler.
+   */
+  async function regenerarContrato() {
+    setRegenerando(true);
+    try {
+      const { data } = await api.get('/contratos', { params: { reserva_id: reservaId } });
+      const vigente = (data?.data ?? []).find((c: { anulado?: boolean }) => !c.anulado);
+      // El nuevo primero: si esto falla, el viejo sigue siendo válido.
+      await api.post('/contratos', { reserva_id: reservaId });
+      if (vigente) {
+        await api.post(`/contratos/${vigente.id}/anular`, {
+          motivo: 'Se extendió el alquiler: las fechas del contrato cambiaron',
+        });
+      }
+      setContratoRegenerado(true);
+      toast.success('Contrato regenerado con las fechas nuevas.');
+    } catch (err) {
+      toast.error(extractError(err) || 'No pudimos regenerar el contrato. Probá desde la ficha de la reserva.');
+    } finally {
+      setRegenerando(false);
+    }
+  }
   const [localError, setLocalError] = useState<string | null>(null);
 
   // El cliente paga la diferencia **al devolver el auto** — ése es el default y
@@ -57,7 +100,8 @@ export function ExtenderModal({
 
   const duracionActual = Math.max(1, diasEntre(fechaInicioActual, fechaFinActual));
   const precioActualNum = precioTotalActual ? parseFloat(String(precioTotalActual)) : 0;
-  const tarifaDiariaSugerida = precioActualNum > 0 ? precioActualNum / duracionActual : 0;
+  // Redondeada: sin esto, `200000 / 3` se pinta como `66666.66666666667`.
+  const tarifaDiariaSugerida = precioActualNum > 0 ? redondear2(precioActualNum / duracionActual) : 0;
   const duracionNueva = Math.max(0, diasEntre(fechaInicioActual, nuevaFecha));
   const diasAgregados = Math.max(0, duracionNueva - duracionActual);
 
@@ -74,26 +118,24 @@ export function ExtenderModal({
       if (lastEditedRef.current === 'dia' && precioExtraPorDia !== '') {
         setPrecioExtraTotal(Math.round((precioExtraPorDia as number) * diasAgregados));
       } else if (lastEditedRef.current === 'total' && precioExtraTotal !== '') {
-        setPrecioExtraPorDia((precioExtraTotal as number) / diasAgregados);
+        setPrecioExtraPorDia(redondear2((precioExtraTotal as number) / diasAgregados));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diasAgregados]);
 
-  function handlePrecioExtraPorDiaChange(val: string) {
+  function handlePrecioExtraPorDiaChange(val: number | '') {
     lastEditedRef.current = 'dia';
     if (val === '') { setPrecioExtraPorDia(''); setPrecioExtraTotal(''); return; }
-    const num = parseFloat(val);
-    setPrecioExtraPorDia(num);
-    if (diasAgregados > 0) setPrecioExtraTotal(Math.round(num * diasAgregados));
+    setPrecioExtraPorDia(val);
+    if (diasAgregados > 0) setPrecioExtraTotal(Math.round(val * diasAgregados));
   }
 
-  function handlePrecioExtraTotalChange(val: string) {
+  function handlePrecioExtraTotalChange(val: number | '') {
     lastEditedRef.current = 'total';
     if (val === '') { setPrecioExtraTotal(''); setPrecioExtraPorDia(''); return; }
-    const num = parseFloat(val);
-    setPrecioExtraTotal(num);
-    if (diasAgregados > 0) setPrecioExtraPorDia(num / diasAgregados);
+    setPrecioExtraTotal(val);
+    if (diasAgregados > 0) setPrecioExtraPorDia(redondear2(val / diasAgregados));
   }
 
   const precioTotalNuevoInformativo = precioActualNum + (precioExtraTotal === '' ? 0 : precioExtraTotal);
@@ -176,6 +218,30 @@ export function ExtenderModal({
               )}
             </div>
 
+            {/* **La renovación del contrato, que es lo que se pidió.**
+                El dueño preguntó por "nuevo contrato o la renovación del
+                contrato"; alargar el alquiler ya existía, pero el papel seguía
+                diciendo la fecha vieja — y un contrato que nombra una fecha que
+                no es sirve para poco cuando hay un reclamo.
+
+                Reusa la lógica de `AccionesContrato`: **primero se emite el
+                nuevo y después se anula el viejo**. Ese orden es deliberado —
+                al revés, si el POST falla, la reserva queda sin contrato válido
+                y el auto sale con un papel anulado en la mano. */}
+            <button
+              onClick={regenerarContrato}
+              disabled={regenerando || contratoRegenerado}
+              className="w-full px-5 py-2.5 rounded-xl border border-primary/30 bg-primary/5 text-primary text-sm font-medium transition-colors hover:bg-primary/10 disabled:opacity-60"
+            >
+              {contratoRegenerado
+                ? 'Contrato actualizado ✓'
+                : regenerando ? 'Actualizando el contrato…' : 'Regenerar el contrato con las fechas nuevas'}
+            </button>
+            <p className="text-[11px] leading-snug text-slate-500 text-center">
+              El contrato vigente quedó con la fecha anterior. Regenerarlo lo
+              anula y emite uno nuevo, que el cliente vuelve a firmar.
+            </p>
+
             <button
               onClick={onSuccess}
               className="w-full px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors"
@@ -252,23 +318,22 @@ export function ExtenderModal({
               <p className="text-xs text-slate-400 italic">Elegí la nueva fecha de fin para ver el precio sugerido.</p>
             )}
             <div className="grid grid-cols-2 gap-4">
+              {/* Con el puntito de los miles, igual que en la reserva. */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-600">Precio extra x Día ($)</label>
-                <input
-                  type="number"
-                  value={precioExtraPorDia === '' ? '' : precioExtraPorDia}
-                  onChange={e => handlePrecioExtraPorDiaChange(e.target.value)}
-                  min={0} step={100}
+                <label className="text-xs font-medium text-slate-600">Precio extra x Día</label>
+                <InputMoneda
+                  value={precioExtraPorDia}
+                  onChange={handlePrecioExtraPorDiaChange}
+                  placeholder="35.000"
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-600">Precio extra Total ($)</label>
-                <input
-                  type="number"
-                  value={precioExtraTotal === '' ? '' : precioExtraTotal}
-                  onChange={e => handlePrecioExtraTotalChange(e.target.value)}
-                  min={0} step={100}
+                <label className="text-xs font-medium text-slate-600">Precio extra Total</label>
+                <InputMoneda
+                  value={precioExtraTotal}
+                  onChange={handlePrecioExtraTotalChange}
+                  placeholder="70.000"
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                 />
               </div>

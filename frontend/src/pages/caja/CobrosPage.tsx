@@ -6,7 +6,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { usePagos, type FiltrosCobros } from '@/hooks/usePagos';
 import { useClientes } from '@/hooks/useClientes';
 import { useEmitirReciboDePago } from '@/hooks/useRecibos';
-import { formatCurrency, extractError } from '@/lib/utils';
+import { extractError, formatCurrency, formatDocumento } from '@/lib/utils';
 import { METODO_PAGO_LABEL , MEDIO_PAGO_COLOR } from '@/lib/constants';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -119,7 +119,7 @@ export function CobrosPage() {
                           onClick={() => { set({ cliente_id: c.id }); setBuscaCliente(''); }}
                         >
                           {c.nombre_completo}
-                          <span className="ml-2 text-xs text-muted-foreground">{c.dni_cuit}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">{formatDocumento(c.dni_cuit)}</span>
                         </button>
                       </li>
                     ))}

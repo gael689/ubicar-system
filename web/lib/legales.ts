@@ -97,8 +97,8 @@ export const TERMINOS: SeccionLegal[] = [
     id: "kilometraje",
     titulo: "7. Kilometraje",
     parrafos: [
-      "Todos nuestros alquileres incluyen kilometraje libre, sin límite ni cargo por kilómetro recorrido.",
-      "Los kilómetros se registran al entregar y al recibir el vehículo, para el control de mantenimiento de la unidad.",
+      "El régimen de kilometraje se establece en el contrato de alquiler que se firma al retirar el vehículo. Ahí queda escrito qué incluye la reserva y qué cargo corresponde si se supera.",
+      "Los kilómetros se registran al entregar y al recibir el vehículo, y quedan asentados en el contrato.",
     ],
   },
   {

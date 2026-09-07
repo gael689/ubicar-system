@@ -147,7 +147,7 @@ export const FAQ: GrupoFaq[] = [
         id: "que-incluye",
         pregunta: "¿Qué incluye el precio?",
         respuesta: [
-          "Los precios están en pesos argentinos, con impuestos incluidos, e incluyen el kilometraje libre y el seguro de responsabilidad civil que exige la normativa.",
+          "Los precios están en pesos argentinos, con impuestos incluidos, e incluyen el seguro de responsabilidad civil que exige la normativa. El régimen de kilometraje queda escrito en el contrato.",
           "No incluye combustible, peajes, multas ni estacionamiento: eso corre por tu cuenta.",
         ],
         destacada: true,
@@ -191,10 +191,13 @@ export const FAQ: GrupoFaq[] = [
     preguntas: [
       {
         id: "kilometraje",
-        pregunta: "¿El kilometraje es libre?",
+        pregunta: "¿Cómo funciona el kilometraje?",
         respuesta: [
-          "Sí. Todos nuestros alquileres incluyen kilometraje libre, sin límite ni cargo por kilómetro recorrido.",
-          "Registramos los kilómetros al entregar y al recibir el vehículo, pero es para el control de mantenimiento de la unidad, no para cobrarte.",
+          // **Antes decía "kilometraje libre, sin límite ni cargo".** El
+          // contrato no lo promete, y una FAQ destacada que promete más que el
+          // papel firmado es una discusión perdida de antemano.
+          "El kilometraje se pacta en el contrato de alquiler: ahí queda escrito qué incluye tu reserva y qué pasa si lo superás.",
+          "Registramos los kilómetros al entregar y al recibir el vehículo. Si tenés un viaje largo en mente, avisanos antes de reservar y lo dejamos aclarado.",
         ],
         destacada: true,
       },
@@ -210,7 +213,7 @@ export const FAQ: GrupoFaq[] = [
         id: "salir-del-pais",
         pregunta: "¿Puedo salir de la provincia o del país?",
         respuesta: [
-          "Dentro de la Argentina podés circular sin restricciones, con el kilometraje libre incluido.",
+          "Dentro de la Argentina podés circular sin restricciones, con el kilometraje que se haya pactado en el contrato.",
           "Para salir del país hace falta autorización expresa y por escrito, que hay que pedir con anticipación porque requiere documentación adicional del vehículo.",
         ],
       },

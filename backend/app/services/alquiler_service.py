@@ -41,6 +41,30 @@ from app.services.echeq_service import EcheqService
 logger = logging.getLogger(__name__)
 
 
+def _devolucion_acordada(reserva: Reserva) -> datetime:
+    """
+    Cuándo se pactó que vuelve el auto. Es el punto cero del excedente.
+
+    **La fecha importa tanto como la hora, y hasta la migración 092 no
+    existía.** Los dos lugares que calculaban esto combinaban
+    `hora_devolucion_acordada` con `reserva.fecha_fin`, y eso rompe el caso más
+    común de todos: se vende medio día más y el auto vuelve a las 08:30 *del día
+    siguiente*. Con la hora sola, el sistema entendía 08:30 del día de fin — o
+    sea ocho horas **antes** del horario pactado. `calcular_excedente` recibía
+    una diferencia negativa, la tomaba como dentro de los 40 minutos de gracia y
+    devolvía cargo cero.
+
+    O sea: el medio día vendido no se cobraba, y no fallaba ruidosamente sino
+    en silencio, que es la peor forma de perder plata.
+
+    El default sigue siendo el de siempre (D-18): se devuelve el día de fin, a
+    la misma hora en que se retiró.
+    """
+    fecha = reserva.fecha_devolucion_acordada or reserva.fecha_fin
+    hora = reserva.hora_devolucion_acordada or reserva.hora_inicio
+    return datetime.combine(fecha, hora)
+
+
 class AlquilerService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -90,8 +114,7 @@ class AlquilerService:
         if reserva.estado not in (EstadoReserva.ACTIVA.value, EstadoReserva.VENCIDA.value):
             raise BusinessRuleError("estado_invalido", "El alquiler no está activo")
 
-        hora_devolucion = reserva.hora_devolucion_acordada or reserva.hora_inicio
-        hora_devolucion_dt = datetime.combine(reserva.fecha_fin, hora_devolucion)
+        hora_devolucion_dt = _devolucion_acordada(reserva)
         checkin_dt = datetime.combine(checkin_fecha, checkin_hora)
 
         tarifa_diaria = self._obtener_tarifa_diaria(reserva)
@@ -422,8 +445,7 @@ class AlquilerService:
             )
 
         # Calcular excedente
-        hora_devolucion = reserva.hora_devolucion_acordada or reserva.hora_inicio
-        hora_devolucion_dt = datetime.combine(reserva.fecha_fin, hora_devolucion)
+        hora_devolucion_dt = _devolucion_acordada(reserva)
         tarifa_diaria = self._obtener_tarifa_diaria(reserva)
         resultado = calcular_excedente(hora_devolucion_dt, checkin_dt, tarifa_diaria, **self._params_excedente())
 
@@ -741,6 +763,25 @@ class AlquilerService:
                 tarifa_aplicada_id=nueva_tarifa_id,
                 precio_total=nuevo_precio,
                 estado=nuevo_estado,
+                # **La devolución acordada acompaña al fin nuevo.**
+                #
+                # Esto movía `fecha_fin` y dejaba la devolución acordada donde
+                # estaba, así que después de extender el punto cero del
+                # excedente quedaba siendo un horario pactado para un día que ya
+                # pasó: el check-in calculaba las horas de más contra la fecha
+                # vieja y cobraba un excedente que no existía.
+                #
+                # Extender **es** acordar una devolución nueva. Si además se
+                # pacta otro horario para ese día, se carga editando la reserva,
+                # que ahora sí lo permite.
+                #
+                # `cargo_late_checkout` **no se toca**: ya se facturó como parte
+                # del débito del check-out (`cobranza.monto_facturado` lo suma),
+                # y ponerlo en cero acá dejaría al cliente debiendo menos de lo
+                # que dice el ledger. Si ese cargo quedó mal, se corrige por el
+                # camino de siempre: editando la reserva.
+                hora_devolucion_acordada=nueva_hora_fin,
+                fecha_devolucion_acordada=nueva_fecha_fin,
             )
 
             # ── La diferencia, al libro ──────────────────────────────────────

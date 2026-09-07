@@ -11,14 +11,17 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { useMultas } from '@/hooks/useMultas';
 import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR, ESTADO_MULTA_COLOR_OUTLINE } from '@/lib/constants';
 import type { Multa, BusquedaMultaResult, EstadoMulta, EstadoMultaEditable, MultaCreate } from '@/types';
-import { cn, extractError } from '@/lib/utils';
+import { cn, extractError, formatDocumento, formatMiles } from '@/lib/utils';
 
 function formatDate(iso: string) {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
 }
+// Vía `formatMiles`: un `toLocaleString('es-AR')` sin `maximumFractionDigits`
+// muestra hasta **tres** decimales por default, así que un importe que no da
+// exacto aparecía escrito como `$33.333,333`.
 function formatMoney(v: string | number) {
-  return `$${parseFloat(String(v)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
+  return `$${formatMiles(Number(v))}`;
 }
 
 // "cobrada"/"bonificada" no se setean a mano: van por los botones de
@@ -426,7 +429,7 @@ export function MultasPage() {
                     {m.cliente && (
                       <Link to={`/clientes/${m.cliente.id}`} className="text-sm text-primary hover:underline">
                         {m.cliente.nombre_completo}
-                        <span className="text-muted-foreground font-normal"> · {m.cliente.dni_cuit}</span>
+                        <span className="text-muted-foreground font-normal"> · {formatDocumento(m.cliente.dni_cuit)}</span>
                       </Link>
                     )}
                     {m.descripcion && <p className="text-xs text-muted-foreground">{m.descripcion}</p>}

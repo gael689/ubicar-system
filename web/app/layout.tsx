@@ -96,7 +96,7 @@ const JSON_LD = {
       "@id": `${SITE}/#business`,
       name: "Ubicar Rent",
       description:
-        "Empresa de alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y el sur de la Provincia de Buenos Aires. Reserva online con precio final y kilometraje libre, para particulares y empresas.",
+        "Empresa de alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y el sur de la Provincia de Buenos Aires. Reserva online con precio final, para particulares y empresas.",
       url: `${SITE}/`,
       logo: `${SITE}/og-image.jpeg`,
       image: `${SITE}/og-image.jpeg`,

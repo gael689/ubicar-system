@@ -271,7 +271,13 @@ class ContratoService:
             # escrito con cuánto salió es indefendible.
             "check_out_combustible": a.checkout_combustible if a else None,
             # La devolución es la prevista: el contrato se firma al entregar.
-            "check_in_fecha": _iso(r.fecha_fin),
+            #
+            # **La fecha sale de la devolución acordada, no de `fecha_fin`.**
+            # La hora ya salía de ahí, y la fecha no: con un late check-in a las
+            # 08:30 del día siguiente, el contrato imprimía el día de fin con
+            # las 08:30 — o sea una devolución *anterior* al retiro de ese
+            # mismo día. El papel que el cliente firma decía algo imposible.
+            "check_in_fecha": _iso(r.fecha_devolucion_acordada or r.fecha_fin),
             "check_in_hora": _hora(r.hora_devolucion_acordada or r.hora_fin),
             "check_in_lugar": r.lugar_devolucion,
         }
@@ -328,7 +334,11 @@ class ContratoService:
             "lineas": lineas,
             "descuento": float(descuento),
             "valor_estimado": float(estimado),
-            "incluye_kilometraje": True,
+            # El contrato es el que fija el régimen de kilometraje, así que lo
+            # dice en primera persona en vez de prometer "libre". La web decía
+            # lo mismo y se cambió en la misma tanda: que el sitio prometa algo
+            # que el papel no dice es exactamente donde nace un reclamo.
+            "kilometraje_segun_contrato": True,
             # El IVA se desagrega sólo si se factura: para un consumidor final
             # el precio es final y desglosarlo confunde sin aportar nada.
             "discrimina_iva": bool(r.con_factura),

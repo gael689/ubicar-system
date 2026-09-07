@@ -27,8 +27,12 @@ import { Check, MapPin, ShieldCheck, Wallet } from "lucide-react";
 const BENEFICIOS = [
   {
     Icono: Check,
-    titulo: "Kilometraje libre",
-    detalle: "Sin tope de kilómetros ni cargo por excedente.",
+    // **Decía "Kilometraje libre" y el contrato no lo promete.** Prometer en
+    // el sitio algo que el papel que se firma no dice es exactamente donde
+    // nace un reclamo con respaldo escrito. Se cambió el sitio y la línea del
+    // contrato en la misma tanda, para que digan lo mismo.
+    titulo: "Kilometraje según contrato",
+    detalle: "El régimen de kilómetros queda escrito en el contrato que firmás.",
   },
   {
     Icono: ShieldCheck,
