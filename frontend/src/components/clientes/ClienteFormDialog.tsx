@@ -179,6 +179,10 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
 
   const loading = create.isPending || update.isPending;
 
+  // Se guarda aparte para poder encadenar su `onBlur` con el formateo del
+  // documento sin pisarlo (ver el campo de DNI/CUIT más abajo).
+  const registroDni = register('dni_cuit');
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* El alta de cliente tiene muchos campos y no entra entera en una
@@ -252,12 +256,21 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
                   candado era sólo de pantalla. */}
               <Field label="DNI / CUIT" error={errors.dni_cuit?.message}>
                 <input
-                  {...register('dni_cuit')}
+                  {...registroDni}
                   placeholder="12.345.678"
                   className="input-base"
-                  // Los puntos se ponen al salir del campo, no mientras se
+                  // **Se llama al `onBlur` de react-hook-form y después al
+                  // formateo.** Poner `onBlur` suelto después del spread pisaba
+                  // el de RHF, que es el que marca el campo como tocado y
+                  // dispara la validación — el formateo andaba, pero se comía
+                  // silenciosamente algo que no es nuestro.
+                  //
+                  // Los puntos se ponen al salir del campo y no mientras se
                   // tipea: formatear con el cursor adentro lo hace saltar.
-                  onBlur={e => setValue('dni_cuit', formatDocumento(e.target.value))}
+                  onBlur={e => {
+                    registroDni.onBlur(e);
+                    setValue('dni_cuit', formatDocumento(e.target.value));
+                  }}
                 />
               </Field>
               <Field label="Teléfono" error={errors.telefono?.message}>

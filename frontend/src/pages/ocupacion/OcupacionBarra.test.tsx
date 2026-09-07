@@ -19,7 +19,7 @@
  * Lo que se fija acá es que la barra muestre **la devolución que se pactó** y no
  * el fin del período facturado, que son cosas distintas y se veían mezcladas.
  */
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

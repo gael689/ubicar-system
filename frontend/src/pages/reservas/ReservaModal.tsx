@@ -429,14 +429,23 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    */
   const vehiculosPorCategoria = useMemo(() => {
     const categorias = categoriasData ?? [];
+    // **Los de Uber no entran al selector.** No se alquilan, así que ofrecerlos
+    // sólo sirve para elegir uno por error — y hasta ahora se podía: aparecían
+    // dentro de su categoría real, mezclados con los que sí se venden, cada vez
+    // que se apretaba "Ver toda la flota". La consulta de libres ya los
+    // excluía, pero esa lista no.
+    //
+    // El backend igual lo rechaza (`ReservaService._validar_que_se_alquila`);
+    // esto es para que no haya que llegar al rechazo.
+    const seAlquilan = vehiculosActivos.filter(v => v.destino !== 'uber');
     const grupos = categorias
       .map(c => ({
         nombre: c.nombre,
-        vehiculos: vehiculosActivos.filter(v => v.categoria_id === c.id),
+        vehiculos: seAlquilan.filter(v => v.categoria_id === c.id),
       }))
       .filter(g => g.vehiculos.length > 0);
 
-    const huerfanos = vehiculosActivos.filter(
+    const huerfanos = seAlquilan.filter(
       v => !v.categoria_id || !categorias.some(c => c.id === v.categoria_id)
     );
     if (huerfanos.length) grupos.push({ nombre: 'Sin categoría', vehiculos: huerfanos });

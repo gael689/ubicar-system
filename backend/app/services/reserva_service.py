@@ -483,6 +483,7 @@ class ReservaService:
             vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
             if not vehiculo or not vehiculo.activo:
                 raise NotFoundError("Vehículo", vehiculo_id)
+            self._validar_que_se_alquila(vehiculo)
             # El auto manda: su categoría real gana sobre la que hayan pedido.
             categoria_id = vehiculo.categoria_id or categoria_id
         else:
@@ -863,6 +864,12 @@ class ReservaService:
         # Hasta hoy esto lo tapaba sólo un `disabled` en el formulario del
         # sistema interno — o sea, no lo tapaba: cualquier otro cliente de la
         # API podía hacerlo.
+        # Cambiar el auto por acá tampoco puede meter uno de Uber.
+        if vehiculo_id is not None and vehiculo_id != reserva.vehiculo_id:
+            nuevo = self.db.get(Vehiculo, vehiculo_id)
+            if nuevo is not None:
+                self._validar_que_se_alquila(nuevo)
+
         if vehiculo_id is not None and reserva.alquiler is not None and reserva.vehiculo_id != vehiculo_id:
             raise ConflictError(
                 "alquiler_en_curso|El vehículo ya se entregó: el kilometraje y el "
@@ -1332,6 +1339,7 @@ class ReservaService:
         nuevo_vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == nuevo_vehiculo_id).first()
         if not nuevo_vehiculo or not nuevo_vehiculo.activo:
             raise NotFoundError("Vehículo destino", nuevo_vehiculo_id)
+        self._validar_que_se_alquila(nuevo_vehiculo)
 
         inicio_dt = datetime.combine(reserva.fecha_inicio, reserva.hora_inicio)
         fin_dt = datetime.combine(reserva.fecha_fin, reserva.hora_fin)
@@ -1456,6 +1464,36 @@ class ReservaService:
 
     def saldo_pendiente(self, reserva: Reserva) -> Decimal:
         return self.total_a_cobrar(reserva) - Decimal(str(reserva.anticipo_monto or 0))
+
+    @staticmethod
+    def _validar_que_se_alquila(vehiculo: Vehiculo) -> None:
+        """
+        Un auto afectado a Uber no se alquila. Punto.
+
+        **La guarda existía en un solo sentido.** `VehiculoService.update` no
+        deja pasar un auto a Uber si tiene reservas vivas — pero nada impedía lo
+        contrario: reservar uno que ya estaba en Uber. Y el sistema lo dejaba
+        entrar por todos lados, porque `DisponibilidadService` los saca del cupo
+        pero `create()` nunca miraba `destino`: alcanzaba con elegirlo a mano en
+        el selector, apretar el `+` de su fila en el calendario, o mandar el
+        `POST` directo.
+
+        El resultado era una reserva que el sistema no cuenta como ocupación —
+        no descuenta cupo, no aparece en disponibilidad— sobre un auto que no
+        está. Del mostrador, sobre por qué molesta que estén mezclados: *"le
+        quita lugar a los que sí alquilamos"*.
+
+        Va acá y no sólo en la pantalla porque una validación de formulario la
+        saltea cualquier otro cliente de la API — es exactamente lo que pasaba
+        con el cambio de vehículo antes de D-48.
+        """
+        if vehiculo.destino != "alquiler":
+            raise BusinessRuleError(
+                "vehiculo_no_se_alquila",
+                f"{vehiculo.patente} está afectado a Uber y no se alquila. "
+                f"Si va a volver a la flota de alquiler, cambiale el destino "
+                f"desde su ficha.",
+            )
 
     def _asentar_sena(
         self,
@@ -1748,6 +1786,7 @@ class ReservaService:
         vehiculo = self.db.get(Vehiculo, vehiculo_id)
         if not vehiculo or not vehiculo.activo:
             raise NotFoundError("Vehículo", vehiculo_id)
+        self._validar_que_se_alquila(vehiculo)
 
         anterior = reserva.vehiculo_id
         estado_antes = reserva.estado
