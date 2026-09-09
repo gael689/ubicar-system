@@ -109,6 +109,24 @@ export function FirmaContrato({ token }: { token: string }) {
   const puedeFirmar =
     nombre.trim().length > 2 && dni.trim().length > 4 && !!firma && faltanTildes.length === 0;
 
+  /**
+   * Firma, y **si algo se corta, pregunta cómo quedó antes de dar un error**.
+   *
+   * El caso reportado, palabra por palabra:
+   *
+   * > *"El cliente firmó por mobile, pero le salía sin conexión con el
+   * > servidor, y después a nosotros nos llegó firmado."*
+   *
+   * Es lo que pasa cuando el POST llega y la respuesta no vuelve: el trazo va
+   * como imagen en base64, pesa, y en 4G flojo la conexión se corta justo ahí.
+   * El servidor firmó; el teléfono no se enteró. Decirle "no se pudo" a
+   * alguien que ya firmó es la peor salida posible — vuelve a trazar, aprieta
+   * de nuevo, y ahora recibe un 409 que tampoco entiende.
+   *
+   * Así que ante un corte (`status 0`), un error del servidor, o un 409 —que
+   * es literalmente "ya está firmado"— se relee el contrato. Si figura
+   * firmado, el resultado es el bueno y la pantalla lo muestra.
+   */
   async function confirmar() {
     if (!puedeFirmar || !firma) return;
     setEnviando(true);
@@ -120,12 +138,33 @@ export function FirmaContrato({ token }: { token: string }) {
         firma_base64: firma,
         aceptaciones: contrato!.aceptaciones.map((a) => a.clave),
       });
-      setListo(true);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      darPorFirmado();
     } catch (e) {
-      setError((e as ApiError).message);
+      const err = e as ApiError;
+      const puedeHaberEntrado = err.status === 0 || err.status === 409 || err.status >= 500;
+      if (puedeHaberEntrado && (await quedoFirmado())) {
+        darPorFirmado();
+        return;
+      }
+      setError(err.message);
     } finally {
       setEnviando(false);
+    }
+  }
+
+  function darPorFirmado() {
+    setListo(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /** ¿El servidor lo tiene firmado? Si no se puede preguntar, `false`: ante la
+   *  duda se muestra el error, que es lo que deja seguir intentando. */
+  async function quedoFirmado(): Promise<boolean> {
+    try {
+      const actual = await api.contratoParaFirmar(token);
+      return actual.firmado;
+    } catch {
+      return false;
     }
   }
 

@@ -225,16 +225,21 @@ export function ReservasList() {
 
   return (
     <div className="space-y-4">
-      {/* Header — sticky para no perderlo al scrollear la tabla */}
+      {/* Header — sticky para no perderlo al scrollear la tabla.
+          Envuelve (`flex-wrap`) y se achica en el teléfono: sin eso el título
+          y los tres controles no entran en 360 px, la fila desborda de costado
+          y la barra fija termina más alta que la tabla que tiene abajo. */}
       <div className="sticky top-0 z-10 -mx-4 -mt-4 bg-surface/95 backdrop-blur px-4 pt-4 pb-3 space-y-3 border-b border-transparent">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Reservas y Alquileres</h1>
-            <p className="text-sm text-slate-500 mt-1">{total} resultado{total !== 1 ? 's' : ''}</p>
+            <h1 className="text-lg sm:text-2xl font-bold text-slate-800">Reservas y Alquileres</h1>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1">{total} resultado{total !== 1 ? 's' : ''}</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Toggle de densidad */}
-            <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5">
+            {/* Toggle de densidad. Oculto en el teléfono: ahí la tabla se mira
+                de costado y apretar las filas no gana nada, sólo ocupa lugar
+                en una barra que tiene que quedar corta. */}
+            <div className="hidden sm:flex items-center rounded-lg border border-slate-200 bg-white p-0.5">
               <button
                 onClick={() => setDensidad('comoda')}
                 title="Densidad cómoda"
@@ -460,7 +465,19 @@ export function ReservasList() {
         </div>
       )}
 
-      {/* Tabla Light / Excel-like */}
+      {/* Tabla Light / Excel-like.
+          **El contenedor scrollea de costado.** Antes era `overflow-hidden`
+          con una tabla `w-full`: en el teléfono las siete columnas no entran,
+          así que la tabla se comprimía hasta cortar el texto y lo que
+          sobresalía quedaba recortado, sin forma de llegar. Reportado así:
+
+          > *"Esta vista es la del celu, no me deja mirar para la derecha a
+          > menos que acueste el celu."*
+
+          El ancho mínimo es lo que hace que el scroll exista: sin él la tabla
+          se sigue apretando en vez de desbordar, y "Fechas" vuelve a salir
+          cortada. En una pantalla de escritorio no cambia nada — ahí sobra
+          ancho y el contenedor no llega a scrollear. */}
       <div className="rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <div className="flex items-center justify-center h-40">
@@ -472,7 +489,8 @@ export function ReservasList() {
             <p>No hay reservas para mostrar</p>
           </div>
         ) : (
-          <table className="w-full text-sm border-collapse">
+          <div className="overflow-x-auto overscroll-x-contain">
+          <table className="w-full min-w-[62rem] text-sm border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-left">
                 <th className={cn(cellPad, 'border-r border-slate-200 w-16')}>ID</th>
@@ -662,6 +680,7 @@ export function ReservasList() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

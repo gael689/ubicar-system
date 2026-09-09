@@ -146,6 +146,53 @@ export function codigoDeError(err: unknown): string | null {
   return codigo && !codigo.includes(' ') && detail.includes('|') ? codigo : null;
 }
 
+/**
+ * El request salió y **nunca volvió una respuesta**.
+ *
+ * Es lo único que se puede afirmar: no dice que la operación no se haya hecho.
+ * Ver `mensajeSinRespuesta` para por qué la diferencia importa tanto.
+ */
+export function sinRespuesta(err: unknown): boolean {
+  return axios.isAxiosError(err) && !err.response;
+}
+
+/** Lo cortó el reloj de axios, no la red. */
+export function esTimeout(err: unknown): boolean {
+  return (
+    axios.isAxiosError(err) &&
+    !err.response &&
+    (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT')
+  );
+}
+
+/**
+ * Qué decir cuando no llegó respuesta. **No es un detalle de redacción.**
+ *
+ * El mensaje viejo era uno solo — *"Sin conexión con el servidor"* — y se
+ * mostraba igual en los tres casos, incluido el que más pasa en el mostrador:
+ * el pedido llegó, el servidor lo hizo, y lo que se perdió fue la respuesta.
+ * Reportado así:
+ *
+ * > *"Hago el contrato rápido, me dice Sin conexión, pero cuando llego a la PC
+ * > me aparece para terminar de editarlo."*
+ *
+ * O sea que la reserva estaba creada y la pantalla decía lo contrario. Alguien
+ * que lee "sin conexión" vuelve a cargar todo, y ahí sí termina con dos.
+ *
+ * Sin internet es el único caso donde se puede afirmar que no salió: el
+ * navegador lo sabe antes de intentar. En los otros dos la frase tiene que
+ * quedar abierta, porque la verdad está abierta.
+ */
+export function mensajeSinRespuesta(err: unknown): string {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return 'Te quedaste sin internet: esto no se envió. Reconectate y probá de nuevo.';
+  }
+  if (esTimeout(err)) {
+    return 'El servidor tardó demasiado en contestar. Puede que haya quedado hecho igual — fijate antes de repetirlo.';
+  }
+  return 'Se cortó la conexión antes de la respuesta. Puede que haya quedado hecho igual — fijate antes de repetirlo.';
+}
+
 export function extractError(err: unknown, fallback = 'Algo salió mal'): string {
   if (axios.isAxiosError(err)) {
     const detail = err.response?.data?.detail;
@@ -153,7 +200,7 @@ export function extractError(err: unknown, fallback = 'Algo salió mal'): string
     if (Array.isArray(detail) && detail[0]?.msg) {
       return detail.map((d: { msg: string }) => d.msg).join(', ');
     }
-    if (!err.response) return 'Sin conexión con el servidor';
+    if (!err.response) return mensajeSinRespuesta(err);
   }
   if (err instanceof Error) return err.message;
   return fallback;

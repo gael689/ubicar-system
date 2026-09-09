@@ -40,19 +40,36 @@ interface Envelope<T> {
   data: T;
 }
 
+/**
+ * Cuánto se espera antes de dar por perdido un pedido.
+ *
+ * Sin esto un `fetch` desde un celular con mala señal podía quedar colgado
+ * indefinidamente: el botón decía "Firmando…" para siempre y nadie sabía si
+ * había que volver a apretarlo. Es generoso a propósito — el problema que
+ * resuelve es el cuelgue, no la lentitud.
+ */
+const ESPERA_MAXIMA_MS = 45_000;
+
+function conTiempoLimite(init?: RequestInit): RequestInit {
+  if (init?.signal || typeof AbortSignal?.timeout !== "function") return init ?? {};
+  return { ...init, signal: AbortSignal.timeout(ESPERA_MAXIMA_MS) };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
-      ...init,
+      ...conTiempoLimite(init),
       headers: { "Content-Type": "application/json", ...init?.headers },
       cache: "no-store",
     });
   } catch {
-    // Sin red o backend caído. El mensaje va directo a la pantalla, así que
-    // dice qué hacer en vez de nombrar el problema técnico.
+    // Sin red, backend caído, o —lo más frecuente en un celular— el pedido
+    // llegó y lo que se perdió fue la respuesta. El mensaje no puede afirmar
+    // que no se hizo nada: quien lo lee vuelve a apretar. Ver `FirmaContrato`,
+    // que ante un `status: 0` va a preguntarle al servidor cómo quedó.
     throw new ApiError(
-      "No pudimos conectarnos. Revisá tu conexión o escribinos por WhatsApp.",
+      "Se cortó la conexión antes de la respuesta. Revisá tu conexión o escribinos por WhatsApp.",
       0,
     );
   }

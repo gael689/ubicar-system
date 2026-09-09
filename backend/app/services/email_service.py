@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -328,6 +329,53 @@ class EmailService:
                 "[Email] falló el aviso '%s' de la entidad #%s",
                 evento, getattr(entidad, "id", "?"),
             )
+
+    @staticmethod
+    def avisar_luego(background: BackgroundTasks, evento: str, entidad) -> None:
+        """
+        Lo mismo que `avisar`, pero **después de contestarle al cliente**.
+
+        El SDK de Resend es síncrono y no tiene timeout: un mail que tarda
+        cuarenta segundos deja el request abierto cuarenta segundos. Del otro
+        lado, en el mostrador, hay un celular con 4G flojo y un axios que corta
+        solo. Reportado dos veces:
+
+        > *"Hago el contrato rápido, me dice Sin conexión, pero cuando llego a
+        > la PC me aparece para terminar de editarlo."*
+
+        La reserva estaba creada: lo que no llegó fue la respuesta, porque el
+        request seguía esperando a Resend. El mail no es parte de lo que la
+        persona está esperando ver, así que sale por atrás — que es el mismo
+        tratamiento que ya tenía el aviso de contrato firmado (`public.py`).
+
+        **Sólo se pasa el id, nunca la instancia.** La sesión del request se
+        cierra al devolver la respuesta, y una entidad atada a esa sesión
+        explota apenas la tarea corra un milisegundo tarde.
+        """
+        background.add_task(
+            EmailService._avisar_en_sesion_propia, evento, type(entidad), entidad.id
+        )
+
+    @staticmethod
+    def _avisar_en_sesion_propia(evento: str, modelo: type, entidad_id: int) -> None:
+        """El aviso ya fuera del request, con su propia sesión y sin dueño a
+        quien devolverle un error: lo único que corresponde es el log."""
+        from app.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            entidad = db.get(modelo, entidad_id)
+            if entidad is None:
+                return
+            EmailService.avisar(db, evento, entidad)
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "[Email] falló el aviso diferido '%s' de %s#%s",
+                evento, getattr(modelo, "__name__", modelo), entidad_id,
+            )
+        finally:
+            db.close()
 
     # ── Reintento ────────────────────────────────────────────────────────
 

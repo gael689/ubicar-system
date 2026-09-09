@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Calendar, Car, FileSignature, MapPin, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -11,8 +11,10 @@ import { useAdicionales } from '@/hooks/useAdicionales';
 import { useConfiguracion } from '@/hooks/useConfiguracion';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
 import api from '@/lib/api';
-import { extractError, formatDocumento, formatMiles, redondear2 } from '@/lib/utils';
-import type { ApiResponse, Cliente, ReservaCreate } from '@/types';
+import {
+  extractError, formatDocumento, formatMiles, mensajeSinRespuesta, redondear2, sinRespuesta,
+} from '@/lib/utils';
+import type { ApiResponse, Cliente, Reserva, ReservaCreate } from '@/types';
 
 interface Props {
   initialVehiculoId?: number;
@@ -56,7 +58,10 @@ function sumarDias(iso: string, dias: number): string {
  * pantalla y subir el escaneo. No hay una segunda implementación de contratos.
  */
 export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, onCreada }: Props) {
-  const { createReserva, loading } = useReservas();
+  const { createReserva, listReservas, loading } = useReservas();
+  /** El cliente que esta pantalla dio de alta, para que un reintento no cree
+   *  un duplicado. Ver `crear`. */
+  const clienteCreado = useRef<number | null>(null);
   const { data: vehiculosData } = useVehiculos({ incluir_inactivos: false, page_size: 100 });
   const { data: configItems } = useConfiguracion();
   const { data: catalogoAdicionales = [] } = useAdicionales();
@@ -80,8 +85,19 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
     const valores = (item?.valor ?? '').split(',').map(s => s.trim()).filter(Boolean);
     return valores.length ? valores : LUGARES_FALLBACK;
   }, [configItems]);
+  // El lugar. **"Otro" existía en Nueva reserva y acá no**, y es el caso que
+  // más aparece en el camino rápido: una entrega puerta a puerta se acuerda
+  // por teléfono y el domicilio no está en la lista de Configuración. Sin
+  // esto había que crear la reserva con un lugar equivocado y corregirla
+  // después — o sea, justo el paso que el contrato rápido viene a evitar.
+  //
+  // Sigue siendo **un solo campo para retiro y devolución**, como estaba: en
+  // el mostrador el auto sale y vuelve al mismo lado, y partirlo en dos
+  // agregaría un paso al camino corto. Si difieren, se corrige editando la
+  // reserva, igual que la garantía o la condición de pago.
   const [lugar, setLugar] = useState('');
-  const lugarElegido = lugar || lugares[0] || '';
+  const [esOtro, setEsOtro] = useState(false);
+  const lugarElegido = (esOtro ? lugar : lugar || lugares[0] || '').trim();
 
   const [precioTotal, setPrecioTotal] = useState<number | ''>('');
   const [cobertura, setCobertura] = useState<number | ''>('');
@@ -123,10 +139,15 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
     }
     if (!vehiculoId) { setError('Elegí el auto: el contrato tiene que decir cuál se entrega.'); return; }
     if (duracionDias <= 0) { setError('La devolución tiene que ser posterior al retiro.'); return; }
+    if (!lugarElegido) { setError('Escribí el lugar de retiro y devolución.'); return; }
     if (!precioTotal || Number(precioTotal) <= 0) { setError('Falta el precio.'); return; }
 
+    // Fuera del `try` para que un reintento lo tenga a mano: si la reserva se
+    // cae después de dar de alta al cliente, apretar de nuevo no puede volver
+    // a crearlo. Es un ref y no estado porque no cambia nada de la pantalla.
+    let idCliente = clienteId ? Number(clienteId) : clienteCreado.current ?? 0;
+
     try {
-      let idCliente = clienteId ? Number(clienteId) : 0;
       if (!idCliente) {
         // Alta mínima, igual que la del wizard: alcanza el nombre, y la campana
         // reclama después lo que falte. Acá se aprovecha para pedir DNI y
@@ -139,6 +160,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
           notas: 'Alta rápida desde un contrato de mostrador.',
         });
         idCliente = (data.data as Cliente).id;
+        clienteCreado.current = idCliente;
       }
 
       const payload: ReservaCreate = {
@@ -165,7 +187,55 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
       onCreada();
       toast.success('Reserva creada. Generá el contrato acá abajo.');
     } catch (err) {
+      // **Que no llegue la respuesta no significa que no se haya creado.**
+      // Es el caso reportado desde el celular del mostrador: la pantalla decía
+      // "sin conexión" y la reserva aparecía después en la computadora. En vez
+      // de mandar a la persona a buscarla, se busca acá — y si está, el modal
+      // sigue donde tenía que seguir: en el panel del contrato.
+      if (sinRespuesta(err)) {
+        const encontrada = await buscarLaQueQuizasSeCreo(idCliente);
+        if (encontrada) {
+          setReservaId(encontrada.id);
+          onCreada();
+          toast.success(`La reserva #${encontrada.id} sí se había creado. Seguí con el contrato.`);
+          return;
+        }
+        setError(
+          `${mensajeSinRespuesta(err)} Buscamos la reserva y no aparece, así que ` +
+          'podés volver a intentarlo.',
+        );
+        return;
+      }
       setError(extractError(err));
+    }
+  }
+
+  /**
+   * La reserva que el servidor pudo haber creado sin llegar a contestarnos.
+   *
+   * Se busca por auto y por día —los dos datos que la identifican y que el
+   * backend sabe filtrar— y recién ahí se compara el resto. Un contrato rápido
+   * es siempre de hoy o de mañana, así que el universo a revisar es chico.
+   *
+   * Si algo falla, devuelve `null`: esto es el intento de aclarar una duda, y
+   * no puede convertirse en un segundo error encima del primero.
+   */
+  async function buscarLaQueQuizasSeCreo(idCliente: number): Promise<Reserva | null> {
+    if (!idCliente) return null;
+    try {
+      const resp = await listReservas({
+        vehiculo_id: Number(vehiculoId),
+        cliente_id: idCliente,
+        fecha: fechaInicio,
+        page_size: 20,
+      });
+      return resp.data.find(r =>
+        r.estado !== 'cancelada' &&
+        r.fecha_inicio === fechaInicio &&
+        r.fecha_fin === fechaFin,
+      ) ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -294,16 +364,32 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                 </label>
                 <div className="flex gap-1.5 flex-wrap">
                   {lugares.map(l => (
-                    <button key={l} type="button" onClick={() => setLugar(l)}
+                    <button key={l} type="button"
+                      onClick={() => { setLugar(l); setEsOtro(false); }}
                       className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                        lugarElegido === l
+                        !esOtro && lugarElegido === l
                           ? 'bg-primary/15 border-primary/35 text-primary'
                           : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10'
                       }`}>
                       {l}
                     </button>
                   ))}
+                  <button type="button"
+                    onClick={() => { setEsOtro(true); setLugar(''); }}
+                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                      esOtro
+                        ? 'bg-primary/15 border-primary/35 text-primary'
+                        : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10'
+                    }`}>
+                    Otro
+                  </button>
                 </div>
+                {esOtro && (
+                  <input type="text" value={lugar} onChange={e => setLugar(e.target.value)}
+                    placeholder="Dirección específica"
+                    autoFocus
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                )}
               </div>
 
               {/* Precio y cobertura */}

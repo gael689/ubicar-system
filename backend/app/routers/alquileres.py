@@ -4,7 +4,7 @@ Router de Alquileres — Fase 3 completo.
 """
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_current_user
@@ -121,6 +121,7 @@ def preview_excedente(
 def checkin(
     alquiler_id: int,
     payload: CheckinCreate,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -155,9 +156,11 @@ def checkin(
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # El cierre al cliente, con los cargos si los hubo. Después del commit: el
-    # auto ya volvió, y ninguna falla de Resend puede devolver un error acá.
-    EmailService.avisar(db, "checkin", alquiler)
+    # El cierre al cliente, con los cargos si los hubo. Después del commit **y
+    # después de la respuesta**: el auto ya volvió, ninguna falla de Resend
+    # puede devolver un error acá, y esperar al mail adentro del request es lo
+    # que hacía que la devolución registrada apareciera como "sin conexión".
+    EmailService.avisar_luego(background, "checkin", alquiler)
 
     return ok(AlquilerResponse.model_validate(alquiler), "Checkin registrado")
 

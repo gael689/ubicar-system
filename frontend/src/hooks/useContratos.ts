@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import { extractError } from '@/lib/utils';
+import { extractError, sinRespuesta } from '@/lib/utils';
 import type { Contrato, ContratoPreparado, ContratoSnapshot, ContratoPlantilla } from '@/types';
 
 const KEY = 'contratos';
@@ -20,6 +20,23 @@ const KEY = 'contratos';
  */
 const avisar = (porDefecto: string) => (err: unknown) =>
   toast.error(extractError(err) || porDefecto);
+
+/**
+ * ¿Un contrato figura firmado del lado del servidor?
+ *
+ * Se usa cuando el POST de la firma no devolvió respuesta. El trazo viaja como
+ * imagen y desde el celular del mostrador la conexión se corta justo ahí: el
+ * servidor firmó y la pantalla mostró un error. Antes de insistir, se
+ * pregunta.
+ */
+export async function contratoYaFirmado(id: number): Promise<boolean> {
+  try {
+    const res = await api.get<{ data: Contrato }>(`/contratos/${id}`);
+    return !!res.data.data.firmado;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * El anverso precargado y editable. No persiste nada — lo que el operador
@@ -65,7 +82,13 @@ export function useCrearContrato() {
       qc.invalidateQueries({ queryKey: ['alquileres'] });
       qc.invalidateQueries({ queryKey: ['reservas'] });
     },
-    onError: avisar('No pudimos emitir el contrato.'),
+    onError: (err) => {
+      // Sin respuesta, el contrato puede haber quedado emitido igual. Se
+      // recarga: si está, el panel pasa solo a mostrarlo y el aviso queda
+      // como lo que es, una advertencia y no un "no se hizo".
+      if (sinRespuesta(err)) qc.invalidateQueries({ queryKey: [KEY] });
+      avisar('No pudimos emitir el contrato.')(err);
+    },
   });
 }
 

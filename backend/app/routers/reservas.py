@@ -6,7 +6,9 @@ import logging
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -185,11 +187,51 @@ def list_reservas(
     )
 
 
+def _archivar_pdf_y_avisar(reserva_id: int, usuario_id: int | None) -> None:
+    """
+    El PDF de confirmación y el mail al cliente, **ya fuera del request**.
+
+    Los dos estaban adentro: se dibujaba el PDF, se subía al storage y se
+    mandaba el mail con el SDK de Resend, que es síncrono y sin timeout. Con
+    eso `POST /reservas` podía tardar más de los quince segundos que el panel
+    esperaba, y desde el celular del mostrador pasaba seguido:
+
+    > *"Hago el contrato rápido, me dice Sin conexión, pero cuando llego a la
+    > PC me aparece para terminar de editarlo."*
+
+    La reserva ya estaba creada y confirmada cuando esto arranca —el commit
+    pasó antes—, así que nada de acá puede voltearla. Y ninguna de las dos
+    cosas es algo que la persona esté esperando ver en pantalla: el PDF se
+    puede volver a pedir desde `GET /reservas/{id}/pdf` y el mail se reintenta
+    desde el panel de Notificaciones.
+
+    Abre su propia sesión: la del endpoint se cierra al devolver la respuesta.
+    """
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        reserva = db.get(Reserva, reserva_id)
+        if reserva is None:
+            return
+        doc = ReservaDocumentoService(db, get_storage()).generar_y_archivar(
+            reserva, usuario_id
+        )
+        if doc is not None:
+            db.commit()
+        EmailService.avisar(db, "reserva_confirmada", reserva)
+    except Exception:
+        db.rollback()
+        logger.exception("[Reservas] falló el archivado/aviso de #%s", reserva_id)
+    finally:
+        db.close()
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_reserva(
     payload: ReservaCreate,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
-    storage: IStorage = Depends(get_storage),
     current_user: Usuario = Depends(get_current_user),
 ):
     svc = ReservaService(db)
@@ -241,18 +283,12 @@ def create_reserva(
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # PDF de confirmación archivado en el perfil del cliente. Va después del
-    # commit y nunca hace fallar la reserva: si algo sale mal se registra y se
-    # puede volver a pedir desde GET /reservas/{id}/pdf.
+    # El PDF archivado y el mail de confirmación salen **después de contestar**.
+    # Ver `_archivar_pdf_y_avisar`: los dos tardan, ninguno es parte de lo que
+    # el mostrador está esperando ver, y tenerlos adentro del request era lo
+    # que hacía que la pantalla dijera "sin conexión" con la reserva ya creada.
     db.refresh(reserva)
-    doc = ReservaDocumentoService(db, storage).generar_y_archivar(reserva, current_user.id)
-    if doc is not None:
-        db.commit()
-
-    # Y la confirmación al cliente, misma lógica: después del commit y sin
-    # poder romper nada. Sólo sale si la reserva nació confirmada — a una
-    # pendiente todavía no se le puede prometer un auto.
-    EmailService.avisar(db, "reserva_confirmada", reserva)
+    background.add_task(_archivar_pdf_y_avisar, reserva.id, current_user.id)
 
     return ok(
         {
@@ -444,6 +480,7 @@ def update_reserva(
 @router.post("/{reserva_id}/confirmar")
 def confirmar_reserva(
     reserva_id: int,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -455,7 +492,9 @@ def confirmar_reserva(
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    EmailService.avisar(db, "reserva_confirmada", reserva)
+    # Después de contestar: Resend es síncrono y sin timeout, y esperarlo
+    # adentro del request es lo que hacía aparecer un falso "sin conexión".
+    EmailService.avisar_luego(background, "reserva_confirmada", reserva)
     return ok(ReservaResponse.model_validate(reserva), "Reserva confirmada")
 
 
@@ -707,6 +746,7 @@ def reasignar_reserva(
 def checkout(
     reserva_id: int,
     payload: CheckoutCreate,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -736,9 +776,11 @@ def checkout(
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # La constancia de entrega al cliente. Después del commit: el auto ya
-    # salió, y ninguna falla de Resend puede devolver un error acá.
-    EmailService.avisar(db, "checkout", alquiler)
+    # La constancia de entrega al cliente. Después del commit **y después de
+    # la respuesta**: el auto ya salió, ninguna falla de Resend puede devolver
+    # un error acá, y esperar al mail con el cliente en el mostrador es lo que
+    # convertía una entrega hecha en un "sin conexión" en pantalla.
+    EmailService.avisar_luego(background, "checkout", alquiler)
 
     return ok(
         {**AlquilerResponse.model_validate(alquiler).model_dump(), "warnings": warnings},

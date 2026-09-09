@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import {
   FileText, Download, PenLine, Ban, AlertTriangle, Link2, Copy, Check,
-  Upload, Paperclip, X,
+  MessageCircle, Upload, Paperclip, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,9 @@ import {
   useContratoDeReserva, usePrepararContrato, useCrearContrato,
   useFirmarContrato, useAnularContrato, descargarPdfContrato,
   useGenerarLinkFirma, useRevocarLinkFirma, useSubirEscaneoContrato,
-  verEscaneoContrato, type LinkFirma,
+  verEscaneoContrato, contratoYaFirmado, type LinkFirma,
 } from '@/hooks/useContratos';
-import { extractError, formatCurrency, formatDate } from '@/lib/utils';
+import { extractError, formatCurrency, formatDate, sinRespuesta } from '@/lib/utils';
 import type { Contrato } from '@/types';
 
 interface Props {
@@ -210,6 +210,28 @@ function BloqueFirma({ contrato }: { contrato: Contrato }) {
   );
   const [copiado, setCopiado] = useState<'url' | 'mensaje' | null>(null);
 
+  // El teléfono sale del snapshot, que es el que se congeló al emitir: es el
+  // número con el que se acordó este alquiler.
+  //
+  // `wa.me` quiere sólo dígitos — los números argentinos se cargan de mil
+  // formas ("+54 9 291 418-0554", "0291 15 418-0554") y no se intenta
+  // adivinar el formato, se limpia lo que no sea dígito. Mismo criterio que
+  // `PanelResolverReserva` y la ficha del cliente.
+  const telefono = String(contrato.snapshot?.cliente?.telefono ?? '');
+  const digitos = telefono.replace(/\D/g, '');
+  // Cuando el link ya venía puesto (`link_prellenado` de una sesión anterior),
+  // el backend no vuelve a armar el texto: acá se arma uno equivalente, para
+  // que el botón no dependa de haber apretado "Generar" en esta misma pantalla.
+  const mensajeWhatsapp = link
+    ? link.mensaje || `Te paso el contrato de alquiler para que lo leas y lo firmes desde el celular:\n\n${link.url}`
+    : '';
+  // **El link se abre, no se manda solo.** WhatsApp quema números por
+  // automatizar el envío: esto deja el chat abierto con el texto escrito y
+  // quien atiende aprieta enviar.
+  const urlWhatsapp = digitos.length >= 8
+    ? `https://wa.me/${digitos}?text=${encodeURIComponent(mensajeWhatsapp)}`
+    : null;
+
   async function copiar(texto: string, cual: 'url' | 'mensaje') {
     try {
       await navigator.clipboard.writeText(texto);
@@ -266,10 +288,22 @@ function BloqueFirma({ contrato }: { contrato: Contrato }) {
           )}
 
           <div className="flex flex-wrap gap-2">
-            {link.mensaje && (
-              <Button size="sm" variant="secondary" onClick={() => copiar(link.mensaje, 'mensaje')}>
+            {urlWhatsapp ? (
+              <Button size="sm" asChild>
+                <a href={urlWhatsapp} target="_blank" rel="noreferrer">
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  Mandar por WhatsApp a {telefono}
+                </a>
+              </Button>
+            ) : (
+              <p className="w-full text-[11px] text-muted-foreground">
+                El cliente no tiene teléfono cargado: copiá el link y mandáselo a mano.
+              </p>
+            )}
+            {mensajeWhatsapp && (
+              <Button size="sm" variant="secondary" onClick={() => copiar(mensajeWhatsapp, 'mensaje')}>
                 {copiado === 'mensaje' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                Copiar mensaje para WhatsApp
+                Copiar mensaje
               </Button>
             )}
             <Button
@@ -452,7 +486,20 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
             ? canvasRef.current?.toDataURL('image/png')
             : null,
       },
-      { onSuccess: onClose },
+      {
+        onSuccess: onClose,
+        onError: async err => {
+          // El toast del hook ya avisó. Lo que falta es el caso en que el
+          // pedido llegó y la respuesta no: el trazo va como imagen y desde un
+          // celular la conexión se corta justo ahí. Antes de dejar a alguien
+          // firmando de nuevo, se pregunta cómo quedó.
+          if (!sinRespuesta(err)) return;
+          if (await contratoYaFirmado(contratoId)) {
+            toast.success('La firma sí había quedado registrada.');
+            onClose();
+          }
+        },
+      },
     );
   };
 
