@@ -36,6 +36,10 @@ class CheckoutCreate(BaseModel):
     # D-34: si el auto sale sin contrato firmado no se bloquea, pero el motivo
     # es obligatorio y queda constancia visible en el listado de alquileres.
     motivo_sin_contrato: str | None = None
+    # Los daños que se cargaron con fotos en la pantalla de entrega. Nacen antes
+    # que el alquiler —el alquiler se crea al confirmar— así que se atan acá.
+    # Ver `DanioService.atar_a_la_entrega`.
+    danios_ids: list[int] = []
 
     @model_validator(mode="after")
     def _validar_motivo_checkout_tardio(self):

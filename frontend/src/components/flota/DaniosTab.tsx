@@ -1,5 +1,7 @@
-import { useState, useRef } from 'react';
-import { AlertTriangle, Plus, X, Save, ImagePlus, Trash2, DollarSign, Gift, Wrench } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import {
+  AlertTriangle, Plus, X, Save, ImagePlus, Trash2, DollarSign, Gift, Wrench, Camera, Loader2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,9 +18,22 @@ import {
   ESTADO_DANIO_LABEL, ESTADO_DANIO_COLOR, RESPONSABLE_DANIO_LABEL, ZONAS_DANIO,
 } from '@/lib/constants';
 import { resolveAssetUrl } from '@/lib/api';
+import { comprimirImagen } from '@/lib/imagen';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { cn, formatCurrency, formatDate, extractError } from '@/lib/utils';
 import type { Danio, TipoDanio, SeveridadDanio, MomentoDanio } from '@/types';
+
+/**
+ * Qué daños lista el componente.
+ *
+ * - `vehiculo`: todos los del auto. Es la ficha de Flota.
+ * - `alquiler`: sólo los que nacieron en este alquiler y en este momento. Es
+ *   la devolución: los que ya estaban se muestran arriba, aparte, y repetirlos
+ *   acá mezclaba "lo que trajo" con "lo que apareció".
+ * - `sesion`: sólo los cargados desde esta pantalla. Es la entrega: el
+ *   alquiler todavía no existe, así que no hay otra forma de reconocerlos.
+ */
+export type AlcanceDanios = 'vehiculo' | 'alquiler' | 'sesion';
 
 interface Props {
   vehiculoId: number;
@@ -29,6 +44,9 @@ interface Props {
   /** Modo compacto para usar dentro de un modal (sin Card exterior). */
   compacto?: boolean;
   titulo?: string;
+  alcance?: AlcanceDanios;
+  /** Aviso de cada daño recién creado (la entrega junta los ids). */
+  onCreado?: (danio: Danio) => void;
 }
 
 const FORM_VACIO = {
@@ -39,14 +57,48 @@ const FORM_VACIO = {
   costo_estimado: '',
 };
 
+interface FotoPendiente {
+  file: File;
+  url: string;
+}
+
+/**
+ * Parte de daños: registrar, fotografiar, imputar, cobrar y bonificar.
+ *
+ * **Este componente vive adentro de los modales de entrega y devolución, y
+ * no puede tener ni un `<form>` ni un botón que envíe.** Un `<button>` sin
+ * `type` dentro de un formulario es de tipo *submit*, y el evento de envío
+ * burbujea por el árbol de React —atravesando incluso los diálogos en portal—
+ * hasta el formulario del modal. El reporte del mostrador:
+ *
+ * > *"Desde el celu, cuando estoy registrando el check-in, pongo registrar
+ * > daños, agrego un daño y me saca a la parte de reservas y alquileres."*
+ *
+ * Lo que pasaba: tocar "Registrar daño" **registraba la devolución** con lo
+ * que hubiera en pantalla —combustible lleno, limpio, garantía devuelta— y
+ * cerraba el modal. Por eso todo botón acá lleva `type="button"`, el alta es
+ * un `<div>` que se guarda con un click y no un `<form>`, y el test
+ * `DaniosTab.test.tsx` lo cuida.
+ */
 export function DaniosTab({
   vehiculoId,
   alquilerId,
   momento = 'preexistente',
   compacto = false,
   titulo = 'Daños del vehículo',
+  alcance = 'vehiculo',
+  onCreado,
 }: Props) {
-  const { data: danios = [], isLoading } = useDanios({ vehiculo_id: vehiculoId });
+  const { data: todos = [], isLoading } = useDanios(
+    alcance === 'alquiler' && alquilerId ? { alquiler_id: alquilerId } : { vehiculo_id: vehiculoId },
+  );
+  const [idsDeLaSesion, setIdsDeLaSesion] = useState<number[]>([]);
+  const danios = todos.filter(d => {
+    if (alcance === 'alquiler') return d.momento === momento;
+    if (alcance === 'sesion') return idsDeLaSesion.includes(d.id);
+    return true;
+  });
+
   const crear = useCrearDanio();
   const actualizar = useActualizarDanio();
   const imputar = useImputarDanio();
@@ -60,32 +112,119 @@ export function DaniosTab({
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(FORM_VACIO);
+  const [errorForm, setErrorForm] = useState<string | null>(null);
+  const [fotosNuevas, setFotosNuevas] = useState<FotoPendiente[]>([]);
+  /** Progreso de subida, por daño: "subiendo 2 de 3". */
+  const [subiendo, setSubiendo] = useState<{ danioId: number; hecho: number; total: number } | null>(null);
+
   const [bonificarId, setBonificarId] = useState<number | null>(null);
   const [cobrarId, setCobrarId] = useState<number | null>(null);
   const danioACobrar = danios.find(d => d.id === cobrarId) ?? null;
   const [imputandoId, setImputandoId] = useState<number | null>(null);
   const [montoImputar, setMontoImputar] = useState('');
   const fileInputs = useRef<Record<number, HTMLInputElement | null>>({});
+  const inputCamara = useRef<HTMLInputElement | null>(null);
+  const inputGaleria = useRef<HTMLInputElement | null>(null);
 
-  async function handleCrear(e: React.FormEvent) {
-    e.preventDefault();
+  // Las vistas previas son URLs de objeto: si no se liberan, cada foto sacada
+  // queda ocupando memoria hasta cerrar la pestaña — y en un teléfono con
+  // poca memoria eso es lo que hace que el navegador recargue la página.
+  const fotosRef = useRef(fotosNuevas);
+  fotosRef.current = fotosNuevas;
+  useEffect(() => () => fotosRef.current.forEach(f => URL.revokeObjectURL(f.url)), []);
+
+  function agregarFotosNuevas(files: FileList | null) {
+    if (!files?.length) return;
+    const nuevas = Array.from(files).map(file => ({ file, url: URL.createObjectURL(file) }));
+    setFotosNuevas(prev => [...prev, ...nuevas]);
+  }
+
+  function quitarFotoNueva(i: number) {
+    setFotosNuevas(prev => {
+      URL.revokeObjectURL(prev[i].url);
+      return prev.filter((_, j) => j !== i);
+    });
+  }
+
+  function cerrarForm() {
+    fotosNuevas.forEach(f => URL.revokeObjectURL(f.url));
+    setFotosNuevas([]);
+    setForm(FORM_VACIO);
+    setErrorForm(null);
+    setShowForm(false);
+  }
+
+  /**
+   * Sube fotos de a una. **Devuelve cuántas fallaron** en vez de tirar: el
+   * daño ya existe, y una foto que no subió por la señal no puede hacer
+   * parecer que el daño tampoco quedó.
+   */
+  async function subirFotos(danioId: number, files: File[]): Promise<number> {
+    let fallidas = 0;
+    setSubiendo({ danioId, hecho: 0, total: files.length });
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const chica = await comprimirImagen(files[i]);
+        await subirFoto.mutateAsync({ id: danioId, file: chica });
+      } catch {
+        fallidas++;
+      }
+      setSubiendo({ danioId, hecho: i + 1, total: files.length });
+    }
+    setSubiendo(null);
+    return fallidas;
+  }
+
+  async function handleCrear() {
+    if (!form.zona.trim()) {
+      setErrorForm('Indicá la zona del daño.');
+      return;
+    }
+    setErrorForm(null);
+    let danio: Danio;
     try {
-      await crear.mutateAsync({
+      const res = await crear.mutateAsync({
         vehiculo_id: vehiculoId,
         alquiler_id: alquilerId ?? null,
         momento,
-        zona: form.zona,
+        zona: form.zona.trim(),
         tipo: form.tipo,
         severidad: form.severidad,
         descripcion: form.descripcion || null,
         costo_estimado: form.costo_estimado ? parseFloat(form.costo_estimado) : null,
       });
-      toast.success('Daño registrado');
-      setForm(FORM_VACIO);
-      setShowForm(false);
+      danio = res.data.data;
     } catch (err) {
-      toast.error(extractError(err));
+      setErrorForm(extractError(err));
+      return;
     }
+
+    setIdsDeLaSesion(ids => [...ids, danio.id]);
+    onCreado?.(danio);
+
+    const files = fotosNuevas.map(f => f.file);
+    cerrarForm();
+    if (files.length === 0) {
+      toast.success('Daño registrado');
+      return;
+    }
+    const fallidas = await subirFotos(danio.id, files);
+    if (fallidas === 0) {
+      toast.success(`Daño registrado con ${files.length} foto${files.length > 1 ? 's' : ''}`);
+    } else {
+      toast.error(
+        `El daño quedó registrado, pero ${fallidas} de ${files.length} fotos no subieron. ` +
+        'Volvé a cargarlas con el botón "Foto" del daño.',
+      );
+    }
+  }
+
+  async function handleFotos(danioId: number, files: FileList | null) {
+    if (!files?.length) return;
+    const lista = Array.from(files);
+    const fallidas = await subirFotos(danioId, lista);
+    if (fallidas === 0) toast.success(lista.length > 1 ? `${lista.length} fotos cargadas` : 'Foto cargada');
+    else toast.error(`${fallidas} de ${lista.length} fotos no subieron. Probá de nuevo.`);
   }
 
   async function handleImputar(d: Danio) {
@@ -126,38 +265,35 @@ export function DaniosTab({
     }
   }
 
-  async function handleFoto(danioId: number, file: File | undefined) {
-    if (!file) return;
-    try {
-      await subirFoto.mutateAsync({ id: danioId, file });
-      toast.success('Foto cargada');
-    } catch (err) {
-      toast.error(extractError(err));
-    }
-  }
+  const textoVacio =
+    alcance === 'alquiler' ? 'No se registraron daños nuevos en esta devolución.'
+    : alcance === 'sesion' ? 'Si ves algo que no figura arriba, registralo con foto antes de entregar.'
+    : 'Sin daños registrados para este vehículo.';
 
   const contenido = (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-warning" />
-          <h3 className="font-semibold text-foreground">{titulo}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+          <h3 className="font-semibold text-foreground truncate">{titulo}</h3>
           {danios.length > 0 && (
             <span className="inline-flex items-center rounded-full bg-warning/15 text-warning border border-warning/30 px-2 py-0.5 text-xs font-semibold">
               {danios.length}
             </span>
           )}
         </div>
-        <Button size="sm" onClick={() => setShowForm(v => !v)}>
-          <Plus className="h-4 w-4" /> Registrar daño
-        </Button>
+        {!showForm && (
+          <Button type="button" size="sm" onClick={() => setShowForm(true)}>
+            <Plus className="h-4 w-4" /> Registrar daño
+          </Button>
+        )}
       </div>
 
       {showForm && (
-        <form onSubmit={handleCrear} className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+        <div role="group" aria-label="Nuevo daño" className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm font-medium text-foreground">Nuevo daño</span>
-            <button type="button" onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground">
+            <button type="button" onClick={cerrarForm} className="text-muted-foreground hover:text-foreground" aria-label="Cerrar">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -167,10 +303,13 @@ export function DaniosTab({
               <input
                 value={form.zona}
                 onChange={e => setForm(f => ({ ...f, zona: e.target.value }))}
+                // Enter guarda. Sin `<form>` no hay envío implícito, y tampoco
+                // se quiere: el Enter del teclado del teléfono no puede
+                // disparar el formulario del modal.
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCrear(); } }}
                 list="zonas-danio"
                 placeholder="Ej: Puerta trasera izq."
                 className="input-base"
-                required
               />
               <datalist id="zonas-danio">
                 {ZONAS_DANIO.map(z => <option key={z} value={z} />)}
@@ -200,10 +339,11 @@ export function DaniosTab({
                 ))}
               </select>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 col-span-2 sm:col-span-1">
               <label className="text-xs font-medium text-muted-foreground">Costo estimado</label>
               <input
                 type="number"
+                inputMode="numeric"
                 value={form.costo_estimado}
                 onChange={e => setForm(f => ({ ...f, costo_estimado: e.target.value }))}
                 placeholder="Opcional"
@@ -221,24 +361,82 @@ export function DaniosTab({
               />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Registrar un daño no le cobra nada al cliente. Para eso está "Cobrar al cliente", que genera el débito en su cuenta corriente.
-          </p>
-          <div className="flex gap-2 pt-1">
-            <Button type="submit" size="sm" disabled={crear.isPending}>
-              <Save className="h-4 w-4" /> {crear.isPending ? 'Guardando...' : 'Guardar daño'}
-            </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancelar</Button>
+
+          {/* ── Fotos ─────────────────────────────────────────────────
+              Dos entradas y no una: con `capture` el teléfono abre la cámara
+              trasera directo, que es lo que se usa parado al lado del auto;
+              sin `capture`, deja elegir una foto que ya estaba en la galería. */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">Fotos</label>
+            {fotosNuevas.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {fotosNuevas.map((f, i) => (
+                  <div key={f.url} className="relative">
+                    <img src={f.url} alt={`Foto ${i + 1}`} className="h-20 w-20 object-cover rounded-lg border border-border" />
+                    <button
+                      type="button"
+                      onClick={() => quitarFotoNueva(i)}
+                      className="absolute -top-1.5 -right-1.5 bg-danger text-white rounded-full p-0.5"
+                      aria-label={`Quitar foto ${i + 1}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={inputCamara}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              data-testid="danio-camara"
+              onChange={e => { agregarFotosNuevas(e.target.files); e.target.value = ''; }}
+            />
+            <input
+              ref={inputGaleria}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              data-testid="danio-galeria"
+              onChange={e => { agregarFotosNuevas(e.target.files); e.target.value = ''; }}
+            />
+            <div className="flex gap-2 flex-wrap">
+              <Button type="button" variant="outline" size="sm" onClick={() => inputCamara.current?.click()}>
+                <Camera className="h-3.5 w-3.5" /> Sacar foto
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => inputGaleria.current?.click()}>
+                <ImagePlus className="h-3.5 w-3.5" /> Elegir de la galería
+              </Button>
+            </div>
           </div>
-        </form>
+
+          <p className="text-xs text-muted-foreground">
+            Registrar un daño no le cobra nada al cliente. Para eso está "Imputar al cliente", que genera el débito en su cuenta corriente.
+          </p>
+          {errorForm && <p className="text-xs font-medium text-danger">{errorForm}</p>}
+          <div className="flex gap-2 pt-1">
+            <Button type="button" size="sm" disabled={crear.isPending} onClick={handleCrear}>
+              <Save className="h-4 w-4" />
+              {crear.isPending
+                ? 'Guardando...'
+                : fotosNuevas.length > 0
+                  ? `Guardar daño con ${fotosNuevas.length} foto${fotosNuevas.length > 1 ? 's' : ''}`
+                  : 'Guardar daño'}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={cerrarForm}>Cancelar</Button>
+          </div>
+        </div>
       )}
 
       {isLoading ? (
         <div className="space-y-2"><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></div>
       ) : danios.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground">
-          <Wrench className="h-9 w-9 opacity-30" />
-          <p className="text-sm">Sin daños registrados para este vehículo.</p>
+        <div className={cn('flex flex-col items-center justify-center gap-2 text-muted-foreground text-center', compacto ? 'py-3' : 'py-8')}>
+          {!compacto && <Wrench className="h-9 w-9 opacity-30" />}
+          <p className="text-sm">{textoVacio}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -280,21 +478,23 @@ export function DaniosTab({
                 <div className="flex gap-2 flex-wrap">
                   {d.fotos.map(f => (
                     <div key={f.id} className="relative group">
-                      <img
-                        src={resolveAssetUrl(f.url) ?? ''}
-                        alt={f.descripcion ?? 'Foto del daño'}
-                        className="h-20 w-20 object-cover rounded-lg border border-border"
-                      />
+                      <a href={resolveAssetUrl(f.url) ?? '#'} target="_blank" rel="noreferrer">
+                        <img
+                          src={resolveAssetUrl(f.url) ?? ''}
+                          alt={f.descripcion ?? 'Foto del daño'}
+                          className="h-20 w-20 object-cover rounded-lg border border-border"
+                        />
+                      </a>
                       {/* **La foto del rayón es la prueba con la que se le
-                          cobra al cliente**, el borrado es real (no baja
-                          lógica) y el botón aparece al pasar el mouse por una
-                          miniatura de 80px. Un click de más y no está más.
-                          Ahora pregunta. */}
+                          cobra al cliente**, y el borrado es real (no baja
+                          lógica): por eso pregunta. En pantallas táctiles no
+                          hay hover, así que ahí el botón se ve siempre. */}
                       <button
                         type="button"
                         onClick={() => setFotoAEliminar(f.id)}
-                        className="absolute -top-1.5 -right-1.5 bg-danger text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute -top-1.5 -right-1.5 bg-danger text-white rounded-full p-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                         title="Eliminar foto"
+                        aria-label="Eliminar foto"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -303,15 +503,23 @@ export function DaniosTab({
                 </div>
               )}
 
+              {subiendo?.danioId === d.id && (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Subiendo foto {Math.min(subiendo.hecho + 1, subiendo.total)} de {subiendo.total}…
+                </p>
+              )}
+
               <div className="flex items-center gap-1.5 flex-wrap">
                 <input
                   ref={el => { fileInputs.current[d.id] = el; }}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
-                  onChange={e => { handleFoto(d.id, e.target.files?.[0]); e.target.value = ''; }}
+                  onChange={e => { handleFotos(d.id, e.target.files); e.target.value = ''; }}
                 />
-                <Button variant="outline" size="sm" onClick={() => fileInputs.current[d.id]?.click()} disabled={subirFoto.isPending}>
+                <Button type="button" variant="outline" size="sm" onClick={() => fileInputs.current[d.id]?.click()} disabled={subiendo !== null}>
                   <ImagePlus className="h-3.5 w-3.5" /> Foto
                 </Button>
 
@@ -320,23 +528,25 @@ export function DaniosTab({
                     <div className="flex items-center gap-1.5">
                       <input
                         type="number"
+                        inputMode="numeric"
                         value={montoImputar}
                         onChange={e => setMontoImputar(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleImputar(d); } }}
                         placeholder="Monto"
                         min={0}
                         autoFocus
                         className="input-base h-8 w-28 text-sm"
                       />
-                      <Button size="sm" onClick={() => handleImputar(d)} disabled={imputar.isPending}>
+                      <Button type="button" size="sm" onClick={() => handleImputar(d)} disabled={imputar.isPending}>
                         Confirmar
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setImputandoId(null); setMontoImputar(''); }}>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => { setImputandoId(null); setMontoImputar(''); }}>
                         Cancelar
                       </Button>
                     </div>
                   ) : (
                     <Button
-                      variant="outline" size="sm"
+                      type="button" variant="outline" size="sm"
                       onClick={() => { setImputandoId(d.id); setMontoImputar(d.costo_estimado ?? ''); }}
                     >
                       <DollarSign className="h-3.5 w-3.5" /> Imputar al cliente
@@ -344,26 +554,25 @@ export function DaniosTab({
                   )
                 )}
 
-                {/* Imputar y cobrar son dos actos distintos y el botón de
-                    arriba decía "Cobrar al cliente" para el primero. Imputar
-                    genera el débito —el cliente lo debe—; cobrar es la plata
-                    entrando, y desde `PLAN_DINERO.md` §1.4 crea el Pago que la
-                    hace aparecer en la caja del día. */}
+                {/* Imputar y cobrar son dos actos distintos. Imputar genera el
+                    débito —el cliente lo debe—; cobrar es la plata entrando, y
+                    desde `PLAN_DINERO.md` §1.4 crea el Pago que la hace
+                    aparecer en la caja del día. */}
                 {d.estado === 'imputado' && (
-                  <Button variant="default" size="sm" onClick={() => setCobrarId(d.id)}>
+                  <Button type="button" variant="default" size="sm" onClick={() => setCobrarId(d.id)}>
                     <DollarSign className="h-3.5 w-3.5" /> Registrar cobro
                   </Button>
                 )}
 
                 {d.estado !== 'bonificado' && (
-                  <Button variant="outline" size="sm" onClick={() => setBonificarId(d.id)}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setBonificarId(d.id)}>
                     <Gift className="h-3.5 w-3.5" /> Bonificar
                   </Button>
                 )}
 
                 {d.estado !== 'reparado' && (
                   <Button
-                    variant="outline" size="sm"
+                    type="button" variant="outline" size="sm"
                     onClick={() => actualizar.mutate({ id: d.id, payload: { estado: 'reparado' } })}
                   >
                     <Wrench className="h-3.5 w-3.5" /> Marcar reparado
@@ -372,9 +581,10 @@ export function DaniosTab({
 
                 {d.estado !== 'imputado' && (
                   <Button
-                    variant="ghost" size="sm"
+                    type="button" variant="ghost" size="sm"
                     onClick={() => darDeBaja.mutate(d.id)}
                     title="Baja lógica — el daño no se borra"
+                    aria-label="Dar de baja el daño"
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>

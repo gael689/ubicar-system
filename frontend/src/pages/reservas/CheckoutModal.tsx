@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Car } from 'lucide-react';
 import { useAlquileres } from '@/hooks/useAlquileres';
 import { DaniosPreexistentes } from '@/components/flota/DaniosPreexistentes';
+import { DaniosTab } from '@/components/flota/DaniosTab';
 import { InputMoneda } from '@/components/shared/InputMoneda';
 import { formatMiles } from '@/lib/utils';
 import type { Reserva } from '@/types';
@@ -61,7 +62,15 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
   const [cobrarAhora, setCobrarAhora] = useState(false);
   const [pagoMonto, setPagoMonto] = useState<number | ''>('');
   const [pagoMedio, setPagoMedio] = useState('efectivo');
-  const [pagoFecha, setPagoFecha] = useState(new Date().toISOString().split('T')[0]);
+  // La fecha del reloj de acá, no la de UTC: después de las 21 h, UTC ya es mañana.
+  const [pagoFecha, setPagoFecha] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  // Los daños fotografiados en esta pantalla. El alquiler recién existe al
+  // confirmar la entrega, así que viajan con el check-out para quedar atados a
+  // él (`DanioService.atar_a_la_entrega`).
+  const [daniosIds, setDaniosIds] = useState<number[]>([]);
   // D-34: el contrato no bloquea la entrega, pero si el auto sale sin firmar
   // el motivo es obligatorio y queda constancia visible en la ficha.
   const [motivoSinContrato, setMotivoSinContrato] = useState('');
@@ -113,6 +122,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
         cargo_checkout_tardio: cargo,
         motivo_checkout_tardio: cargo > 0 ? motivoCheckoutTardio.trim() : null,
         motivo_sin_contrato: motivoSinContrato.trim() || null,
+        danios_ids: daniosIds,
         pago_inmediato: cobrarAhora && pagoMonto !== '' ? {
           monto: Number(pagoMonto),
           medio_pago: pagoMedio,
@@ -263,7 +273,28 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estado del vehículo</label>
-            {reserva.vehiculo_id && <DaniosPreexistentes vehiculoId={reserva.vehiculo_id} />}
+            {reserva.vehiculo_id && (
+              <DaniosPreexistentes
+                vehiculoId={reserva.vehiculo_id}
+                excluir={d => daniosIds.includes(d.id)}
+              />
+            )}
+            {/* **Opcional, y conviene.** Sin foto del auto al salir, el
+                rayón que aparezca en la devolución se discute con un "ya
+                estaba". La cláusula 1 del contrato pide constatar el estado
+                en la entrega; esto es la constancia. */}
+            {reserva.vehiculo_id && (
+              <div className="rounded-xl border border-border bg-muted/20 p-3">
+                <DaniosTab
+                  vehiculoId={reserva.vehiculo_id}
+                  momento="checkout"
+                  alcance="sesion"
+                  compacto
+                  titulo="Daños al entregar"
+                  onCreado={d => setDaniosIds(ids => [...ids, d.id])}
+                />
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">

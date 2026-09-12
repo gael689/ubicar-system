@@ -139,6 +139,7 @@ class AlquilerService:
         cargo_checkout_tardio: Decimal = Decimal("0"),
         motivo_checkout_tardio: str | None = None,
         motivo_sin_contrato: str | None = None,
+        danios_ids: list[int] | None = None,
     ) -> tuple[Alquiler, list[dict]]:
         """
         Registra el checkout de una reserva confirmada.
@@ -253,6 +254,15 @@ class AlquilerService:
             if contrato is not None:
                 contrato.alquiler_id = alquiler.id
                 alquiler.contrato_firmado = contrato.firmado
+
+            # Lo mismo con los daños que se fotografiaron en la pantalla de
+            # entrega: se cargaron antes de que existiera este alquiler.
+            if danios_ids:
+                from app.services.danio_service import DanioService
+
+                DanioService(self.db).atar_a_la_entrega(
+                    danios_ids, alquiler_id=alquiler.id, vehiculo_id=reserva.vehiculo_id
+                )
 
             # Ledger completo: el checkout factura el alquiler completo como
             # un débito automático en la cuenta corriente del cliente,

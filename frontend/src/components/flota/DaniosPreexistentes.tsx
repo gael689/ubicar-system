@@ -3,9 +3,19 @@ import { useDaniosPreexistentes } from '@/hooks/useDanios';
 import { SEVERIDAD_DANIO_LABEL, SEVERIDAD_DANIO_COLOR, TIPO_DANIO_LABEL } from '@/lib/constants';
 import { resolveAssetUrl } from '@/lib/api';
 import { cn, formatDate } from '@/lib/utils';
+import type { Danio } from '@/types';
 
 interface Props {
   vehiculoId: number | undefined;
+  /**
+   * Daños que no van en esta lista aunque sigan vigentes.
+   *
+   * **Sin esto, un daño recién cargado en la devolución aparecía acá arriba
+   * con el cartel "no son responsabilidad de este cliente"** —porque ya es un
+   * daño vigente del auto— al mismo tiempo que abajo, en "Daños al devolver".
+   * La misma chapa, dos veredictos opuestos en la misma pantalla.
+   */
+  excluir?: (d: Danio) => boolean;
 }
 
 /**
@@ -13,8 +23,9 @@ interface Props {
  * operador sepa qué NO es responsabilidad del cliente que se lo lleva —
  * es informativo, no bloquea nada.
  */
-export function DaniosPreexistentes({ vehiculoId }: Props) {
-  const { data: danios = [], isLoading } = useDaniosPreexistentes(vehiculoId);
+export function DaniosPreexistentes({ vehiculoId, excluir }: Props) {
+  const { data: todos = [], isLoading } = useDaniosPreexistentes(vehiculoId);
+  const danios = excluir ? todos.filter(d => !excluir(d)) : todos;
 
   if (isLoading || !vehiculoId) return null;
 
@@ -41,11 +52,13 @@ export function DaniosPreexistentes({ vehiculoId }: Props) {
         {danios.map(d => (
           <div key={d.id} className="rounded-lg bg-white/95 px-2.5 py-2 flex items-start gap-2">
             {d.fotos[0]?.url && (
-              <img
-                src={resolveAssetUrl(d.fotos[0].url) ?? ''}
-                alt={d.zona}
-                className="h-10 w-10 object-cover rounded border border-border shrink-0"
-              />
+              <a href={resolveAssetUrl(d.fotos[0].url) ?? '#'} target="_blank" rel="noreferrer" className="shrink-0">
+                <img
+                  src={resolveAssetUrl(d.fotos[0].url) ?? ''}
+                  alt={d.zona}
+                  className="h-10 w-10 object-cover rounded border border-border"
+                />
+              </a>
             )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -56,7 +69,10 @@ export function DaniosPreexistentes({ vehiculoId }: Props) {
                 <span className="text-[10px] text-muted-foreground">{TIPO_DANIO_LABEL[d.tipo]}</span>
               </div>
               {d.descripcion && <p className="text-[11px] text-muted-foreground truncate">{d.descripcion}</p>}
-              <p className="text-[10px] text-muted-foreground">Desde {formatDate(d.fecha_deteccion)}</p>
+              <p className="text-[10px] text-muted-foreground">
+                Desde {formatDate(d.fecha_deteccion)}
+                {d.fotos.length > 1 && ` · ${d.fotos.length} fotos`}
+              </p>
             </div>
           </div>
         ))}

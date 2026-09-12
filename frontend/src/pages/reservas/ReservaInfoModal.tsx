@@ -14,6 +14,7 @@ import { CheckoutModal } from './CheckoutModal';
 import { CheckinModal } from './CheckinModal';
 import { ExtenderModal } from './ExtenderModal';
 import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
+import { DaniosResumen } from '@/components/flota/DaniosResumen';
 import { BadgeCanal } from '@/components/reservas/BadgeCanal';
 
 interface Props {
@@ -369,6 +370,14 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
         <div className="px-6 pb-4">
           <ContratoPanel reservaId={reserva.id} antesDeEntregar={!reserva.alquiler_id} />
         </div>
+
+        {/* Lo constatado en la entrega y en la devolución, con sus fotos. Va
+            aparte del contrato: el contrato se congela al emitirse. */}
+        {reserva.alquiler_id && (
+          <div className="px-6 pb-4">
+            <DaniosResumen alquilerId={reserva.alquiler_id} titulo="Daños de este alquiler" />
+          </div>
+        )}
 
         {/* Acciones */}
         <div className="px-6 py-4 border-t border-border bg-muted/30 space-y-2 sticky bottom-0">

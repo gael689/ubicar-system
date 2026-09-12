@@ -29,6 +29,29 @@ ALLOWED_FOTO_EXT = {"jpg", "jpeg", "png", "webp", "heic"}
 MAX_FOTO_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
+_EXT_POR_TIPO = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+    "image/heic": "heic", "image/heif": "heic",
+}
+
+
+def _extension_de_la_foto(nombre: str | None, content_type: str | None) -> str:
+    """
+    La extensión sale del nombre y, si el nombre no trae, del tipo.
+
+    **La foto sacada con la cámara desde el navegador no siempre tiene
+    nombre con extensión**: según el teléfono llega como `image`, `blob` o
+    un número. Antes eso daba *"Extensión 'image' no permitida"* justo en el
+    caso que se quería resolver — fotografiar el daño parado al lado del auto.
+    """
+    nombre = nombre or ""
+    if "." in nombre:
+        ext = nombre.rsplit(".", 1)[-1].lower()
+        if ext in ALLOWED_FOTO_EXT:
+            return ext
+    return _EXT_POR_TIPO.get((content_type or "").lower(), nombre.rsplit(".", 1)[-1].lower())
+
+
 def _service(db: Session = Depends(get_db)) -> DanioService:
     return DanioService(db)
 
@@ -203,7 +226,7 @@ async def upload_foto(
     storage: IStorage = Depends(get_storage),
     current_user: Usuario = Depends(get_current_user),
 ):
-    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    ext = _extension_de_la_foto(file.filename, file.content_type)
     if ext not in ALLOWED_FOTO_EXT:
         raise BusinessRuleError(
             "foto_extension_invalida",

@@ -769,6 +769,7 @@ def checkout(
             cargo_checkout_tardio=payload.cargo_checkout_tardio,
             motivo_checkout_tardio=payload.motivo_checkout_tardio,
             motivo_sin_contrato=payload.motivo_sin_contrato,
+            danios_ids=payload.danios_ids,
         )
         db.commit()
     except ConflictError as e:

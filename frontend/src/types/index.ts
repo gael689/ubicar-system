@@ -1012,6 +1012,8 @@ export interface CheckoutCreate {
   // D-34: si el auto sale sin contrato firmado no se bloquea, pero el motivo
   // es obligatorio y queda constancia visible.
   motivo_sin_contrato?: string | null;
+  /** Daños fotografiados en la pantalla de entrega, para atarlos al alquiler. */
+  danios_ids?: number[];
 }
 
 export interface CheckinCreate {

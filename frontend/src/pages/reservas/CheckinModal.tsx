@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Flag, Wrench, AlertTriangle } from 'lucide-react';
 import { useAlquileres } from '@/hooks/useAlquileres';
 import { extractError } from '@/lib/utils';
@@ -51,8 +51,51 @@ const DECISION_OPTIONS: { value: DecisionExcedente; label: string; desc: string 
   { value: 'no_cobrar',       label: 'No cobrar',       desc: 'Bonificar el excedente (requiere motivo)' },
 ];
 
+/**
+ * La fecha de hoy **en el reloj de acá**. `toISOString()` la da en UTC, y a
+ * partir de las 21 h de Argentina eso ya es mañana: una devolución cargada a
+ * la noche nacía con la fecha del día siguiente y el cálculo de horas de más
+ * salía corrido un día entero.
+ */
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Lo cargado en la devolución, guardado en el navegador mientras se completa.
+ *
+ * **Por qué.** En un Android con poca memoria, abrir la cámara para
+ * fotografiar un daño puede hacer que el sistema cierre el navegador en
+ * segundo plano; al volver, la página se recarga y el formulario aparece
+ * vacío — el *"vuelvo a cero"* del mostrador. Los daños y sus fotos no se
+ * pierden (van al servidor apenas se guardan); lo que se perdía era esto.
+ *
+ * No se guarda nada de cobros: la plata se vuelve a confirmar a mano.
+ */
+interface BorradorCheckin {
+  guardado: number;
+  fecha: string; hora: string; km: string; combustible: number; limpieza: string;
+  descripcion: string; decision: DecisionExcedente; horasACobrar: string;
+  montoManual: string; motivo: string; garantiaEstado: string; garantiaMontoDevuelto: string;
+}
+const claveBorrador = (alquilerId: number) => `ubicar:checkin-borrador:${alquilerId}`;
+const VIDA_BORRADOR_MS = 24 * 60 * 60 * 1000;
+
+function leerBorrador(alquilerId: number): BorradorCheckin | null {
+  try {
+    const crudo = localStorage.getItem(claveBorrador(alquilerId));
+    if (!crudo) return null;
+    const b = JSON.parse(crudo) as BorradorCheckin;
+    if (!b.guardado || Date.now() - b.guardado > VIDA_BORRADOR_MS) return null;
+    return b;
+  } catch {
+    return null;
+  }
+}
+
+function borrarBorrador(alquilerId: number) {
+  try { localStorage.removeItem(claveBorrador(alquilerId)); } catch { /* sin storage */ }
 }
 
 export function CheckinModal({
@@ -79,22 +122,26 @@ export function CheckinModal({
   const [gastoCombustibleHecho, setGastoCombustibleHecho] = useState(false);
   const [gastoLimpiezaHecho, setGastoLimpiezaHecho] = useState(false);
 
-  const [fecha, setFecha] = useState(todayStr());
-  const [hora, setHora] = useState(reserva.hora_fin.slice(0, 5));
-  const [km, setKm] = useState('');
-  const [combustible, setCombustible] = useState(100);
-  const [limpieza, setLimpieza] = useState('limpio');
-  const [descripcion, setDescripcion] = useState('');
+  // Se lee una sola vez, al abrir: después manda lo que se tipea.
+  const [borrador] = useState(() => leerBorrador(alquilerId));
+  const [avisoBorrador, setAvisoBorrador] = useState(borrador !== null);
+
+  const [fecha, setFecha] = useState(borrador?.fecha ?? todayStr());
+  const [hora, setHora] = useState(borrador?.hora ?? reserva.hora_fin.slice(0, 5));
+  const [km, setKm] = useState(borrador?.km ?? '');
+  const [combustible, setCombustible] = useState(borrador?.combustible ?? 100);
+  const [limpieza, setLimpieza] = useState(borrador?.limpieza ?? 'limpio');
+  const [descripcion, setDescripcion] = useState(borrador?.descripcion ?? '');
   const [registradoEnTiempoReal, setRegistradoEnTiempoReal] = useState(true);
-  const [decision, setDecision] = useState<DecisionExcedente>('cobrar_completo');
-  const [horasACobrar, setHorasACobrar] = useState('');
-  const [montoManual, setMontoManual] = useState('');
-  const [motivo, setMotivo] = useState('');
+  const [decision, setDecision] = useState<DecisionExcedente>(borrador?.decision ?? 'cobrar_completo');
+  const [horasACobrar, setHorasACobrar] = useState(borrador?.horasACobrar ?? '');
+  const [montoManual, setMontoManual] = useState(borrador?.montoManual ?? '');
+  const [motivo, setMotivo] = useState(borrador?.motivo ?? '');
   const [localError, setLocalError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewExcedente | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [garantiaEstado, setGarantiaEstado] = useState('devuelta');
-  const [garantiaMontoDevuelto, setGarantiaMontoDevuelto] = useState(garantiaMonto ?? '');
+  const [garantiaEstado, setGarantiaEstado] = useState(borrador?.garantiaEstado ?? 'devuelta');
+  const [garantiaMontoDevuelto, setGarantiaMontoDevuelto] = useState(borrador?.garantiaMontoDevuelto ?? garantiaMonto ?? '');
   const [cargoCombustible, setCargoCombustible] = useState('');
   const [cargoLimpieza, setCargoLimpieza] = useState('');
   const [cobrarAhora, setCobrarAhora] = useState(false);
@@ -104,6 +151,38 @@ export function CheckinModal({
   const [pagoNotas, setPagoNotas] = useState('');
   const [mostrarConfirmacionCobro, setMostrarConfirmacionCobro] = useState(false);
   const [confirmoSinCobro, setConfirmoSinCobro] = useState(false);
+
+  // Guardar el borrador a cada cambio. El primer render no cuenta: abrir el
+  // modal y cerrarlo sin tocar nada no tiene que dejar un borrador que al
+  // día siguiente diga "recuperamos lo que habías cargado".
+  const primerRender = useRef(true);
+  useEffect(() => {
+    if (primerRender.current) { primerRender.current = false; return; }
+    const b: BorradorCheckin = {
+      guardado: Date.now(), fecha, hora, km, combustible, limpieza, descripcion,
+      decision, horasACobrar, montoManual, motivo, garantiaEstado,
+      garantiaMontoDevuelto: String(garantiaMontoDevuelto),
+    };
+    try { localStorage.setItem(claveBorrador(alquilerId), JSON.stringify(b)); } catch { /* sin storage */ }
+  }, [alquilerId, fecha, hora, km, combustible, limpieza, descripcion, decision,
+      horasACobrar, montoManual, motivo, garantiaEstado, garantiaMontoDevuelto]);
+
+  function descartarBorrador() {
+    borrarBorrador(alquilerId);
+    setFecha(todayStr());
+    setHora(reserva.hora_fin.slice(0, 5));
+    setKm('');
+    setCombustible(100);
+    setLimpieza('limpio');
+    setDescripcion('');
+    setDecision('cobrar_completo');
+    setHorasACobrar('');
+    setMontoManual('');
+    setMotivo('');
+    setGarantiaEstado('devuelta');
+    setGarantiaMontoDevuelto(garantiaMonto ?? '');
+    setAvisoBorrador(false);
+  }
 
   const [realKmCheckout, setRealKmCheckout] = useState(kmCheckout);
   const [loadingAlquiler, setLoadingAlquiler] = useState(true);
@@ -298,6 +377,7 @@ export function CheckinModal({
 
     try {
       await checkin(alquilerId, payload);
+      borrarBorrador(alquilerId);
       onSuccess();
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
@@ -327,7 +407,24 @@ export function CheckinModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+        <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          {avisoBorrador && borrador && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 flex items-center justify-between gap-3">
+              <p className="text-xs text-foreground">
+                Recuperamos lo que habías cargado a las{' '}
+                {new Date(borrador.guardado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}.
+              </p>
+              <button type="button" onClick={descartarBorrador} className="text-xs font-semibold text-primary hover:underline shrink-0">
+                Empezar de cero
+              </button>
+            </div>
+          )}
+
+        {/* **El formulario termina antes de la parte de daños, a propósito.**
+            Adentro de un `<form>`, cualquier botón de esa sección enviaba la
+            devolución entera: "Registrar daño" cerraba el alquiler con lo que
+            hubiera en pantalla. Ver `DaniosTab`. */}
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Fecha y hora */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -833,13 +930,19 @@ export function CheckinModal({
             </div>
           )}
 
+        </form>
+
           {/* Parte de daños — lo que ya estaba + lo que aparece al devolverlo */}
-          <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
-            <DaniosPreexistentes vehiculoId={vehiculoId} />
+          <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3">
+            <DaniosPreexistentes
+              vehiculoId={vehiculoId}
+              excluir={d => d.alquiler_id === alquilerId && d.momento === 'checkin'}
+            />
             <DaniosTab
               vehiculoId={vehiculoId}
               alquilerId={alquilerId}
               momento="checkin"
+              alcance="alquiler"
               compacto
               titulo="Daños al devolver"
             />
@@ -875,7 +978,7 @@ export function CheckinModal({
               ❌ {localError || error}
             </div>
           )}
-        </form>
+        </div>
 
         {mostrarConfirmacionCobro ? (
           <div className="px-6 py-4 border-t border-warning bg-warning shrink-0">

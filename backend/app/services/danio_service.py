@@ -144,6 +144,42 @@ class DanioService:
         self.db.flush()
         return danio
 
+    def atar_a_la_entrega(
+        self, danios_ids: list[int], *, alquiler_id: int, vehiculo_id: int
+    ) -> int:
+        """
+        Ata al alquiler los daños que se cargaron en la pantalla de entrega.
+
+        **El orden real es al revés del que el modelo espera.** El operador
+        fotografía el rayón *antes* de apretar "Entregar el vehículo", y el
+        alquiler recién nace con ese botón. Sin este paso el daño quedaba
+        suelto sobre el auto, sin decir en qué entrega se constató — que es
+        justamente lo que la cláusula 1 del contrato pide dejar asentado.
+
+        **No le asigna cliente**, a propósito: un daño constatado al entregar
+        es la prueba de que *ya estaba*, lo contrario de una responsabilidad.
+
+        Sólo toma los que son de este auto, nacieron en una entrega y todavía
+        no tienen alquiler: un id ajeno o repetido se ignora en vez de
+        reasignar un daño de otra operación.
+        """
+        if not danios_ids:
+            return 0
+        danios = (
+            self.db.query(Danio)
+            .filter(
+                Danio.id.in_(danios_ids),
+                Danio.vehiculo_id == vehiculo_id,
+                Danio.momento == "checkout",
+                Danio.alquiler_id.is_(None),
+            )
+            .all()
+        )
+        for d in danios:
+            d.alquiler_id = alquiler_id
+        self.db.flush()
+        return len(danios)
+
     # ── Valorización contra la garantía (ítem 53) ────────────────────────────
 
     def imputar(

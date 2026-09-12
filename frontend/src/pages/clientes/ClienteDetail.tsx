@@ -23,6 +23,7 @@ import { CuentaCorrienteTab } from '@/components/clientes/CuentaCorrienteTab';
 import { RecibosTab } from '@/components/clientes/RecibosTab';
 import { EcheqsTab } from '@/components/clientes/EcheqsTab';
 import { ComprobantesTab } from '@/components/clientes/ComprobantesTab';
+import { DaniosResumen } from '@/components/flota/DaniosResumen';
 
 import { useCliente, useDeactivateCliente, useReactivateCliente } from '@/hooks/useClientes';
 import { useCuentaCorrienteCliente } from '@/hooks/useCuentasCorrientes';
@@ -227,6 +228,7 @@ export function ClienteDetail() {
           <TabsTrigger value="historial">Historial</TabsTrigger>
           <TabsTrigger value="tarjeta">Tarjeta</TabsTrigger>
           <TabsTrigger value="multas">Multas</TabsTrigger>
+          <TabsTrigger value="danios">Daños</TabsTrigger>
           <TabsTrigger value="cuenta-corriente">Cta. Corriente</TabsTrigger>
           <TabsTrigger value="recibos">Recibos</TabsTrigger>
           <TabsTrigger value="echeqs">Echeqs</TabsTrigger>
@@ -306,6 +308,10 @@ export function ClienteDetail() {
 
         <TabsContent value="multas">
           <MultasTab clienteId={cliente.id} />
+        </TabsContent>
+
+        <TabsContent value="danios">
+          <DaniosResumen clienteId={cliente.id} titulo="Daños en sus alquileres" />
         </TabsContent>
 
         <TabsContent value="cuenta-corriente">
