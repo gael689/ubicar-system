@@ -901,6 +901,10 @@ def _url_webhook() -> str:
 # sistema. Por eso el token es largo, vence, y se revoca desde el mostrador.
 
 
+class FirmaCodeudorPublica(BaseModel):
+    firma_base64: str | None = None
+
+
 class FirmarPorLinkRequest(BaseModel):
     nombre: str
     dni: str
@@ -908,11 +912,26 @@ class FirmarPorLinkRequest(BaseModel):
     firma_base64: str
     # Las claves de `contrato_clausulado.ACEPTACIONES` que el cliente tildó.
     # Se mandan todas o el service rechaza: no es un formulario a completar a
-    # medias.
+    # medias. Con pagaré pendiente, además `"pagare"`.
     aceptaciones: list[str] = []
+    # Las firmas de los co-deudores del pagaré, en su orden. Firman en el
+    # mismo teléfono y en el mismo acto que el titular.
+    codeudores: list[FirmaCodeudorPublica] = []
 
 
-def _contrato_para_el_cliente(contrato, plantilla) -> dict:
+def _pagare_para_el_cliente(pagare) -> dict | None:
+    """El pagaré tal como se emitió. Mismo principio que el contrato: snapshot."""
+    if pagare is None:
+        return None
+    return {
+        "numero": pagare.numero_formateado,
+        "snapshot": pagare.snapshot or {},
+        "firmado": pagare.firmado,
+        "firmado_at": pagare.firmado_at,
+    }
+
+
+def _contrato_para_el_cliente(contrato, plantilla, pagare=None) -> dict:
     """
     Lo que ve el cliente. **Es el snapshot congelado**, igual que el PDF: si
     esta pantalla leyera las tablas vivas, mostraría un contrato distinto del
@@ -929,6 +948,13 @@ def _contrato_para_el_cliente(contrato, plantilla) -> dict:
             "clausulas": plantilla.clausulas,
         },
         "aceptaciones": contrato_clausulado.ACEPTACIONES,
+        # El pagaré que viaja en este link (firmado o no), o `null`.
+        "pagare": _pagare_para_el_cliente(pagare),
+        # ¿Queda algo por firmar? Con el contrato firmado puede faltar el
+        # pagaré, si se generó después.
+        "pendiente": not contrato.anulado and (
+            not contrato.firmado or (pagare is not None and not pagare.firmado)
+        ),
         "firmado": contrato.firmado,
         "firmado_at": contrato.firmado_at,
         "firmado_por_nombre": contrato.firmado_por_nombre,
@@ -964,11 +990,14 @@ def ver_contrato_por_token(token: str, db: Session = Depends(get_db)):
     except BusinessRuleError as e:
         raise HTTPException(status_code=410, detail=_mensaje(e))
 
+    from app.services.pagare_service import PagareService
+
     plantilla = (
         db.get(ContratoPlantilla, contrato.plantilla_id)
         if contrato.plantilla_id else svc.plantilla_vigente()
     )
-    return ok(_contrato_para_el_cliente(contrato, plantilla))
+    pagare = PagareService(db).de_contrato(contrato.id)
+    return ok(_contrato_para_el_cliente(contrato, plantilla, pagare))
 
 
 @router.post("/contratos/{token}/firmar", dependencies=[Depends(limite_solicitudes)])
@@ -992,6 +1021,10 @@ def firmar_contrato_por_token(
     try:
         crudo = payload.firma_base64.split(",", 1)[-1]
         firma_bytes = base64.b64decode(crudo) if crudo else None
+        codeudores = []
+        for c in payload.codeudores:
+            crudo_c = (c.firma_base64 or "").split(",", 1)[-1]
+            codeudores.append({"firma_bytes": base64.b64decode(crudo_c) if crudo_c else None})
     except Exception:
         raise HTTPException(status_code=422, detail="La firma no se pudo leer. Volvé a trazarla.")
 
@@ -1005,6 +1038,7 @@ def firmar_contrato_por_token(
             aceptadas=payload.aceptaciones,
             ip=_ip_del_cliente(request),
             user_agent=request.headers.get("user-agent"),
+            codeudores=codeudores,
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Este link no es válido.")
@@ -1012,7 +1046,7 @@ def firmar_contrato_por_token(
         # 422 cuando falta algo del formulario y el cliente puede corregirlo;
         # 409 cuando el contrato ya no admite la firma (vencido, anulado o ya
         # firmado) y no hay nada que corregir.
-        codigo = 422 if e.rule in ("faltan_aceptaciones", "falta_firma") else 409
+        codigo = 422 if e.rule in ("faltan_aceptaciones", "falta_firma", "falta_firma_codeudor") else 409
         raise HTTPException(status_code=codigo, detail=_mensaje(e))
 
     # **La firma se guarda y se contesta. Los avisos van después.**
@@ -1061,6 +1095,31 @@ def descargar_contrato_por_token(token: str, db: Session = Depends(get_db)):
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{nombre}"'},
+    )
+
+
+@router.get("/contratos/{token}/pagare/pdf", dependencies=[Depends(limite_consultas)])
+def descargar_pagare_por_token(token: str, db: Session = Depends(get_db)):
+    """El PDF del pagaré que viaja en este link. Mismo criterio que el contrato."""
+    from app.services.contrato_service import ContratoService
+    from app.services.pagare_service import PagareService
+
+    try:
+        contrato = ContratoService(db).por_token(token, para_firmar=False)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Este link no es válido.")
+    except BusinessRuleError as e:
+        raise HTTPException(status_code=410, detail=_mensaje(e))
+
+    svc = PagareService(db)
+    pagare = svc.de_contrato(contrato.id)
+    if pagare is None:
+        raise HTTPException(status_code=404, detail="Este link no tiene pagaré.")
+    pdf = svc.generar_pdf(pagare.id)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="pagare_{pagare.numero_formateado}.pdf"'},
     )
 
 

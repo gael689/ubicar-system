@@ -10,6 +10,11 @@ class ContratoCreate(BaseModel):
     snapshot: dict | None = None
 
 
+class FirmaCodeudor(BaseModel):
+    # Data URL del canvas, igual que la firma del titular.
+    firma_base64: str | None = None
+
+
 class FirmarContratoRequest(BaseModel):
     nombre: str
     dni: str
@@ -18,6 +23,9 @@ class FirmarContratoRequest(BaseModel):
     # Data URL del canvas (`data:image/png;base64,...`). Opcional: se puede
     # registrar la firma en papel sin imagen.
     firma_base64: str | None = None
+    # Las firmas de los co-deudores del pagaré, si hay pagaré pendiente y
+    # tiene co-deudores. En el orden en que figuran en el pagaré.
+    codeudores: list[FirmaCodeudor] = []
 
     @field_validator("nombre", "dni")
     @classmethod

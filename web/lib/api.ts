@@ -312,6 +312,8 @@ export const api = {
       dni: string;
       firma_base64: string;
       aceptaciones: string[];
+      /** Firmas de los co-deudores del pagaré, en su orden. */
+      codeudores?: { firma_base64: string }[];
     },
   ) =>
     request<{ numero: string; firmado_at: string }>(
@@ -325,6 +327,8 @@ export const api = {
    * cae en una carpeta que nadie encuentra.
    */
   urlContratoPdf: (token: string) => `${BASE}/public/contratos/${token}/pdf`,
+
+  urlPagarePdf: (token: string) => `${BASE}/public/contratos/${token}/pagare/pdf`,
 
   /**
    * Plan de conexión (13/08), §3.9 — lo que registra el cartel de derivación

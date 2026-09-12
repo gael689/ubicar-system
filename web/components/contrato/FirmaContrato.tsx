@@ -20,6 +20,12 @@ import { LienzoFirma } from "./LienzoFirma";
  * Todo sale del **snapshot congelado** que devuelve el backend. Esta pantalla
  * no calcula ni un peso: si mostrara un total recalculado, la firma valdría
  * sobre un número distinto al que se emitió.
+ *
+ * **El pagaré va abajo del contrato, en el mismo link, y se firma con la misma
+ * firma.** Es un documento aparte —se lee entero, tiene su propia declaración
+ * y su propio PDF— y cada co-deudor firma en su recuadro. Si el contrato ya
+ * estaba firmado y el pagaré se generó después, el link se abre sólo para el
+ * pagaré: la firma vieja no se reutiliza.
  */
 export function FirmaContrato({ token }: { token: string }) {
   const [contrato, setContrato] = useState<ContratoParaFirmar | null>(null);
@@ -29,6 +35,7 @@ export function FirmaContrato({ token }: { token: string }) {
   const [nombre, setNombre] = useState("");
   const [dni, setDni] = useState("");
   const [firma, setFirma] = useState<string | null>(null);
+  const [firmasCod, setFirmasCod] = useState<(string | null)[]>([]);
   const [tildadas, setTildadas] = useState<Record<string, boolean>>({});
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +46,10 @@ export function FirmaContrato({ token }: { token: string }) {
       .contratoParaFirmar(token)
       .then((c) => {
         setContrato(c);
-        setListo(c.firmado);
+        // Listo es "no queda nada por firmar", no "el contrato está firmado":
+        // con el contrato firmado puede faltar el pagaré.
+        setListo(c.pendiente === undefined ? c.firmado : !c.pendiente);
+        setFirmasCod((c.pagare?.snapshot.codeudores ?? []).map(() => null));
         // El nombre viene precargado del contrato: es el del titular. Queda
         // editable porque quien firma puede no ser el mismo (una empresa manda
         // a otra persona a retirar).
@@ -68,6 +78,8 @@ export function FirmaContrato({ token }: { token: string }) {
   }
 
   const urlPdf = api.urlContratoPdf(token);
+  const pagare = contrato.pagare;
+  const urlPagare = api.urlPagarePdf(token);
 
   if (listo) {
     return (
@@ -75,8 +87,9 @@ export function FirmaContrato({ token }: { token: string }) {
         <CheckCircle2 className="mx-auto h-12 w-12 text-[hsl(var(--ubicar-green))]" />
         <h1 className="mt-4 text-2xl font-bold text-[#1B3F6B]">Listo, quedó firmado</h1>
         <p className="mt-2 text-muted-foreground">
-          Contrato <strong className="text-foreground">{contrato.numero}</strong>. Te
-          mandamos una copia por mail.
+          Contrato <strong className="whitespace-nowrap text-foreground">{contrato.numero}</strong>
+          {pagare && <> y pagaré <strong className="whitespace-nowrap text-foreground">{pagare.numero}</strong></>}.
+          Te mandamos una copia por mail.
         </p>
 
         {/* Botón y no descarga automática: los navegadores de teléfono bloquean
@@ -87,6 +100,13 @@ export function FirmaContrato({ token }: { token: string }) {
             <Download className="h-4 w-4" /> Ver y descargar el contrato firmado
           </a>
         </Button>
+        {pagare && (
+          <Button asChild variant="outline" className="mt-3 w-full sm:w-auto sm:ml-3">
+            <a href={urlPagare} target="_blank" rel="noopener noreferrer">
+              <Download className="h-4 w-4" /> Ver y descargar el pagaré
+            </a>
+          </Button>
+        )}
 
         <p className="mt-4 text-xs text-muted-foreground">
           Podés volver a este link cuando quieras para bajarlo de nuevo.
@@ -105,9 +125,20 @@ export function FirmaContrato({ token }: { token: string }) {
     );
   }
 
-  const faltanTildes = contrato.aceptaciones.filter((a) => !tildadas[a.clave]);
+  // Qué se firma en esta visita. Con el contrato ya firmado, sólo el pagaré.
+  const firmaContrato = !contrato.firmado;
+  const firmaPagare = !!pagare && !pagare.firmado;
+  const codeudores = firmaPagare ? pagare!.snapshot.codeudores ?? [] : [];
+  const declaraciones = [
+    ...(firmaContrato ? contrato.aceptaciones : []),
+    ...(firmaPagare && pagare!.snapshot.aceptacion ? [pagare!.snapshot.aceptacion] : []),
+  ];
+
+  const faltanTildes = declaraciones.filter((a) => !tildadas[a.clave]);
+  const faltanCodeudores = codeudores.filter((_, i) => !firmasCod[i]);
   const puedeFirmar =
-    nombre.trim().length > 2 && dni.trim().length > 4 && !!firma && faltanTildes.length === 0;
+    nombre.trim().length > 2 && dni.trim().length > 4 && !!firma
+    && faltanTildes.length === 0 && faltanCodeudores.length === 0;
 
   /**
    * Firma, y **si algo se corta, pregunta cómo quedó antes de dar un error**.
@@ -136,7 +167,8 @@ export function FirmaContrato({ token }: { token: string }) {
         nombre: nombre.trim(),
         dni: dni.trim(),
         firma_base64: firma,
-        aceptaciones: contrato!.aceptaciones.map((a) => a.clave),
+        aceptaciones: declaraciones.map((a) => a.clave),
+        codeudores: firmasCod.map((f) => ({ firma_base64: f ?? "" })),
       });
       darPorFirmado();
     } catch (e) {
@@ -162,7 +194,7 @@ export function FirmaContrato({ token }: { token: string }) {
   async function quedoFirmado(): Promise<boolean> {
     try {
       const actual = await api.contratoParaFirmar(token);
-      return actual.firmado;
+      return actual.pendiente === undefined ? actual.firmado : !actual.pendiente;
     } catch {
       return false;
     }
@@ -180,10 +212,24 @@ export function FirmaContrato({ token }: { token: string }) {
       <header className="mb-6">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">
           Contrato de alquiler {contrato.numero}
+          {pagare && ` · Pagaré ${pagare.numero}`}
         </p>
         <h1 className="mt-1 text-2xl font-bold text-[#1B3F6B]">
-          Leelo y firmalo desde acá
+          {firmaContrato && firmaPagare
+            ? "Leelos y firmalos desde acá"
+            : firmaPagare ? "Leé el pagaré y firmalo desde acá" : "Leelo y firmalo desde acá"}
         </h1>
+        {firmaContrato && firmaPagare && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Son dos documentos: el contrato y, abajo, un pagaré. Con una sola firma quedan firmados los dos.
+          </p>
+        )}
+        {!firmaContrato && firmaPagare && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            El contrato ya lo firmaste (<a href={urlPdf} target="_blank" rel="noopener noreferrer" className="underline">verlo</a>).
+            Falta el pagaré.
+          </p>
+        )}
         {empresa.razon_social && (
           <p className="mt-1 text-xs text-muted-foreground">
             {empresa.nombre_comercial ?? "Ubicar Rent"} es el nombre comercial de{" "}
@@ -193,6 +239,7 @@ export function FirmaContrato({ token }: { token: string }) {
         )}
       </header>
 
+      {firmaContrato && (<>
       {/* 1 · De qué se trata */}
       <Bloque titulo="Tu alquiler">
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
@@ -263,10 +310,50 @@ export function FirmaContrato({ token }: { token: string }) {
         </p>
       </Bloque>
 
+      </>)}
+
+      {/* 2 bis · El pagaré, abajo del contrato */}
+      {firmaPagare && (
+        <Bloque titulo={`Pagaré ${pagare!.numero}`}>
+          <div className="rounded-lg border border-border bg-white p-4 text-[13px] leading-relaxed">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="font-bold text-foreground">{pagare!.snapshot.titulo}</p>
+              <p className="rounded border border-foreground px-2 py-0.5 font-semibold tabular-nums">
+                Por $ {pagare!.snapshot.monto_numerico}
+              </p>
+            </div>
+            <p className="mt-1 text-muted-foreground">
+              {pagare!.snapshot.lugar_emision}, {fechaLarga(new Date())}
+            </p>
+            <p className="mt-3 text-foreground">{pagare!.snapshot.texto}</p>
+            <div className="mt-4 grid gap-3 border-t border-border pt-3 text-xs text-muted-foreground sm:grid-cols-2">
+              <div>
+                <p className="font-semibold text-foreground">Deudor</p>
+                <p>{pagare!.snapshot.deudor.nombre} · DNI {pagare!.snapshot.deudor.dni}</p>
+              </div>
+              {codeudores.length > 0 && (
+                <div>
+                  <p className="font-semibold text-foreground">Co-deudor{codeudores.length > 1 ? "es" : ""}</p>
+                  {codeudores.map((c) => (
+                    <p key={c.dni}>{c.nombre} · DNI {c.dni}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            La fecha del pagaré es la del día en que lo firmás.{" "}
+            <a href={urlPagare} target="_blank" rel="noopener noreferrer" className="underline">
+              Ver el pagaré en PDF
+            </a>
+          </p>
+        </Bloque>
+      )}
+
       {/* 3 · Las declaraciones */}
       <Bloque titulo="Antes de firmar">
         <ul className="space-y-3">
-          {contrato.aceptaciones.map((a) => (
+          {declaraciones.map((a) => (
             <li key={a.clave}>
               <label className="flex cursor-pointer select-none items-start gap-3 text-sm">
                 <Checkbox
@@ -295,7 +382,24 @@ export function FirmaContrato({ token }: { token: string }) {
         <div className="mt-4">
           <LienzoFirma onCambiar={setFirma} />
         </div>
+        {firmaContrato && firmaPagare && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Esta firma queda en el contrato y en el pagaré.
+          </p>
+        )}
       </Bloque>
+
+      {/* 4 bis · Los co-deudores, cada uno con su firma */}
+      {codeudores.map((c, i) => (
+        <Bloque key={c.dni || i} titulo={`Firma del co-deudor: ${c.nombre}`}>
+          <p className="mb-3 text-xs text-muted-foreground">
+            DNI {c.dni}. Firma {c.nombre} en su recuadro, en este mismo teléfono.
+          </p>
+          <LienzoFirma
+            onCambiar={(f) => setFirmasCod((prev) => prev.map((x, j) => (j === i ? f : x)))}
+          />
+        </Bloque>
+      ))}
 
       {error && (
         <p className="mb-4 rounded-lg bg-destructive px-4 py-3 text-sm text-destructive-foreground">
@@ -313,6 +417,9 @@ export function FirmaContrato({ token }: { token: string }) {
             dni.trim().length > 4 ? null : "tu DNI",
             faltanTildes.length ? `tildar ${faltanTildes.length} declaración(es)` : null,
             firma ? null : "tu firma",
+            faltanCodeudores.length
+              ? `la firma de ${faltanCodeudores.map((c) => c.nombre).join(", ")}`
+              : null,
           ]
             .filter(Boolean)
             .join(", ")}
@@ -327,7 +434,10 @@ export function FirmaContrato({ token }: { token: string }) {
           </>
         ) : (
           <>
-            <FileText className="h-4 w-4" /> Firmar el contrato
+            <FileText className="h-4 w-4" />{" "}
+            {firmaContrato && firmaPagare
+              ? "Firmar el contrato y el pagaré"
+              : firmaPagare ? "Firmar el pagaré" : "Firmar el contrato"}
           </>
         )}
       </Button>
@@ -351,6 +461,16 @@ function resolver(texto: string, empresa: Record<string, string>): string {
   return texto
     .replace(/\{\{LOCADOR\}\}/g, (empresa.locador_nombre ?? "").toUpperCase())
     .replace(/\{\{JURISDICCION\}\}/g, empresa.jurisdiccion ?? "Bahía Blanca");
+}
+
+const MESES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+  "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+/** "12 de septiembre de 2026", como sale en el encabezado del pagaré. */
+function fechaLarga(d: Date): string {
+  return `${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`;
 }
 
 function fecha(iso?: string): string {

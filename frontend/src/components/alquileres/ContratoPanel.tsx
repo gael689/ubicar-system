@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import {
   FileText, Download, PenLine, Ban, AlertTriangle, Link2, Copy, Check,
   MessageCircle, Upload, Paperclip, X,
@@ -13,8 +13,12 @@ import {
   useGenerarLinkFirma, useRevocarLinkFirma, useSubirEscaneoContrato,
   verEscaneoContrato, contratoYaFirmado, type LinkFirma,
 } from '@/hooks/useContratos';
+import { usePagareDeReserva, usePrepararPagare, useCrearPagare } from '@/hooks/usePagares';
+import { LienzoFirma } from '@/components/shared/LienzoFirma';
+import { PagarePanel, FormPagare, datosInicialesPagare, type DatosPagare } from './PagarePanel';
+import { api } from '@/lib/api';
 import { extractError, formatCurrency, formatDate, sinRespuesta } from '@/lib/utils';
-import type { Contrato } from '@/types';
+import type { Contrato, Pagare, PersonaPagare } from '@/types';
 
 interface Props {
   reservaId: number;
@@ -38,6 +42,14 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
   const { data: preparado } = usePrepararContrato(reservaId, !contrato && !isLoading);
   const crear = useCrearContrato();
   const anular = useAnularContrato();
+  // ── El pagaré ───────────────────────────────────────────────────────
+  // Documento aparte, que viaja en el mismo link y se firma con la misma
+  // firma. Ver `PagarePanel` y `docs/PAGARE.md`.
+  const { data: pagare } = usePagareDeReserva(reservaId);
+  const { data: pagarePreparado } = usePrepararPagare(reservaId, !contrato && !isLoading);
+  const crearPagare = useCrearPagare();
+  const [conPagare, setConPagare] = useState(true);
+  const [datosPagare, setDatosPagare] = useState<DatosPagare | null>(null);
 
   const [firmando, setFirmando] = useState(false);
   const [anulando, setAnulando] = useState(false);
@@ -74,16 +86,67 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
 
         {preparado && <ResumenAnverso snapshot={preparado.snapshot} />}
 
+        {/* ── Pagaré, abajo del contrato ─────────────────────────────
+            Se genera en el mismo click y comparte el link. Si faltan las
+            tasas en Configuración, se avisa acá y el contrato sale solo. */}
+        {pagarePreparado && (
+          <div className="rounded-xl border border-border p-4 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                checked={conPagare && pagarePreparado.faltantes.length === 0}
+                disabled={pagarePreparado.faltantes.length > 0}
+                onChange={e => setConPagare(e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              Generar también el pagaré
+              <span className="text-xs font-normal text-muted-foreground">— mismo link, misma firma</span>
+            </label>
+            {(conPagare || pagarePreparado.faltantes.length > 0) && (
+              <FormPagare
+                preparado={pagarePreparado}
+                datos={datosPagare ?? datosInicialesPagare(pagarePreparado)}
+                onCambiar={setDatosPagare}
+              />
+            )}
+          </div>
+        )}
+
         <Button
           size="sm"
-          disabled={!preparado || crear.isPending}
-          onClick={() => preparado && crear.mutate({ reserva_id: reservaId, snapshot: preparado.snapshot })}
+          disabled={!preparado || crear.isPending || crearPagare.isPending}
+          onClick={() => {
+            if (!preparado) return;
+            const incluirPagare = conPagare && !!pagarePreparado && pagarePreparado.faltantes.length === 0;
+            const dp = datosPagare ?? datosInicialesPagare(pagarePreparado);
+            crear.mutate(
+              { reserva_id: reservaId, snapshot: preparado.snapshot },
+              {
+                onSuccess: () => {
+                  if (!incluirPagare) return;
+                  crearPagare.mutate(
+                    { reserva_id: reservaId, monto: parseFloat(dp.monto), codeudores: dp.codeudores },
+                    {
+                      // El contrato ya quedó: el pagaré se puede reintentar
+                      // desde el bloque que aparece abajo del contrato.
+                      onError: e => toast.error(`El contrato se generó, pero el pagaré no: ${extractError(e)}`),
+                    },
+                  );
+                },
+              },
+            );
+          }}
         >
-          {crear.isPending ? 'Generando…' : 'Generar contrato'}
+          {crear.isPending || crearPagare.isPending
+            ? 'Generando…'
+            : conPagare && pagarePreparado?.faltantes.length === 0 ? 'Generar contrato y pagaré' : 'Generar contrato'}
         </Button>
       </Card>
     );
   }
+
+  const pagarePendiente = !!pagare && !pagare.firmado && !pagare.anulado;
+  const faltaFirmar = !contrato.anulado && (!contrato.firmado || pagarePendiente);
 
   // ── Contrato emitido ────────────────────────────────────────────────────
   return (
@@ -142,15 +205,16 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
 
         {contrato.snapshot && <ResumenAnverso snapshot={contrato.snapshot} />}
 
-        {!contrato.firmado && !contrato.anulado && <BloqueFirma contrato={contrato} />}
+        {faltaFirmar && <BloqueFirma contrato={contrato} pagare={pagarePendiente ? pagare! : null} />}
 
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => descargarPdfContrato(contrato)}>
             <Download className="h-4 w-4" /> Descargar PDF
           </Button>
-          {!contrato.firmado && !contrato.anulado && (
+          {faltaFirmar && (
             <Button size="sm" onClick={() => setFirmando(true)}>
-              <PenLine className="h-4 w-4" /> Firmar en el mostrador
+              <PenLine className="h-4 w-4" />
+              {contrato.firmado ? 'Firmar el pagaré en el mostrador' : 'Firmar en el mostrador'}
             </Button>
           )}
           {!contrato.anulado && (
@@ -164,11 +228,16 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
             marcado como firmado: el orden natural es marcar y después subir,
             o al revés, y forzar una secuencia sólo agrega clics. */}
         {!contrato.anulado && <AdjuntarPapel contrato={contrato} />}
+
+        {!contrato.anulado && <PagarePanel reservaId={reservaId} />}
       </Card>
 
       {firmando && (
         <FirmaDialog
           contratoId={contrato.id}
+          reservaId={reservaId}
+          firmaContrato={!contrato.firmado}
+          pagare={pagarePendiente ? pagare! : null}
           onClose={() => setFirmando(false)}
         />
       )}
@@ -200,7 +269,7 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
  * redundancia: hay clientes sin teléfono a mano, y hay veces que el papel
  * firmado es lo que pide la otra parte.
  */
-function BloqueFirma({ contrato }: { contrato: Contrato }) {
+function BloqueFirma({ contrato, pagare }: { contrato: Contrato; pagare: Pagare | null }) {
   const generar = useGenerarLinkFirma();
   const revocar = useRevocarLinkFirma();
   const [link, setLink] = useState<LinkFirma | null>(
@@ -223,7 +292,9 @@ function BloqueFirma({ contrato }: { contrato: Contrato }) {
   // el backend no vuelve a armar el texto: acá se arma uno equivalente, para
   // que el botón no dependa de haber apretado "Generar" en esta misma pantalla.
   const mensajeWhatsapp = link
-    ? link.mensaje || `Te paso el contrato de alquiler para que lo leas y lo firmes desde el celular:\n\n${link.url}`
+    ? link.mensaje || (pagare
+      ? `Te paso ${contrato.firmado ? 'el pagaré para que lo leas y lo firmes' : 'el contrato de alquiler y el pagaré para que los leas y los firmes'} desde el celular:\n\n${link.url}`
+      : `Te paso el contrato de alquiler para que lo leas y lo firmes desde el celular:\n\n${link.url}`)
     : '';
   // **El link se abre, no se manda solo.** WhatsApp quema números por
   // automatizar el envío: esto deja el chat abierto con el texto escrito y
@@ -246,14 +317,18 @@ function BloqueFirma({ contrato }: { contrato: Contrato }) {
     <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Link2 className="h-4 w-4 text-primary" />
-        <p className="text-sm font-semibold text-foreground">Que lo firme el cliente</p>
+        <p className="text-sm font-semibold text-foreground">
+          {pagare && contrato.firmado ? 'Que firme el pagaré' : pagare ? 'Que firme el contrato y el pagaré' : 'Que lo firme el cliente'}
+        </p>
       </div>
 
       {!link ? (
         <>
           <p className="text-xs text-muted-foreground">
             Genera un link para mandarle por WhatsApp. El cliente lee el contrato completo,
-            acepta las condiciones y firma desde el celular. Cuando firma,{' '}
+            acepta las condiciones y firma desde el celular.
+            {pagare && ' En el mismo link, abajo del contrato, está el pagaré: una sola firma vale para los dos.'}
+            {' '}Cuando firma,{' '}
             <strong className="text-foreground">nos llega el aviso con el PDF firmado</strong>.
           </p>
           <Button
@@ -431,48 +506,54 @@ function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
 type Medio = 'pantalla' | 'papel';
 
 /**
+ * ¿Quedó todo firmado del lado del servidor? Para cuando el POST no volvió.
+ * Con pagaré, "firmado" es los dos documentos, no sólo el contrato.
+ */
+async function todoFirmado(contratoId: number, reservaId: number, conPagare: boolean): Promise<boolean> {
+  if (!(await contratoYaFirmado(contratoId))) return false;
+  if (!conPagare) return true;
+  try {
+    const res = await api.get<{ data: Pagare[] }>('/pagares', { params: { reserva_id: reservaId } });
+    return res.data.data.some(p => !p.anulado && p.firmado);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Las dos formas reales de firmar, explícitas.
  *
  * En papel ya funcionaba —bastaba con confirmar sin dibujar nada— pero nada lo
  * decía, así que en la práctica no existía. Y sin registrar el medio, un
  * contrato firmado con lapicera y uno marcado por error se veían idénticos.
+ *
+ * **Con pagaré, la misma firma vale para los dos documentos**, y cada
+ * co-deudor firma en su propio recuadro. El backend no firma ninguno si falta
+ * la firma de un co-deudor: el acto es uno.
  */
-function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dibujando = useRef(false);
-  const [tieneTrazo, setTieneTrazo] = useState(false);
+function FirmaDialog({
+  contratoId, reservaId, firmaContrato, pagare, onClose,
+}: {
+  contratoId: number;
+  reservaId: number;
+  /** `false` si el contrato ya estaba firmado y lo que falta es el pagaré. */
+  firmaContrato: boolean;
+  pagare: Pagare | null;
+  onClose: () => void;
+}) {
+  const codeudores: PersonaPagare[] = pagare?.snapshot.codeudores ?? [];
+  const [firma, setFirma] = useState<string | null>(null);
+  const [firmasCod, setFirmasCod] = useState<(string | null)[]>(() => codeudores.map(() => null));
   const [nombre, setNombre] = useState('');
   const [dni, setDni] = useState('');
   const [medio, setMedio] = useState<Medio>('pantalla');
   const firmar = useFirmarContrato();
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#111';
-  }, []);
-
-  const posicion = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * (e.currentTarget.width / rect.width),
-      y: (e.clientY - rect.top) * (e.currentTarget.height / rect.height),
-    };
-  };
-
-  const limpiar = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setTieneTrazo(false);
-  };
+  const faltanCodeudores = medio === 'pantalla' && firmasCod.some(f => !f);
+  const titulo = firmaContrato && pagare ? 'Firmar contrato y pagaré' : pagare ? 'Firmar el pagaré' : 'Firmar contrato';
 
   const confirmar = () => {
-    if (!nombre.trim() || !dni.trim()) return;
+    if (!nombre.trim() || !dni.trim() || faltanCodeudores) return;
     firmar.mutate(
       {
         id: contratoId,
@@ -481,10 +562,8 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
         firma_medio: medio,
         // En papel nunca se manda trazo aunque haya quedado dibujado antes de
         // cambiar de opción: el original es el papel.
-        firma_base64:
-          medio === 'pantalla' && tieneTrazo
-            ? canvasRef.current?.toDataURL('image/png')
-            : null,
+        firma_base64: medio === 'pantalla' ? firma : null,
+        codeudores: medio === 'pantalla' ? firmasCod.map(f => ({ firma_base64: f })) : [],
       },
       {
         onSuccess: onClose,
@@ -494,7 +573,7 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
           // celular la conexión se corta justo ahí. Antes de dejar a alguien
           // firmando de nuevo, se pregunta cómo quedó.
           if (!sinRespuesta(err)) return;
-          if (await contratoYaFirmado(contratoId)) {
+          if (await todoFirmado(contratoId, reservaId, !!pagare)) {
             toast.success('La firma sí había quedado registrada.');
             onClose();
           }
@@ -505,11 +584,12 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-background p-5 space-y-4">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-background p-5 space-y-4">
         <div>
-          <h3 className="font-semibold text-foreground">Firmar contrato</h3>
+          <h3 className="font-semibold text-foreground">{titulo}</h3>
           <p className="text-xs text-muted-foreground">
             Firma manuscrita del cliente. Quien firma puede no ser el titular de la reserva.
+            {pagare && firmaContrato && ' La misma firma queda en el contrato y en el pagaré.'}
           </p>
         </div>
 
@@ -517,7 +597,7 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
           {([
             ['pantalla', 'Firma en pantalla', 'Con el dedo o el mouse'],
             ['papel', 'Firmó en papel', 'Se imprimió y firmó a mano'],
-          ] as const).map(([valor, titulo, ayuda]) => (
+          ] as const).map(([valor, tituloMedio, ayuda]) => (
             <button
               key={valor}
               type="button"
@@ -529,7 +609,7 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
                   : 'border-border hover:border-primary/40'
               }`}
             >
-              <p className="text-sm font-medium text-foreground">{titulo}</p>
+              <p className="text-sm font-medium text-foreground">{tituloMedio}</p>
               <p className="text-xs text-muted-foreground">{ayuda}</p>
             </button>
           ))}
@@ -549,48 +629,35 @@ function FirmaDialog({ contratoId, onClose }: { contratoId: number; onClose: () 
         {medio === 'papel' ? (
           <p className="rounded-lg bg-muted px-3 py-2.5 text-xs text-muted-foreground">
             El <strong className="text-foreground">papel firmado es el original</strong> y hay
-            que archivarlo. Acá sólo queda la constancia de quién firmó y cuándo: el PDF que
-            se reimprima desde el sistema va a decir que se firmó en papel, sin la imagen de
-            la firma.
+            que archivarlo{pagare ? ' (el del pagaré, con más razón: es el que se presenta al cobro)' : ''}.
+            Acá sólo queda la constancia de quién firmó y cuándo: el PDF que se reimprima desde el
+            sistema va a decir que se firmó en papel, sin la imagen de la firma.
           </p>
         ) : (
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Firma</label>
-          <canvas
-            ref={canvasRef}
-            width={560}
-            height={180}
-            className="w-full touch-none rounded-lg border border-dashed border-border bg-white"
-            onPointerDown={e => {
-              dibujando.current = true;
-              const ctx = e.currentTarget.getContext('2d');
-              const { x, y } = posicion(e);
-              ctx?.beginPath();
-              ctx?.moveTo(x, y);
-              e.currentTarget.setPointerCapture(e.pointerId);
-            }}
-            onPointerMove={e => {
-              if (!dibujando.current) return;
-              const ctx = e.currentTarget.getContext('2d');
-              const { x, y } = posicion(e);
-              ctx?.lineTo(x, y);
-              ctx?.stroke();
-              setTieneTrazo(true);
-            }}
-            onPointerUp={() => { dibujando.current = false; }}
-            onPointerLeave={() => { dibujando.current = false; }}
-          />
-          <button type="button" onClick={limpiar} className="text-xs text-primary hover:underline">
-            Borrar y volver a firmar
-          </button>
-        </div>
+          <div className="space-y-3">
+            <LienzoFirma onCambiar={setFirma} etiqueta={pagare ? 'Firma del cliente (deudor)' : 'Firma'} />
+            {codeudores.map((c, i) => (
+              <LienzoFirma
+                key={i}
+                etiqueta={`Firma del co-deudor: ${c.nombre} (DNI ${c.dni}) *`}
+                onCambiar={f => setFirmasCod(prev => prev.map((x, j) => (j === i ? f : x)))}
+              />
+            ))}
+          </div>
+        )}
+
+        {faltanCodeudores && (
+          <p className="text-xs text-muted-foreground">
+            Falta la firma de {codeudores.filter((_, i) => !firmasCod[i]).map(c => c.nombre).join(', ')}.
+          </p>
         )}
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
           <Button
+            type="button"
             size="sm"
-            disabled={!nombre.trim() || !dni.trim() || firmar.isPending}
+            disabled={!nombre.trim() || !dni.trim() || faltanCodeudores || firmar.isPending}
             onClick={confirmar}
           >
             {firmar.isPending

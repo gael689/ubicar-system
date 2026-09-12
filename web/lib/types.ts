@@ -84,11 +84,38 @@ export interface AceptacionContrato {
  * `snapshot` es el anverso **congelado al emitir el contrato**, no las tablas
  * vivas: la firma tiene que valer sobre el texto exacto que se mostró.
  */
+export interface PersonaPagare {
+  nombre: string;
+  dni: string;
+  domicilio?: string;
+}
+
+/** El pagaré que viaja en el mismo link que el contrato. */
+export interface PagareParaFirmar {
+  numero: string;
+  snapshot: {
+    titulo: string;
+    lugar_emision: string;
+    monto_numerico: string;
+    texto: string;
+    deudor: PersonaPagare;
+    codeudores: PersonaPagare[];
+    aceptacion: AceptacionContrato;
+    [k: string]: unknown;
+  };
+  firmado: boolean;
+  firmado_at: string | null;
+}
+
 export interface ContratoParaFirmar {
   numero: string;
   snapshot: Record<string, any>;
   clausulado: { version: number; titulo: string; clausulas: ClausulaContrato[] };
   aceptaciones: AceptacionContrato[];
+  /** El pagaré de este link, o `null` si la reserva no tiene. */
+  pagare: PagareParaFirmar | null;
+  /** ¿Queda algo por firmar? Con el contrato firmado puede faltar el pagaré. */
+  pendiente: boolean;
   firmado: boolean;
   firmado_at: string | null;
   firmado_por_nombre: string | null;

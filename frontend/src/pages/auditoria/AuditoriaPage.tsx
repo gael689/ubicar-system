@@ -28,6 +28,9 @@ const ACCION_LABEL: Record<string, string> = {
   reasignar_vehiculo: 'Cambió el vehículo',
   anular_contrato: 'Anuló contrato',
   anular_contrato_firmado: 'Anuló un contrato FIRMADO',
+  emitir_pagare: 'Emitió pagaré',
+  anular_pagare: 'Anuló pagaré',
+  anular_pagare_firmado: 'Anuló un pagaré FIRMADO',
 };
 
 const ENTIDAD_LABEL: Record<string, string> = {
@@ -38,6 +41,7 @@ const ENTIDAD_LABEL: Record<string, string> = {
   regla_precio: 'Regla de precio',
   descuento_duracion: 'Descuento por duración',
   contrato: 'Contrato',
+  pagare: 'Pagaré',
 };
 
 // Rojo para lo que saca plata o borra; verde para lo que entra; neutro para
@@ -50,6 +54,9 @@ const ACCION_COLOR: Record<string, string> = {
   // El más grave de la lista: alguien invalidó un papel que el cliente ya
   // había firmado. Es la línea que se va a buscar dentro de seis meses.
   anular_contrato_firmado: 'bg-red-800 text-white',
+  anular_pagare: 'bg-red-600 text-white',
+  anular_pagare_firmado: 'bg-red-800 text-white',
+  emitir_pagare: 'bg-slate-600 text-white',
   cancelar: 'bg-red-600 text-white',
   bonificar: 'bg-amber-600 text-white',
   autorizar_descuento: 'bg-amber-600 text-white',

@@ -1835,6 +1835,67 @@ export interface ContratoPreparado {
   falta_datos_fiscales: boolean;
 }
 
+// ─── Pagaré ──────────────────────────────────────────────────────────────────
+
+export interface PersonaPagare {
+  nombre: string;
+  dni: string;
+  domicilio?: string;
+}
+
+/**
+ * El pagaré a la vista que acompaña al contrato. Documento aparte, mismo link
+ * y misma firma. Ver `backend/app/models/pagare.py`.
+ */
+export interface Pagare {
+  id: number;
+  numero_formateado: string;
+  reserva_id: number;
+  contrato_id: number;
+  /** Todo lo que se imprime, congelado al emitir. */
+  snapshot: {
+    titulo: string;
+    lugar_emision: string;
+    monto: number;
+    monto_numerico: string;
+    monto_letras: string;
+    beneficiario: string;
+    lugar_pago: string;
+    interes_compensatorio: string;
+    interes_punitorio: string;
+    deudor: PersonaPagare;
+    codeudores: PersonaPagare[];
+    texto: string;
+    [k: string]: unknown;
+  };
+  firmado: boolean;
+  firmado_at: string | null;
+  firmado_por_nombre: string | null;
+  firmado_por_dni: string | null;
+  firma_medio: 'link' | 'pantalla' | 'papel' | null;
+  firma_ip: string | null;
+  firmas_codeudores: { nombre: string; dni: string; firma_key: string | null }[] | null;
+  anulado: boolean;
+  motivo_anulacion: string | null;
+  fecha_generacion: string;
+  tiene_escaneo: boolean;
+}
+
+export interface PagarePreparado {
+  monto_sugerido: number;
+  franquicia: number | null;
+  deudor: PersonaPagare;
+  codeudor_sugerido: PersonaPagare | null;
+  beneficiario: string;
+  lugar_emision: string;
+  lugar_pago: string;
+  interes_compensatorio: string;
+  interes_punitorio: string;
+  /** Lo que impide emitir (las tasas sin cargar, típicamente). Vacío = se puede. */
+  faltantes: string[];
+  tiene_contrato: boolean;
+}
+
 
 // ─── Disponibilidad interna (cupo del mostrador) ─────────────────────────────
 

@@ -110,6 +110,9 @@ TABLAS_EN_ORDEN = [
     "fotos_danio",
     "danios",
     "reserva_adicionales",
+    # Antes que `contratos`: el pagaré apunta a su contrato (migración 094).
+    # Sin esto, el DELETE de contratos muere contra la FK del primer pagaré.
+    "pagares",
     "contratos",
     "pagos_web",
     "holds",

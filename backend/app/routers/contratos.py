@@ -30,6 +30,17 @@ from app.services.contrato_service import ContratoService
 router = APIRouter(prefix="/contratos", tags=["Contratos"])
 
 
+def decodificar_firma(data_url: str | None) -> bytes | None:
+    """El PNG de un data-URL de canvas. `ValueError` si no se puede leer."""
+    if not data_url:
+        return None
+    try:
+        crudo = data_url.split(",", 1)[-1]
+        return base64.b64decode(crudo) if crudo else None
+    except Exception as e:
+        raise ValueError("firma ilegible") from e
+
+
 def _respuesta(c: Contrato) -> ContratoResponse:
     r = ContratoResponse.model_validate(c)
     r.numero_formateado = c.numero_formateado
@@ -128,18 +139,19 @@ def firmar_contrato(
     "firma digital" en ningún texto de la interfaz.
     """
     firma_bytes = None
-    if payload.firma_base64:
-        try:
-            data = payload.firma_base64.split(",", 1)[-1]
-            firma_bytes = base64.b64decode(data)
-        except Exception:
-            raise HTTPException(status_code=422, detail="La firma no es una imagen válida")
+    try:
+        firma_bytes = decodificar_firma(payload.firma_base64)
+        codeudores = [
+            {"firma_bytes": decodificar_firma(c.firma_base64)} for c in payload.codeudores
+        ]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="La firma no es una imagen válida")
 
     svc = ContratoService(db)
     try:
         contrato = svc.firmar(
             contrato_id, firma_bytes, payload.nombre, payload.dni, current_user.id,
-            medio=payload.firma_medio,
+            medio=payload.firma_medio, codeudores=codeudores,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -175,23 +187,33 @@ def generar_link_firma(
     db.commit()
     db.refresh(contrato)
 
+    from app.services.pagare_service import PagareService
+
+    pagare = PagareService(db).pendiente_de(contrato.id)
     return ok({
         "url": contrato.link_prellenado,
         "expira": contrato.firma_token_expira,
         # El texto listo para pegar en WhatsApp. Que lo arme el backend evita
         # que cada pantalla lo redacte distinto.
-        "mensaje": _mensaje_whatsapp(contrato),
+        "mensaje": _mensaje_whatsapp(contrato, con_pagare=pagare is not None),
     }, "Link de firma generado")
 
 
-def _mensaje_whatsapp(contrato) -> str:
+def _mensaje_whatsapp(contrato, con_pagare: bool = False) -> str:
     snap = contrato.snapshot or {}
     nombre = ((snap.get("cliente") or {}).get("nombre") or "").split(",")[0].strip()
     marca = (snap.get("empresa") or {}).get("nombre_comercial") or "Ubicar Rent"
     saludo = f"Hola {nombre.title()}! " if nombre else "Hola! "
+    # Qué hay para firmar en el link. Decir "el contrato" cuando lo que falta
+    # es el pagaré —o los dos— hace que el cliente abra esperando otra cosa.
+    if con_pagare and contrato.firmado:
+        que = "el pagaré para que lo leas y lo firmes"
+    elif con_pagare:
+        que = "el contrato de alquiler y el pagaré para que los leas y los firmes"
+    else:
+        que = "el contrato de alquiler para que lo leas y lo firmes"
     return (
-        f"{saludo}Te paso el contrato de alquiler para que lo leas y lo firmes "
-        f"desde el celular:\n\n{contrato.link_prellenado}\n\n"
+        f"{saludo}Te paso {que} desde el celular:\n\n{contrato.link_prellenado}\n\n"
         f"Cualquier duda, respondé por acá. — {marca}"
     )
 

@@ -121,6 +121,17 @@ def notificar_contrato_firmado(db: Session, contrato) -> None:
         emails = EmailService(db)
         pdf = svc.generar_pdf(contrato.id)
         adjunto = [(f"contrato_{contrato.numero_formateado}.pdf", pdf)]
+
+        # El pagaré firmado va en el mismo mail: se firmó en el mismo acto, y
+        # la copia del cliente tiene que tener los dos documentos que firmó.
+        from app.services.pagare_service import PagareService
+
+        pagares = PagareService(db)
+        pagare = pagares.de_contrato(contrato.id)
+        if pagare is not None and pagare.firmado:
+            adjunto.append(
+                (f"pagare_{pagare.numero_formateado}.pdf", pagares.generar_pdf(pagare.id))
+            )
         empresa = (contrato.snapshot or {}).get("empresa") or svc.datos_empresa()
 
         for destino in destinatarios_equipo(db):

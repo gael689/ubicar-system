@@ -502,9 +502,22 @@ class ContratoService:
         self, contrato_id: int, firma_bytes: bytes | None,
         nombre: str, dni: str, usuario_id: int | None,
         medio: str | None = None,
+        codeudores: list[dict] | None = None,
+        ip: str | None = None,
+        user_agent: str | None = None,
+        con_aceptacion_pagare: bool = False,
     ) -> Contrato:
         """
-        Deja el contrato firmado.
+        Deja firmado el contrato **y el pagaré que viaja con él**, si hay uno.
+
+        **Una firma, un acto, dos documentos.** El pagaré pendiente se firma en
+        la misma transacción y con el mismo trazo; si le falta algo (la firma de
+        un co-deudor), no se firma ninguno de los dos. Si el contrato ya estaba
+        firmado y lo que falta es el pagaré —se generó después—, se firma sólo
+        el pagaré: la firma vieja del contrato no se copia a un documento que
+        la persona no vio.
+
+        `codeudores` es `[{nombre, dni, firma_bytes}]` en el orden del pagaré.
 
         `medio` distingue las dos formas reales de firmar:
 
@@ -517,33 +530,66 @@ class ContratoService:
         Si no viene, se deduce del trazo. Se guarda igual para que un contrato
         firmado en papel no se confunda con uno marcado por error.
         """
+        from app.services.pagare_service import PagareService
+
         contrato = self.get(contrato_id)
         if contrato.anulado:
             raise BusinessRuleError("contrato_anulado", "El contrato está anulado")
-        if contrato.firmado:
+
+        pagares = PagareService(self.db)
+        pagare = pagares.pendiente_de(contrato.id)
+        if contrato.firmado and pagare is None:
             raise BusinessRuleError("contrato_ya_firmado", "El contrato ya está firmado")
 
-        if firma_bytes:
-            from app.core.deps import get_storage
-            key = f"contratos/{contrato.id}/firma.png"
-            contrato.firma_key = get_storage().upload(key, firma_bytes, "image/png")
+        medio_final = medio or ("pantalla" if firma_bytes else "papel")
+        # Antes de escribir nada: si el pagaré no se puede firmar, el contrato
+        # tampoco se firma.
+        if pagare is not None:
+            pagares.validar_firma(pagare, medio_final, codeudores)
 
-        contrato.firmado = True
-        contrato.firmado_at = datetime.utcnow()
-        contrato.firmado_por_nombre = nombre
-        contrato.firmado_por_dni = dni
-        contrato.firma_medio = medio or ("pantalla" if firma_bytes else "papel")
+        if not contrato.firmado:
+            if firma_bytes:
+                from app.core.deps import get_storage
+                key = f"contratos/{contrato.id}/firma.png"
+                contrato.firma_key = get_storage().upload(key, firma_bytes, "image/png")
 
-        # El alquiler es quien responde "¿este auto salió con contrato?" en el
-        # listado, así que el estado tiene que vivir también ahí. Si todavía no
-        # hay alquiler —contrato firmado antes de la entrega— lo sella el
-        # check-out al crearlo.
-        alquiler = contrato.alquiler or (contrato.reserva.alquiler if contrato.reserva else None)
-        if alquiler:
-            contrato.alquiler_id = alquiler.id
-            alquiler.contrato_firmado = True
+            contrato.firmado = True
+            contrato.firmado_at = datetime.utcnow()
+            contrato.firmado_por_nombre = nombre
+            contrato.firmado_por_dni = dni
+            contrato.firma_medio = medio_final
+
+            # El alquiler es quien responde "¿este auto salió con contrato?" en el
+            # listado, así que el estado tiene que vivir también ahí. Si todavía no
+            # hay alquiler —contrato firmado antes de la entrega— lo sella el
+            # check-out al crearlo.
+            alquiler = contrato.alquiler or (contrato.reserva.alquiler if contrato.reserva else None)
+            if alquiler:
+                contrato.alquiler_id = alquiler.id
+                alquiler.contrato_firmado = True
+
+        if pagare is not None:
+            pagares.firmar(
+                pagare,
+                firma_bytes=firma_bytes,
+                nombre=nombre,
+                dni=dni,
+                medio=medio_final,
+                codeudores=codeudores,
+                ip=ip,
+                user_agent=user_agent,
+                con_aceptacion=con_aceptacion_pagare,
+            )
         self.db.flush()
         return contrato
+
+    def pendiente_de_firma(self, contrato: Contrato) -> bool:
+        """¿Queda algo por firmar en este link? El contrato o su pagaré."""
+        from app.services.pagare_service import PagareService
+
+        if contrato.anulado:
+            return False
+        return not contrato.firmado or PagareService(self.db).pendiente_de(contrato.id) is not None
 
     # ── Firma por link (D-C6) ─────────────────────────────────────────────
 
@@ -564,7 +610,8 @@ class ContratoService:
         contrato = self.get(contrato_id)
         if contrato.anulado:
             raise BusinessRuleError("contrato_anulado", "El contrato está anulado")
-        if contrato.firmado:
+        # Con el contrato firmado, el link todavía sirve si falta el pagaré.
+        if not self.pendiente_de_firma(contrato):
             raise BusinessRuleError(
                 "contrato_ya_firmado",
                 "El contrato ya está firmado: no hace falta mandar el link.",
@@ -636,7 +683,7 @@ class ContratoService:
             raise BusinessRuleError("contrato_anulado", "Este contrato fue anulado.")
 
         if para_firmar:
-            if contrato.firmado:
+            if not self.pendiente_de_firma(contrato):
                 raise BusinessRuleError(
                     "contrato_ya_firmado", "Este contrato ya está firmado."
                 )
@@ -660,6 +707,7 @@ class ContratoService:
         aceptadas: list[str],
         ip: str | None,
         user_agent: str | None,
+        codeudores: list[dict] | None = None,
     ) -> Contrato:
         """
         Firma remota. Es la misma firma ológrafa digitalizada de siempre, con
@@ -670,12 +718,19 @@ class ContratoService:
         hay alguien mirando y el papel se archiva; en remoto, el trazo es la
         única prueba de que del otro lado había una persona.
         """
-        contrato = self.por_token(token, para_firmar=True)
+        from app.services.pagare_service import PagareService
 
+        contrato = self.por_token(token, para_firmar=True)
+        pagare = PagareService(self.db).pendiente_de(contrato.id)
+
+        # Las declaraciones del contrato se piden sólo si el contrato es lo que
+        # se firma; la del pagaré, sólo si hay pagaré pendiente.
         faltan = [
             a["titulo"] for a in contrato_clausulado.ACEPTACIONES
-            if a["clave"] not in aceptadas
+            if not contrato.firmado and a["clave"] not in aceptadas
         ]
+        if pagare is not None and "pagare" not in aceptadas:
+            faltan.append("Pagaré")
         if faltan:
             raise BusinessRuleError(
                 "faltan_aceptaciones",
@@ -687,15 +742,18 @@ class ContratoService:
             )
 
         ahora = datetime.utcnow()
-        contrato.firma_aceptaciones = [
-            {**a, "aceptado_at": ahora.isoformat()}
-            for a in contrato_clausulado.ACEPTACIONES
-        ]
-        contrato.firma_ip = (ip or "")[:45] or None
-        contrato.firma_user_agent = (user_agent or "")[:255] or None
+        if not contrato.firmado:
+            contrato.firma_aceptaciones = [
+                {**a, "aceptado_at": ahora.isoformat()}
+                for a in contrato_clausulado.ACEPTACIONES
+            ]
+            contrato.firma_ip = (ip or "")[:45] or None
+            contrato.firma_user_agent = (user_agent or "")[:255] or None
 
         self.firmar(
             contrato.id, firma_bytes, nombre, dni, usuario_id=None, medio="link",
+            codeudores=codeudores, ip=ip, user_agent=user_agent,
+            con_aceptacion_pagare=pagare is not None,
         )
         return contrato
 
@@ -762,6 +820,17 @@ class ContratoService:
         alquiler = self.db.get(Alquiler, contrato.alquiler_id)
         if alquiler:
             alquiler.contrato_firmado = False
+
+        # **El pagaré se anula con su contrato.** Se emiten como un par y viajan
+        # en el mismo link: el contrato nuevo lleva un pagaré nuevo. Dejarlo
+        # vigente lo ataría a un link muerto y trabaría emitir el siguiente.
+        from app.services.pagare_service import PagareService
+
+        pagare = PagareService(self.db).de_contrato(contrato.id)
+        if pagare is not None:
+            PagareService(self.db).anular(
+                pagare.id, f"Se anuló el contrato {contrato.numero_formateado}: {motivo}", usuario_id
+            )
         self.db.flush()
 
         # Acción distinta cuando estaba firmado: es la línea que alguien va a

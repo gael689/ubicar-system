@@ -103,10 +103,14 @@ export function useFirmarContrato() {
     mutationFn: ({ id, ...body }: {
       id: number; nombre: string; dni: string;
       firma_medio?: 'pantalla' | 'papel'; firma_base64?: string | null;
+      /** Firmas de los co-deudores del pagaré pendiente, en su orden. */
+      codeudores?: { firma_base64: string | null }[];
     }) =>
       api.post<{ data: Contrato }>(`/contratos/${id}/firmar`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
+      // La firma del contrato firma también el pagaré pendiente.
+      qc.invalidateQueries({ queryKey: ['pagares'] });
       qc.invalidateQueries({ queryKey: ['alquileres'] });
       qc.invalidateQueries({ queryKey: ['reservas'] });
     },
@@ -121,6 +125,8 @@ export function useAnularContrato() {
       api.post<{ data: Contrato }>(`/contratos/${id}/anular`, { motivo }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
+      // Anular el contrato anula su pagaré.
+      qc.invalidateQueries({ queryKey: ['pagares'] });
       qc.invalidateQueries({ queryKey: ['alquileres'] });
       qc.invalidateQueries({ queryKey: ['reservas'] });
     },

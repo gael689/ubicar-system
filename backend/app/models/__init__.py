@@ -21,6 +21,7 @@ from app.models.tarifa_calendario import TarifaCalendario, DescuentoDuracion
 from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
 from app.models.contrato import Contrato, ContratoPlantilla
+from app.models.pagare import Pagare
 from app.models.hold import Hold
 from app.models.categoria import Categoria
 from app.models.comprobante import Comprobante
@@ -45,4 +46,5 @@ __all__ = [
     "Multa", "Servicio", "Danio", "FotoDanio", "FechaEspecial",
     "TarifaCalendario", "DescuentoDuracion",
     "Adicional", "ReservaAdicional", "BloqueoVehiculo",
+    "Pagare",
 ]
