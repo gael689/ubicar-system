@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Calendar, Car, FileSignature, MapPin, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
+import axios from 'axios';
 
 import { InputMoneda } from '@/components/shared/InputMoneda';
 import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
@@ -12,7 +13,7 @@ import { useConfiguracion } from '@/hooks/useConfiguracion';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
 import api from '@/lib/api';
 import {
-  extractError, formatDocumento, formatMiles, mensajeSinRespuesta, redondear2, sinRespuesta,
+  extractError, formatDate, formatDocumento, formatMiles, mensajeSinRespuesta, redondear2, sinRespuesta,
 } from '@/lib/utils';
 import type { ApiResponse, Cliente, Reserva, ReservaCreate } from '@/types';
 
@@ -203,6 +204,31 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
         setError(
           `${mensajeSinRespuesta(err)} Buscamos la reserva y no aparece, así que ` +
           'podés volver a intentarlo.',
+        );
+        return;
+      }
+      // **El auto está ocupado en esas fechas.** Antes se veía "Request failed
+      // with status code 409" y nada más. Un caso es el de arriba visto desde
+      // el segundo intento: la primera vez se creó sin que llegara la
+      // respuesta, se volvió a cargar todo, y lo que ocupa el auto es esa
+      // misma reserva. Si es del mismo cliente y las mismas fechas, se sigue
+      // con ella en vez de trabar al mostrador.
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null;
+      if (detail?.code === 'solapamiento') {
+        const encontrada = await buscarLaQueQuizasSeCreo(idCliente);
+        if (encontrada) {
+          setReservaId(encontrada.id);
+          onCreada();
+          toast.success(`La reserva #${encontrada.id} ya estaba creada. Seguí con el contrato.`);
+          return;
+        }
+        const c = detail.conflicto;
+        setError(
+          c?.reserva_id
+            ? `El auto ya tiene la reserva #${c.reserva_id} (${c.estado}) del ` +
+              `${formatDate(c.fecha_inicio)} al ${formatDate(c.fecha_fin)}. ` +
+              'Elegí otro auto o cambiá las fechas.'
+            : `${detail.message}. Elegí otro auto o cambiá las fechas.`,
         );
         return;
       }

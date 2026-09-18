@@ -197,6 +197,10 @@ export function extractError(err: unknown, fallback = 'Algo salió mal'): string
   if (axios.isAxiosError(err)) {
     const detail = err.response?.data?.detail;
     if (typeof detail === 'string') return soloElMensaje(detail);
+    // Los 409 de reservas vienen armados: `{code, message, conflicto}`. Sin
+    // esto caían al `err.message` de axios y el mostrador leía "Request failed
+    // with status code 409" en vez de "el auto tiene una reserva en ese rango".
+    if (typeof detail?.message === 'string') return detail.message;
     if (Array.isArray(detail) && detail[0]?.msg) {
       return detail.map((d: { msg: string }) => d.msg).join(', ');
     }

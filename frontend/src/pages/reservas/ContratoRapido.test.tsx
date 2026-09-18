@@ -147,3 +147,51 @@ describe('Cuando no llega la respuesta', () => {
     expect(aviso.textContent).toMatch(/no aparece/);
   });
 });
+
+/** El 409 tal como lo arma `_parse_conflicto` en el backend. */
+function solapamiento() {
+  const err = new AxiosError('Request failed with status code 409', 'ERR_BAD_REQUEST');
+  err.response = {
+    status: 409, statusText: 'Conflict', headers: {}, config: {} as never,
+    data: { detail: {
+      code: 'solapamiento',
+      message: 'El vehículo tiene una reserva confirmada en ese rango',
+      conflicto: { reserva_id: 55, estado: 'confirmada', fecha_inicio: '2026-09-18', fecha_fin: '2026-09-20' },
+    } },
+  };
+  return err;
+}
+
+describe('Cuando el auto ya está ocupado (409)', () => {
+  it('dice qué reserva lo ocupa, no "Request failed with status code 409"', async () => {
+    const user = userEvent.setup();
+    createReserva.mockRejectedValue(solapamiento());
+    listReservas.mockResolvedValue({ data: [], total: 0, page: 1, page_size: 20 });
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+
+    await cargarLoMinimo(user);
+    await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
+
+    const aviso = await screen.findByText(/reserva #55/);
+    expect(aviso.textContent).toMatch(/18\/09\/2026 al 20\/09\/2026/);
+    expect(screen.queryByText(/status code 409/)).toBeNull();
+  });
+
+  it('si lo que lo ocupa es esta misma reserva, sigue con el contrato', async () => {
+    const user = userEvent.setup();
+    createReserva.mockRejectedValue(solapamiento());
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+
+    await cargarLoMinimo(user);
+    const hoy = (document.querySelector('input[type="date"]') as HTMLInputElement).value;
+    const fin = (document.querySelectorAll('input[type="date"]')[1] as HTMLInputElement).value;
+    listReservas.mockResolvedValue({
+      data: [{ id: 55, estado: 'confirmada', fecha_inicio: hoy, fecha_fin: fin }],
+      total: 1, page: 1, page_size: 20,
+    });
+
+    await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
+
+    expect(await screen.findByText(/panel del contrato 55/)).toBeTruthy();
+  });
+});
