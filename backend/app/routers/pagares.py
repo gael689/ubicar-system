@@ -74,7 +74,7 @@ def crear_pagare(
         raise HTTPException(status_code=409, detail=str(e))
     db.commit()
     db.refresh(pagare)
-    return ok(_respuesta(pagare), "Garantía generada")
+    return ok(_respuesta(pagare), "Franquicia generada")
 
 
 @router.post("/{pagare_id}/anular")
@@ -92,7 +92,7 @@ def anular_pagare(
         raise HTTPException(status_code=409, detail=str(e))
     db.commit()
     db.refresh(pagare)
-    return ok(_respuesta(pagare), "Garantía anulada")
+    return ok(_respuesta(pagare), "Franquicia anulada")
 
 
 @router.post("/{pagare_id}/escaneo")
@@ -120,7 +120,7 @@ async def subir_escaneo_pagare(
         raise HTTPException(status_code=422, detail=str(e))
     db.commit()
     db.refresh(pagare)
-    return ok(_respuesta(pagare), "Garantía firmada adjuntada")
+    return ok(_respuesta(pagare), "Franquicia firmada adjuntada")
 
 
 @router.get("/{pagare_id}/escaneo")
@@ -136,7 +136,7 @@ def descargar_escaneo_pagare(
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     if not pagare.escaneo_key:
-        raise HTTPException(status_code=404, detail="Esta garantía no tiene el papel adjuntado")
+        raise HTTPException(status_code=404, detail="Esta franquicia no tiene el papel adjuntado")
     try:
         contenido = get_storage().read(pagare.escaneo_key)
     except Exception:

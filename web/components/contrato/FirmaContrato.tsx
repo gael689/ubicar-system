@@ -88,7 +88,7 @@ export function FirmaContrato({ token }: { token: string }) {
         <h1 className="mt-4 text-2xl font-bold text-[#1B3F6B]">Listo, quedó firmado</h1>
         <p className="mt-2 text-muted-foreground">
           Contrato <strong className="whitespace-nowrap text-foreground">{contrato.numero}</strong>
-          {pagare && <> y garantía <strong className="whitespace-nowrap text-foreground">{pagare.numero}</strong></>}.
+          {pagare && <> y franquicia <strong className="whitespace-nowrap text-foreground">{pagare.numero}</strong></>}.
           Te mandamos una copia por mail.
         </p>
 
@@ -103,7 +103,7 @@ export function FirmaContrato({ token }: { token: string }) {
         {pagare && (
           <Button asChild variant="outline" className="mt-3 w-full sm:w-auto sm:ml-3">
             <a href={urlPagare} target="_blank" rel="noopener noreferrer">
-              <Download className="h-4 w-4" /> Ver y descargar la garantía
+              <Download className="h-4 w-4" /> Ver y descargar la franquicia
             </a>
           </Button>
         )}
@@ -212,22 +212,22 @@ export function FirmaContrato({ token }: { token: string }) {
       <header className="mb-6">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">
           Contrato de alquiler {contrato.numero}
-          {pagare && ` · Garantía ${pagare.numero}`}
+          {pagare && ` · Franquicia ${pagare.numero}`}
         </p>
         <h1 className="mt-1 text-2xl font-bold text-[#1B3F6B]">
           {firmaContrato && firmaPagare
             ? "Leelos y firmalos desde acá"
-            : firmaPagare ? "Leé la garantía y firmala desde acá" : "Leelo y firmalo desde acá"}
+            : firmaPagare ? "Leé la franquicia y firmala desde acá" : "Leelo y firmalo desde acá"}
         </h1>
         {firmaContrato && firmaPagare && (
           <p className="mt-1 text-sm text-muted-foreground">
-            Son dos documentos: el contrato y, abajo, una garantía. Con una sola firma quedan firmados los dos.
+            Son dos documentos: el contrato y, abajo, una franquicia. Con una sola firma quedan firmados los dos.
           </p>
         )}
         {!firmaContrato && firmaPagare && (
           <p className="mt-1 text-sm text-muted-foreground">
             El contrato ya lo firmaste (<a href={urlPdf} target="_blank" rel="noopener noreferrer" className="underline">verlo</a>).
-            Falta la garantía.
+            Falta la franquicia.
           </p>
         )}
         {empresa.razon_social && (
@@ -314,7 +314,7 @@ export function FirmaContrato({ token }: { token: string }) {
 
       {/* 2 bis · El pagaré, abajo del contrato */}
       {firmaPagare && (
-        <Bloque titulo={`Garantía ${pagare!.numero}`}>
+        <Bloque titulo={`Franquicia ${pagare!.numero}`}>
           <div className="rounded-lg border border-border bg-white p-4 text-[13px] leading-relaxed">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <p className="font-bold text-foreground">{pagare!.snapshot.titulo}</p>
@@ -342,9 +342,9 @@ export function FirmaContrato({ token }: { token: string }) {
             </div>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            La fecha de la garantía es la del día en que la firmás.{" "}
+            La fecha de la franquicia es la del día en que la firmás.{" "}
             <a href={urlPagare} target="_blank" rel="noopener noreferrer" className="underline">
-              Ver la garantía en PDF
+              Ver la franquicia en PDF
             </a>
           </p>
         </Bloque>
@@ -384,7 +384,7 @@ export function FirmaContrato({ token }: { token: string }) {
         </div>
         {firmaContrato && firmaPagare && (
           <p className="mt-2 text-xs text-muted-foreground">
-            Esta firma queda en el contrato y en la garantía.
+            Esta firma queda en el contrato y en la franquicia.
           </p>
         )}
       </Bloque>
@@ -436,8 +436,8 @@ export function FirmaContrato({ token }: { token: string }) {
           <>
             <FileText className="h-4 w-4" />{" "}
             {firmaContrato && firmaPagare
-              ? "Firmar el contrato y la garantía"
-              : firmaPagare ? "Firmar la garantía" : "Firmar el contrato"}
+              ? "Firmar el contrato y la franquicia"
+              : firmaPagare ? "Firmar la franquicia" : "Firmar el contrato"}
           </>
         )}
       </Button>

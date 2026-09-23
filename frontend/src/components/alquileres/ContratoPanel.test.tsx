@@ -79,19 +79,19 @@ beforeEach(() => {
   crearPagare.mockReset();
 });
 
-describe('Generar contrato y garantía', () => {
+describe('Generar contrato y franquicia', () => {
   it('un click genera los dos, con el monto y el co-deudor elegidos', async () => {
     const user = userEvent.setup();
     crearContrato.mockImplementation((_p, opts) => opts?.onSuccess?.());
     render(<ContratoPanel reservaId={9} />);
 
-    expect(screen.getByLabelText(/Generar también la garantía/)).toBeChecked();
+    expect(screen.getByLabelText(/Generar también la franquicia/)).toBeChecked();
     const monto = screen.getByDisplayValue('140000');
     await user.clear(monto);
     await user.type(monto, '500000');
     await user.click(screen.getByRole('button', { name: /Sumar al conductor adicional/ }));
 
-    await user.click(screen.getByRole('button', { name: 'Generar contrato y garantía' }));
+    await user.click(screen.getByRole('button', { name: 'Generar contrato y franquicia' }));
 
     expect(crearContrato).toHaveBeenCalledWith({ reserva_id: 9, snapshot: SNAPSHOT }, expect.anything());
     expect(crearPagare).toHaveBeenCalledWith(
@@ -104,7 +104,7 @@ describe('Generar contrato y garantía', () => {
     const user = userEvent.setup();
     crearContrato.mockImplementation((_p, opts) => opts?.onSuccess?.());
     render(<ContratoPanel reservaId={9} />);
-    await user.click(screen.getByLabelText(/Generar también la garantía/));
+    await user.click(screen.getByLabelText(/Generar también la franquicia/));
     await user.click(screen.getByRole('button', { name: 'Generar contrato' }));
     expect(crearContrato).toHaveBeenCalled();
     expect(crearPagare).not.toHaveBeenCalled();
@@ -125,16 +125,16 @@ describe('Con el contrato emitido', () => {
   it('sin pagaré, abajo del contrato se ofrece generarlo', () => {
     contratoActual = contrato();
     render(<ContratoPanel reservaId={9} />);
-    expect(screen.getByRole('button', { name: /Generar garantía/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generar franquicia/ })).toBeInTheDocument();
   });
 
   it('con el contrato firmado y el pagaré pendiente, el link y la firma siguen disponibles', () => {
     contratoActual = contrato({ firmado: true, firmado_por_nombre: 'Juan', firmado_por_dni: '30111222' });
     pagareActual = pagare();
     render(<ContratoPanel reservaId={9} />);
-    expect(screen.getByText('Que firme la garantía')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Firmar la garantía en el mostrador/ })).toBeInTheDocument();
-    expect(screen.getByText('Garantía P-00000012')).toBeInTheDocument();
+    expect(screen.getByText('Que firme la franquicia')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Firmar la franquicia en el mostrador/ })).toBeInTheDocument();
+    expect(screen.getByText('Franquicia P-00000012')).toBeInTheDocument();
   });
 
   it('con los dos firmados, no queda nada para firmar', () => {
@@ -151,7 +151,7 @@ describe('Con el contrato emitido', () => {
     pagareActual = pagare({ snapshot: { ...pagare().snapshot, codeudores: [{ nombre: 'Ana Gómez', dni: '30999888' }] } });
     render(<ContratoPanel reservaId={9} />);
     await user.click(screen.getByRole('button', { name: /^Firmar en el mostrador/ }));
-    expect(screen.getByText('Firmar contrato y garantía')).toBeInTheDocument();
+    expect(screen.getByText('Firmar contrato y franquicia')).toBeInTheDocument();
     expect(screen.getByLabelText(/Firma del co-deudor: Ana Gómez/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar firma' })).toBeDisabled());
   });

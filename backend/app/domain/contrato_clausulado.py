@@ -1,5 +1,5 @@
 """
-Clausulado del contrato de alquiler — versión 3.
+Clausulado del contrato de alquiler — versión 4.
 
 **Esto es el contenido de la plantilla v1, no la fuente de verdad en runtime.**
 Se carga una vez a `contrato_plantillas` (ver `ContratoService.asegurar_plantilla`)
@@ -53,6 +53,14 @@ d. **No se copia "Reducción de la Franquicia a CERO"** del contrato modelo.
    Por lo mismo tampoco se copia "Cobertura a todo riesgo" — no existe la
    cobertura total, y el papel no puede sugerir que sí.
 
+**Qué cambió en la v4 (septiembre 2026).** Se agrega la cláusula 14, "Franquicia
+como garantía": deja escrito en el contrato que el documento denominado
+«Franquicia» —el que hasta ahora se llamaba pagaré— se firma con la misma firma,
+se anexa al contrato y es garantía del pago de lo que el CLIENTE adeude. Va al
+final y no en el medio para no renumerar: las cláusulas 5 y 6 se citan por número
+desde el anverso. La redacción es propuesta del sistema y **la tiene que revisar
+el abogado** antes de imprimirse en producción.
+
 Los `subrayados` son pares [inicio, fin] de índices sobre el texto del párrafo.
 Marcan los pasajes de exención de responsabilidad y penalidades que en el
 original van subrayados — que estén marcados es parte de la validez.
@@ -67,7 +75,7 @@ TITULO = "CLÁUSULAS, CONDICIONES Y NORMAS DE UTILIZACIÓN DEL VEHÍCULO"
 # este número habría que acordarse de publicar la versión a mano después de
 # cada deploy, y el día que alguien se olvide los contratos se siguen firmando
 # con el texto viejo sin que nada avise.
-VERSION = 3
+VERSION = 4
 
 # Marcador que el generador reemplaza por `empresa.locador_nombre`.
 LOCADOR = "{{LOCADOR}}"
@@ -457,6 +465,26 @@ CLAUSULAS: list[dict] = [
                 "vigente en la República Argentina, y siendo válidas las notificaciones que se "
                 "cursen en los domicilios constituidos en este instrumento.",
                 [[0, 230]],
+            ),
+        ],
+    },
+    {
+        "numero": 14,
+        "titulo": "Franquicia como garantía",
+        "parrafos": [
+            _p(
+                "Cuando junto con este Contrato se emite un documento denominado "
+                "«Franquicia», el CLIENTE lo suscribe en este mismo acto y con la misma firma "
+                "que este Contrato. Dicho documento se anexa al presente y forma parte "
+                "integrante del mismo."
+            ),
+            _ps(
+                "El documento «Franquicia» se otorga en garantía del pago de las sumas que el "
+                f"CLIENTE adeude a {LOCADOR} con causa en este Contrato —incluidos los cargos, "
+                "daños y franquicias previstos en él— y podrá ser presentado al cobro por "
+                f"{LOCADOR} ante el incumplimiento, sin perjuicio de los demás derechos que le "
+                "asisten.",
+                "podrá ser presentado al cobro",
             ),
         ],
     },

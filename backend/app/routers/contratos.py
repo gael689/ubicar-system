@@ -207,9 +207,9 @@ def _mensaje_whatsapp(contrato, con_pagare: bool = False) -> str:
     # Qué hay para firmar en el link. Decir "el contrato" cuando lo que falta
     # es el pagaré —o los dos— hace que el cliente abra esperando otra cosa.
     if con_pagare and contrato.firmado:
-        que = "la garantía para que la leas y la firmes"
+        que = "la franquicia para que la leas y la firmes"
     elif con_pagare:
-        que = "el contrato de alquiler y la garantía para que los leas y los firmes"
+        que = "el contrato de alquiler y la franquicia para que los leas y los firmes"
     else:
         que = "el contrato de alquiler para que lo leas y lo firmes"
     return (

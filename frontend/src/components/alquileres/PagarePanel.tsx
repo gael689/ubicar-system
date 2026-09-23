@@ -48,8 +48,8 @@ export function FormPagare({
       <div className="flex gap-2 rounded-lg bg-warning px-3 py-2 text-white">
         <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
         <p className="text-xs">
-          Para emitir la garantía falta cargar {preparado.faltantes.join('; ')}.
-          El texto de la garantía tiene que decir las tasas: sin ellas no se genera.
+          Para emitir la franquicia falta cargar {preparado.faltantes.join('; ')}.
+          El texto de la franquicia tiene que decir las tasas: sin ellas no se genera.
         </p>
       </div>
     );
@@ -59,7 +59,7 @@ export function FormPagare({
     <div className="space-y-3 text-xs">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <label className="text-muted-foreground">Monto de la garantía ($) *</label>
+          <label className="text-muted-foreground">Monto de la franquicia ($) *</label>
           <input
             type="number"
             inputMode="decimal"
@@ -138,7 +138,7 @@ export function PagarePanel({ reservaId }: { reservaId: number }) {
       <div className="rounded-xl border border-border p-4 space-y-3">
         <div className="flex items-center gap-2">
           <ScrollText className="h-4 w-4 text-primary" />
-          <h4 className="text-sm font-semibold text-foreground">Garantía</h4>
+          <h4 className="text-sm font-semibold text-foreground">Franquicia</h4>
           <span className="text-xs text-muted-foreground">— documento aparte, mismo link y misma firma</span>
         </div>
         {preparado && <FormPagare preparado={preparado} datos={actuales} onCambiar={setDatos} />}
@@ -151,13 +151,13 @@ export function PagarePanel({ reservaId }: { reservaId: number }) {
               crear.mutate(
                 { reserva_id: reservaId, monto: parseFloat(actuales.monto), codeudores: actuales.codeudores },
                 {
-                  onSuccess: () => { toast.success('Garantía generada'); setDatos(null); },
+                  onSuccess: () => { toast.success('Franquicia generada'); setDatos(null); },
                   onError: e => toast.error(extractError(e)),
                 },
               )
             }
           >
-            <ScrollText className="h-4 w-4" /> {crear.isPending ? 'Generando…' : 'Generar garantía'}
+            <ScrollText className="h-4 w-4" /> {crear.isPending ? 'Generando…' : 'Generar franquicia'}
           </Button>
         )}
       </div>
@@ -171,7 +171,7 @@ export function PagarePanel({ reservaId }: { reservaId: number }) {
         <div className="flex items-center gap-2">
           <ScrollText className="h-4 w-4 text-primary" />
           <div>
-            <h4 className="text-sm font-semibold text-foreground">Garantía {pagare.numero_formateado}</h4>
+            <h4 className="text-sm font-semibold text-foreground">Franquicia {pagare.numero_formateado}</h4>
             <p className="text-xs text-muted-foreground">
               Por ${s.monto_numerico} · emitido el {formatDate(pagare.fecha_generacion)}
             </p>
@@ -206,7 +206,7 @@ export function PagarePanel({ reservaId }: { reservaId: number }) {
 
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" variant="secondary" onClick={() => descargarPdfPagare(pagare)}>
-          <Download className="h-4 w-4" /> Descargar garantía
+          <Download className="h-4 w-4" /> Descargar franquicia
         </Button>
         <input
           ref={input}
@@ -216,7 +216,7 @@ export function PagarePanel({ reservaId }: { reservaId: number }) {
           onChange={e => {
             const archivo = e.target.files?.[0];
             e.target.value = '';
-            if (archivo) subir.mutate({ id: pagare.id, archivo }, { onSuccess: () => toast.success('Garantía firmada adjuntada') });
+            if (archivo) subir.mutate({ id: pagare.id, archivo }, { onSuccess: () => toast.success('Franquicia firmada adjuntada') });
           }}
         />
         <Button type="button" size="sm" variant="ghost" disabled={subir.isPending} onClick={() => input.current?.click()}>
@@ -236,8 +236,8 @@ export function PagarePanel({ reservaId }: { reservaId: number }) {
       <MotivoDialog
         open={anulando}
         onOpenChange={setAnulando}
-        title="Anular garantía"
-        description="La garantía no se borra: queda registrada como anulada con su motivo. Después se puede emitir otra."
+        title="Anular franquicia"
+        description="La franquicia no se borra: queda registrada como anulada con su motivo. Después se puede emitir otra."
         confirmLabel="Anular"
         destructive
         loading={anular.isPending}

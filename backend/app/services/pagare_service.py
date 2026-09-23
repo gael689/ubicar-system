@@ -100,9 +100,9 @@ class PagareService:
         conf = conf or self.datos_config()
         faltan = []
         if not conf["interes_compensatorio"]:
-            faltan.append("la tasa de interés compensatorio (Configuración → Garantía)")
+            faltan.append("la tasa de interés compensatorio (Configuración → Franquicia)")
         if not conf["interes_punitorio"]:
-            faltan.append("la tasa de interés punitorio (Configuración → Garantía)")
+            faltan.append("la tasa de interés punitorio (Configuración → Franquicia)")
         if not conf["beneficiario"]:
             faltan.append("la razón social de la empresa (Configuración → Empresa)")
         if not conf["lugar_pago"]:
@@ -114,7 +114,7 @@ class PagareService:
     def get(self, pagare_id: int) -> Pagare:
         p = self.db.get(Pagare, pagare_id)
         if not p:
-            raise NotFoundError("Garantía", pagare_id)
+            raise NotFoundError("Franquicia", pagare_id)
         return p
 
     def de_contrato(self, contrato_id: int) -> Pagare | None:
@@ -223,7 +223,7 @@ class PagareService:
             limpios.append({"nombre": nombre, "dni": dni, "domicilio": (c.get("domicilio") or "").strip()})
         if len(limpios) > MAX_CODEUDORES:
             raise BusinessRuleError(
-                "demasiados_codeudores", f"La garantía admite hasta {MAX_CODEUDORES} co-deudores."
+                "demasiados_codeudores", f"La franquicia admite hasta {MAX_CODEUDORES} co-deudores."
             )
         return limpios
 
@@ -245,30 +245,30 @@ class PagareService:
         if contrato is None:
             raise BusinessRuleError(
                 "pagare_sin_contrato",
-                "Generá el contrato primero: la garantía viaja en el mismo link y se "
+                "Generá el contrato primero: la franquicia viaja en el mismo link y se "
                 "firma con la misma firma.",
             )
         existente = self.de_contrato(contrato.id)
         if existente is not None:
             raise BusinessRuleError(
                 "pagare_ya_existe",
-                f"La reserva ya tiene la garantía {existente.numero_formateado}. "
+                f"La reserva ya tiene la franquicia {existente.numero_formateado}. "
                 "Anulalo antes de emitir otro.",
             )
 
         try:
             monto_dec = Decimal(str(monto)).quantize(Decimal("0.01"))
         except (InvalidOperation, TypeError, ValueError):
-            raise BusinessRuleError("pagare_monto_invalido", "El monto de la garantía no es un número.")
+            raise BusinessRuleError("pagare_monto_invalido", "El monto de la franquicia no es un número.")
         if monto_dec <= 0:
-            raise BusinessRuleError("pagare_monto_invalido", "El monto de la garantía tiene que ser mayor a cero.")
+            raise BusinessRuleError("pagare_monto_invalido", "El monto de la franquicia tiene que ser mayor a cero.")
 
         conf = self.datos_config()
         faltan = self.faltantes(conf)
         if faltan:
             raise BusinessRuleError(
                 "pagare_falta_configuracion",
-                "Para emitir la garantía falta cargar " + "; ".join(faltan) + ".",
+                "Para emitir la franquicia falta cargar " + "; ".join(faltan) + ".",
             )
 
         limpios = self._limpiar_codeudores(codeudores)
@@ -320,7 +320,7 @@ class PagareService:
             entidad_tipo="pagare",
             entidad_id=pagare.id,
             descripcion=(
-                f"Garantía {pagare.numero_formateado} por ${snapshot['monto_numerico']} "
+                f"Franquicia {pagare.numero_formateado} por ${snapshot['monto_numerico']} "
                 f"(contrato {contrato.numero_formateado}, {firmantes} firmante(s))"
             ),
             datos_despues={"monto": snapshot["monto"], "codeudores": len(limpios)},
@@ -336,9 +336,9 @@ class PagareService:
         el acto es uno.
         """
         if pagare.anulado:
-            raise BusinessRuleError("pagare_anulado", "La garantía está anulada.")
+            raise BusinessRuleError("pagare_anulado", "La franquicia está anulada.")
         if pagare.firmado:
-            raise BusinessRuleError("pagare_ya_firmado", "La garantía ya está firmada.")
+            raise BusinessRuleError("pagare_ya_firmado", "La franquicia ya está firmada.")
         esperados = (pagare.snapshot or {}).get("codeudores") or []
         if medio == "papel" or not esperados:
             return
@@ -411,7 +411,7 @@ class PagareService:
         """Nunca se borra. Un pagaré firmado anulado sigue diciendo que se firmó."""
         pagare = self.get(pagare_id)
         if pagare.anulado:
-            raise BusinessRuleError("pagare_ya_anulado", "La garantía ya está anulada.")
+            raise BusinessRuleError("pagare_ya_anulado", "La franquicia ya está anulada.")
         estaba_firmado = bool(pagare.firmado)
         pagare.anulado = True
         pagare.activo = False
@@ -424,7 +424,7 @@ class PagareService:
             entidad_tipo="pagare",
             entidad_id=pagare.id,
             descripcion=(
-                f"Garantía {pagare.numero_formateado} anulada"
+                f"Franquicia {pagare.numero_formateado} anulada"
                 + (" — estaba FIRMADA" if estaba_firmado else "")
                 + f". Motivo: {motivo}"
             ),
@@ -443,7 +443,7 @@ class PagareService:
         }.get(content_type)
         if extension is None:
             raise BusinessRuleError(
-                "formato_no_soportado", "Subí la garantía firmada como PDF, JPG, PNG o WEBP."
+                "formato_no_soportado", "Subí la franquicia firmada como PDF, JPG, PNG o WEBP."
             )
         pagare.escaneo_key = get_storage().upload(
             f"pagares/{pagare.id}/firmado.{extension}", contenido, content_type

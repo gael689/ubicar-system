@@ -68,7 +68,7 @@ export function useAnularPagare() {
     mutationFn: ({ id, motivo }: { id: number; motivo: string }) =>
       api.post<{ data: Pagare }>(`/pagares/${id}/anular`, { motivo }),
     onSuccess: invalidar,
-    onError: avisar('No pudimos anular la garantía.'),
+    onError: avisar('No pudimos anular la franquicia.'),
   });
 }
 
@@ -81,7 +81,7 @@ export function useSubirEscaneoPagare() {
       return api.post<{ data: Pagare }>(`/pagares/${id}/escaneo`, form);
     },
     onSuccess: invalidar,
-    onError: avisar('No pudimos subir la garantía firmada.'),
+    onError: avisar('No pudimos subir la franquicia firmada.'),
   });
 }
 

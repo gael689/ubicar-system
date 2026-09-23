@@ -34,7 +34,12 @@ MESES = [
     "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ]
 
-TITULO = "PAGARÉ"
+# El documento se llama **"Franquicia"** para quien lo ve y lo firma (pedido de
+# Ubicar, 23/09/2026). El cuerpo sigue diciendo "pagaré" —"A la vista pagaré
+# solidariamente y sin protesto"—: es el texto legal, y el art. 101 pide la
+# denominación del título inserta en el texto. El encabezado es lo que se
+# renombra; la redacción legal no se toca sin el abogado.
+TITULO = "FRANQUICIA"
 
 # La declaración que el cliente tilda en el link antes de firmar. Va aparte de
 # las del contrato: aceptar las cláusulas del alquiler no es aceptar firmar un
@@ -42,9 +47,9 @@ TITULO = "PAGARÉ"
 # eso dicho con todas las letras.
 ACEPTACION = {
     "clave": "pagare",
-    "titulo": "Pagaré",
+    "titulo": "Franquicia",
     "texto": (
-        "Leí el pagaré y entiendo que firmo un documento a la vista por el monto "
+        "Leí la Franquicia y entiendo que firmo un pagaré a la vista por el monto "
         "indicado, que puede ser presentado al cobro sin necesidad de otro "
         "trámite, junto con {codeudores}."
     ),

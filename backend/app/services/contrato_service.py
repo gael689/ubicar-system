@@ -731,7 +731,7 @@ class ContratoService:
             if not contrato.firmado and a["clave"] not in aceptadas
         ]
         if pagare is not None and "pagare" not in aceptadas:
-            faltan.append("Garantía")
+            faltan.append("Franquicia")
         if faltan:
             raise BusinessRuleError(
                 "faltan_aceptaciones",

@@ -112,7 +112,7 @@ def generar_pdf_pagare(pagare, firma: bytes | None = None, firmas_codeudores: li
     y = arriba - 9 * mm
     c.setFillColor(_TINTA)
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(izq + 6 * mm, y, snap.get("titulo") or "PAGARÉ")
+    c.drawString(izq + 6 * mm, y, snap.get("titulo") or "FRANQUICIA")
     c.setFont("Helvetica", 8)
     c.setFillColor(_GRIS)
     c.drawRightString(der - 6 * mm, y + 1 * mm, f"N° {pagare.numero_formateado}")

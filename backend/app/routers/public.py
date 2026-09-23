@@ -1114,7 +1114,7 @@ def descargar_pagare_por_token(token: str, db: Session = Depends(get_db)):
     svc = PagareService(db)
     pagare = svc.de_contrato(contrato.id)
     if pagare is None:
-        raise HTTPException(status_code=404, detail="Este link no tiene garantía.")
+        raise HTTPException(status_code=404, detail="Este link no tiene franquicia.")
     pdf = svc.generar_pdf(pagare.id)
     return Response(
         content=pdf,
