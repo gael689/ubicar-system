@@ -35,6 +35,11 @@ class VehiculoCreate(VehiculoBase):
 class VehiculoUpdate(BaseModel):
     marca: str | None = None
     modelo: str | None = None
+    # `anio` y `tipo` faltaban acá y el formulario los manda: Pydantic descarta
+    # en silencio lo que el schema no conoce, así que corregir el año de un auto
+    # devolvía "Vehículo actualizado" y no cambiaba nada.
+    anio: int | None = None
+    tipo: TipoVehiculo | None = None
     color: str | None = None
     estado: EstadoVehiculo | None = None
     km_actual: int | None = None
