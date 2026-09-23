@@ -295,6 +295,9 @@ class DisponibilidadService:
                     categoria_id=cat.id,
                     canal=canal,
                     edad_conductor=edad_conductor,
+                    # El mostrador puede alquilar de 07:30 a 18:40 del mismo
+                    # día; la web sigue pidiendo al menos una noche.
+                    mismo_dia_es_un_dia=(canal == "mostrador"),
                 )
                 # Ya no hay que reponer nada: al retirarse el recargo por edad
                 # (D-38), el promedio por día y el precio de referencia son
@@ -315,6 +318,7 @@ class DisponibilidadService:
                         canal=canal,
                         edad_conductor=edad_conductor,
                         porcentaje_anticipo=100,
+                        mismo_dia_es_un_dia=(canal == "mostrador"),
                     )
                     if c100.descuento_monto and c100.total < cotizacion.total:
                         pago_total = {

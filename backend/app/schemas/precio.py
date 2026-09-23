@@ -198,8 +198,10 @@ class CalcularPrecioRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validar(self):
-        if self.fecha_fin <= self.fecha_inicio:
-            raise ValueError("La fecha de fin debe ser posterior a la de inicio")
+        # Mismo día está permitido (07:30 → 18:40): se cobra como un día. Lo
+        # que no puede ser es una devolución **anterior** al retiro.
+        if self.fecha_fin < self.fecha_inicio:
+            raise ValueError("La devolución no puede ser anterior al retiro")
         if self.categoria_id is None and self.vehiculo_id is None:
             raise ValueError("Indicá una categoría o un vehículo para cotizar")
         return self

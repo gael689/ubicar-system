@@ -97,6 +97,20 @@ def calcular_duracion_dias(fecha_inicio: date, fecha_fin: date) -> int:
     return (fecha_fin - fecha_inicio).days
 
 
+def duracion_facturable_dias(fecha_inicio: date, fecha_fin: date) -> int:
+    """
+    Los días que se cobran, con **mínimo uno**.
+
+    `calcular_duracion_dias` da 0 cuando el auto sale y vuelve el mismo día, y
+    con 0 no hay tarifa que aplicar. Un alquiler de 07:30 a 18:40 del 29/9 es
+    un día de alquiler, no ninguno: lo que se cobra es el día de retiro.
+
+    Va aparte y no dentro de `calcular_duracion_dias` porque ese número también
+    dice "cuánto dura" (y ahí 0 es lo correcto). Esto es sólo para cotizar.
+    """
+    return max((fecha_fin - fecha_inicio).days, 1)
+
+
 def canal_de_origen(origen: str | None) -> str:
     """
     El canal de tarifas que le corresponde a una reserva según su `origen`.

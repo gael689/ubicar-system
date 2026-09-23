@@ -290,7 +290,8 @@ class ContratoService:
         propio contrato (cláusula 6) se reserva el derecho de aumentar.
         """
         lineas = []
-        dias = (r.fecha_fin - r.fecha_inicio).days
+        # Mínimo un día: retiro y devolución el mismo día es un alquiler de un día.
+        dias = max((r.fecha_fin - r.fecha_inicio).days, 1)
         # El recargo por edad ya no existe (D-38, retirado): la edad decide
         # si la persona puede alquilar (D-51) pero no cuánto paga. Antes esto
         # imprimía además una línea "Conductor joven (19 años)", que le dice
@@ -730,7 +731,7 @@ class ContratoService:
             if not contrato.firmado and a["clave"] not in aceptadas
         ]
         if pagare is not None and "pagare" not in aceptadas:
-            faltan.append("Pagaré")
+            faltan.append("Garantía")
         if faltan:
             raise BusinessRuleError(
                 "faltan_aceptaciones",

@@ -14,7 +14,7 @@ from app.domain.enums import EstadoReserva, EstadoVehiculo
 from app.domain.solapamientos import detectar_solapamientos, rango_de_carga
 from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
 from app.domain.tarifas import (
-    cotizar_por_bandas, calcular_duracion_dias, canal_de_origen, TarifaInfo,
+    cotizar_por_bandas, duracion_facturable_dias, canal_de_origen, TarifaInfo,
 )
 from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
@@ -191,7 +191,7 @@ class ReservaService:
                 "el alquiler ya se facturó en la cuenta corriente",
             )
 
-        duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
         pedidos = {aid: cant for aid, cant in solicitados}
 
         if pedidos:
@@ -335,7 +335,7 @@ class ReservaService:
         dispararía. Es el mismo criterio que ya aplica `sincronizar_adicionales`
         y el cotizador.
         """
-        duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
         for ra in reserva.adicionales:
             if ra.unidad_cobro == "por_dia":
                 ra.subtotal = self._subtotal_adicional(
@@ -359,7 +359,7 @@ class ReservaService:
         alquiler cambia. Corregir una reserva de $100.000 a $140.000 dejaba la
         cobertura cobrando el 30% de la cifra vieja, en silencio.
         """
-        duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
         for ra in reserva.adicionales:
             a = ra.adicional
             if a is None or a.porcentaje_sobre_alquiler is None:
@@ -543,7 +543,13 @@ class ReservaService:
         # siguiente, y sin fecha el sistema lo leía como ocho horas *antes* del
         # horario pactado: `control_24hs` veía una diferencia negativa, la
         # tomaba como dentro de la gracia y no cobraba nada. Ver migración 092.
-        hora_dev = hora_devolucion_acordada or hora_inicio
+        #
+        # **El default es la hora de devolución cargada (`hora_fin`)**, que
+        # hasta ahora era siempre igual a la de retiro. Desde que la devolución
+        # se puede cargar libre (retira 07:30, devuelve 18:40 el mismo día),
+        # tomar la hora de retiro dejaba la devolución acordada *antes* de la
+        # entrega y el control de excedente cobraba horas que no existen.
+        hora_dev = hora_devolucion_acordada or hora_fin
         fecha_dev = fecha_devolucion_acordada or fecha_fin
 
         # Calcular el precio de lista (el que sale de la tarifa) SIEMPRE que
@@ -551,7 +557,8 @@ class ReservaService:
         # es lo único que permite auditar un descuento después (ítem 22).
         tarifa_id = None
         precio_lista: Decimal | None = None
-        duracion = calcular_duracion_dias(fecha_inicio, fecha_fin)
+        # Mínimo un día: retiro y devolución el mismo día es un alquiler de un día.
+        duracion = duracion_facturable_dias(fecha_inicio, fecha_fin)
 
         # **El precio de lista sale del mismo motor que el precio cobrado.**
         #
@@ -580,6 +587,7 @@ class ReservaService:
                 # incluye (ver Reserva.total_adicionales).
                 adicionales=None,
                 fecha_nacimiento=nacimiento,
+                mismo_dia_es_un_dia=True,
             )
             precio_lista = cotizacion_lista.total
         except (BusinessRuleError, NotFoundError):
@@ -948,7 +956,7 @@ class ReservaService:
             if late_checkout is not None:
                 kwargs["late_checkout"] = late_checkout
                 if not late_checkout:
-                    kwargs["hora_devolucion_acordada"] = h_inicio
+                    kwargs["hora_devolucion_acordada"] = h_fin
                     kwargs["fecha_devolucion_acordada"] = f_fin
                     kwargs["cargo_late_checkout"] = Decimal("0")
             if late_checkout is not False:
@@ -963,9 +971,11 @@ class ReservaService:
             # acordada acompaña. Sin esto quedaría apuntando a la fecha vieja y
             # el excedente se calcularía contra un momento que ya no existe —
             # es el mismo error que tenía `AlquilerService.extender`.
-            if (fecha_fin is not None or hora_inicio is not None) and not reserva.late_checkout:
+            if (
+                fecha_fin is not None or hora_fin is not None or hora_inicio is not None
+            ) and not reserva.late_checkout:
                 kwargs.setdefault("fecha_devolucion_acordada", f_fin)
-                kwargs.setdefault("hora_devolucion_acordada", h_inicio)
+                kwargs.setdefault("hora_devolucion_acordada", h_fin)
             if forma_pago_prevista is not None:
                 kwargs["forma_pago_prevista"] = forma_pago_prevista
             if estado_pago is not None:
@@ -1079,7 +1089,7 @@ class ReservaService:
             tarifa_id = reserva.tarifa_aplicada_id
         else:
             # Calcular tarifa y precio total
-            duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+            duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
             tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
             try:
                 cot = cotizar_por_bandas(

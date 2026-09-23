@@ -463,6 +463,7 @@ def cotizar(
     nombre_fallback: str = "Tarifa por duración",
     adicionales: list[AdicionalSolicitado] | None = None,
     porcentaje_anticipo: int | None = None,
+    mismo_dia_es_un_dia: bool = False,
 ) -> Cotizacion:
     """
     Cotiza un alquiler resolviendo el precio día por día.
@@ -486,8 +487,13 @@ def cotizar(
         fecha_inicio: primer día del alquiler (se cobra).
         fecha_fin: día de devolución (NO se cobra).
         canal: "web" o "mostrador" — filtra las reglas por canal.
+        mismo_dia_es_un_dia: el mostrador puede alquilar de 07:30 a 18:40 del
+            mismo día; eso se cobra como **un día** (el de retiro). La web
+            sigue exigiendo al menos una noche, por eso es opt-in.
     """
     duracion_dias = (fecha_fin - fecha_inicio).days
+    if mismo_dia_es_un_dia and duracion_dias == 0:
+        duracion_dias = 1
     if duracion_dias <= 0:
         raise BusinessRuleError(
             "rango_invalido",

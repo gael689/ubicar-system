@@ -271,6 +271,7 @@ class PrecioService:
         fecha_nacimiento: date | None = None,
         edad_conductor: int | None = None,
         porcentaje_anticipo: int | None = None,
+        mismo_dia_es_un_dia: bool = False,
     ) -> tuple[Cotizacion, int | None]:
         """
         Cotiza un alquiler. Devuelve (cotización, categoria_id efectiva).
@@ -301,6 +302,9 @@ class PrecioService:
                 raise NotFoundError("Categoría", categoria_id)
 
         duracion = calcular_duracion_dias(fecha_inicio, fecha_fin)
+        if mismo_dia_es_un_dia and duracion == 0:
+            # Retiro y devolución el mismo día: se cobra el día de retiro.
+            duracion = 1
         reglas = self._cargar_reglas(fecha_inicio, fecha_fin, categoria_id, vehiculo_id)
         precio_fallback, nombre_fallback = self._precio_banda(
             duracion, categoria_id, vehiculo_id, canal
@@ -322,6 +326,7 @@ class PrecioService:
                 nombre_fallback=nombre_fallback,
                 adicionales=adicionales_cargados,
                 porcentaje_anticipo=porcentaje_anticipo,
+                mismo_dia_es_un_dia=mismo_dia_es_un_dia,
             )
 
         adicionales_cargados = self._cargar_adicionales(adicionales or [])

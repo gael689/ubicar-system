@@ -18,7 +18,7 @@ from app.domain.cuenta_corriente import calcular_vencimiento
 from app.domain.enums import EstadoReserva, EstadoVehiculo, DecisionExcedente
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.tarifas import (
-    seleccionar_tarifa, cotizar_por_bandas, calcular_duracion_dias, canal_de_origen,
+    seleccionar_tarifa, cotizar_por_bandas, duracion_facturable_dias, canal_de_origen,
     TarifaInfo,
 )
 from app.domain.transiciones import estado_tras_checkout, estado_tras_checkin
@@ -61,7 +61,7 @@ def _devolucion_acordada(reserva: Reserva) -> datetime:
     la misma hora en que se retiró.
     """
     fecha = reserva.fecha_devolucion_acordada or reserva.fecha_fin
-    hora = reserva.hora_devolucion_acordada or reserva.hora_inicio
+    hora = reserva.hora_devolucion_acordada or reserva.hora_fin
     return datetime.combine(fecha, hora)
 
 
@@ -733,7 +733,7 @@ class AlquilerService:
             )
 
         # Recalcular tarifa con la nueva duración
-        nueva_duracion = calcular_duracion_dias(reserva.fecha_inicio, nueva_fecha_fin)
+        nueva_duracion = duracion_facturable_dias(reserva.fecha_inicio, nueva_fecha_fin)
         tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
 
         fecha_fin_anterior = reserva.fecha_fin
@@ -1129,7 +1129,7 @@ class AlquilerService:
         el excedente a la tarifa diaria suelta (más cara que la de un alquiler
         largo) sería defendible, pero es una decisión comercial que nadie tomó.
         """
-        duracion = calcular_duracion_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
 
         # El precio pactado manda sobre cualquier recálculo: es el que el
         # cliente aceptó, e incluye el descuento que se le haya hecho.

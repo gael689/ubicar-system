@@ -126,6 +126,9 @@ def calcular_precio(
             canal=payload.canal,
             adicionales=[(a.adicional_id, a.cantidad) for a in payload.adicionales],
             fecha_nacimiento=payload.fecha_nacimiento,
+            # Este endpoint es del sistema interno: el mostrador puede cargar
+            # un alquiler que sale y vuelve el mismo día, y se cobra como uno.
+            mismo_dia_es_un_dia=True,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

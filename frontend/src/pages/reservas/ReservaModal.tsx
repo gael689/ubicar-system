@@ -102,10 +102,22 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const [fechaFin, setFechaFin]               = useState(
     reserva?.fecha_fin ?? sumarDias(initialFechaInicio ?? today(), 1)
   );
-  // D-18: el auto se devuelve a la misma hora en que se entrega — hora_fin se
-  // deriva de hora_inicio, no es un campo libre. La única excepción es un
-  // "late checkout acordado" (más abajo), que define hora_devolucion_acordada.
-  const horaFin = horaInicio;
+  // La hora de devolución **se puede cargar libre**. Antes estaba bloqueada a la
+  // del retiro (D-18: se devuelve a la hora en que se entregó) y eso impedía
+  // cargar un alquiler de mostrador como "retira 07:30, devuelve 18:40 el mismo
+  // día". Mientras nadie la toque acompaña a la del retiro, como siempre;
+  // `null` significa "todavía no la tocaron".
+  const [horaFinPropia, setHoraFinPropia]  = useState<string | null>(
+    reserva && formatTime(reserva.hora_fin) !== formatTime(reserva.hora_inicio)
+      ? formatTime(reserva.hora_fin)
+      : null
+  );
+  const horaFin = horaFinPropia ?? horaInicio;
+  // La devolución tiene que caer **después** del retiro, contando la hora: el
+  // mismo día vale mientras la hora sea posterior. Comparar sólo fechas era lo
+  // que rechazaba un alquiler de 07:30 a 18:40 del mismo día.
+  const devolucionPosterior =
+    !!fechaInicio && !!fechaFin && `${fechaFin}T${horaFin}` > `${fechaInicio}T${horaInicio}`;
   const [lugarEntrega, setLugarEntrega]       = useState(reserva?.lugar_entrega ?? '');
   const [lugarDevolucion, setLugarDevolucion] = useState(reserva?.lugar_devolucion ?? '');
   // Los lugares salen de `web.lugares_retiro` (D-56: una sola fuente), no de
@@ -272,8 +284,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    */
   const nombreClientePendiente = clienteId ? '' : clientSearch.trim();
 
-  const duracionDias = fechaInicio && fechaFin
-    ? Math.max(0, (new Date(fechaFin).getTime() - new Date(fechaInicio).getTime()) / 86400000)
+  // Los días que se cobran: el mismo día es **un** día, no cero.
+  const duracionDias = fechaInicio && fechaFin && fechaFin >= fechaInicio
+    ? Math.max(1, Math.round((new Date(fechaFin).getTime() - new Date(fechaInicio).getTime()) / 86400000))
     : 0;
 
   // Precio
@@ -464,7 +477,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * sitio público. Acá no se cuenta nada: tener dos cuentas de cupo es tener
    * dos verdades sobre cuántos autos hay.
    */
-  const rangoElegido = fechaInicio && fechaFin && fechaFin > fechaInicio;
+  const rangoElegido = devolucionPosterior;
   const { data: disponibilidad, isLoading: cargandoCupo } = useDisponibilidadInterna(
     !isEdit && rangoElegido
       ? {
@@ -782,7 +795,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     }
     if (n === 2) {
       if (!fechaInicio || !fechaFin) return 'Faltan las fechas.';
-      if (fechaFin <= fechaInicio) return 'La devolución tiene que ser posterior al retiro.';
+      if (!devolucionPosterior) {
+        return fechaFin === fechaInicio
+          ? 'Si se devuelve el mismo día, la hora de devolución tiene que ser posterior a la de retiro.'
+          : 'La devolución tiene que ser posterior al retiro.';
+      }
       if (!lugarEntrega) return 'Falta el lugar de retiro.';
       if (!lugarDevolucion) return 'Falta el lugar de devolución.';
     }
@@ -855,7 +872,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   // correspondía, y —peor— **no aparecía cuando sí**, y el backend rechazaba
   // la reserva con un 422 sin campo donde escribir el motivo.
   const { data: cotizacionLista } = useCalcularPrecio(
-    !isEdit && (vehiculoId || categoriaManualId) && fechaInicio && fechaFin && fechaFin > fechaInicio
+    !isEdit && (vehiculoId || categoriaManualId) && devolucionPosterior
       ? {
           fecha_inicio: fechaInicio,
           fecha_fin: fechaFin,
@@ -1020,8 +1037,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       errorEnPaso('Complete el lugar de entrega y de devolución.', 2);
       return;
     }
-    if (new Date(fechaFin) <= new Date(fechaInicio)) {
-      errorEnPaso('La fecha de fin debe ser posterior a la de inicio', 2);
+    if (!devolucionPosterior) {
+      errorEnPaso('La devolución tiene que ser posterior al retiro (si es el mismo día, con una hora más tarde).', 2);
       return;
     }
     if (!precioTotal) {
@@ -1245,7 +1262,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     paso,
     clienteId, clientSearch, conductorId,
     vehiculoId, categoriaManualId,
-    fechaInicio, horaInicio, fechaFin,
+    fechaInicio, horaInicio, fechaFin, horaFinPropia,
     lugarEntrega, lugarDevolucion, entregaEsOtro, devolucionEsOtro,
     lateCheckout, horaDevolucionAcordada, fechaDevolucionAcordada, cargoLateCheckout,
     precioTotal, precioPorDia, descuentoMotivo, adicionales, conFactura,
@@ -1257,7 +1274,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     notas, observaciones,
   }), [
     paso, clienteId, clientSearch, conductorId, vehiculoId, categoriaManualId,
-    fechaInicio, horaInicio, fechaFin, lugarEntrega, lugarDevolucion,
+    fechaInicio, horaInicio, fechaFin, horaFinPropia, lugarEntrega, lugarDevolucion,
     entregaEsOtro, devolucionEsOtro, lateCheckout, horaDevolucionAcordada,
     fechaDevolucionAcordada,
     cargoLateCheckout, precioTotal, precioPorDia, descuentoMotivo, adicionales,
@@ -1284,6 +1301,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     setClienteId(d.clienteId); setClientSearch(d.clientSearch); setConductorId(d.conductorId);
     setVehiculoId(d.vehiculoId); setCategoriaManualId(d.categoriaManualId);
     setFechaInicio(d.fechaInicio); setHoraInicio(d.horaInicio); setFechaFin(d.fechaFin);
+    setHoraFinPropia(d.horaFinPropia ?? null);
     setLugarEntrega(d.lugarEntrega); setLugarDevolucion(d.lugarDevolucion);
     setEntregaEsOtro(d.entregaEsOtro); setDevolucionEsOtro(d.devolucionEsOtro);
     // La sincronización de lugares corre una sola vez al llegar la config y
@@ -1758,7 +1776,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                     // Mover el retiro más allá de la devolución dejaría una
                     // duración negativa y el precio en cero hasta que alguien
                     // toque el otro campo. La devolución acompaña.
-                    if (nueva && fechaFin && fechaFin <= nueva) setFechaFin(sumarDias(nueva, 1));
+                    if (nueva && fechaFin && fechaFin < nueva) setFechaFin(nueva);
                   }}
                   className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" required />
                 <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)}
@@ -1768,15 +1786,20 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             <div className="space-y-1.5">
               <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-slate-400" /> Fin *
-                {duracionDias > 0 && <span className="text-primary font-normal">({duracionDias} días)</span>}
+                {duracionDias > 0 && <span className="text-primary font-normal">({duracionDias} día{duracionDias !== 1 ? 's' : ''})</span>}
               </label>
               <div className="flex gap-2">
                 <input type="date" value={fechaFin} min={fechaInicio || FECHA_MIN} max={FECHA_MAX}
                   onChange={e => setFechaFin(e.target.value)}
                   className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" required />
-                <input type="time" value={horaFin} disabled title="Se devuelve a la misma hora en que se entrega"
-                  className="w-24 px-2 py-2.5 rounded-lg border border-slate-200 bg-slate-100 text-slate-500 text-sm cursor-not-allowed" />
+                <input type="time" value={horaFin} onChange={e => setHoraFinPropia(e.target.value || null)}
+                  className="w-24 px-2 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
               </div>
+              {fechaInicio && fechaFin && !devolucionPosterior && (
+                <p className="text-[11px] leading-snug text-amber-700">
+                  La devolución tiene que ser después del retiro. Si es el mismo día, poné una hora más tarde.
+                </p>
+              )}
             </div>
           </div>
 
@@ -1827,7 +1850,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   // así se corrige lo que cambió en vez de tipearlo entero.
                   if (activo) {
                     if (!fechaDevolucionAcordada) setFechaDevolucionAcordada(fechaFin);
-                    if (!horaDevolucionAcordada) setHoraDevolucionAcordada(horaInicio);
+                    if (!horaDevolucionAcordada) setHoraDevolucionAcordada(horaFin);
                   }
                 }}
                 className="w-4 h-4 accent-white" />
@@ -1838,7 +1861,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             {!lateCheckout ? (
               <p className="text-[11px] leading-snug text-white/70">
                 Sin esto, el auto se devuelve el {fechaFin ? formatFecha(fechaFin) : 'día de fin'} a
-                las {horaInicio} — la misma hora en que se retira.
+                las {horaFin}{horaFin === horaInicio ? ' — la misma hora en que se retira' : ''}.
               </p>
             ) : (
               <>
@@ -1865,7 +1888,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 {/* El resumen en una línea. Son dos fechas distintas, y
                     confundirlas es exactamente lo que pasó. */}
                 <p className="text-[11px] leading-snug text-white/80">
-                  Se factura hasta el <strong>{fechaFin ? formatFecha(fechaFin) : '—'} {horaInicio}</strong>
+                  Se factura hasta el <strong>{fechaFin ? formatFecha(fechaFin) : '—'} {horaFin}</strong>
                   {' '}y el auto vuelve el{' '}
                   <strong>
                     {fechaDevolucionAcordada ? formatFecha(fechaDevolucionAcordada) : '—'}{' '}

@@ -80,6 +80,13 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
   const [fechaInicio, setFechaInicio] = useState(initialFecha ?? hoy());
   const [horaInicio, setHoraInicio] = useState('10:00');
   const [fechaFin, setFechaFin] = useState(sumarDias(initialFecha ?? hoy(), 1));
+  // La hora de devolución es libre. Mientras no se toque, acompaña a la de
+  // retiro (`null`); así el caso de siempre no agrega ningún paso y el del
+  // mismo día —retira 07:30, devuelve 18:40— se puede cargar.
+  const [horaFinPropia, setHoraFinPropia] = useState<string | null>(null);
+  const horaFin = horaFinPropia ?? horaInicio;
+  const devolucionPosterior =
+    !!fechaInicio && !!fechaFin && `${fechaFin}T${horaFin}` > `${fechaInicio}T${horaInicio}`;
 
   const lugares = useMemo(() => {
     const item = configItems?.find(c => c.clave === 'web.lugares_retiro');
@@ -112,11 +119,12 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
   const coberturas = catalogoAdicionales.filter(a => a.grupo === 'cobertura' && a.activo);
 
   const duracionDias = useMemo(() => {
-    if (!fechaInicio || !fechaFin || fechaFin <= fechaInicio) return 0;
-    return Math.round(
+    if (!fechaInicio || !fechaFin || fechaFin < fechaInicio) return 0;
+    // El mismo día es un día de alquiler, no cero.
+    return Math.max(1, Math.round(
       (new Date(`${fechaFin}T12:00:00`).getTime() - new Date(`${fechaInicio}T12:00:00`).getTime())
       / 86400000,
-    );
+    ));
   }, [fechaInicio, fechaFin]);
 
   // El precio lo sugiere el mismo motor que usa el wizard y el backend al
@@ -139,7 +147,14 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
       return;
     }
     if (!vehiculoId) { setError('Elegí el auto: el contrato tiene que decir cuál se entrega.'); return; }
-    if (duracionDias <= 0) { setError('La devolución tiene que ser posterior al retiro.'); return; }
+    if (!devolucionPosterior) {
+      setError(
+        fechaFin === fechaInicio
+          ? 'Si se devuelve el mismo día, la hora de devolución tiene que ser posterior a la de retiro.'
+          : 'La devolución tiene que ser posterior al retiro.',
+      );
+      return;
+    }
     if (!lugarElegido) { setError('Escribí el lugar de retiro y devolución.'); return; }
     if (!precioTotal || Number(precioTotal) <= 0) { setError('Falta el precio.'); return; }
 
@@ -170,7 +185,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
         fecha_inicio: fechaInicio,
         hora_inicio: `${horaInicio}:00`,
         fecha_fin: fechaFin,
-        hora_fin: `${horaInicio}:00`,
+        hora_fin: `${horaFin}:00`,
         lugar_entrega: lugarElegido,
         lugar_devolucion: lugarElegido,
         precio_total: Number(precioTotal),
@@ -365,7 +380,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                     <input type="date" value={fechaInicio}
                       onChange={e => {
                         setFechaInicio(e.target.value);
-                        if (e.target.value && fechaFin <= e.target.value) setFechaFin(sumarDias(e.target.value, 1));
+                        if (e.target.value && fechaFin < e.target.value) setFechaFin(e.target.value);
                       }}
                       className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
                     <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)}
@@ -375,11 +390,20 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                 <div className="space-y-1.5">
                   <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-slate-400" /> Devolución *
-                    {duracionDias > 0 && <span className="text-primary font-normal">({duracionDias} días)</span>}
+                    {duracionDias > 0 && <span className="text-primary font-normal">({duracionDias} día{duracionDias !== 1 ? 's' : ''})</span>}
                   </label>
-                  <input type="date" value={fechaFin} min={fechaInicio}
-                    onChange={e => setFechaFin(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  <div className="flex gap-2">
+                    <input type="date" value={fechaFin} min={fechaInicio}
+                      onChange={e => setFechaFin(e.target.value)}
+                      className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                    <input type="time" value={horaFin} onChange={e => setHoraFinPropia(e.target.value || null)}
+                      className="w-24 px-2 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  </div>
+                  {fechaInicio && fechaFin && !devolucionPosterior && (
+                    <p className="text-[11px] leading-snug text-amber-700">
+                      La devolución tiene que ser después del retiro. Si es el mismo día, poné una hora más tarde.
+                    </p>
+                  )}
                 </div>
               </div>
 
