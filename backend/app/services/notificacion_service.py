@@ -15,9 +15,9 @@ puntual de un echeq rechazado).
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import case, exists, extract, func
+from sqlalchemy import case, exists, extract, func, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -26,6 +26,41 @@ from app.domain.notificaciones_reglas import evaluar_todas
 from app.models.notificacion import Notificacion, NotificacionVista, PreferenciaNotificacion
 
 ESTADOS_ACTIVOS = ("pendiente", "enviada", "pospuesta")
+
+# Avisos de **estado continuo**: hablan de algo que sigue igual hasta que
+# alguien lo arregla (una categoría sin precio, un cliente sin DNI, un service
+# vencido). Estas reglas ponen `fecha_objetivo = hoy`, así que la clave de
+# dedupe cambiaba cada día y el motor creaba **una fila nueva por día** para el
+# mismo problema, sin importar que la de ayer siguiera abierta. Leerla o
+# descartarla sólo escondía la de ese día: al siguiente nacía otra. Era la causa
+# principal de la campana clavada en "99+".
+#
+# Ahora hay una sola fila por (tipo, entidad) mientras el problema exista, y si
+# alguien la descarta, se vuelve a avisar recién pasados `REAVISO_DIAS`.
+TIPOS_DE_ESTADO_CONTINUO = frozenset({
+    "checkout_pendiente",
+    "limite_credito_superado",
+    "service_km_vencido",
+    "service_km_proximo",
+    "vehiculo_fuera_servicio_prolongado",
+    "datos_por_completar",
+})
+REAVISO_DIAS = 7
+
+# Avisos **escalonados**: el mismo asunto avisa en pocos momentos espaciados
+# (deuda a los 7, 15 y 30 días; un vencimiento a los 15 y a los 3). Cada
+# escalón es una fila propia (`escalon` en la clave), y **el nuevo reemplaza al
+# anterior**: hay una sola fila activa por asunto, la del escalón en que está.
+TIPOS_ESCALONADOS = frozenset({
+    "cc_vencida",
+    "vtv_vencimiento",
+    "poliza_vencimiento",
+    "doc_vehiculo_por_vencer",
+    "doc_vehiculo_vencido",
+    "doc_cliente_por_vencer",
+    "doc_cliente_vencido",
+    "licencia_cliente_por_vencer",
+})
 
 # Tipos de aviso instantáneo (`generar_una`, no catalogados) que escalan solos
 # si nadie resuelve la reserva o el contrato que los generó. Es el C-9: "avisos
@@ -53,7 +88,12 @@ def _lista(valor: str) -> list[str]:
 
 
 def _clave_dedupe(c: dict) -> str:
-    return f"{c['tipo']}:{c['entidad_tipo']}:{c['entidad_id']}:{c['fecha_objetivo'] or ''}"
+    clave = f"{c['tipo']}:{c['entidad_tipo']}:{c['entidad_id']}:{c['fecha_objetivo'] or ''}"
+    # Los escalonados suman el escalón, así cada uno es un aviso propio. Sólo si
+    # viene: las claves de todo lo demás quedan exactamente como estaban.
+    if c.get("escalon") is not None:
+        clave += f":{c['escalon']}"
+    return clave
 
 
 class NotificacionService:
@@ -77,11 +117,18 @@ class NotificacionService:
             .all()
         }
 
+        ya_avisados = self._ya_avisados_de_estado_continuo(candidatos, hoy)
+
         creadas = 0
         for c in candidatos:
             clave = _clave_dedupe(c)
             if clave in existentes:
                 continue
+            if c["tipo"] in TIPOS_DE_ESTADO_CONTINUO:
+                quien = (c["tipo"], c["entidad_tipo"], c["entidad_id"])
+                if quien in ya_avisados:
+                    continue
+                ya_avisados.add(quien)
             self.db.add(Notificacion(
                 tipo=c["tipo"],
                 titulo=c["titulo"],
@@ -98,7 +145,111 @@ class NotificacionService:
 
         resueltas = self._auto_resolver(candidatos)
         self.db.flush()
-        return {"creadas": creadas, "resueltas": resueltas, "evaluadas": len(candidatos)}
+        self._refrescar_texto(candidatos)
+        colapsadas = self._colapsar_duplicadas()
+        self.db.flush()
+        return {
+            "creadas": creadas,
+            "resueltas": resueltas + colapsadas,
+            "evaluadas": len(candidatos),
+        }
+
+    def _ya_avisados_de_estado_continuo(
+        self, candidatos: list[dict], hoy: date
+    ) -> set[tuple]:
+        """
+        Los (tipo, entidad) de estado continuo que **no hay que volver a
+        avisar hoy**: tienen una fila activa, o se avisó hace menos de
+        `REAVISO_DIAS`. Lo segundo es lo que evita que descartar un aviso lo
+        haga reaparecer mañana.
+        """
+        tipos = {c["tipo"] for c in candidatos if c["tipo"] in TIPOS_DE_ESTADO_CONTINUO}
+        if not tipos:
+            return set()
+        limite = datetime.combine(hoy - timedelta(days=REAVISO_DIAS), time.min)
+        filas = (
+            self.db.query(Notificacion.tipo, Notificacion.entidad_tipo, Notificacion.entidad_id)
+            .filter(
+                Notificacion.tipo.in_(tipos),
+                or_(
+                    Notificacion.estado.in_(ESTADOS_ACTIVOS),
+                    Notificacion.created_at >= limite,
+                ),
+            )
+            .all()
+        )
+        return {(t, et, eid) for t, et, eid in filas}
+
+    def _refrescar_texto(self, candidatos: list[dict]) -> None:
+        """
+        Al aviso de estado continuo que ya existe le actualiza el texto y la
+        urgencia. Sin esto un resumen ("Hay 9 datos por completar") quedaba
+        para siempre con el número del día en que nació.
+        """
+        vigentes = {
+            (c["tipo"], c["entidad_tipo"], c["entidad_id"]): c
+            for c in candidatos if c["tipo"] in TIPOS_DE_ESTADO_CONTINUO
+        }
+        if not vigentes:
+            return
+        activas = (
+            self.db.query(Notificacion)
+            .filter(
+                Notificacion.tipo.in_({k[0] for k in vigentes}),
+                Notificacion.estado.in_(ESTADOS_ACTIVOS),
+            )
+            .all()
+        )
+        for n in activas:
+            c = vigentes.get((n.tipo, n.entidad_tipo, n.entidad_id))
+            if c is None:
+                continue
+            n.titulo = c["titulo"]
+            n.descripcion = c["descripcion"]
+            n.urgencia = c["urgencia"]
+
+    def _colapsar_duplicadas(self) -> int:
+        """
+        Deja **una** fila activa por asunto y resuelve las demás. Repara lo que
+        ya se acumuló y sostiene el escalonado: cada corrida del motor lo hace,
+        así que el contador baja solo, sin migración.
+
+        - **Estado continuo**: se conserva la **más vieja**. Es la que puede
+          tener el acuse de alguien o un "posponer" puesto, y perderlos haría
+          reaparecer el aviso justo para quien ya lo había atendido.
+        - **Escalonados**: se conserva la **más nueva**, que es el escalón en el
+          que está hoy. El "a los 7 días" no tiene sentido al lado del "a los 30".
+          El asunto es tipo + entidad + fecha del hecho: dos documentos del mismo
+          auto son dos asuntos.
+        """
+        colapsadas = 0
+        activas = (
+            self.db.query(Notificacion)
+            .filter(
+                Notificacion.tipo.in_(TIPOS_DE_ESTADO_CONTINUO | TIPOS_ESCALONADOS),
+                Notificacion.estado.in_(ESTADOS_ACTIVOS),
+                Notificacion.autoresoluble.is_(True),
+            )
+            .order_by(Notificacion.created_at.asc(), Notificacion.id.asc())
+            .all()
+        )
+        ganadoras: dict[tuple, Notificacion] = {}
+        for n in activas:
+            if n.tipo in TIPOS_ESCALONADOS:
+                quien = (n.tipo, n.entidad_tipo, n.entidad_id, n.fecha_objetivo)
+            else:
+                quien = (n.tipo, n.entidad_tipo, n.entidad_id)
+            previa = ganadoras.get(quien)
+            if previa is None:
+                ganadoras[quien] = n
+                continue
+            perdedora = previa if n.tipo in TIPOS_ESCALONADOS else n
+            if n.tipo in TIPOS_ESCALONADOS:
+                ganadoras[quien] = n
+            perdedora.estado = "resuelta"
+            perdedora.resuelta_at = datetime.utcnow()
+            colapsadas += 1
+        return colapsadas
 
     def generar_una(self, candidato: dict) -> Notificacion | None:
         """Crea una notificación puntual fuera del ciclo del motor — para

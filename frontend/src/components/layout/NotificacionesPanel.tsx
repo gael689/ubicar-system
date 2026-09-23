@@ -57,16 +57,23 @@ export function NotificacionesPanel() {
       <button
         onClick={() => setOpen(v => !v)}
         className="relative flex items-center justify-center w-9 h-9 rounded-xl hover:bg-white/10 transition-colors text-slate-400 hover:text-white"
-        title="Notificaciones"
+        title={total > 0 ? `${total} alerta(s), ${urgentes} urgente(s)` : 'Notificaciones'}
       >
         <Bell className="h-5 w-5" />
-        {total > 0 && (
+        {/* **El número es lo urgente** (críticas y altas), no todo lo activo.
+            Contar también lo de fondo —datos por completar, vencimientos a
+            15 días— lo dejaba clavado en "99+" y un número que nunca baja
+            deja de decir algo. Lo demás sigue en la lista; acá sólo un
+            puntito avisa que hay algo sin mirar. */}
+        {urgentes > 0 ? (
           <span className={`absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full text-[10px] font-bold flex items-center justify-center px-1 ${
-            criticas > 0 ? 'bg-red-600 text-white' : urgentes > 0 ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'
+            criticas > 0 ? 'bg-red-600 text-white' : 'bg-red-500 text-white'
           }`}>
-            {total > 99 ? '99+' : total}
+            {urgentes > 99 ? '99+' : urgentes}
           </span>
-        )}
+        ) : total > 0 ? (
+          <span className="absolute top-0.5 right-0.5 h-2.5 w-2.5 rounded-full bg-amber-500" />
+        ) : null}
       </button>
 
       {open && (
@@ -152,9 +159,11 @@ function NotifCard({ item, onNavigate }: { item: NotificacionItem; onNavigate: (
   const posponer = usePosponerNotificacion();
   const descartar = useDescartarNotificacion();
 
-  function manana8am(): string {
+  // Se pospone de a varios días, no "mañana": lo que se posterga es lo que hoy
+  // no se puede resolver, y recordarlo al día siguiente era el mismo aviso otra vez.
+  function enDias(n: number): string {
     const d = new Date();
-    d.setDate(d.getDate() + 1);
+    d.setDate(d.getDate() + n);
     d.setHours(8, 0, 0, 0);
     return d.toISOString();
   }
@@ -190,13 +199,16 @@ function NotifCard({ item, onNavigate }: { item: NotificacionItem; onNavigate: (
         >
           <Check className="h-3 w-3" /> Leída
         </button>
-        <button
-          onClick={e => accion(e, () => posponer.mutateAsync({ id: item.id, hasta: manana8am() }))}
-          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-warning px-1.5 py-0.5 rounded"
-          title="Recordarme mañana"
-        >
-          <Clock className="h-3 w-3" /> Mañana
-        </button>
+        {[3, 7].map(n => (
+          <button
+            key={n}
+            onClick={e => accion(e, () => posponer.mutateAsync({ id: item.id, hasta: enDias(n) }))}
+            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-warning px-1.5 py-0.5 rounded"
+            title={`Recordarme en ${n} días`}
+          >
+            <Clock className="h-3 w-3" /> {n} días
+          </button>
+        ))}
         <button
           onClick={e => accion(e, () => descartar.mutateAsync(item.id))}
           className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-danger px-1.5 py-0.5 rounded"

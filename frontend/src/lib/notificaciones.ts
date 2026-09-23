@@ -58,6 +58,9 @@ export const TIPO_GRUPO: Record<string, string> = {
   categoria_precio_generico: '📌 Falta completar',
   vehiculo_sin_categoria: '📌 Falta completar',
   datos_empresa_sin_cargar: '📌 Falta completar',
+  // Un solo aviso con el total de lo que falta cargar (categorías, autos,
+  // clientes, datos de la empresa).
+  datos_por_completar: '📌 Falta completar',
 };
 
 export const GRUPO_OTROS = 'Otros';

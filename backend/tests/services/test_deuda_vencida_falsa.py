@@ -66,7 +66,7 @@ class TestCheckoutContadoCobradoIntegro:
         # El mismo día: el débito contado vence hoy.
         assert cc_vencimiento_proximo(db, CHECKOUT) == []
         # Y al día siguiente, que es cuando aparecía la falsa deuda vencida.
-        assert cc_vencida(db, CHECKOUT + timedelta(days=1)) == []
+        assert cc_vencida(db, CHECKOUT + timedelta(days=8)) == []
         # Y treinta días después, que es cuando escalaba a crítica.
         assert cc_vencida(db, CHECKOUT + timedelta(days=31)) == []
 
@@ -85,7 +85,7 @@ class TestCheckoutContadoCobradoIntegro:
                          usuario_id=usuario.id)
         db.flush()
 
-        avisos = cc_vencida(db, CHECKOUT + timedelta(days=1))
+        avisos = cc_vencida(db, CHECKOUT + timedelta(days=8))
         assert len(avisos) == 1
         assert avisos[0]["tipo"] == "cc_vencida"
 
@@ -118,7 +118,7 @@ class TestClienteConDosAlquileres:
                           reserva=reserva_b, monto="300000", usuario_id=usuario.id)
         db.flush()
 
-        avisos = cc_vencida(db, CHECKOUT + timedelta(days=2))
+        avisos = cc_vencida(db, CHECKOUT + timedelta(days=8))
 
         assert len(avisos) == 1, "el alquiler A está pago y no tiene que avisar"
         assert f"#{reserva_b.id}" in avisos[0]["descripcion"]
@@ -143,7 +143,7 @@ class TestMovimientosSinAlquiler:
         )
         db.flush()
 
-        avisos = cc_vencida(db, CHECKOUT + timedelta(days=1))
+        avisos = cc_vencida(db, CHECKOUT + timedelta(days=8))
         assert len(avisos) == 1
         assert "Multa #1" in avisos[0]["descripcion"]
 
@@ -160,4 +160,4 @@ class TestMovimientosSinAlquiler:
         )
         db.flush()
 
-        assert cc_vencida(db, CHECKOUT + timedelta(days=1)) == []
+        assert cc_vencida(db, CHECKOUT + timedelta(days=8)) == []

@@ -28,6 +28,8 @@ dependen de algo que todavía no existe en el sistema:
   vencimiento en sí, más abajo.
 """
 from datetime import date, datetime, timedelta
+from decimal import Decimal
+
 from sqlalchemy.orm import Session
 
 from app.models.alquiler import Alquiler
@@ -53,54 +55,6 @@ def _cliente_nombre(c) -> str:
 
 
 # ── Operación diaria ────────────────────────────────────────────────────────
-
-def entregas_hoy(db: Session, hoy: date) -> list[dict]:
-    reservas = (
-        db.query(Reserva)
-        .outerjoin(Alquiler, Alquiler.reserva_id == Reserva.id)
-        .filter(
-            Reserva.estado == "confirmada",
-            Reserva.fecha_inicio == hoy,
-            Alquiler.id.is_(None),
-        )
-        .all()
-    )
-    return [
-        {
-            "tipo": "entrega_hoy",
-            "titulo": "Entrega programada hoy",
-            "descripcion": f"Reserva #{r.id} — {_vehiculo_desc(r.vehiculo)} — {_cliente_nombre(r.cliente)} a las {r.hora_inicio.strftime('%H:%M')}",
-            "urgencia": "alta",
-            "entidad_tipo": "reserva",
-            "entidad_id": r.id,
-            "url_destino": "/reservas",
-            "fecha_objetivo": hoy,
-        }
-        for r in reservas
-    ]
-
-
-def devoluciones_hoy(db: Session, hoy: date) -> list[dict]:
-    alquileres = (
-        db.query(Alquiler)
-        .join(Reserva, Reserva.id == Alquiler.reserva_id)
-        .filter(Reserva.estado == "activa", Reserva.fecha_fin == hoy, Alquiler.checkin_fecha.is_(None))
-        .all()
-    )
-    return [
-        {
-            "tipo": "devolucion_hoy",
-            "titulo": "Devolución programada hoy",
-            "descripcion": f"Alquiler #{a.id} — {_vehiculo_desc(a.reserva.vehiculo)} — {_cliente_nombre(a.reserva.cliente)} a las {a.reserva.hora_fin.strftime('%H:%M')}",
-            "urgencia": "alta",
-            "entidad_tipo": "alquiler",
-            "entidad_id": a.id,
-            "url_destino": "/reservas",
-            "fecha_objetivo": hoy,
-        }
-        for a in alquileres
-    ]
-
 
 def checkout_pendiente(db: Session, hoy: date) -> list[dict]:
     ahora = datetime.now()
@@ -234,24 +188,6 @@ def contrato_sin_firmar_auto_afuera(db: Session, hoy: date) -> list[dict]:
     return avisos
 
 
-def reserva_pendiente_24hs(db: Session, hoy: date) -> list[dict]:
-    limite = datetime.utcnow() - timedelta(hours=24)
-    reservas = db.query(Reserva).filter(Reserva.estado == "pendiente", Reserva.created_at < limite).all()
-    return [
-        {
-            "tipo": "reserva_pendiente_24hs",
-            "titulo": "Reserva sin confirmar hace más de 24hs",
-            "descripcion": f"Reserva #{r.id} — {_vehiculo_desc(r.vehiculo)} — {_cliente_nombre(r.cliente)} — creada {r.created_at.strftime('%d/%m %H:%M')}",
-            "urgencia": "media",
-            "entidad_tipo": "reserva",
-            "entidad_id": r.id,
-            "url_destino": "/reservas",
-            "fecha_objetivo": hoy,
-        }
-        for r in reservas
-    ]
-
-
 # ── Cobranzas y finanzas ────────────────────────────────────────────────────
 
 def echeq_proximo_t2(db: Session, hoy: date) -> list[dict]:
@@ -306,23 +242,6 @@ def echeq_sin_acreditar(db: Session, hoy: date) -> list[dict]:
     ]
 
 
-def echeq_rechazado(db: Session, hoy: date) -> list[dict]:
-    echeqs = db.query(Echeq).filter(Echeq.estado == "rechazado", Echeq.activo == True).all()
-    return [
-        {
-            "tipo": "echeq_rechazado",
-            "titulo": "Echeq rechazado",
-            "descripcion": f"Echeq de {e.contraparte} — ${e.monto} — {e.motivo_rechazo or 'sin motivo registrado'}",
-            "urgencia": "critica",
-            "entidad_tipo": "echeq",
-            "entidad_id": e.id,
-            "url_destino": "/caja",
-            "fecha_objetivo": None,
-        }
-        for e in echeqs
-    ]
-
-
 def _sigue_impago(m, alquileres_con_saldo: set[int], clientes_con_deuda: set[int]) -> bool:
     """
     ¿Este débito todavía representa plata que falta cobrar?
@@ -349,44 +268,79 @@ def _sigue_impago(m, alquileres_con_saldo: set[int], clientes_con_deuda: set[int
     return cliente_id in clientes_con_deuda
 
 
+def _resumir_conceptos(movs, maximo: int = 3) -> str:
+    conceptos = [m.concepto for m in movs]
+    texto = "; ".join(conceptos[:maximo])
+    if len(conceptos) > maximo:
+        texto += f" y {len(conceptos) - maximo} más"
+    return texto
+
+
+def _por_cliente(movs, alquileres_con_saldo, con_deuda) -> dict:
+    """Los movimientos que siguen impagos, agrupados por cliente."""
+    grupos: dict[int, tuple] = {}
+    for m in movs:
+        if not _sigue_impago(m, alquileres_con_saldo, con_deuda):
+            continue
+        cliente = m.cuenta_corriente.cliente
+        grupos.setdefault(cliente.id, (cliente, []))[1].append(m)
+    return grupos
+
+
 def cc_vencimiento_proximo(db: Session, hoy: date) -> list[dict]:
-    objetivos = {hoy + timedelta(days=3): "T-3", hoy: "T-0"}
+    """
+    Un aviso **por cliente**, tres días antes de que le venza algo.
+
+    Antes era uno por movimiento y en dos momentos (T-3 y T-0): un cliente con
+    tres débitos generaba seis avisos. Ahora un solo aviso, con el total.
+    """
+    objetivo = hoy + timedelta(days=3)
     movs = (
         db.query(MovimientoCuentaCorriente)
         .filter(
             MovimientoCuentaCorriente.tipo == "debito",
             MovimientoCuentaCorriente.anulado == False,
-            MovimientoCuentaCorriente.fecha_vencimiento.in_(list(objetivos.keys())),
+            MovimientoCuentaCorriente.fecha_vencimiento == objetivo,
         )
         .all()
     )
     # Con condición `contado` el vencimiento es el mismo día del movimiento
     # (`calcular_vencimiento`), así que sin este filtro el check-out cobrado
     # íntegro disparaba "vence hoy" el mismo día que se cobró.
-    alquileres_con_saldo = cobranza.alquileres_con_saldo_pendiente(db)
-    con_deuda = cobranza.clientes_con_deuda(db)
+    grupos = _por_cliente(
+        movs, cobranza.alquileres_con_saldo_pendiente(db), cobranza.clientes_con_deuda(db)
+    )
     items = []
-    for m in movs:
-        if not _sigue_impago(m, alquileres_con_saldo, con_deuda):
-            continue
-        cliente = m.cuenta_corriente.cliente
+    for cliente, lista in grupos.values():
+        total = sum((Decimal(str(m.monto)) for m in lista), Decimal("0"))
         items.append({
             "tipo": "cc_vencimiento_proximo",
             "titulo": "Vencimiento de cuenta corriente",
-            "descripcion": f"{_cliente_nombre(cliente)} — {m.concepto} — ${m.monto} — vence {m.fecha_vencimiento} ({objetivos[m.fecha_vencimiento]})",
+            "descripcion": (
+                f"{_cliente_nombre(cliente)} — {_resumir_conceptos(lista)} — ${total} "
+                f"— vence {objetivo} (T-3)"
+            ),
             "urgencia": "alta",
-            "entidad_tipo": "movimiento_cc",
-            "entidad_id": m.id,
+            "entidad_tipo": "cliente",
+            "entidad_id": cliente.id,
             "url_destino": f"/clientes/{cliente.id}",
-            "fecha_objetivo": m.fecha_vencimiento,
+            "fecha_objetivo": objetivo,
         })
     return items
 
 
-_BUCKETS_CC_VENCIDA = [(30, "critica"), (15, "critica"), (7, "alta"), (1, "alta")]
+# Días de mora en los que se avisa: **a los 7, a los 15 y a los 30.** No al día
+# 1, 2, 3…: una deuda de un día no es un aviso, y avisar todos los días de la
+# misma deuda es lo que llenaba la campana.
+_BUCKETS_CC_VENCIDA = [(30, "critica"), (15, "critica"), (7, "alta")]
 
 
 def cc_vencida(db: Session, hoy: date) -> list[dict]:
+    """
+    Un aviso **por cliente** con deuda vencida, según la mora de su débito más
+    viejo. Cada escalón (7 / 15 / 30) es un aviso propio, y el nuevo reemplaza
+    al anterior (ver `TIPOS_ESCALONADOS` en el service).
+    """
     movs = (
         db.query(MovimientoCuentaCorriente)
         .filter(
@@ -396,32 +350,32 @@ def cc_vencida(db: Session, hoy: date) -> list[dict]:
         )
         .all()
     )
-    alquileres_con_saldo = cobranza.alquileres_con_saldo_pendiente(db)
-    con_deuda = cobranza.clientes_con_deuda(db)
+    grupos = _por_cliente(
+        movs, cobranza.alquileres_con_saldo_pendiente(db), cobranza.clientes_con_deuda(db)
+    )
     items = []
-    for m in movs:
-        if not _sigue_impago(m, alquileres_con_saldo, con_deuda):
-            continue
-        dias = (hoy - m.fecha_vencimiento).days
-        bucket = next(((umbral, urg) for umbral, urg in _BUCKETS_CC_VENCIDA if dias >= umbral), None)
+    for cliente, lista in grupos.values():
+        dias = max((hoy - m.fecha_vencimiento).days for m in lista)
+        bucket = next(((u, urg) for u, urg in _BUCKETS_CC_VENCIDA if dias >= u), None)
         if bucket is None:
             continue
         umbral, urgencia = bucket
-        cliente = m.cuenta_corriente.cliente
+        total = sum((Decimal(str(m.monto)) for m in lista), Decimal("0"))
         items.append({
             "tipo": "cc_vencida",
             "titulo": f"Deuda vencida hace +{umbral} días",
-            "descripcion": f"{_cliente_nombre(cliente)} — {m.concepto} — ${m.monto} — vencido hace {dias} días",
+            "descripcion": (
+                f"{_cliente_nombre(cliente)} — {_resumir_conceptos(lista)} — ${total} "
+                f"— el más viejo vencido hace {dias} días"
+            ),
             "urgencia": urgencia,
-            "entidad_tipo": "movimiento_cc",
-            "entidad_id": m.id,
+            "entidad_tipo": "cliente",
+            "entidad_id": cliente.id,
             "url_destino": f"/clientes/{cliente.id}",
-            # Se agrega el bucket a la fecha objetivo para que cada escalón
-            # dispare su propia notificación (dedupe por tipo+entidad+fecha).
-            "fecha_objetivo": m.fecha_vencimiento + timedelta(days=umbral),
+            "fecha_objetivo": None,
+            "escalon": umbral,
         })
     return items
-
 
 def cliente_supera_limite_credito(db: Session, hoy: date) -> list[dict]:
     cuentas = (
@@ -505,43 +459,11 @@ def garantia_sin_resolver(db: Session, hoy: date) -> list[dict]:
     return items
 
 
-def factura_pendiente_emitir(db: Session, hoy: date) -> list[dict]:
-    alquileres = (
-        db.query(Alquiler)
-        .join(Reserva, Reserva.id == Alquiler.reserva_id)
-        .filter(Reserva.estado == "finalizada", Alquiler.checkin_fecha.isnot(None))
-        .all()
-    )
-    items = []
-    for a in alquileres:
-        r = a.reserva
-        tiene_comprobante = (
-            db.query(Comprobante)
-            .filter(
-                Comprobante.alquiler_id == a.id,
-                Comprobante.tipo.in_(["factura_a", "factura_b", "factura_c"]),
-                Comprobante.estado != "anulada",
-            )
-            .first()
-        )
-        if tiene_comprobante:
-            continue
-        items.append({
-            "tipo": "factura_pendiente_emitir",
-            "titulo": "Factura pendiente de emitir",
-            "descripcion": f"Alquiler #{a.id} cerrado el {a.checkin_fecha} sin comprobante emitido — {_cliente_nombre(r.cliente)}",
-            "urgencia": "media",
-            "entidad_tipo": "alquiler",
-            "entidad_id": a.id,
-            "url_destino": f"/clientes/{r.cliente_id}",
-            "fecha_objetivo": a.checkin_fecha,
-        })
-    return items
-
-
 # ── Flota y documentación ───────────────────────────────────────────────────
 
-_UMBRALES_DOC = [(1, "critica"), (7, "alta"), (15, "media"), (30, "baja")]
+# Se avisa **a los 15 y a los 3 días**, no a los 30, 15, 7 y 1. Cada escalón es un
+# aviso propio (`escalon`) y el nuevo reemplaza al anterior.
+_UMBRALES_DOC = [(3, "critica"), (15, "alta")]
 
 
 def doc_vehiculo_vencimiento(db: Session, hoy: date) -> list[dict]:
@@ -600,6 +522,7 @@ def _reglas_vencimiento_vehiculo(vehiculos, hoy: date, tipo: str, label: str, ge
             "entidad_id": v.id,
             "url_destino": f"/flota/{v.id}",
             "fecha_objetivo": vh,
+            "escalon": umbral,
         })
     return items
 
@@ -642,6 +565,7 @@ def _reglas_documentos_lista(docs, hoy: date, entidad_tipo: str, get_id, url_bas
             "entidad_id": entidad_id,
             "url_destino": f"/{url_base}/{entidad_id}",
             "fecha_objetivo": vh,
+            "escalon": umbral,
         })
     return items
 
@@ -719,21 +643,23 @@ def licencia_cliente_por_vencer(db: Session, hoy: date) -> list[dict]:
     items = []
     for c in clientes:
         dias = (c.licencia_vencimiento - hoy).days
-        if dias <= 7:
-            umbral = 7
-        elif dias <= 30:
-            umbral = 30
+        # A los 15 y a los 3 días, como el resto de los vencimientos.
+        if dias <= 3:
+            umbral, urgencia = 3, "alta"
+        elif dias <= 15:
+            umbral, urgencia = 15, "media"
         else:
             continue
         items.append({
             "tipo": "licencia_cliente_por_vencer",
             "titulo": "Licencia de cliente por vencer",
             "descripcion": f"{_cliente_nombre(c)} — vence el {c.licencia_vencimiento} (T-{umbral})",
-            "urgencia": "media",
+            "urgencia": urgencia,
             "entidad_tipo": "cliente",
             "entidad_id": c.id,
             "url_destino": f"/clientes/{c.id}",
             "fecha_objetivo": c.licencia_vencimiento,
+            "escalon": umbral,
         })
     return items
 
@@ -808,28 +734,6 @@ def multa_pendiente_imputar(db: Session, hoy: date) -> list[dict]:
             "entidad_id": m.id,
             "url_destino": "/multas",
             "fecha_objetivo": m.fecha_infraccion,
-        }
-        for m in multas
-    ]
-
-
-def multa_imputada_sin_cobrar(db: Session, hoy: date) -> list[dict]:
-    limite = datetime.utcnow() - timedelta(days=15)
-    multas = (
-        db.query(Multa)
-        .filter(Multa.estado == "imputada", Multa.activo == True, Multa.fecha_imputada.isnot(None), Multa.fecha_imputada < limite)
-        .all()
-    )
-    return [
-        {
-            "tipo": "multa_imputada_sin_cobrar",
-            "titulo": "Multa imputada sin cobrar hace más de 15 días",
-            "descripcion": f"Multa #{m.id} — ${m.monto} — imputada el {m.fecha_imputada.strftime('%d/%m/%Y')}",
-            "urgencia": "media",
-            "entidad_tipo": "multa",
-            "entidad_id": m.id,
-            "url_destino": "/multas",
-            "fecha_objetivo": hoy,
         }
         for m in multas
     ]
@@ -1041,49 +945,6 @@ def reserva_web_esperando_transferencia(db: Session, hoy: date) -> list[dict]:
             "fecha_objetivo": r.fecha_inicio,
         }
         for r in reservas
-    ]
-
-
-def contrato_firmado_sin_ver(db: Session, hoy: date) -> list[dict]:
-    """
-    Plan de conexión (13/08) — cierra C-3 como red de seguridad.
-
-    El aviso instantáneo de la firma (`_avisar_contrato_firmado`, disparado
-    en segundo plano desde `POST /public/contratos/{token}/firmar`) va
-    envuelto en un `try/except` a propósito: la firma ya está guardada y no
-    puede fallar por un aviso. Pero eso significa que si el aviso se cae —una
-    excepción que no se vio en el log, Resend caído— **nadie se entera nunca**.
-    Esta regla reclama todos los días durante 72hs después de la firma, hasta
-    que alguien la resuelve abriendo el contrato desde el panel (ver
-    `routers/contratos.py::get_contrato`, que llama a
-    `NotificacionService.resolver_por_entidad`).
-    """
-    limite = datetime.utcnow() - timedelta(hours=72)
-    contratos = (
-        db.query(Contrato)
-        .filter(
-            Contrato.firmado.is_(True),
-            Contrato.firmado_at.isnot(None),
-            Contrato.firmado_at >= limite,
-            Contrato.anulado.is_(False),
-        )
-        .all()
-    )
-    return [
-        {
-            "tipo": "contrato_firmado_sin_ver",
-            "titulo": "Contrato firmado por el cliente",
-            "descripcion": (
-                f"{c.numero_formateado} — {c.firmado_por_nombre or '?'} firmó el "
-                f"{c.firmado_at.strftime('%d/%m %H:%M')}"
-            ),
-            "urgencia": "media",
-            "entidad_tipo": "contrato",
-            "entidad_id": c.id,
-            "url_destino": f"/reservas?reserva={c.reserva_id}",
-            "fecha_objetivo": c.firmado_at.date(),
-        }
-        for c in contratos
     ]
 
 
@@ -1494,23 +1355,69 @@ def cliente_sin_completar(db: Session, hoy: date) -> list[dict]:
     return avisos
 
 
+# ── Datos por completar: un solo aviso ──────────────────────────────────────
+
+_FAMILIAS_DATOS = {
+    "categoria_precio_generico": "categoría(s) con precio genérico",
+    "categoria_sin_precio": "categoría(s) sin precio",
+    "categoria_sin_franquicia": "categoría(s) sin franquicia",
+    "vehiculo_sin_categoria": "auto(s) sin categoría",
+    "datos_empresa_sin_cargar": "dato(s) de la empresa sin cargar",
+    "cliente_sin_completar": "cliente(s) sin DNI o teléfono",
+}
+
+
+def datos_por_completar(db: Session, hoy: date) -> list[dict]:
+    """
+    **Un solo aviso** con todo lo que falta completar, en vez de uno por
+    categoría, uno por auto y uno por cliente.
+
+    Son tareas de fondo, no urgencias: una categoría sin precio no se resuelve
+    hoy porque la campana lo pida. Tener treinta avisos idénticos tapaba los
+    que sí eran del día. Las reglas de abajo siguen existiendo tal cual —acá se
+    cuentan— y el detalle está en cada pantalla.
+    """
+    cuentas: dict[str, int] = {}
+    for regla in (categoria_sin_precio, categoria_sin_franquicia, vehiculo_sin_categoria,
+                  datos_empresa_sin_cargar, cliente_sin_completar):
+        for aviso in regla(db, hoy):
+            cuentas[aviso["tipo"]] = cuentas.get(aviso["tipo"], 0) + 1
+    total = sum(cuentas.values())
+    if not total:
+        return []
+    detalle = ", ".join(
+        f"{n} {_FAMILIAS_DATOS[t]}" for t, n in cuentas.items() if t in _FAMILIAS_DATOS
+    )
+    return [{
+        "tipo": "datos_por_completar",
+        "titulo": f"Hay {total} dato(s) por completar",
+        "descripcion": detalle,
+        "urgencia": "media",
+        "entidad_tipo": "configuracion",
+        "entidad_id": 0,
+        "url_destino": "/configuracion",
+        "fecha_objetivo": hoy,
+    }]
+
+
+# Fuera del catálogo a propósito (limpieza de la campana): `entregas_hoy` y
+# `devoluciones_hoy` (ya están en la agenda), `echeq_rechazado` y
+# `contrato_firmado_sin_ver` (los avisa el evento instantáneo),
+# `reserva_pendiente_24hs`, `factura_pendiente_emitir` y
+# `multa_imputada_sin_cobrar` (ruido: lo importante lo cubren las multas por
+# vencer/vencidas y el saldo pendiente).
 REGLAS = [
-    entregas_hoy,
-    devoluciones_hoy,
     checkout_pendiente,
     checkin_vencido,
     contrato_no_firmado_entrega_hoy,
-    reserva_pendiente_24hs,
     echeq_proximo_t2,
     echeq_vence_hoy,
     echeq_sin_acreditar,
-    echeq_rechazado,
     cc_vencimiento_proximo,
     cc_vencida,
     cliente_supera_limite_credito,
     saldo_pendiente_al_finalizar,
     garantia_sin_resolver,
-    factura_pendiente_emitir,
     doc_vehiculo_vencimiento,
     vtv_vencimiento,
     poliza_vencimiento,
@@ -1521,22 +1428,16 @@ REGLAS = [
     licencia_vencida_con_reserva_futura,
     vehiculo_fuera_de_servicio_prolongado,
     multa_pendiente_imputar,
-    multa_imputada_sin_cobrar,
     multa_por_vencer,
     multa_vencida,
     reserva_web_sin_atender,
     reserva_web_sin_asignar,
     reserva_web_esperando_transferencia,
-    contrato_firmado_sin_ver,
     contrato_sin_firmar_entrega_proxima,
     contrato_sin_firmar_auto_afuera,
     fecha_especial_sin_precio,
-    categoria_sin_precio,
-    categoria_sin_franquicia,
-    vehiculo_sin_categoria,
     contrato_sin_emitir,
-    datos_empresa_sin_cargar,
-    cliente_sin_completar,
+    datos_por_completar,
 ]
 
 

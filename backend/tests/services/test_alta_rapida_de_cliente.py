@@ -59,10 +59,17 @@ class TestDosAltasRapidasSeguidas:
         svc.create(alta_rapida("Ana Gómez"), usuario_id=usuario.id)
         db.flush()
 
+        # La regla los sigue encontrando a los dos, uno por cliente…
         avisos = cliente_sin_completar(db, date.today())
         nombres = " ".join(a["titulo"] for a in avisos)
         assert "Juan Pérez" in nombres
         assert "Ana Gómez" in nombres
+
+        # …y la campana los muestra en un solo aviso con el total.
+        from app.domain.notificaciones_reglas import datos_por_completar
+        resumen = [a for a in datos_por_completar(db, date.today())]
+        assert len(resumen) == 1
+        assert "2 cliente(s) sin DNI o teléfono" in resumen[0]["descripcion"]
 
 
 class TestElDniDeVerdadSigueSiendoUnico:
