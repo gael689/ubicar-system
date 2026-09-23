@@ -1335,7 +1335,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      {/* Más grande a propósito (era max-w-2xl, 672px; ahora ~1150px, un 70% más): la
+            lista de clientes se abre adentro del formulario y con el modal chico
+            se cortaba y sólo se veía uno. El alto mínimo le da lugar para
+            mostrar varios sin scrollear. */}
+      <div className="w-full max-w-6xl min-h-[75vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="px-6 pt-4 pb-3 border-b border-slate-200 bg-slate-50 shrink-0">
           <div className="flex items-center justify-between">
@@ -1666,7 +1670,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:bg-slate-100"
                 />
                 {clientDropdownOpen && !isEdit && (
-                  <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-10">
+                  <div className="absolute top-full left-0 right-0 mt-1 max-h-80 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-10">
                     {filteredClientes.length === 0 ? (
                       /* **Alta rapida.** Antes, si el cliente no existia, el
                          formulario frenaba y habia que irse a Clientes, cargarlo
