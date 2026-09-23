@@ -167,7 +167,7 @@ class TestEmision:
 
     def test_uno_solo_por_contrato(self, db, usuario, contrato):
         _emitir(db, contrato, usuario)
-        with pytest.raises(BusinessRuleError, match="ya tiene el pagaré"):
+        with pytest.raises(BusinessRuleError, match="ya tiene la garantía"):
             _emitir(db, contrato, usuario)
 
     def test_monto_cero_o_codeudor_sin_dni_no(self, db, usuario, contrato):
@@ -265,7 +265,7 @@ class TestFirmaPorLink:
     def test_sin_tildar_el_pagare_no_firma_nada(self, db, usuario, contrato, storage):
         p = _emitir(db, contrato, usuario)
         token = self._link(db, contrato)
-        with pytest.raises(BusinessRuleError, match="Pagaré"):
+        with pytest.raises(BusinessRuleError, match="Garantía"):
             ContratoService(db).firmar_por_link(
                 token, nombre="Juan", dni="30111222", firma_bytes=FIRMA,
                 aceptadas=self.ACEPTACIONES_CONTRATO, ip=None, user_agent=None,
@@ -337,7 +337,7 @@ class TestLinkPublico:
         p = _emitir(db, contrato, usuario, codeudores=[{"nombre": "Ana", "dni": "30999888"}])
         r = client.post(f"/api/v1/contratos/{contrato.id}/link")
         assert r.status_code == 200, r.text
-        assert "el contrato de alquiler y el pagaré" in r.json()["data"]["mensaje"]
+        assert "el contrato de alquiler y la garantía" in r.json()["data"]["mensaje"]
         token = contrato.firma_token
 
         vista = client.get(f"/api/v1/public/contratos/{token}").json()["data"]

@@ -28,9 +28,9 @@ const ACCION_LABEL: Record<string, string> = {
   reasignar_vehiculo: 'Cambió el vehículo',
   anular_contrato: 'Anuló contrato',
   anular_contrato_firmado: 'Anuló un contrato FIRMADO',
-  emitir_pagare: 'Emitió pagaré',
-  anular_pagare: 'Anuló pagaré',
-  anular_pagare_firmado: 'Anuló un pagaré FIRMADO',
+  emitir_pagare: 'Emitió garantía',
+  anular_pagare: 'Anuló garantía',
+  anular_pagare_firmado: 'Anuló una garantía FIRMADA',
 };
 
 const ENTIDAD_LABEL: Record<string, string> = {
@@ -41,7 +41,7 @@ const ENTIDAD_LABEL: Record<string, string> = {
   regla_precio: 'Regla de precio',
   descuento_duracion: 'Descuento por duración',
   contrato: 'Contrato',
-  pagare: 'Pagaré',
+  pagare: 'Garantía',
 };
 
 // Rojo para lo que saca plata o borra; verde para lo que entra; neutro para

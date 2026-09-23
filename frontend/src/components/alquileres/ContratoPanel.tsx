@@ -99,7 +99,7 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
                 onChange={e => setConPagare(e.target.checked)}
                 className="h-4 w-4 accent-primary"
               />
-              Generar también el pagaré
+              Generar también la garantía
               <span className="text-xs font-normal text-muted-foreground">— mismo link, misma firma</span>
             </label>
             {(conPagare || pagarePreparado.faltantes.length > 0) && (
@@ -129,7 +129,7 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
                     {
                       // El contrato ya quedó: el pagaré se puede reintentar
                       // desde el bloque que aparece abajo del contrato.
-                      onError: e => toast.error(`El contrato se generó, pero el pagaré no: ${extractError(e)}`),
+                      onError: e => toast.error(`El contrato se generó, pero la garantía no: ${extractError(e)}`),
                     },
                   );
                 },
@@ -139,7 +139,7 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
         >
           {crear.isPending || crearPagare.isPending
             ? 'Generando…'
-            : conPagare && pagarePreparado?.faltantes.length === 0 ? 'Generar contrato y pagaré' : 'Generar contrato'}
+            : conPagare && pagarePreparado?.faltantes.length === 0 ? 'Generar contrato y garantía' : 'Generar contrato'}
         </Button>
       </Card>
     );
@@ -214,7 +214,7 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
           {faltaFirmar && (
             <Button size="sm" onClick={() => setFirmando(true)}>
               <PenLine className="h-4 w-4" />
-              {contrato.firmado ? 'Firmar el pagaré en el mostrador' : 'Firmar en el mostrador'}
+              {contrato.firmado ? 'Firmar la garantía en el mostrador' : 'Firmar en el mostrador'}
             </Button>
           )}
           {!contrato.anulado && (
@@ -293,7 +293,7 @@ function BloqueFirma({ contrato, pagare }: { contrato: Contrato; pagare: Pagare 
   // que el botón no dependa de haber apretado "Generar" en esta misma pantalla.
   const mensajeWhatsapp = link
     ? link.mensaje || (pagare
-      ? `Te paso ${contrato.firmado ? 'el pagaré para que lo leas y lo firmes' : 'el contrato de alquiler y el pagaré para que los leas y los firmes'} desde el celular:\n\n${link.url}`
+      ? `Te paso ${contrato.firmado ? 'la garantía para que la leas y la firmes' : 'el contrato de alquiler y la garantía para que los leas y los firmes'} desde el celular:\n\n${link.url}`
       : `Te paso el contrato de alquiler para que lo leas y lo firmes desde el celular:\n\n${link.url}`)
     : '';
   // **El link se abre, no se manda solo.** WhatsApp quema números por
@@ -318,7 +318,7 @@ function BloqueFirma({ contrato, pagare }: { contrato: Contrato; pagare: Pagare 
       <div className="flex items-center gap-2">
         <Link2 className="h-4 w-4 text-primary" />
         <p className="text-sm font-semibold text-foreground">
-          {pagare && contrato.firmado ? 'Que firme el pagaré' : pagare ? 'Que firme el contrato y el pagaré' : 'Que lo firme el cliente'}
+          {pagare && contrato.firmado ? 'Que firme la garantía' : pagare ? 'Que firme el contrato y la garantía' : 'Que lo firme el cliente'}
         </p>
       </div>
 
@@ -327,7 +327,7 @@ function BloqueFirma({ contrato, pagare }: { contrato: Contrato; pagare: Pagare 
           <p className="text-xs text-muted-foreground">
             Genera un link para mandarle por WhatsApp. El cliente lee el contrato completo,
             acepta las condiciones y firma desde el celular.
-            {pagare && ' En el mismo link, abajo del contrato, está el pagaré: una sola firma vale para los dos.'}
+            {pagare && ' En el mismo link, abajo del contrato, está la garantía: una sola firma vale para los dos.'}
             {' '}Cuando firma,{' '}
             <strong className="text-foreground">nos llega el aviso con el PDF firmado</strong>.
           </p>
@@ -550,7 +550,7 @@ function FirmaDialog({
   const firmar = useFirmarContrato();
 
   const faltanCodeudores = medio === 'pantalla' && firmasCod.some(f => !f);
-  const titulo = firmaContrato && pagare ? 'Firmar contrato y pagaré' : pagare ? 'Firmar el pagaré' : 'Firmar contrato';
+  const titulo = firmaContrato && pagare ? 'Firmar contrato y garantía' : pagare ? 'Firmar la garantía' : 'Firmar contrato';
 
   const confirmar = () => {
     if (!nombre.trim() || !dni.trim() || faltanCodeudores) return;
@@ -589,7 +589,7 @@ function FirmaDialog({
           <h3 className="font-semibold text-foreground">{titulo}</h3>
           <p className="text-xs text-muted-foreground">
             Firma manuscrita del cliente. Quien firma puede no ser el titular de la reserva.
-            {pagare && firmaContrato && ' La misma firma queda en el contrato y en el pagaré.'}
+            {pagare && firmaContrato && ' La misma firma queda en el contrato y en la garantía.'}
           </p>
         </div>
 
@@ -629,7 +629,7 @@ function FirmaDialog({
         {medio === 'papel' ? (
           <p className="rounded-lg bg-muted px-3 py-2.5 text-xs text-muted-foreground">
             El <strong className="text-foreground">papel firmado es el original</strong> y hay
-            que archivarlo{pagare ? ' (el del pagaré, con más razón: es el que se presenta al cobro)' : ''}.
+            que archivarlo{pagare ? ' (el de la garantía, con más razón: es el que se presenta al cobro)' : ''}.
             Acá sólo queda la constancia de quién firmó y cuándo: el PDF que se reimprima desde el
             sistema va a decir que se firmó en papel, sin la imagen de la firma.
           </p>
