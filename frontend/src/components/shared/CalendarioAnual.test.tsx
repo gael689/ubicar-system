@@ -79,6 +79,26 @@ describe('CalendarioAnual', () => {
     expect(screen.queryByTitle('Septiembre de 2026 — ya pasó')).not.toBeInTheDocument();
   });
 
+  it('el tamaño grande agranda los días y marca hoy más fuerte; el default no cambia', () => {
+    // La vista anual de Ocupación es el calendario principal y pide celdas
+    // más grandes. Fechas especiales usa el default y tiene que quedar igual.
+    const hoyEn = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('button')).find(
+        b => b.textContent === '21' && b.className.includes('ring'),
+      ) as HTMLElement;
+
+    const { container, unmount } = montar(2026);
+    expect(hoyEn(container).className).toContain('ring-2');
+    expect(hoyEn(container).className).toContain('text-[10px]');
+    unmount();
+
+    const grande = render(
+      <CalendarioAnual anio={2026} onAnioChange={() => {}} hoy={AGOSTO_2026} renderDia={() => null} tamano="grande" />,
+    );
+    expect(hoyEn(grande.container).className).toContain('ring-[3px]');
+    expect(hoyEn(grande.container).className).toContain('text-sm');
+  });
+
   it('en otro año no marca ninguno como pasado', () => {
     montar(2027);
     for (const nombre of MESES_NOMBRE) {

@@ -39,6 +39,55 @@ export function ordenDeMeses(anio: number, hoy: Date): number[] {
   return [...todos.slice(actual), ...todos.slice(0, actual)];
 }
 
+/**
+ * Cuánto lugar ocupa el cuadro.
+ *
+ * - `compacto` (default): el de Fechas especiales, que comparte la pantalla
+ *   con un panel. Queda exactamente como estaba.
+ * - `grande`: la vista anual de Ocupación, que es el calendario principal y
+ *   tiene todo el ancho. Menos meses por fila en pantallas medianas, números
+ *   más grandes y más oscuros, y el día de hoy con un anillo más grueso —
+ *   *"a veces está todo tan clarito que no se ve bien"*.
+ */
+export type TamanoCalendario = 'compacto' | 'grande';
+
+interface EstilosCalendario {
+  grilla: string;
+  mes: string;
+  titulo: string;
+  semana: string;
+  celdas: string;
+  dia: string;
+  vacio: string;
+  hoySolo: string;
+  hoyConColor: string;
+}
+
+const ESTILOS: Record<TamanoCalendario, EstilosCalendario> = {
+  compacto: {
+    grilla: 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+    mes: 'p-3',
+    titulo: 'text-sm',
+    semana: 'text-[9px] font-semibold text-muted-foreground/60',
+    celdas: 'gap-0.5',
+    dia: 'aspect-square rounded text-[10px]',
+    vacio: 'text-muted-foreground',
+    hoySolo: 'ring-2 ring-primary text-primary font-bold',
+    hoyConColor: 'ring-2 ring-slate-900',
+  },
+  grande: {
+    grilla: 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4',
+    mes: 'p-3 border-slate-300',
+    titulo: 'text-base',
+    semana: 'text-[11px] font-bold text-slate-600 pb-0.5',
+    celdas: 'gap-1',
+    dia: 'aspect-[5/4] rounded-md text-sm',
+    vacio: 'text-slate-800 bg-slate-50',
+    hoySolo: 'ring-[3px] ring-primary bg-primary text-white font-extrabold',
+    hoyConColor: 'ring-[3px] ring-offset-1 ring-slate-900 font-extrabold',
+  },
+};
+
 export interface CeldaDia {
   /** Clases del chip del día — color de fondo, texto, anillo, etc. */
   className?: string;
@@ -66,6 +115,7 @@ export function CalendarioAnual({
   renderDia,
   contadorMes,
   hoy = new Date(),
+  tamano = 'compacto',
 }: {
   anio: number;
   onAnioChange: (anio: number) => void;
@@ -77,8 +127,10 @@ export function CalendarioAnual({
   /** Contador chico junto al nombre del mes (ej: "3 días"). */
   contadorMes?: (mes: number) => number | null;
   hoy?: Date;
+  tamano?: TamanoCalendario;
 }) {
   const hoyStr = ymd(hoy);
+  const estilos = ESTILOS[tamano];
 
   return (
     <div className="space-y-4">
@@ -94,7 +146,7 @@ export function CalendarioAnual({
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className={estilos.grilla}>
         {ordenDeMeses(anio, hoy).map(mes => (
           <MesMini
             key={mes}
@@ -110,6 +162,7 @@ export function CalendarioAnual({
             contador={contadorMes ? contadorMes(mes) : null}
             onSelectMes={onSelectMes}
             onSelectDia={onSelectDia}
+            estilos={estilos}
           />
         ))}
       </div>
@@ -118,7 +171,7 @@ export function CalendarioAnual({
 }
 
 function MesMini({
-  anio, mes, nombre, hoyStr, yaPaso = false, renderDia, contador, onSelectMes, onSelectDia,
+  anio, mes, nombre, hoyStr, yaPaso = false, renderDia, contador, onSelectMes, onSelectDia, estilos,
 }: {
   anio: number;
   mes: number;
@@ -130,6 +183,7 @@ function MesMini({
   contador?: number | null;
   onSelectMes?: (mes: number) => void;
   onSelectDia?: (fechaISO: string) => void;
+  estilos: EstilosCalendario;
 }) {
   const primero = new Date(anio, mes, 1);
   const diasEnMes = new Date(anio, mes + 1, 0).getDate();
@@ -141,7 +195,7 @@ function MesMini({
   ];
 
   return (
-    <div className={cn('rounded-xl border border-border p-3', yaPaso && 'bg-muted/20')}>
+    <div className={cn('rounded-xl border border-border', estilos.mes, yaPaso && 'bg-muted/20')}>
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <button
           type="button"
@@ -149,7 +203,7 @@ function MesMini({
           disabled={!onSelectMes}
           title={yaPaso ? `${nombre} de ${anio} — ya pasó` : undefined}
           className={cn(
-            'text-sm font-semibold',
+            estilos.titulo, 'font-semibold',
             yaPaso ? 'text-muted-foreground' : 'text-foreground',
             onSelectMes && 'hover:text-primary hover:underline',
           )}
@@ -163,9 +217,9 @@ function MesMini({
           <span className="shrink-0 text-[10px] text-muted-foreground">{contador} día{contador !== 1 ? 's' : ''}</span>
         )}
       </div>
-      <div className="grid grid-cols-7 gap-0.5">
+      <div className={cn('grid grid-cols-7', estilos.celdas)}>
         {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
-          <div key={i} className="text-center text-[9px] font-semibold text-muted-foreground/60">{d}</div>
+          <div key={i} className={cn('text-center', estilos.semana)}>{d}</div>
         ))}
         {celdas.map((dia, i) => {
           if (dia === null) return <div key={i} />;
@@ -180,14 +234,15 @@ function MesMini({
               onClick={() => onSelectDia?.(fechaISO)}
               disabled={!onSelectDia}
               className={cn(
-                'relative aspect-square flex items-center justify-center rounded text-[10px] transition-colors',
+                'relative flex items-center justify-center transition-colors',
+                estilos.dia,
                 onSelectDia && 'cursor-pointer hover:brightness-95',
-                celda.className || 'text-muted-foreground',
+                celda.className || estilos.vacio,
                 // Anillos sólidos, sin opacidad: sobre un chip de color, un
                 // borde translúcido se mezcla con el fondo y deja de marcar
                 // el día de hoy, que es justo lo que tiene que saltar.
-                esHoy && !celda.className && 'ring-2 ring-primary text-primary font-bold',
-                esHoy && celda.className && 'ring-2 ring-slate-900',
+                esHoy && !celda.className && estilos.hoySolo,
+                esHoy && celda.className && estilos.hoyConColor,
               )}
             >
               {celda.contenido ?? dia}

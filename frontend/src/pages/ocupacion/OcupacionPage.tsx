@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle, Ban, Wrench, CalendarRange, Globe, CreditCard } from 'lucide-react';
 import { ESTADO_RESERVA_LABEL } from '@/lib/constants';
 import { useCategorias } from '@/hooks/useCategorias';
@@ -9,7 +10,7 @@ import { useReservas } from '@/hooks/useReservas';
 import { CancelarReservaDialog } from '@/components/reservas/CancelarReservaDialog';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { cn, extractError } from '@/lib/utils';
+import { cn, extractError, fechaLocal, hoyLocal } from '@/lib/utils';
 import { abreviarLugar } from '@/lib/lugares';
 import { CalendarioAnual } from '@/components/shared/CalendarioAnual';
 import type { VehiculoOcupacion, EventoOcupacion, Reserva, ApiResponse, DiaResumenAnual } from '@/types';
@@ -28,11 +29,15 @@ const ESTADO_COLORS_EVENTO: Record<string, string> = {
   // bloqueo), así que pintarla como las que sí ocupan hace que la grilla
   // mienta: una celda parece tomada estando libre. Con el relleno tenue se
   // sigue viendo que hay algo en el aire, que es la información verdadera.
-  pendiente: 'bg-amber-100 border-amber-500 border-dashed text-amber-900',
-  confirmada: 'bg-blue-500 border-blue-600 text-white',
-  activa: 'bg-emerald-500 border-emerald-600 text-white',
-  vencida: 'bg-red-600 border-red-700 text-white animate-pulse',
-  finalizada: 'bg-slate-500 border-slate-600 text-white',
+  //
+  // Contraste (27/09): *"a veces está todo tan clarito que no se ve bien"*.
+  // Los rellenos suben un tono (100 → 200, 500 → 600) y los bordes pasan a
+  // 600/800 para que la barra se despegue del fondo de la grilla.
+  pendiente: 'bg-amber-200 border-amber-600 border-dashed text-amber-950',
+  confirmada: 'bg-blue-600 border-blue-800 text-white',
+  activa: 'bg-emerald-600 border-emerald-800 text-white',
+  vencida: 'bg-red-600 border-red-800 text-white animate-pulse',
+  finalizada: 'bg-slate-500 border-slate-700 text-white',
   cancelada: 'bg-red-500 border-red-600 text-white line-through opacity-90',
   // Reserva web esperando el pago. **Llegaba desde el backend y no tenía
   // color**: caía en el fallback gris, idéntica a una `finalizada`. Y no es lo
@@ -42,7 +47,7 @@ const ESTADO_COLORS_EVENTO: Record<string, string> = {
   // sostiene el hold, no la reserva), así que pintarla sólida haría que la
   // grilla mienta: una celda parecería tomada estando libre. Pero tampoco
   // puede ser invisible, o el mostrador vende encima de una venta en curso.
-  pendiente_pago: 'bg-violet-100 border-violet-400 border-dashed text-violet-900',
+  pendiente_pago: 'bg-violet-200 border-violet-600 border-dashed text-violet-950',
   // Bloqueos: el `estado` que llega es el motivo. Se pintan con rayado
   // diagonal para que a simple vista no se confundan con una reserva — el
   // auto no está alquilado, está fuera de circulación.
@@ -208,8 +213,15 @@ function addDays(date: Date, days: number): Date {
   return d;
 }
 
+/**
+ * `YYYY-MM-DD` en hora **local**.
+ *
+ * Era `toISOString()`, que es UTC: en Bahía Blanca, después de las 21 "hoy"
+ * pasaba a ser mañana — el botón Hoy llevaba al día siguiente y la columna
+ * resaltada era la de al lado.
+ */
 function formatDate(d: Date): string {
-  return d.toISOString().split('T')[0];
+  return fechaLocal(d);
 }
 
 function parseDate(s: string): Date {
@@ -220,13 +232,104 @@ function daysBetween(a: Date, b: Date): number {
   return Math.floor((b.getTime() - a.getTime()) / 86400000);
 }
 
-const FULL_DAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const SHORT_DAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MONTH_LABELS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 // 2.8: 'anual' es una **pre-vista** de 'timeline', no un reemplazo — cae ahí
 // mismo al elegir un mes o un día. Es el modo por defecto en escritorio
 // (Gael la eligió como calendario principal, 14/08).
 type ViewMode = 'timeline' | 'agenda' | 'anual';
+
+// ── Tamaños de la grilla ─────────────────────────────────────────────────────
+// Estaban escritos a mano en diez lugares (180, 220, 60px, 52px). Las barras
+// se posicionan en porcentaje del ancho de la celda donde arrancan, así que
+// **todas las columnas de día tienen que medir lo mismo**: el zoom cambia el
+// ancho de todas juntas, nunca de una sola.
+
+/** Cuántos días dibuja el timeline desde el 1° del mes elegido. */
+const DIAS_A_MOSTRAR = 120;
+/** Ancho de la columna fija con patente y modelo. */
+const ANCHO_COL_NOMBRE = 172;
+/** Alto de cada carril de la fila "Por asignar". */
+const ALTO_CARRIL = 56;
+
+/**
+ * Zoom de la grilla. *"Que no quede todo tan chiquito"* y a la vez poder ver
+ * más días de un vistazo: cada uno elige, y el navegador lo recuerda.
+ */
+type Zoom = 'compacto' | 'normal' | 'amplio';
+const ZOOMS: Record<Zoom, { label: string; col: number; fila: number; texto: string; textoChico: string }> = {
+  compacto: { label: 'Compacto', col: 128, fila: 50, texto: 'text-[11px]', textoChico: 'text-[10px]' },
+  normal: { label: 'Normal', col: 168, fila: 64, texto: 'text-xs', textoChico: 'text-[11px]' },
+  amplio: { label: 'Amplio', col: 220, fila: 80, texto: 'text-[13px]', textoChico: 'text-xs' },
+};
+const CLAVE_ZOOM = 'ocupacion.zoom';
+
+function leerZoom(): Zoom {
+  try {
+    const v = window.localStorage.getItem(CLAVE_ZOOM);
+    if (v && v in ZOOMS) return v as Zoom;
+  } catch { /* modo privado o storage bloqueado: queda el de siempre */ }
+  return 'normal';
+}
+
+function guardarZoom(z: Zoom) {
+  try { window.localStorage.setItem(CLAVE_ZOOM, z); } catch { /* idem */ }
+}
+
+/**
+ * El CSS fijo de la grilla: fondos, hover de fila, columna de hoy.
+ *
+ * **Por qué CSS y no estado de React.** La grilla son 120 columnas × N autos.
+ * Guardar "fila/columna con el mouse encima" en el estado de la página
+ * re-dibujaría todas las celdas en cada movimiento del mouse. La fila se
+ * resuelve con `:hover`; la columna, con una regla que se escribe en un
+ * `<style>` aparte (ver `reglasColumna`).
+ *
+ * Los fondos van por clase propia y no por `bg-*` de Tailwind para que el
+ * hover —que tiene más especificidad— los pueda pisar sin `!important`.
+ */
+const PRIMARIO = 'hsl(var(--primary))';
+const CSS_GRILLA = `
+.ocup-grid td.ocup-nombre { background-color: #fff; }
+.ocup-grid td.ocup-dia { background-color: #fff; }
+.ocup-grid td.ocup-finde { background-color: #f1f5f9; }
+.ocup-grid td.ocup-hoy {
+  background-color: hsl(var(--primary) / 0.12);
+  box-shadow: inset 2px 0 0 0 ${PRIMARIO}, inset -2px 0 0 0 ${PRIMARIO};
+}
+.ocup-grid tr.ocup-fila:hover > td {
+  background-color: #dbe8f8;
+  box-shadow: inset 0 2px 0 0 ${PRIMARIO}, inset 0 -2px 0 0 ${PRIMARIO};
+}
+.ocup-grid tr.ocup-fila:hover > td.ocup-nombre {
+  background-color: #cfe0f5;
+  box-shadow: inset 5px 0 0 0 ${PRIMARIO}, inset 0 2px 0 0 ${PRIMARIO}, inset 0 -2px 0 0 ${PRIMARIO};
+}
+.ocup-grid .ocup-patente, .ocup-grid .ocup-modelo { transition: font-size .12s ease; }
+.ocup-grid tr.ocup-fila:hover .ocup-patente { font-size: 16px; color: ${PRIMARIO}; }
+.ocup-grid tr.ocup-fila:hover .ocup-modelo { font-size: 12px; color: #0f172a; }
+@keyframes ocup-flash {
+  0%, 100% { box-shadow: inset 2px 0 0 0 ${PRIMARIO}, inset -2px 0 0 0 ${PRIMARIO}; }
+  25%, 75% { box-shadow: inset 0 0 0 4px #f59e0b; }
+}
+.ocup-grid.ocup-flash .ocup-hoy { animation: ocup-flash 0.8s ease-in-out 2; }
+`;
+
+/**
+ * La columna con el mouse encima: fondo marcado, encabezado oscuro y el cruce
+ * con la fila resaltada más fuerte, con un marco.
+ */
+function reglasColumna(col: string): string {
+  const c = `[data-col="${col}"]`;
+  return `
+.ocup-grid td${c} { background-color: #dbe8f8; box-shadow: inset 2px 0 0 0 ${PRIMARIO}, inset -2px 0 0 0 ${PRIMARIO}; }
+.ocup-grid th${c} { background-color: #1e293b; color: #fff; }
+.ocup-grid th${c} .ocup-dia-num { font-size: 16px; color: #fff; }
+.ocup-grid th${c} .ocup-dia-sem { color: #fff; }
+.ocup-grid tr.ocup-fila:hover > td${c} { background-color: #b9d1f0; box-shadow: inset 0 0 0 3px ${PRIMARIO}; }
+`;
+}
 
 export function OcupacionPage() {
   const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
@@ -279,19 +382,34 @@ export function OcupacionPage() {
   const [activeCheckout, setActiveCheckout] = useState<{ id: number, defaultTime?: string, defaultDate?: string } | null>(null);
   const [reservaInfoId, setReservaInfoId] = useState<number | null>(null);
 
-  const DAYS_TO_SHOW = 120;
+  const [zoom, setZoomState] = useState<Zoom>(leerZoom);
+  const { col: ANCHO_COL, fila: ALTO_FILA, texto: TEXTO_BARRA, textoChico: TEXTO_BARRA_CHICO } = ZOOMS[zoom];
 
-  const days = Array.from({ length: DAYS_TO_SHOW }, (_, i) => {
+  /**
+   * El "Hoy" recién apretado: la columna de hoy parpadea con un marco un
+   * instante para que el ojo la encuentre. Se apaga sola.
+   */
+  const [flashHoy, setFlashHoy] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
+
+  /** El `<style>` donde se escribe la regla de la columna con el mouse encima. */
+  const hoverStyleRef = useRef<HTMLStyleElement>(null);
+  const colResaltada = useRef<string | null>(null);
+
+  const days = useMemo(() => Array.from({ length: DIAS_A_MOSTRAR }, (_, i) => {
     const d = new Date(currentYear, currentMonth, 1);
     d.setDate(d.getDate() + i);
     return d;
-  });
+  }), [currentYear, currentMonth]);
 
   const rangeStart = days[0];
   const rangeEnd = days[days.length - 1];
   const totalDays = days.length;
 
-  const { data: ocupacionData, isLoading: loading, error: queryError, refetch } = useOcupacion({
+  const {
+    data: ocupacionData, isLoading: loading, isPlaceholderData: recargando, error: queryError, refetch,
+  } = useOcupacion({
     fecha_inicio: formatDate(addDays(rangeStart, -2)),
     fecha_fin: formatDate(addDays(rangeEnd, 2)),
   });
@@ -311,29 +429,76 @@ export function OcupacionPage() {
     setSinAsignar(ocupacionData.sin_asignar ?? []);
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
-      setScrollToDate(formatDate(new Date()));
+      setScrollToDate(hoyLocal());
     }
   }, [ocupacionData]);
 
   const loadData = () => { void refetch(); };
 
-  // Scroll to a specific date column in timeline view
+  // Lleva la grilla a una fecha, **centrada** en la parte visible (lo que
+  // queda a la derecha de la columna fija de patentes).
+  //
+  // Espera a que la tabla exista: antes el efecto corría con el spinner en
+  // pantalla, no encontraba columnas y **borraba el pedido igual**, así que
+  // "Hoy" desde otro mes no movía nada.
   useEffect(() => {
-    if (!scrollToDate || !scrollContainerRef.current || viewMode !== 'timeline') return;
-    const targetIdx = days.findIndex(d => formatDate(d) === scrollToDate);
-    if (targetIdx !== -1) {
-      const scrollTarget = Math.max(0, (targetIdx - 1) * 180);
-      scrollContainerRef.current.scrollTo({ left: scrollTarget, behavior: 'smooth' });
+    if (!scrollToDate || viewMode !== 'timeline' || loading) return;
+    const cont = scrollContainerRef.current;
+    if (!cont) return;
+    const idx = days.findIndex(d => formatDate(d) === scrollToDate);
+    if (idx !== -1) {
+      const visible = Math.max(0, cont.clientWidth - ANCHO_COL_NOMBRE);
+      const left = Math.max(0, idx * ANCHO_COL + ANCHO_COL / 2 - visible / 2);
+      if (typeof cont.scrollTo === 'function') cont.scrollTo({ left, behavior: 'smooth' });
+      else cont.scrollLeft = left;
     }
     setScrollToDate(null);
-  }, [scrollToDate, days, viewMode]);
+  }, [scrollToDate, days, viewMode, loading, ANCHO_COL]);
 
   const goToday = () => {
     const d = new Date();
     setCurrentYear(d.getFullYear());
     setCurrentMonth(d.getMonth());
-    setScrollToDate(formatDate(d));
-    if (viewMode === 'agenda') setAgendaDate(d);
+    setAgendaDate(d);
+    // Desde la vista anual, "Hoy" no hacía nada visible: el cuadro del año ya
+    // incluye hoy. Lo que se quiere es ver **qué pasa hoy**, y eso es el
+    // timeline.
+    if (viewMode === 'anual') setViewMode('timeline');
+    setScrollToDate(hoyLocal());
+    setFlashHoy(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashHoy(false), 1800);
+  };
+
+  /**
+   * Cambia el zoom sin perder el lugar: el día que estaba en el centro de la
+   * pantalla sigue en el centro.
+   */
+  const cambiarZoom = (z: Zoom) => {
+    const cont = scrollContainerRef.current;
+    if (cont && viewMode === 'timeline') {
+      const visible = Math.max(0, cont.clientWidth - ANCHO_COL_NOMBRE);
+      const idx = Math.min(days.length - 1, Math.max(0, Math.floor((cont.scrollLeft + visible / 2) / ANCHO_COL)));
+      setScrollToDate(formatDate(days[idx]));
+    }
+    setZoomState(z);
+    guardarZoom(z);
+  };
+
+  // ── Hover de columna, por delegación ─────────────────────────────────────
+  // Un solo listener en la tabla. Cada celda de día lleva `data-col`; cuando
+  // el mouse cambia de columna se reescribe la regla del `<style>` y listo:
+  // React no se entera, no se re-dibuja ninguna celda.
+  const onGridMouseOver = (e: ReactMouseEvent) => {
+    const el = e.target instanceof Element ? e.target.closest('[data-col]') : null;
+    const col = el?.getAttribute('data-col') ?? null;
+    if (col === colResaltada.current) return;
+    colResaltada.current = col;
+    if (hoverStyleRef.current) hoverStyleRef.current.textContent = col == null ? '' : reglasColumna(col);
+  };
+  const onGridMouseLeave = () => {
+    colResaltada.current = null;
+    if (hoverStyleRef.current) hoverStyleRef.current.textContent = '';
   };
 
   const jumpToDate = (dateStr: string) => {
@@ -417,9 +582,12 @@ export function OcupacionPage() {
     } catch { loadData(); }
   };
 
-  const getEventsForVehicleDay = (vehiculoId: number, day: Date): EventoOcupacion[] => {
+  /** Los eventos de un auto que tocan un día. Recibe ya los de ese auto: la
+   *  grilla lo llama 120 veces por fila y filtrar toda la flota cada vez era
+   *  gasto puro. */
+  const getEventsForVehicleDay = (vehiculoEvents: EventoOcupacion[], day: Date): EventoOcupacion[] => {
     const dayStr = formatDate(day);
-    return eventosVisibles.filter(e => e.vehiculo_id === vehiculoId && e.fecha_inicio <= dayStr && e.fecha_fin >= dayStr);
+    return vehiculoEvents.filter(e => e.fecha_inicio <= dayStr && e.fecha_fin >= dayStr);
   };
 
   // ── Asignar arrastrando desde "Por asignar" ──────────────────────────────
@@ -532,7 +700,6 @@ export function OcupacionPage() {
   }, [eventosSinAsignar]);
 
   /** Alto de la fila "Por asignar": crece con los carriles, no con las reservas. */
-  const ALTO_CARRIL = 56;
   const altoSinAsignar = carrilesSinAsignar.cantidad * ALTO_CARRIL + 4;
 
   /**
@@ -628,79 +795,84 @@ export function OcupacionPage() {
     return { isStart, span: cappedSpan, leftPercent, widthPercent: Math.max(10, widthPercent) };
   };
 
-  const isToday = (day: Date) => formatDate(day) === formatDate(new Date());
+  const hoyStr = hoyLocal();
+  const isToday = (day: Date) => formatDate(day) === hoyStr;
+  const esFinde = (day: Date) => day.getDay() === 0 || day.getDay() === 6;
+  /** Clase de fondo de una celda de día (ver `CSS_GRILLA`). */
+  const claseFondoDia = (day: Date) => (isToday(day) ? 'ocup-hoy' : esFinde(day) ? 'ocup-finde' : 'ocup-dia');
 
   const renderControls = () => (
     <div className="flex flex-wrap items-center gap-2">
       {/* Timeline month/year controls */}
       {viewMode === 'timeline' && (
-        <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
-          <button onClick={prevMonth} className="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-600">
+        <div className="flex items-center gap-1 bg-white px-1.5 py-1 rounded-lg border border-slate-300 shadow-sm">
+          <button onClick={prevMonth} title="Mes anterior" className="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-700">
             <ChevronLeft className="w-4 h-4" />
           </button>
           <select
             value={currentMonth}
             onChange={e => setCurrentMonth(Number(e.target.value))}
-            className="bg-transparent border-none text-slate-800 font-bold text-sm focus:ring-0 cursor-pointer p-0"
+            className="bg-transparent border-none text-slate-900 font-bold text-sm focus:ring-0 cursor-pointer p-0"
           >
             {MONTH_LABELS.map((m, i) => <option key={i} value={i}>{m.toUpperCase()}</option>)}
           </select>
           <select
             value={currentYear}
             onChange={e => setCurrentYear(Number(e.target.value))}
-            className="bg-transparent border-none text-slate-800 font-bold text-sm focus:ring-0 cursor-pointer p-0"
+            className="bg-transparent border-none text-slate-900 font-bold text-sm focus:ring-0 cursor-pointer p-0"
           >
             {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 2 + i).map(y => (
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
-          <button onClick={nextMonth} className="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-600">
+          <button onClick={nextMonth} title="Mes siguiente" className="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-700">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       )}
 
+      {/* "Hoy" resaltado: es el botón que más se usa de la pantalla. Lleva
+          directo al día —también desde la vista anual— y lo centra. */}
+      <button
+        onClick={goToday}
+        title="Ir a hoy"
+        className="px-3 py-1.5 text-sm font-bold text-primary bg-primary/10 hover:bg-primary hover:text-white rounded-lg border border-primary/60 shadow-sm transition-colors"
+      >
+        Hoy
+      </button>
+
       {/* Date jump (available in both modes) */}
-      <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 shadow-sm px-2">
-        <Calendar className="w-4 h-4 text-slate-400" />
+      <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-300 shadow-sm px-2">
+        <Calendar className="w-4 h-4 text-slate-500" />
         <input
           type="date"
-          className="border-none bg-transparent text-sm text-slate-700 focus:ring-0 py-2 pr-1 cursor-pointer"
+          className="border-none bg-transparent text-sm text-slate-800 focus:ring-0 py-1.5 pr-1 cursor-pointer"
           onChange={e => jumpToDate(e.target.value)}
           title="Ir a fecha"
         />
       </div>
 
-      <div className="w-px h-6 bg-slate-200" />
-
-      <button
-        onClick={goToday}
-        className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-primary hover:bg-primary/10 rounded-lg border border-slate-200 bg-white shadow-sm transition-colors"
-      >
-        Hoy
-      </button>
-
       {/* View mode toggle */}
       {/* La anual va primera: es el calendario principal (14/08), así que
           encabeza el selector además de ser el modo por defecto. */}
-      <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex rounded-lg border border-slate-300 bg-white shadow-sm overflow-hidden">
         <button
           onClick={() => setViewMode('anual')}
-          className={`p-2 transition-colors ${viewMode === 'anual' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`p-2 transition-colors ${viewMode === 'anual' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-100'}`}
           title="Vista anual — el año completo"
         >
           <CalendarRange className="w-4 h-4" />
         </button>
         <button
           onClick={() => setViewMode('timeline')}
-          className={`p-2 transition-colors ${viewMode === 'timeline' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`p-2 transition-colors ${viewMode === 'timeline' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-100'}`}
           title="Vista timeline"
         >
           <LayoutList className="w-4 h-4" />
         </button>
         <button
           onClick={() => setViewMode('agenda')}
-          className={`p-2 transition-colors ${viewMode === 'agenda' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`p-2 transition-colors ${viewMode === 'agenda' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-100'}`}
           title="Vista agenda (mobile)"
         >
           <Calendar className="w-4 h-4" />
@@ -710,96 +882,118 @@ export function OcupacionPage() {
   );
 
   return (
-    <div className="space-y-3 h-full flex flex-col p-3">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Calendario de Ocupación</h1>
+    <div className="space-y-2 h-full flex flex-col p-2 sm:p-3">
+      {/* Una sola barra: controles, leyenda, filtros y "Nueva operación".
+          El título "Calendario de Ocupación" se fue: el encabezado del panel ya
+          dice "Ocupación", y esa franja era alto que la grilla necesita. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 shrink-0">
+        {renderControls()}
+
+        {/* Leyenda de estados — una sola para las tres vistas. La anual pinta
+            con estos mismos colores desde que dejó de pintar por densidad, así
+            que ya no hay dos leyendas compitiendo en la misma pantalla. */}
+        <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-xs">
+          {/* Sólo los estados de reserva. Los 5 motivos de bloqueo no van uno
+              por uno: se resumen en un único ítem "Bloqueado" al final, con el
+              mismo rayado, para no convertir la leyenda en una lista de 10. */}
+          {ESTADOS_RESERVA_LEYENDA.map((estado) => (
+            <div key={estado} className="flex items-center gap-1.5">
+              <div className={`flex items-center justify-center w-5 h-5 rounded border ${ESTADO_COLORS_EVENTO[estado]}`}>
+                {ESTADO_ICONS[estado]}
+              </div>
+              {/* Con la etiqueta y no con el nombre crudo del estado: sin esto
+                  `pendiente_pago` se leía "Pendiente_pago". */}
+              <span className="text-slate-800 font-medium">
+                {ESTADO_RESERVA_LABEL[estado] ?? estado}
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center justify-center w-5 h-5 rounded border bg-slate-600 border-slate-700 text-white bg-stripes">
+              <Ban className="w-3.5 h-3.5" />
+            </div>
+            <span className="text-slate-800 font-medium">Bloqueado</span>
+          </div>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {renderControls()}
+
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {/* Filtros y zoom: sólo tienen efecto en el timeline, así que sólo
+              aparecen ahí. **Sólo filtran lo que se ve** — no tocan la
+              consulta ni el cupo. */}
+          {viewMode === 'timeline' && (
+            <>
+              <select
+                value={filtroCategoria}
+                onChange={e => setFiltroCategoria(e.target.value)}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-800 shadow-sm"
+                title="Mostrar sólo los autos de una categoría"
+              >
+                <option value="">Todas las categorías</option>
+                {(categoriasData ?? []).map(c => (
+                  <option key={c.id} value={c.id}>{c.nombre}</option>
+                ))}
+              </select>
+
+              {/* Apagar el agrupado devuelve la lista plana por patente, que es
+                  como estaba antes. El agregado es reversible desde la pantalla. */}
+              <button
+                onClick={() => setAgrupar(v => !v)}
+                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold shadow-sm transition-colors ${
+                  agrupar
+                    ? 'border-primary/50 bg-primary/10 text-primary'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                }`}
+                title={agrupar ? 'Ver la flota como lista, ordenada por patente' : 'Agrupar las filas por categoría'}
+              >
+                {agrupar ? 'Por categoría' : 'Lista'}
+              </button>
+
+              <div className="flex rounded-lg border border-slate-300 bg-white shadow-sm overflow-hidden">
+                {([
+                  { v: 'todas', label: 'Todas' },
+                  { v: 'web', label: 'Web' },
+                  { v: 'mostrador', label: 'Mostrador' },
+                ] as const).map(o => (
+                  <button
+                    key={o.v}
+                    onClick={() => setFiltroCanal(o.v)}
+                    className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                      filtroCanal === o.v ? 'bg-primary text-white' : 'text-slate-700 hover:bg-slate-100'
+                    }`}
+                    title="Mostrar sólo las reservas de este canal"
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+
+              <div
+                className="flex rounded-lg border border-slate-300 bg-white shadow-sm overflow-hidden"
+                role="group"
+                aria-label="Tamaño de la grilla"
+              >
+                {(Object.keys(ZOOMS) as Zoom[]).map(z => (
+                  <button
+                    key={z}
+                    onClick={() => cambiarZoom(z)}
+                    aria-pressed={zoom === z}
+                    className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                      zoom === z ? 'bg-slate-800 text-white' : 'text-slate-700 hover:bg-slate-100'
+                    }`}
+                    title={`Tamaño de la grilla: ${ZOOMS[z].label.toLowerCase()}`}
+                  >
+                    {ZOOMS[z].label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           {/* Dos opciones, no una. Ver `MenuNuevaOperacion`. */}
           <MenuNuevaOperacion
             onNuevaReserva={() => { setInitialVehiculoId(undefined); setInitialFecha(undefined); setShowReservaModal(true); }}
             onNuevoContrato={() => { setInitialVehiculoId(undefined); setInitialFecha(undefined); setShowContratoRapido(true); }}
           />
-        </div>
-      </div>
-
-      {/* Leyenda de estados — una sola para las tres vistas. La anual pinta
-          con estos mismos colores desde que dejó de pintar por densidad, así
-          que ya no hay dos leyendas compitiendo en la misma pantalla. */}
-      <div className="flex items-center gap-5 flex-wrap text-sm px-1">
-        {/* Sólo los estados de reserva. Los 5 motivos de bloqueo no van uno
-            por uno: se resumen en un único ítem "Bloqueado" al final, con el
-            mismo rayado, para no convertir la leyenda en una lista de 10. */}
-        {ESTADOS_RESERVA_LEYENDA.map((estado) => (
-          <div key={estado} className="flex items-center gap-2">
-            <div className={`flex items-center justify-center w-5 h-5 rounded border ${ESTADO_COLORS_EVENTO[estado]}`}>
-              {ESTADO_ICONS[estado]}
-            </div>
-            {/* Con la etiqueta y no con el nombre crudo del estado: sin esto
-                `pendiente_pago` se leía "Pendiente_pago". */}
-            <span className="text-slate-600 font-medium">
-              {ESTADO_RESERVA_LABEL[estado] ?? estado}
-            </span>
-          </div>
-        ))}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-5 h-5 rounded border bg-slate-600 border-slate-700 text-white bg-stripes">
-            <Ban className="w-3.5 h-3.5" />
-          </div>
-          <span className="text-slate-600 font-medium">Bloqueado</span>
-        </div>
-
-        {/* Filtros. Van con la leyenda porque son de la misma familia: la
-            leyenda dice qué significan los colores, esto dice qué se muestra.
-            **Sólo filtran lo que se ve** — no tocan la consulta ni el cupo. */}
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
-          <select
-            value={filtroCategoria}
-            onChange={e => setFiltroCategoria(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 shadow-sm"
-            title="Mostrar sólo los autos de una categoría"
-          >
-            <option value="">Todas las categorías</option>
-            {(categoriasData ?? []).map(c => (
-              <option key={c.id} value={c.id}>{c.nombre}</option>
-            ))}
-          </select>
-
-          {/* Apagar el agrupado devuelve la lista plana por patente, que es
-              como estaba antes. El agregado es reversible desde la pantalla. */}
-          <button
-            onClick={() => setAgrupar(v => !v)}
-            className={`rounded-lg border px-2.5 py-1 text-xs font-medium shadow-sm transition-colors ${
-              agrupar
-                ? 'border-primary/25 bg-primary/10 text-primary'
-                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-            }`}
-            title={agrupar ? 'Ver la flota como lista, ordenada por patente' : 'Agrupar las filas por categoría'}
-          >
-            {agrupar ? 'Por categoría' : 'Lista'}
-          </button>
-
-          <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
-            {([
-              { v: 'todas', label: 'Todas' },
-              { v: 'web', label: 'Web' },
-              { v: 'mostrador', label: 'Mostrador' },
-            ] as const).map(o => (
-              <button
-                key={o.v}
-                onClick={() => setFiltroCanal(o.v)}
-                className={`px-2.5 py-1 text-xs font-medium transition-colors ${
-                  filtroCanal === o.v ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'
-                }`}
-                title="Mostrar sólo las reservas de este canal"
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -811,53 +1005,79 @@ export function OcupacionPage() {
       {viewMode === 'timeline' && (
         <div
           ref={scrollContainerRef}
-          className="flex-1 min-h-0 bg-white overflow-auto relative"
+          className="flex-1 min-h-0 bg-white overflow-auto relative rounded-lg border border-slate-300"
         >
+          <style>{CSS_GRILLA}</style>
+          {/* La regla de la columna con el mouse encima. React no le pone
+              contenido: lo escribe `onGridMouseOver`. */}
+          <style ref={hoverStyleRef} />
           {loading ? (
             <div className="flex items-center justify-center h-60">
               <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
             </div>
           ) : (
-            <table className="min-w-full text-sm table-fixed border-collapse">
+            <table
+              className={cn(
+                'ocup-grid min-w-full text-sm table-fixed border-collapse transition-opacity',
+                flashHoy && 'ocup-flash',
+                // Cambio de mes: se sigue viendo la grilla anterior (y el
+                // scroll no se pierde) mientras llega la nueva.
+                recargando && 'opacity-60',
+              )}
+              onMouseOver={onGridMouseOver}
+              onMouseLeave={onGridMouseLeave}
+            >
               <colgroup>
-                <col style={{ width: '220px', minWidth: '220px' }} />
-                {days.map((_, i) => <col key={i} style={{ width: '180px', minWidth: '180px' }} />)}
+                <col style={{ width: ANCHO_COL_NOMBRE, minWidth: ANCHO_COL_NOMBRE }} />
+                {days.map((_, i) => <col key={i} style={{ width: ANCHO_COL, minWidth: ANCHO_COL }} />)}
               </colgroup>
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+                <tr className="bg-slate-100 border-b border-slate-300 sticky top-0 z-40 shadow-sm">
                   <th
-                    className="px-4 py-3 text-left font-semibold text-slate-700 sticky left-0 top-0 bg-slate-50 z-50 border-r border-slate-200 shadow-[1px_0_0_0_#e2e8f0]"
-                    style={{ minWidth: '220px', width: '220px' }}
+                    className="px-3 py-2 text-left text-xs uppercase tracking-wide font-bold text-slate-700 sticky left-0 top-0 bg-slate-100 z-50 border-r border-slate-300 shadow-[1px_0_0_0_#cbd5e1]"
+                    style={{ minWidth: ANCHO_COL_NOMBRE, width: ANCHO_COL_NOMBRE }}
                   >
                     Vehículo
                   </th>
                   {days.map((day, i) => {
                     const today = isToday(day);
-                    const weekend = day.getDay() === 0 || day.getDay() === 6;
+                    const weekend = esFinde(day);
                     return (
                       <th
                         key={i}
-                        className={`py-2 text-center border-r border-slate-200 sticky top-0 z-40 ${
-                          today ? 'bg-primary/10/90 text-primary/90' :
-                          weekend ? 'bg-slate-100/90 text-slate-600' : 'bg-slate-50/90 text-slate-600'
-                        }`}
-                        style={{ minWidth: '180px', width: '180px' }}
+                        data-col={i}
+                        // Hoy, **sólido**: antes era `bg-primary/10/90`, una
+                        // clase que Tailwind no genera — hoy no tenía color y
+                        // el encabezado quedaba transparente.
+                        className={cn(
+                          'py-1.5 px-1 text-center border-r border-slate-300 sticky top-0 z-40 whitespace-nowrap',
+                          today ? 'ocup-hoy bg-primary text-white'
+                            : weekend ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-800',
+                        )}
+                        style={{ minWidth: ANCHO_COL, width: ANCHO_COL }}
                       >
-                        <div className={`font-bold text-[13px] ${today ? 'text-primary/90' : 'text-slate-800'}`}>
-                          {day.getDate()}/{day.getMonth() + 1}/{day.getFullYear()}
-                        </div>
-                        <div className="text-[10px] uppercase tracking-wider font-bold opacity-80 mt-0.5">
-                          {FULL_DAY_LABELS[day.getDay()]}
-                        </div>
+                        <span className="inline-flex items-baseline justify-center gap-1.5">
+                          <span className={cn('ocup-dia-sem text-[11px] uppercase font-semibold', today ? 'text-white' : 'text-slate-600')}>
+                            {SHORT_DAY_LABELS[day.getDay()]}
+                          </span>
+                          <span className="ocup-dia-num font-bold text-sm">
+                            {day.getDate()}/{day.getMonth() + 1}
+                          </span>
+                          {today && (
+                            <span className="rounded bg-white px-1 text-[10px] font-extrabold tracking-wider text-primary">
+                              HOY
+                            </span>
+                          )}
+                        </span>
                       </th>
                     );
                   })}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-slate-300">
                 {vehiculos.length === 0 ? (
                   <tr>
-                    <td colSpan={totalDays + 1} className="text-center py-16 text-slate-500 bg-slate-50">
+                    <td colSpan={totalDays + 1} className="text-center py-16 text-slate-600 bg-slate-50">
                       No hay vehículos activos en la flota
                     </td>
                   </tr>
@@ -870,7 +1090,7 @@ export function OcupacionPage() {
                   {eventosSinAsignar.length > 0 && (
                     <tr className="bg-amber-50">
                       <td
-                        className="px-3 py-1 sticky left-0 bg-amber-50 z-20 border-r border-amber-200 shadow-[1px_0_0_0_#fde68a] align-middle"
+                        className="px-2 py-1 sticky left-0 bg-amber-50 z-20 border-r border-amber-300 shadow-[1px_0_0_0_#fcd34d] align-middle"
                         style={{ height: altoSinAsignar }}
                       >
                         {/* **La etiqueta es el botón.** Las barras se dibujan
@@ -884,12 +1104,12 @@ export function OcupacionPage() {
                           className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-amber-100"
                           title="Ver todas las reservas sin auto asignado"
                         >
-                          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                          <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0" />
                           <div className="flex flex-col min-w-0">
-                            <span className="font-bold text-amber-900 text-[13px] uppercase tracking-wide truncate">
+                            <span className="font-bold text-amber-950 text-[13px] uppercase tracking-wide truncate">
                               Por asignar
                             </span>
-                            <span className="text-amber-800 font-semibold text-[10.5px] truncate">
+                            <span className="text-amber-900 font-semibold text-[11px] truncate">
                               {eventosSinAsignar.length} reserva{eventosSinAsignar.length !== 1 ? 's' : ''} sin auto
                               <span className="ml-1 font-normal underline">— ver todas</span>
                             </span>
@@ -907,8 +1127,9 @@ export function OcupacionPage() {
                         return (
                           <td
                             key={dayIdx}
-                            className="relative border-r border-amber-200/70 p-0"
-                            style={{ minWidth: '180px', width: '180px', height: altoSinAsignar }}
+                            data-col={dayIdx}
+                            className="relative border-r border-amber-300 p-0"
+                            style={{ minWidth: ANCHO_COL, width: ANCHO_COL, height: altoSinAsignar }}
                           >
                             {aDibujar.map(ev => {
                               const { leftPercent, widthPercent } = getEventSpan(ev, day, eventosSinAsignar);
@@ -923,7 +1144,7 @@ export function OcupacionPage() {
                                     e.dataTransfer.setData('text/plain', `reserva:${ev.id}`);
                                   }}
                                   onDragEnd={() => setReservaArrastrada(null)}
-                                  className="absolute rounded-md border border-dashed border-amber-500 bg-amber-200 text-amber-950 shadow-sm cursor-grab active:cursor-grabbing transition-all z-10 overflow-hidden hover:brightness-105"
+                                  className="absolute rounded-md border border-dashed border-amber-600 bg-amber-200 text-amber-950 shadow-sm cursor-grab active:cursor-grabbing transition-all z-10 overflow-hidden hover:brightness-105"
                                   style={{
                                     left: `calc(${leftPercent}% + 1px)`,
                                     width: `calc(${widthPercent}% - 2px)`,
@@ -935,13 +1156,13 @@ export function OcupacionPage() {
                                   }}
                                 >
                                   <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full gap-0.5">
-                                    <div className="font-bold text-[11px] truncate flex items-center gap-1 leading-tight">
+                                    <div className="font-bold text-xs truncate flex items-center gap-1 leading-tight">
                                       <Car className="w-3.5 h-3.5 shrink-0" />
                                       <span className="truncate flex-1">{ev.cliente_nombre}</span>
-                                      {ev.origen === 'web' && <Globe className="h-3 w-3 shrink-0 opacity-90" />}
+                                      {ev.origen === 'web' && <Globe className="h-3 w-3 shrink-0" />}
                                     </div>
                                     {ev.notas && (
-                                      <div className="text-[9px] truncate opacity-80 leading-tight pl-1">
+                                      <div className="text-[10px] font-medium truncate leading-tight pl-1">
                                         {ev.notas}
                                       </div>
                                     )}
@@ -951,7 +1172,7 @@ export function OcupacionPage() {
                                         saber que está. */}
                                     <button
                                       onClick={e => { e.stopPropagation(); abrirAsignacion(ev.id); }}
-                                      className="self-start rounded bg-amber-600 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-white hover:bg-amber-700"
+                                      className="self-start rounded bg-amber-700 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-amber-800"
                                     >
                                       Asignar auto
                                     </button>
@@ -973,7 +1194,7 @@ export function OcupacionPage() {
                     <tr className="bg-sky-100">
                       <td
                         colSpan={days.length + 1}
-                        className="px-0 py-1 bg-sky-100 border-y border-sky-200"
+                        className="px-0 py-1 bg-sky-100 border-y border-sky-300"
                       >
                         {/* **Pegado a la izquierda.** La celda abarca los 120
                             días, así que sin esto el nombre de la categoría se
@@ -987,11 +1208,11 @@ export function OcupacionPage() {
                               s.has(grupo.id) ? s.delete(grupo.id) : s.add(grupo.id);
                               return s;
                             })}
-                            className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-sky-900 hover:text-sky-950"
+                            className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-sky-950 hover:text-black"
                           >
                             <ChevronRight className={`w-3.5 h-3.5 transition-transform ${!gruposCerrados.has(grupo.id) ? 'rotate-90' : ''}`} />
                             {grupo.nombre}
-                            <span className="font-medium text-sky-700">
+                            <span className="font-semibold text-sky-800">
                               · {grupo.vehiculos.length} unidad{grupo.vehiculos.length !== 1 ? 'es' : ''}
                             </span>
                           </button>
@@ -1005,7 +1226,9 @@ export function OcupacionPage() {
                     return (
                       <tr
                         key={vehiculo.id}
-                        className={`hover:bg-slate-50/80 transition-colors group ${draggingVehiculoId === vehiculo.id ? 'opacity-50' : ''}`}
+                        // `ocup-fila`: el hover de la fila entera (fondo,
+                        // marco y patente más grande) vive en `CSS_GRILLA`.
+                        className={`ocup-fila group ${draggingVehiculoId === vehiculo.id ? 'opacity-50' : ''}`}
                         draggable
                         onDragStart={e => handleDragStart(e, vehiculo.id)}
                         onDragOver={handleDragOver}
@@ -1037,33 +1260,35 @@ export function OcupacionPage() {
                           ? { outline: '2px dashed rgba(245,158,11,.45)', outlineOffset: '-2px' }
                           : undefined}
                       >
-                        <td className="px-3 py-1 sticky left-0 bg-white group-hover:bg-slate-50/80 z-20 border-r border-slate-200 shadow-[1px_0_0_0_#e2e8f0] align-middle h-[60px] cursor-grab active:cursor-grabbing">
-                          <div className="flex items-center gap-2">
-                            <GripVertical className="w-4 h-4 text-slate-300 flex-shrink-0" />
+                        <td
+                          className="ocup-nombre px-2 py-1 sticky left-0 z-20 border-r border-slate-300 shadow-[1px_0_0_0_#cbd5e1] align-middle cursor-grab active:cursor-grabbing"
+                          style={{ height: ALTO_FILA }}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <GripVertical className="w-4 h-4 text-slate-500 flex-shrink-0" />
                             <div className="flex flex-col min-w-0">
-                              <span className="font-bold text-slate-800 text-[13px] uppercase tracking-wide truncate">{vehiculo.patente}</span>
-                              <span className="text-slate-700 font-semibold text-[10.5px] truncate">{vehiculo.marca} {vehiculo.modelo}</span>
+                              <span className="ocup-patente font-bold text-slate-900 text-sm uppercase tracking-wide truncate">{vehiculo.patente}</span>
+                              <span className="ocup-modelo text-slate-700 font-semibold text-[11px] truncate">{vehiculo.marca} {vehiculo.modelo}</span>
                             </div>
                           </div>
                         </td>
                         {days.map((day, dayIdx) => {
-                          const dayEvents = getEventsForVehicleDay(vehiculo.id, day);
+                          const dayEvents = getEventsForVehicleDay(vehiculoEvents, day);
                           const eventsToRender = dayEvents.filter(e => {
                             if (processedEvents.has(e.id)) return false;
                             const { isStart } = getEventSpan(e, day, vehiculoEvents);
                             return isStart;
                           });
-                          const today = isToday(day);
-                          const weekend = day.getDay() === 0 || day.getDay() === 6;
-                          const bgClass = today ? 'bg-primary/10/30' : weekend ? 'bg-slate-50/50' : 'bg-white';
+                          const bgClass = claseFondoDia(day);
 
                           if (eventsToRender.length > 0) {
                             eventsToRender.forEach(e => processedEvents.add(e.id));
                             return (
                               <td
                                 key={dayIdx}
-                                className={`relative p-0 border-r border-slate-200 h-[60px] ${bgClass} group/cell cursor-pointer`}
-                                style={{ overflow: 'visible' }}
+                                data-col={dayIdx}
+                                className={`relative p-0 border-r border-slate-300 ${bgClass} group/cell cursor-pointer`}
+                                style={{ overflow: 'visible', height: ALTO_FILA }}
                                 onClick={() => openReserva(vehiculo.id, formatDate(day))}
                               >
                                 {/* En la fila de un auto de Uber no hay `+`:
@@ -1080,10 +1305,10 @@ export function OcupacionPage() {
                                 )}
                                 {eventsToRender.map(ev => {
                                   const { leftPercent, widthPercent } = getEventSpan(ev, day, vehiculoEvents);
-                                  const colorClass = ESTADO_COLORS_EVENTO[ev.estado] || 'bg-slate-500 border-slate-600 text-white';
+                                  const colorClass = ESTADO_COLORS_EVENTO[ev.estado] || 'bg-slate-500 border-slate-700 text-white';
                                   const evDate = new Date(`${ev.fecha_inicio}T${ev.hora_inicio}`);
                                   const isOverdue = (!ev.tiene_alquiler && ev.estado === 'activa') || (ev.estado === 'confirmada' && evDate < new Date());
-                                  
+
                                   const esBloqueo = ES_BLOQUEO(ev.tipo);
 
                                   return (
@@ -1102,13 +1327,16 @@ export function OcupacionPage() {
                                       // justamente lo que no se podía saber
                                       // mirando el calendario.
                                       title={tooltipEvento(ev)}
-                                      className={`absolute inset-y-1 rounded-md border shadow-sm transition-all z-10 overflow-hidden hover:brightness-110 ${
+                                      // Arriba y abajo con `inset-y-1`, sin alto
+                                      // fijo: la barra acompaña el alto de la
+                                      // fila que ponga el zoom.
+                                      className={`absolute inset-y-1 rounded-md border-2 shadow transition-all z-10 overflow-hidden hover:brightness-110 ${
                                         esBloqueo ? 'cursor-default' : 'cursor-pointer'
                                       } ${colorClass}`}
-                                      style={{ left: `calc(${leftPercent}% + 1px)`, width: `calc(${widthPercent}% - 2px)`, minWidth: 0, height: '52px' }}
+                                      style={{ left: `calc(${leftPercent}% + 1px)`, width: `calc(${widthPercent}% - 2px)`, minWidth: 0 }}
                                     >
                                       {isOverdue && (
-                                        <button 
+                                        <button
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             setCheckoutPrompt({ id: ev.id, fecha: ev.fecha_inicio, hora: ev.hora_inicio });
@@ -1134,30 +1362,34 @@ export function OcupacionPage() {
 
                                           El lugar se abrevia (`AERO`) y la hora
                                           de devolución es la **acordada**, no
-                                          el fin del período facturado. */}
-                                      <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full gap-0">
-                                        <div className="flex items-center justify-between text-[10px] font-bold drop-shadow-sm leading-tight w-full gap-1">
+                                          el fin del período facturado.
+
+                                          Sin opacidades en el texto (27/09):
+                                          sobre el color de la barra, un 75% de
+                                          blanco era justo lo que "no se ve". */}
+                                      <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full gap-0.5">
+                                        <div className={`flex items-center justify-between ${TEXTO_BARRA} font-bold leading-tight w-full gap-1`}>
                                           <span className="truncate">
-                                            <span className="opacity-75">E:</span> {ev.lugar_entrega ? `${abreviarLugar(ev.lugar_entrega)} ` : ''}{ev.hora_inicio.slice(0, 5)}
+                                            <span className="font-medium">E:</span> {ev.lugar_entrega ? `${abreviarLugar(ev.lugar_entrega)} ` : ''}{ev.hora_inicio.slice(0, 5)}
                                           </span>
                                           <span className="shrink-0">
-                                            <span className="opacity-75">D:</span> {ev.lugar_devolucion ? `${abreviarLugar(ev.lugar_devolucion)} ` : ''}{horaDevolucion(ev)}
+                                            <span className="font-medium">D:</span> {ev.lugar_devolucion ? `${abreviarLugar(ev.lugar_devolucion)} ` : ''}{horaDevolucion(ev)}
                                           </span>
                                         </div>
-                                        <div className="text-[10px] truncate flex items-center gap-1 leading-tight w-full opacity-95">
+                                        <div className={`${TEXTO_BARRA} font-semibold truncate flex items-center gap-1 leading-tight w-full`}>
                                           {ESTADO_ICONS[ev.estado]}
-                                          <span className="truncate drop-shadow-sm flex-1">
+                                          <span className="truncate flex-1">
                                             {ev.notas || ev.cliente_nombre}
                                           </span>
                                           {/* El canal, como ícono y nunca como
                                               color: el color ya lo tiene tomado
                                               el estado, que tiene su leyenda. */}
                                           {!esBloqueo && ev.origen === 'web' && (
-                                            <Globe className="h-3 w-3 shrink-0 opacity-90" />
+                                            <Globe className="h-3 w-3 shrink-0" />
                                           )}
                                         </div>
                                         {ev.notas && (
-                                          <div className="text-[9px] truncate opacity-80 leading-tight pl-1">
+                                          <div className={`${TEXTO_BARRA_CHICO} font-medium truncate leading-tight pl-1`}>
                                             {ev.cliente_nombre}
                                           </div>
                                         )}
@@ -1171,7 +1403,9 @@ export function OcupacionPage() {
                           return (
                             <td
                               key={dayIdx}
-                              className={`border-r border-slate-200 group/cell p-0 h-[60px] ${bgClass}`}
+                              data-col={dayIdx}
+                              className={`border-r border-slate-300 group/cell p-0 ${bgClass}`}
+                              style={{ height: ALTO_FILA }}
                             >
                               {vehiculo.destino !== 'uber' && (
                                 <div className="w-full h-full flex items-center justify-center opacity-0 group-hover/cell:opacity-100 focus-within:opacity-100 transition-opacity">
@@ -1200,7 +1434,7 @@ export function OcupacionPage() {
 
       {/* VISTA ANUAL (2.8) — pre-vista de los 12 meses, cae en timeline */}
       {viewMode === 'anual' && (
-        <div className="flex-1 min-h-0 overflow-auto bg-white p-4">
+        <div className="flex-1 min-h-0 overflow-auto bg-white p-2 sm:p-3 rounded-lg border border-slate-300">
           <VistaAnualOcupacion
             onSelectMes={onSelectMesAnual}
             onSelectDia={onSelectDiaAnual}
@@ -1278,7 +1512,7 @@ export function OcupacionPage() {
                   const now = new Date();
                   const hours = now.getHours().toString().padStart(2, '0');
                   const mins = now.getMinutes().toString().padStart(2, '0');
-                  const currentDate = now.toISOString().split('T')[0];
+                  const currentDate = fechaLocal(now);
                   setActiveCheckout({ id: checkoutPrompt.id, defaultTime: `${hours}:${mins}`, defaultDate: currentDate });
                   setCheckoutPrompt(null);
                 }}
@@ -1719,7 +1953,11 @@ function VistaAnualOcupacion({
           leyenda de estados que el timeline, que está arriba. Tener dos
           leyendas distintas en la misma pantalla era lo que hacía que nadie
           supiera qué significaba cada color. */}
+      {/* `grande`: es el calendario principal de la pantalla y tiene todo el
+          ancho para él — celdas y números más grandes que en Fechas
+          especiales, donde el cuadro comparte lugar con un panel. */}
       <CalendarioAnual
+        tamano="grande"
         anio={anio}
         onAnioChange={setAnio}
         onSelectMes={mes => onSelectMes(anio, mes)}
@@ -1743,7 +1981,7 @@ function VistaAnualOcupacion({
                     sola se vería igual que uno con una vencida entre diez
                     activas. */}
                 {otros.length > 0 && (
-                  <span className="absolute inset-x-0 bottom-0 flex h-1.5">
+                  <span className="absolute inset-x-0 bottom-0 flex h-2">
                     {otros.map(e => (
                       <span key={e} className={cn('flex-1', soloFondo(chipAnual(e)))} />
                     ))}

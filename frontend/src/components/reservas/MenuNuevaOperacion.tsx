@@ -51,7 +51,11 @@ export function MenuNuevaOperacion({
             title="Nueva reserva o contrato para este auto y este día"
             className={className ?? 'w-full h-full flex items-center justify-center'}
           >
-            <Plus className="w-5 h-5 text-primary/35" />
+            {/* Era `text-primary/35`: sobre la fila resaltada casi no se veía.
+                Ahora es un botón de verdad, blanco con el `+` en color. */}
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-primary shadow ring-1 ring-primary/60">
+              <Plus className="w-4 h-4" strokeWidth={2.75} />
+            </span>
           </button>
         )}
       </DropdownMenuTrigger>
