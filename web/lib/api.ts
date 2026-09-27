@@ -244,6 +244,10 @@ export const api = {
   calcularPrecio: (body: {
     fecha_inicio: string;
     fecha_fin: string;
+    /** "HH:MM". Con los dos, una devolución una hora o más después del
+     *  horario de retiro se cotiza con un día más. */
+    hora_inicio?: string | null;
+    hora_fin?: string | null;
     categoria_id: number;
     adicionales: { adicional_id: number; cantidad: number }[];
     fecha_nacimiento?: string | null;

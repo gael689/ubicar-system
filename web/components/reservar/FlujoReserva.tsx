@@ -121,6 +121,10 @@ export function FlujoReserva() {
       const c = await api.calcularPrecio({
         fecha_inicio: rango.fechaInicio,
         fecha_fin: rango.fechaFin,
+        // Los horarios cambian el precio: devolver una hora o más después
+        // del horario de retiro es un día más, igual que en el mostrador.
+        hora_inicio: rango.horaInicio,
+        hora_fin: rango.horaFin,
         categoria_id: categoria.categoria_id,
         adicionales: Object.entries(adicionales).map(([id, cantidad]) => ({
           adicional_id: Number(id),
@@ -149,7 +153,7 @@ export function FlujoReserva() {
       setCotizando(false);
     }
   }, [
-    categoria, rango.fechaInicio, rango.fechaFin, adicionales,
+    categoria, rango.fechaInicio, rango.fechaFin, rango.horaInicio, rango.horaFin, adicionales,
     cliente.fechaNacimiento, edad, paso, pctAnticipo,
   ]);
 
