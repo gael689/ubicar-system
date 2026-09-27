@@ -194,22 +194,20 @@ class AlquilerService:
                 f"El km de salida ({checkout_km}) no puede ser menor al km actual del vehículo ({vehiculo.km_actual})",
             )
 
-        # D-34: el contrato no bloquea la entrega, pero si el auto sale sin
-        # firmar se exige un motivo y queda constancia visible en la ficha y
-        # en el listado. No alcanza con la advertencia: sin dejar rastro, "se
-        # entregó sin contrato" se vuelve invisible al día siguiente.
+        # D-34: el contrato no bloquea la entrega. Si el auto sale sin firmar
+        # queda la marca `entregado_sin_contrato` —visible en la ficha y en el
+        # listado hasta que se firme— y la advertencia.
+        #
+        # **El motivo ya no es obligatorio** (pedido del mostrador, 27/09): la
+        # pregunta "¿el cliente ya firmó?" en la entrega frenaba cada salida
+        # para escribir siempre lo mismo, y la marca alcanza para no perder el
+        # rastro. Si alguien manda un motivo, se guarda igual.
         warnings = []
         sin_contrato = False
         if not reserva.alquiler or not (reserva.alquiler.contrato_firmado if reserva.alquiler else False):
             if not self._tiene_contrato_firmado(reserva_id):
                 sin_contrato = True
                 warnings.append({"tipo": "contrato_no_firmado", "mensaje": "El contrato aún no está firmado"})
-                if not (motivo_sin_contrato or "").strip():
-                    raise BusinessRuleError(
-                        "motivo_sin_contrato_requerido",
-                        "El vehículo se está entregando sin contrato firmado. "
-                        "Indicá el motivo para dejarlo registrado.",
-                    )
 
         with self.db.begin_nested():
             # Crear alquiler
@@ -223,7 +221,7 @@ class AlquilerService:
                 checkout_registrado_en_tiempo_real=registrado_en_tiempo_real,
                 checkout_estado_limpieza=checkout_estado_limpieza,
                 entregado_sin_contrato=sin_contrato,
-                motivo_sin_contrato=motivo_sin_contrato if sin_contrato else None,
+                motivo_sin_contrato=((motivo_sin_contrato or "").strip() or None) if sin_contrato else None,
                 garantia_tipo=garantia_tipo,
                 garantia_monto=garantia_monto,
                 garantia_estado="retenida" if garantia_tipo and garantia_tipo != "no_aplica" else None,

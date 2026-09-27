@@ -8,6 +8,7 @@ import { useDebounce } from '@/hooks/useDebounce';
 import { usePagosPendientes } from '@/hooks/usePagos';
 import { DaniosPreexistentes } from '@/components/flota/DaniosPreexistentes';
 import { DaniosTab } from '@/components/flota/DaniosTab';
+import { BotonesDeEstado, LIMPIEZA_OPTIONS, type OpcionDeEstado } from '@/components/reservas/BotonesDeEstado';
 
 const FUEL_LEVELS = [
   { value: 0,   label: 'Vacío',  color: 'bg-red-50 border-red-300 text-red-700' },
@@ -17,10 +18,14 @@ const FUEL_LEVELS = [
   { value: 100, label: 'Lleno',  color: 'bg-emerald-50 border-emerald-300 text-emerald-700' },
 ];
 
-const LIMPIEZA_OPTIONS = [
-  { value: 'limpio',                   label: 'Limpio',          icon: '✅' },
-  { value: 'sucio',                    label: 'Sucio',           icon: '🟡' },
-  { value: 'requiere_lavado_profundo', label: 'Lavado prof.',    icon: '🔴' },
+// Existía 'ejecutada_parcial' y no su hermana entera, así que quedarse con toda
+// la garantía había que anotarlo como parcial con monto cero: un dato que dice
+// lo contrario de lo que pasó. Cada opción con su color, como la limpieza.
+const GARANTIA_OPTIONS: OpcionDeEstado[] = [
+  { value: 'devuelta',          label: 'Devuelta',          icon: '✅', color: 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-emerald-500/40' },
+  { value: 'ejecutada_parcial', label: 'Retención parcial', icon: '⚠️', color: 'bg-amber-50 border-amber-500 text-amber-800 ring-amber-500/40' },
+  { value: 'ejecutada_total',   label: 'Retención total',   icon: '⛔', color: 'bg-red-50 border-red-500 text-red-800 ring-red-500/40' },
+  { value: 'retenida',          label: 'Sigue retenida',    icon: '🔒', color: 'bg-sky-50 border-sky-500 text-sky-800 ring-sky-500/40' },
 ];
 
 const GARANTIA_LABEL: Record<string, string> = {
@@ -132,7 +137,7 @@ export function CheckinModal({
   const [combustible, setCombustible] = useState(borrador?.combustible ?? 100);
   const [limpieza, setLimpieza] = useState(borrador?.limpieza ?? 'limpio');
   const [descripcion, setDescripcion] = useState(borrador?.descripcion ?? '');
-  const [registradoEnTiempoReal, setRegistradoEnTiempoReal] = useState(true);
+
   const [decision, setDecision] = useState<DecisionExcedente>(borrador?.decision ?? 'cobrar_completo');
   const [horasACobrar, setHorasACobrar] = useState(borrador?.horasACobrar ?? '');
   const [montoManual, setMontoManual] = useState(borrador?.montoManual ?? '');
@@ -351,7 +356,9 @@ export function CheckinModal({
       horas_a_cobrar: decision === 'cobrar_parcial' ? parseFloat(horasACobrar) : null,
       monto_manual: decision === 'monto_manual' ? parseFloat(montoManual) : null,
       motivo_bonificacion: decision === 'no_cobrar' ? motivo : null,
-      registrado_en_tiempo_real: registradoEnTiempoReal,
+      // Ya no se pregunta: devolución cargada con la fecha de hoy = se está
+      // haciendo ahora; con otra fecha, es la carga de algo que ya pasó.
+      registrado_en_tiempo_real: fecha === todayStr(),
       garantia_estado: garantiaTipo && garantiaTipo !== 'no_aplica' ? garantiaEstado : undefined,
       // **Se manda siempre, no sólo en la retención parcial.** El backend
       // necesita el monto para registrar el egreso de caja: una garantía en
@@ -727,22 +734,7 @@ export function CheckinModal({
           {/* Limpieza */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estado de limpieza</label>
-            <div className="flex gap-2">
-              {LIMPIEZA_OPTIONS.map(l => (
-                <button
-                  key={l.value}
-                  type="button"
-                  onClick={() => setLimpieza(l.value)}
-                  className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1 ${
-                    limpieza === l.value
-                      ? 'bg-primary/10 border-primary/40 text-primary'
-                      : 'bg-muted border-border text-muted-foreground hover:border-primary/30'
-                  }`}
-                >
-                  <span>{l.icon}</span> {l.label}
-                </button>
-              ))}
-            </div>
+            <BotonesDeEstado opciones={LIMPIEZA_OPTIONS} valor={limpieza} onChange={setLimpieza} />
             {limpieza !== 'limpio' && (
               <div className="rounded-xl bg-muted/50 border border-border p-3 space-y-2">
                 <p className="text-[11px] text-muted-foreground">
@@ -795,31 +787,7 @@ export function CheckinModal({
                   {garantiaMonto && ` · $${parseFloat(garantiaMonto).toLocaleString('es-AR')}`}
                 </span>
               </div>
-              <div className="flex gap-2">
-                {[
-                  { value: 'devuelta',          label: 'Devuelta',          icon: '✅' },
-                  { value: 'ejecutada_parcial',  label: 'Retención parcial', icon: '⚠️' },
-                  // Existía 'ejecutada_parcial' y no su hermana entera, así que
-                  // quedarse con toda la garantía había que anotarlo como
-                  // parcial con monto cero: un dato que dice lo contrario de lo
-                  // que pasó.
-                  { value: 'ejecutada_total',    label: 'Retención total',   icon: '⛔' },
-                  { value: 'retenida',           label: 'Sigue retenida',    icon: '🔒' },
-                ].map(g => (
-                  <button
-                    key={g.value}
-                    type="button"
-                    onClick={() => setGarantiaEstado(g.value)}
-                    className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-all ${
-                      garantiaEstado === g.value
-                        ? 'bg-primary/10 border-primary/40 text-primary'
-                        : 'bg-muted border-border text-muted-foreground hover:border-primary/30'
-                    }`}
-                  >
-                    {g.icon} {g.label}
-                  </button>
-                ))}
-              </div>
+              <BotonesDeEstado opciones={GARANTIA_OPTIONS} valor={garantiaEstado} onChange={setGarantiaEstado} />
               {garantiaEstado === 'ejecutada_parcial' && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground">Monto a devolver</label>
@@ -960,18 +928,6 @@ export function CheckinModal({
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="tiempo-real-ci"
-              checked={registradoEnTiempoReal}
-              onChange={e => setRegistradoEnTiempoReal(e.target.checked)}
-              className="w-4 h-4 accent-primary"
-            />
-            <label htmlFor="tiempo-real-ci" className="text-sm text-muted-foreground">
-              Registrado en tiempo real
-            </label>
-          </div>
 
           {(error || localError) && (
             <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">

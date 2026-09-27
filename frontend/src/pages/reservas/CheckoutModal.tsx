@@ -4,7 +4,8 @@ import { useAlquileres } from '@/hooks/useAlquileres';
 import { DaniosPreexistentes } from '@/components/flota/DaniosPreexistentes';
 import { DaniosTab } from '@/components/flota/DaniosTab';
 import { InputMoneda } from '@/components/shared/InputMoneda';
-import { formatMiles } from '@/lib/utils';
+import { formatMiles, hoyLocal, irAlError, extractError } from '@/lib/utils';
+import { BotonesDeEstado, LIMPIEZA_OPTIONS } from '@/components/reservas/BotonesDeEstado';
 import type { Reserva } from '@/types';
 
 interface Props {
@@ -23,12 +24,6 @@ const FUEL_LEVELS = [
   { value: 100, label: 'Lleno',  color: 'bg-emerald-50 border-emerald-300 text-emerald-700' },
 ];
 
-const LIMPIEZA_OPTIONS = [
-  { value: 'limpio',                   label: 'Limpio',          icon: '✅' },
-  { value: 'sucio',                    label: 'Sucio normal',    icon: '🟡' },
-  { value: 'requiere_lavado_profundo', label: 'Lavado profundo', icon: '🔴' },
-];
-
 const GARANTIA_LABEL: Record<string, string> = {
   efectivo:      'Efectivo',
   tarjeta:       'Tarjeta',
@@ -44,36 +39,14 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
   const [combustible, setCombustible] = useState(100);
   const [limpieza, setLimpieza] = useState('limpio');
   const [descripcion, setDescripcion] = useState('');
-  const [registradoEnTiempoReal, setRegistradoEnTiempoReal] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
   const [cargoCheckoutTardio, setCargoCheckoutTardio] = useState<number | ''>('');
   const [motivoCheckoutTardio, setMotivoCheckoutTardio] = useState('');
 
-  // ── Cobrar al entregar ────────────────────────────────────────────────
-  //
-  // **El backend acepta `pago_inmediato` en el check-out desde siempre y esta
-  // pantalla nunca lo ofreció.** Por eso *"puse contado al momento del
-  // check-out"* no dejaba registro de plata en ningún lado: la condición de
-  // pago decía cuándo correspondía cobrar, pero no había dónde decir que se
-  // cobró. El operador tenía que acordarse de ir a Caja después.
-  //
-  // Arranca apagado: entregar el auto y cobrar son dos hechos, y forzar el
-  // segundo haría que alguien lo tilde sin mirar.
-  const [cobrarAhora, setCobrarAhora] = useState(false);
-  const [pagoMonto, setPagoMonto] = useState<number | ''>('');
-  const [pagoMedio, setPagoMedio] = useState('efectivo');
-  // La fecha del reloj de acá, no la de UTC: después de las 21 h, UTC ya es mañana.
-  const [pagoFecha, setPagoFecha] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  });
   // Los daños fotografiados en esta pantalla. El alquiler recién existe al
   // confirmar la entrega, así que viajan con el check-out para quedar atados a
   // él (`DanioService.atar_a_la_entrega`).
   const [daniosIds, setDaniosIds] = useState<number[]>([]);
-  // D-34: el contrato no bloquea la entrega, pero si el auto sale sin firmar
-  // el motivo es obligatorio y queda constancia visible en la ficha.
-  const [motivoSinContrato, setMotivoSinContrato] = useState('');
 
   const garantia = reserva.garantia_tipo && reserva.garantia_tipo !== 'no_aplica'
     ? reserva.garantia_tipo
@@ -99,14 +72,11 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
     e.preventDefault();
     setLocalError(null);
 
-    if (!km) { setLocalError('Ingrese el kilometraje actual'); return; }
+    if (!km) { setLocalError('Falta el kilometraje de salida.'); irAlError('km'); return; }
     const cargo = cargoCheckoutTardio === '' ? 0 : Number(cargoCheckoutTardio);
     if (cargo > 0 && !motivoCheckoutTardio.trim()) {
       setLocalError('Cobrar un cargo por entregar más tarde requiere un motivo.');
-      return;
-    }
-    if (cobrarAhora && (pagoMonto === '' || Number(pagoMonto) <= 0)) {
-      setLocalError('Ingresá el monto que estás cobrando.');
+      irAlError('motivo_checkout_tardio');
       return;
     }
 
@@ -117,23 +87,18 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
         checkout_km: parseInt(km),
         checkout_combustible: combustible,
         checkout_descripcion: descripcion || null,
-        registrado_en_tiempo_real: registradoEnTiempoReal,
+        // Ya no se pregunta: si la entrega se carga con la fecha de hoy, se
+        // está haciendo ahora; si es de otro día, es una carga de algo que pasó.
+        registrado_en_tiempo_real: fecha === hoyLocal(),
         checkout_estado_limpieza: limpieza,
         cargo_checkout_tardio: cargo,
         motivo_checkout_tardio: cargo > 0 ? motivoCheckoutTardio.trim() : null,
-        motivo_sin_contrato: motivoSinContrato.trim() || null,
         danios_ids: daniosIds,
-        pago_inmediato: cobrarAhora && pagoMonto !== '' ? {
-          monto: Number(pagoMonto),
-          medio_pago: pagoMedio,
-          fecha: pagoFecha,
-          notas: 'Cobro al entregar el auto',
-        } : undefined,
       });
       onSuccess();
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      setLocalError(detail?.message || (typeof detail === 'string' ? detail : 'Error al registrar check-out'));
+    } catch (err) {
+      setLocalError(extractError(err, 'No se pudo registrar la entrega.'));
+      irAlError();
     }
   }
 
@@ -226,6 +191,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
               onChange={e => setKm(e.target.value)}
               min={0}
               placeholder="ej: 45000"
+              data-campo="km"
               className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               required
             />
@@ -253,22 +219,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
 
           <div className="space-y-2">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estado de limpieza</label>
-            <div className="flex gap-2">
-              {LIMPIEZA_OPTIONS.map(l => (
-                <button
-                  key={l.value}
-                  type="button"
-                  onClick={() => setLimpieza(l.value)}
-                  className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1 ${
-                    limpieza === l.value
-                      ? 'bg-primary/10 border-primary/40 text-primary'
-                      : 'bg-muted border-border text-muted-foreground hover:border-primary/30'
-                  }`}
-                >
-                  <span>{l.icon}</span> {l.label}
-                </button>
-              ))}
-            </div>
+            <BotonesDeEstado opciones={LIMPIEZA_OPTIONS} valor={limpieza} onChange={setLimpieza} />
           </div>
 
           <div className="space-y-1.5">
@@ -308,26 +259,6 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
             />
           </div>
 
-          {/* D-34 · Entrega sin contrato. No se bloquea —el día que falle el
-              PDF o se corte internet el negocio no se para— pero se advierte
-              fuerte y el motivo queda registrado y visible después. */}
-          <div className="space-y-2 rounded-xl bg-warning p-3 text-white">
-            <p className="text-xs font-semibold">
-              ¿El cliente ya firmó el contrato?
-            </p>
-            <p className="text-xs">
-              Si el auto sale sin contrato firmado, escribí el motivo. Se puede entregar igual,
-              pero queda registrado en la ficha del alquiler hasta que se firme.
-            </p>
-            <input
-              type="text"
-              value={motivoSinContrato}
-              onChange={e => setMotivoSinContrato(e.target.value)}
-              placeholder="Dejar vacío si ya está firmado. Ej: se firma al volver, impresora sin papel"
-              className="w-full px-3 py-2 rounded-lg border border-white/40 bg-white/95 text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
-            />
-          </div>
-
           {esCheckoutTardio && (
             <div className="space-y-2 rounded-xl bg-amber-50 border border-amber-200 p-3">
               <p className="text-xs font-semibold text-amber-800">
@@ -349,6 +280,7 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
                     type="text"
                     value={motivoCheckoutTardio}
                     onChange={e => setMotivoCheckoutTardio(e.target.value)}
+                    data-campo="motivo_checkout_tardio"
                     placeholder="Ej: vuelo demorado, no es responsabilidad nuestra"
                     className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
@@ -357,78 +289,16 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
             </div>
           )}
 
-          {/* ── ¿Se cobra al entregar? ────────────────────────────────
-
-              **Este bloque no existía**, y el backend acepta el cobro en el
-              check-out desde siempre. Por eso *"puse contado al momento del
-              check-out"* no dejaba plata registrada en ningún lado: la reserva
-              decía cuándo correspondía cobrar, pero no había dónde decir que se
-              había cobrado, y había que acordarse de ir a Caja después.
-
-              Arranca apagado a propósito: entregar y cobrar son dos hechos
-              distintos, y prender esto por default haría que se confirme sin
-              mirar. */}
+          {/* El cobro no se hace acá: entregar el auto y cobrar son dos hechos
+              distintos, y el bloque "Cobrar ahora" hacía que se cargue plata
+              sin mirar. Se muestra el saldo para que nadie entregue a ciegas;
+              el cobro va por Cobros o por la cuenta corriente del cliente. */}
           {saldoAlEntregar > 0 && (
-            <div className="rounded-xl border border-warning overflow-hidden">
-              <div className="bg-warning px-4 py-2.5">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={cobrarAhora}
-                    onChange={e => {
-                      setCobrarAhora(e.target.checked);
-                      if (e.target.checked && pagoMonto === '') setPagoMonto(saldoAlEntregar);
-                    }}
-                    className="w-4 h-4 accent-white"
-                  />
-                  <span className="text-sm font-semibold text-white">
-                    Cobrar ahora — quedan ${formatMiles(saldoAlEntregar)} pendientes
-                  </span>
-                </label>
-              </div>
-              {cobrarAhora && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-background">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Monto *</label>
-                    <InputMoneda
-                      value={pagoMonto}
-                      onChange={setPagoMonto}
-                      placeholder={String(saldoAlEntregar)}
-                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Medio *</label>
-                    <select
-                      value={pagoMedio}
-                      onChange={e => setPagoMedio(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    >
-                      <option value="efectivo">Efectivo</option>
-                      <option value="transferencia">Transferencia</option>
-                      <option value="tarjeta">Tarjeta</option>
-                      <option value="mercado_pago">Mercado Pago</option>
-                      <option value="wapa">Wapa</option>
-                      <option value="cheque">Cheque</option>
-                      <option value="echeq">E-cheq</option>
-                      {/* "Se lo anotamos en la cuenta" **no es un cobro**: deja
-                          la constancia de la decisión pero no baja la deuda.
-                          Ver `caja_service.es_plata_que_entro`. */}
-                      <option value="cuenta_corriente">Anotar en la cuenta</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Fecha *</label>
-                    <input
-                      type="date"
-                      value={pagoFecha}
-                      onChange={e => setPagoFecha(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+            <p className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-2.5 text-sm text-foreground">
+              Saldo pendiente de esta reserva: <strong>${formatMiles(saldoAlEntregar)}</strong>
+              {yaCobrado > 0 && <> (ya cobrado ${formatMiles(yaCobrado)})</>}.
+              Se cobra desde Cobros o desde la cuenta corriente del cliente.
+            </p>
           )}
           {saldoAlEntregar <= 0 && totalReserva > 0 && (
             <p className="rounded-xl border border-success/30 bg-success/10 px-4 py-2.5 text-sm text-success">
@@ -436,21 +306,8 @@ export function CheckoutModal({ reserva, onClose, onSuccess, defaultTime, defaul
             </p>
           )}
 
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="tiempo-real"
-              checked={registradoEnTiempoReal}
-              onChange={e => setRegistradoEnTiempoReal(e.target.checked)}
-              className="w-4 h-4 accent-primary"
-            />
-            <label htmlFor="tiempo-real" className="text-sm text-muted-foreground">
-              Se está entregando ahora (no es una carga de algo que ya pasó)
-            </label>
-          </div>
-
           {(error || localError) && (
-            <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            <div data-error-banner className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">
               ❌ {localError || error}
             </div>
           )}
