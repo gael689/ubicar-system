@@ -146,8 +146,9 @@ export interface EcheqCreate {
   fecha_emision: string;
   fecha_cobro: string;
   contraparte: string;
-  banco: string;
-  numero_cheque: string;
+  // Opcionales: sin ellos el echeq queda "pendiente de completar".
+  banco?: string | null;
+  numero_cheque?: string | null;
   cliente_id?: number | null;
   proveedor_nombre?: string | null;
   reserva_id?: number | null;

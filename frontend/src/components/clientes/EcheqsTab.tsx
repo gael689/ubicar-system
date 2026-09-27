@@ -7,24 +7,18 @@ import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { useEcheqs, useActualizarEcheq } from '@/hooks/useEcheqs';
 import { ESTADO_ECHEQ_LABEL, ESTADO_ECHEQ_COLOR } from '@/lib/constants';
 import { formatCurrency, formatDate, extractError, cn } from '@/lib/utils';
+import { ESTADOS_TRANSICION, ordenarEcheqs } from '@/lib/echeqs';
 import type { Echeq, EstadoEcheq } from '@/types';
-
-const ESTADOS_TRANSICION: Record<string, EstadoEcheq[]> = {
-  en_cartera: ['depositado', 'endosado', 'rechazado', 'cobrado'],
-  depositado: ['cobrado', 'rechazado'],
-  endosado: ['cobrado', 'rechazado'],
-  pendiente: ['cobrado', 'rechazado', 'en_cartera'],
-  cobrado: [],
-  rechazado: [],
-  vencido: [],
-};
 
 interface Props {
   clienteId: number;
 }
 
 export function EcheqsTab({ clienteId }: Props) {
-  const { data: echeqs = [], isLoading } = useEcheqs({ cliente_id: clienteId });
+  const { data: sinOrden = [], isLoading } = useEcheqs({ cliente_id: clienteId });
+  // El mismo orden que la pantalla de Echeqs: primero lo que pide una acción
+  // (pendientes de completar, en cartera por vencimiento), los cerrados al final.
+  const echeqs = ordenarEcheqs(sinOrden);
   const actualizar = useActualizarEcheq();
   const [rechazando, setRechazando] = useState<Echeq | null>(null);
   const [completandoId, setCompletandoId] = useState<number | null>(null);
