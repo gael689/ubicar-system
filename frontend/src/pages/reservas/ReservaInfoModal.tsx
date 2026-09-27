@@ -149,7 +149,11 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
 
   const sinAlquiler = !reserva.alquiler_id;
   const conAlquilerActivo = reserva.alquiler_id && reserva.alquiler_estado === 'activo';
-  const cancelable = reserva.estado === 'confirmada' && sinAlquiler;
+  // Una "activa" o "vencida" sin alquiler es una reserva a la que nunca se le
+  // entregó el auto (las que el reloj movía solo antes del 27/09): se tiene que
+  // poder cancelar, si no queda trabada con la seña adentro.
+  const cancelable =
+    sinAlquiler && ['confirmada', 'activa', 'vencida'].includes(reserva.estado);
   const editable = reserva.estado === 'confirmada' || reserva.estado === 'activa' || reserva.estado === 'vencida';
   const puedeCheckout = sinAlquiler && reserva.estado !== 'cancelada' && reserva.estado !== 'finalizada';
   /**
