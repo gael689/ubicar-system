@@ -511,7 +511,7 @@ def saldo_pendiente_al_finalizar(db: Session, hoy: date) -> list[dict]:
             items.append({
                 "tipo": "saldo_pendiente_alquiler",
                 "titulo": "Saldo pendiente al finalizar",
-                "descripcion": f"Reserva #{r.id} finalizada adeuda ${saldo_pendiente:,.2f} ({dias_vencido} días vencido)",
+                "descripcion": f"Reserva #{r.id} finalizada adeuda {pesos_ar(saldo_pendiente)} ({dias_vencido} días vencido)",
                 "urgencia": "alta" if dias_vencido > 3 else "media",
                 "entidad_tipo": "alquiler",
                 "entidad_id": a.id,
@@ -1350,6 +1350,7 @@ def datos_empresa_sin_cargar(db: Session, hoy: date) -> list[dict]:
 # saber que no es un DNI. Se reexporta acá para no romper lo que ya la importa
 # desde este módulo.
 from app.domain.enums import MARCA_PENDIENTE  # noqa: E402
+from app.utils.helpers import pesos_ar
 
 
 def cliente_sin_completar(db: Session, hoy: date) -> list[dict]:

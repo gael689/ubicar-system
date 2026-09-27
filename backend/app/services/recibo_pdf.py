@@ -14,6 +14,7 @@ from reportlab.pdfgen import canvas
 
 from app.domain.monto_letras import monto_a_letras
 from app.models.recibo import Recibo
+from app.utils.helpers import pesos_ar
 
 _LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
 
@@ -94,7 +95,7 @@ def generar_pdf_recibo(recibo: Recibo, cliente_nombre: str, cliente_dni: str) ->
     labels = ["Saldo anterior", "Este pago", "Saldo actual"]
     valores = [
         _formato_saldo(recibo.saldo_anterior),
-        f"$ {recibo.monto:,.2f}",
+        pesos_ar(recibo.monto, "$ "),
         _formato_saldo(recibo.saldo_posterior),
     ]
     c.setStrokeColor(_BORDER)
@@ -142,8 +143,8 @@ def _formato_saldo(saldo) -> str:
     con la aclaración, igual que en CuentaCorrienteTab.tsx del frontend."""
     monto = abs(saldo)
     if saldo < 0:
-        return f"$ {monto:,.2f} (a favor)"
-    return f"$ {monto:,.2f}"
+        return pesos_ar(monto, "$ ") + " (a favor)"
+    return pesos_ar(monto, "$ ")
 
 
 def _wrap(text: str, width: int) -> list[str]:

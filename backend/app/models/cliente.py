@@ -107,8 +107,9 @@ class ConductorAdicional(Base):
     # causa raíz de "cargué el conductor y no salió en el contrato".
     licencia_vencimiento: Mapped[date | None] = mapped_column(Date(), nullable=True)
     # La cláusula 2.h pide nombre, documento y dirección para autorizar a un
-    # conductor adicional. El contrato ya intentaba leerlo con `getattr`.
-    domicilio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # conductor adicional. La columna existe desde la migración 046; faltaba
+    # declararla acá, y por eso el contrato la leía con `getattr`.
+    domicilio: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Quien maneja puede no ser quien paga: si la reserva designa un conductor
     # adicional, la edad y la licencia que valen son las suyas. Ya no cambia el
     # precio (se retiró el recargo por franja etaria, D-38); sigue decidiendo

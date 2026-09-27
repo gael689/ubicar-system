@@ -1,4 +1,4 @@
-"""Representante de la empresa y hasta tres conductores por reserva
+﻿"""Representante de la empresa y hasta tres conductores por reserva
 
 Pedido del cliente (27/09/2026, txt 20, 21 y 28):
 
@@ -10,9 +10,9 @@ Pedido del cliente (27/09/2026, txt 20, 21 y 28):
 2. **El vencimiento de la licencia de un conductor deja de ser obligatorio.**
    Era la causa raíz de "cargué el conductor y no impactó en el contrato": el
    formulario mandaba el vencimiento vacío, la API contestaba 422 y el
-   conductor nunca se guardaba — sin que la pantalla lo dijera. Se agrega
-   también el domicilio, que la cláusula 2.h pide para autorizar a un
-   conductor adicional y que el contrato ya intentaba leer.
+   conductor nunca se guardaba — sin que la pantalla lo dijera. El domicilio
+   (que pide la cláusula 2.h) ya existía en la tabla desde la 046; sólo faltaba
+   declararlo en el modelo.
 3. **Hasta tres conductores por reserva** (`reserva_conductores`). La columna
    `reservas.conductor_id` queda como el conductor principal: es la que mira
    la edad mínima (D-51) y la que leen las reservas viejas. Se copia una fila
@@ -42,7 +42,8 @@ def upgrade() -> None:
         "conductores_adicionales", "licencia_vencimiento",
         existing_type=sa.Date(), nullable=True,
     )
-    op.add_column("conductores_adicionales", sa.Column("domicilio", sa.Text(), nullable=True))
+    # `domicilio` ya existe desde la 046 (String 255): el modelo no lo declaraba,
+    # por eso parecía faltar. Agregarla de nuevo rompe el deploy en Postgres.
 
     op.create_table(
         "reserva_conductores",
@@ -74,7 +75,6 @@ def downgrade() -> None:
     op.drop_index("ix_reserva_conductores_conductor_id", table_name="reserva_conductores")
     op.drop_index("ix_reserva_conductores_reserva_id", table_name="reserva_conductores")
     op.drop_table("reserva_conductores")
-    op.drop_column("conductores_adicionales", "domicilio")
     # Volver a NOT NULL fallaría con conductores cargados sin vencimiento: se
     # completan con la fecha de hoy antes, que es el dato menos engañoso
     # (una licencia "vencida hoy" pide revisarla, no la da por buena).

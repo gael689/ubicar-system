@@ -18,6 +18,7 @@ from app.models.usuario import Usuario
 from app.schemas.adicional import (
     AdicionalCreate, AdicionalResponse, AdicionalUpdate,
 )
+from app.utils.helpers import pesos_ar
 
 router = APIRouter(prefix="/adicionales", tags=["Adicionales"])
 
@@ -119,9 +120,9 @@ def _validar_franquicia(db: Session, a: Adicional) -> None:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Este descuento baja ${descuento:,.0f} y la categoría más barata "
-                f"tiene una base de ${base_minima:,.0f}: la franquicia quedaría por "
-                f"debajo del mínimo de ${FRANQUICIA_MINIMA:,.0f}. Subí la base de esa "
+                f"Este descuento baja {pesos_ar(descuento)} y la categoría más barata "
+                f"tiene una base de {pesos_ar(base_minima)}: la franquicia quedaría por "
+                f"debajo del mínimo de {pesos_ar(FRANQUICIA_MINIMA)}. Subí la base de esa "
                 f"categoría o bajá el descuento."
             ),
         )
@@ -140,7 +141,7 @@ def _validar_franquicia(db: Session, a: Adicional) -> None:
                 status_code=422,
                 detail=(
                     f"'{a.nombre}' baja más la franquicia que '{otra.nombre}' "
-                    f"(${descuento:,.0f} contra ${descuento_otra:,.0f}) y no cuesta más. "
+                    f"({pesos_ar(descuento)} contra {pesos_ar(descuento_otra)}) y no cuesta más. "
                     f"A mayor cobertura, mayor precio."
                 ),
             )
@@ -149,7 +150,7 @@ def _validar_franquicia(db: Session, a: Adicional) -> None:
                 status_code=422,
                 detail=(
                     f"'{a.nombre}' baja menos la franquicia que '{otra.nombre}' "
-                    f"(${descuento:,.0f} contra ${descuento_otra:,.0f}) y no cuesta menos. "
+                    f"({pesos_ar(descuento)} contra {pesos_ar(descuento_otra)}) y no cuesta menos. "
                     f"A menor cobertura, menor precio."
                 ),
             )

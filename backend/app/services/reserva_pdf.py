@@ -55,6 +55,11 @@ _FORMA_PAGO_LABEL = {
     "cheque": "Cheque",
     "echeq": "E-cheq",
     "cuenta_corriente": "Cuenta corriente",
+    # Faltaban: una reserva web pagada salía con el código crudo "mercado_pago".
+    "mercado_pago": "Mercado Pago",
+    "wapa": "Wapa",
+    "tarjeta_credito": "Tarjeta de crédito",
+    "tarjeta_debito": "Tarjeta de débito",
 }
 
 _CONDICION_PAGO_LABEL = {
@@ -92,9 +97,31 @@ def _hora(h: time | None) -> str:
 
 
 def _money(v: Decimal | float | None) -> str:
-    if v is None:
+    """`150000` → `$ 150.000`; `1234.5` → `$ 1.234,50`.
+
+    Antes salía con el formato de Python (`$ 150,000.00`): coma de miles y
+    punto decimal, al revés de como se lee acá. Un cliente leía "$ 20.00" y no
+    sabía si eran veinte pesos o veinte mil. Los centavos sólo se imprimen si
+    existen, como en la pantalla.
+    """
+    from app.utils.helpers import pesos_ar
+
+    return pesos_ar(v, "$ ")
+
+
+def _documento(valor: str | None) -> str:
+    """DNI con puntos (`40.123.456`) y CUIT con guiones (`20-40123456-3`), igual
+    que en la pantalla. `A COMPLETAR` u otro texto se deja como está."""
+    if not valor:
         return "—"
-    return f"$ {Decimal(str(v)):,.2f}"
+    digitos = "".join(ch for ch in valor if ch.isdigit())
+    if digitos != valor.strip():
+        return valor
+    if len(digitos) == 11:
+        return f"{digitos[:2]}-{digitos[2:10]}-{digitos[10]}"
+    if len(digitos) in (7, 8):
+        return f"{int(digitos):,}".replace(",", ".")
+    return valor
 
 
 def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
@@ -168,7 +195,13 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     y = _seccion(c, "DATOS DEL CLIENTE", margin, y, width)
     filas_cliente = [
         ("Nombre", cliente.nombre_completo),
-        ("DNI / CUIT", cliente.dni_cuit or "—"),
+        # "DNI / CUIT" obligaba a adivinar cuál era: se dice el que es.
+        (
+            "CUIT" if getattr(cliente, "tipo", None) == "empresa"
+            or len("".join(ch for ch in (cliente.dni_cuit or "") if ch.isdigit())) == 11
+            else "DNI",
+            _documento(cliente.dni_cuit),
+        ),
         ("Teléfono", cliente.telefono or "—"),
         ("Email", cliente.email or "—"),
     ]

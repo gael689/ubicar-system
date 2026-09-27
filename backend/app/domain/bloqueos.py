@@ -29,6 +29,7 @@ from app.models.alquiler import Alquiler
 from app.models.cuenta_corriente import CuentaCorriente
 from app.models.multa import Multa
 from app.models.reserva import Reserva
+from app.utils.helpers import pesos_ar
 
 Severidad = Literal["bloqueante", "advertencia"]
 
@@ -54,8 +55,8 @@ def _deuda_cliente(db: Session, cliente_id: int) -> BloqueoItem | None:
         return None
     saldo = float(cc.saldo)
     if cc.bloqueada:
-        return BloqueoItem("cuenta_bloqueada", f"La cuenta corriente del cliente está bloqueada (saldo ${saldo:,.2f})", "bloqueante")
-    return BloqueoItem("deuda_previa", f"El cliente tiene un saldo pendiente de ${saldo:,.2f}", "advertencia")
+        return BloqueoItem("cuenta_bloqueada", f"La cuenta corriente del cliente está bloqueada (saldo {pesos_ar(saldo)})", "bloqueante")
+    return BloqueoItem("deuda_previa", f"El cliente tiene un saldo pendiente de {pesos_ar(saldo)}", "advertencia")
 
 
 # Si el mostrador está pidiendo garantía/depósito al armar una reserva.
