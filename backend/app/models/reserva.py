@@ -139,6 +139,12 @@ class Reserva(Base):
     condicion_pago_ancla: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Sólo si condicion_pago_ancla == 'fecha_especifica'.
     condicion_pago_fecha_ancla: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    # Aclaración libre de la condición de pago (migración 097): "50% al
+    # retirar y el resto a 15 días", "paga la empresa contra factura". Las
+    # opciones fijas no alcanzan para lo que se pacta de verdad, y lo pactado
+    # tiene que salir en el PDF de la reserva, no quedar en la memoria de quien
+    # la cargó.
+    condicion_pago_texto: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Factura (sólo descriptivo por ahora — sin integración AFIP real, ver
     # Plan Maestro decisión #5).

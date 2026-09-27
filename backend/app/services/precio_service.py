@@ -10,7 +10,7 @@ de `domain/precios.py`, que es quien decide.
 **Es la única fuente de precios del sistema.** El sistema interno, el
 cotizador y la web llaman todos acá — "la idea es acoplar todo a esto".
 """
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func
@@ -31,6 +31,7 @@ from app.domain.tarifas import (
     TarifaInfo,
     calcular_duracion_dias,
     cotizar_por_bandas,
+    dias_facturables,
 )
 from app.domain.edades import calcular_edad
 from app.models.adicional import Adicional
@@ -272,6 +273,8 @@ class PrecioService:
         edad_conductor: int | None = None,
         porcentaje_anticipo: int | None = None,
         mismo_dia_es_un_dia: bool = False,
+        hora_inicio: time | str | None = None,
+        hora_fin: time | str | None = None,
     ) -> tuple[Cotizacion, int | None]:
         """
         Cotiza un alquiler. Devuelve (cotización, categoria_id efectiva).
@@ -305,6 +308,11 @@ class PrecioService:
         if mismo_dia_es_un_dia and duracion == 0:
             # Retiro y devolución el mismo día: se cobra el día de retiro.
             duracion = 1
+        elif duracion >= 1:
+            # Con horarios, una devolución que se pasa una hora o más del
+            # horario de retiro suma un día (A1). La banda se elige con esa
+            # duración: 6 días y horas ya son una semana.
+            duracion = dias_facturables(fecha_inicio, hora_inicio, fecha_fin, hora_fin)
         reglas = self._cargar_reglas(fecha_inicio, fecha_fin, categoria_id, vehiculo_id)
         precio_fallback, nombre_fallback = self._precio_banda(
             duracion, categoria_id, vehiculo_id, canal
@@ -327,6 +335,8 @@ class PrecioService:
                 adicionales=adicionales_cargados,
                 porcentaje_anticipo=porcentaje_anticipo,
                 mismo_dia_es_un_dia=mismo_dia_es_un_dia,
+                hora_inicio=hora_inicio,
+                hora_fin=hora_fin,
             )
 
         adicionales_cargados = self._cargar_adicionales(adicionales or [])

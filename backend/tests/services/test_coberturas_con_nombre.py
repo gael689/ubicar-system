@@ -74,7 +74,6 @@ class TestElAsteriscoLlegaAlPapel:
     @pytest.mark.parametrize(
         "clave, nombre, marca",
         [
-            ("mid", "Exención por Daños (LDW)", "*"),
             ("top", "Top Cover", "**"),
             ("super_top", "Super Top Cover", "***"),
         ],
@@ -88,6 +87,16 @@ class TestElAsteriscoLlegaAlPapel:
         contratada = bloque["contratadas"][0]
         assert contratada["nombre"] == nombre
         assert contratada["marca"] == marca
+
+    def test_la_incluida_no_se_repite_como_contratada(self, db, catalogo, armar):
+        """
+        La Exención por Daños (LDW) viene en el precio y el anverso la imprime
+        siempre. Una reserva que la tenía tildada como opción (antes el wizard
+        la ofrecía como chip) la mostraba dos veces: como incluida y como
+        "cobertura contratada" (plan 27/09, txt 5).
+        """
+        bloque = ContratoService(db)._bloque_coberturas(armar(catalogo["mid"]))
+        assert bloque["contratadas"] == []
 
     def test_una_cobertura_de_otro_codigo_no_inventa_asterisco(self, db, armar):
         """
@@ -166,9 +175,8 @@ class TestLaFranquiciaNoEsUnCargo:
         reserva = armar(catalogo["mid"], base="3000000")
         bloque = ContratoService(db)._bloque_coberturas(reserva)
         assert bloque["franquicia"] == 3_000_000
-        # No descuenta nada, así que el anverso no imprime un "baja la
-        # franquicia en $ 0" que se leería como un error de carga.
-        assert bloque["contratadas"][0]["descuento"] is None
+        # Y no se lista como contratada: el anverso ya la imprime siempre.
+        assert bloque["contratadas"] == []
 
 
 class TestElClausuladoNombraLoQueElAnversoImprime:

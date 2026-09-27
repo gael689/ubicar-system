@@ -129,6 +129,8 @@ class ReservaCreate(BaseModel):
     condicion_pago: str = "contado"
     condicion_pago_ancla: Literal["checkout", "checkin", "fecha_especifica"] | None = None
     condicion_pago_fecha_ancla: date | None = None
+    # Aclaración libre (migración 097): sale en el PDF de la reserva.
+    condicion_pago_texto: str | None = None
     # Factura — sólo descriptivo, sin integración AFIP real todavía.
     tipo_factura: Literal["A", "B", "C"] | None = None
     factura_a_nombre_de: str | None = None
@@ -175,6 +177,13 @@ class ReservaUpdate(BaseModel):
     anticipo_monto: Decimal | None = None
     anticipo_fecha: date | None = None
     anticipo_medio_pago: str | None = None
+    # La condición de pago se decide al reservar pero se renegocia: antes no
+    # había forma de corregirla sin rehacer la reserva. `condicion_pago_texto`
+    # vacío ("") borra la aclaración; `None` no la toca.
+    condicion_pago: str | None = None
+    condicion_pago_ancla: Literal["checkout", "checkin", "fecha_especifica"] | None = None
+    condicion_pago_fecha_ancla: date | None = None
+    condicion_pago_texto: str | None = None
 
 
 class ReasignarRequest(BaseModel):
@@ -251,6 +260,7 @@ class ReservaResponse(BaseModel):
     condicion_pago: str = "contado"
     condicion_pago_ancla: str | None = None
     condicion_pago_fecha_ancla: date | None = None
+    condicion_pago_texto: str | None = None
     tipo_factura: str | None = None
     factura_a_nombre_de: str | None = None
     echeq_banco: str | None = None

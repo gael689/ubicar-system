@@ -1,5 +1,5 @@
 """Schemas del motor de precios por calendario (Fase 5, ítem 57 — plan §7.2)."""
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Literal
 
@@ -195,6 +195,11 @@ class CalcularPrecioRequest(BaseModel):
     # Ya no cambia el precio (se retiró el recargo por franja etaria, D-38).
     # Se conserva porque quien llama la usa para validar la edad mínima (D-51).
     fecha_nacimiento: date | None = None
+    # Horarios de retiro y devolución (A1). Opcionales: con los dos, una
+    # devolución que se pasa una hora o más del horario de retiro se cotiza
+    # con un día más (`tarifas.dias_facturables`). Sin ellos, sólo fechas.
+    hora_inicio: time | None = None
+    hora_fin: time | None = None
 
     @model_validator(mode="after")
     def _validar(self):

@@ -129,6 +129,9 @@ def calcular_precio(
             # Este endpoint es del sistema interno: el mostrador puede cargar
             # un alquiler que sale y vuelve el mismo día, y se cobra como uno.
             mismo_dia_es_un_dia=True,
+            # Opcionales: sin ellos se cotiza sólo por fechas, como antes.
+            hora_inicio=payload.hora_inicio,
+            hora_fin=payload.hora_fin,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

@@ -14,7 +14,7 @@ from app.domain.enums import EstadoReserva, EstadoVehiculo
 from app.domain.solapamientos import detectar_solapamientos, rango_de_carga
 from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
 from app.domain.tarifas import (
-    cotizar_por_bandas, duracion_facturable_dias, canal_de_origen, TarifaInfo,
+    cotizar_por_bandas, dias_facturables, canal_de_origen, TarifaInfo,
 )
 from app.models.adicional import Adicional, ReservaAdicional
 from app.models.bloqueo_vehiculo import BloqueoVehiculo
@@ -65,6 +65,23 @@ def _ultimos_cuatro(valor: str | None) -> str | None:
         return None
     digitos = "".join(c for c in valor if c.isdigit())
     return digitos[-4:] or None
+
+
+# Diferencias con el precio de lista por debajo de un peso no son un descuento:
+# son redondeo. El mostrador escribe precios redondos y la cotización puede
+# traer centavos (una semana de $150.000 repartida en días), así que sin esta
+# tolerancia "$149.999,99 vs $150.000" pedía un motivo que nadie decidió. El
+# frontend compara con la misma tolerancia (`ReservaModal`, `ContratoRapidoModal`).
+TOLERANCIA_DESCUENTO = Decimal("1")
+
+MENSAJE_DESCUENTO_SIN_MOTIVO = "El precio es menor al de lista: indicá el motivo."
+
+
+def es_descuento_que_pide_motivo(precio_total, precio_lista) -> bool:
+    """¿El precio cargado queda por debajo del de lista por un peso o más?"""
+    if precio_total is None or precio_lista is None:
+        return False
+    return Decimal(str(precio_lista)) - Decimal(str(precio_total)) >= TOLERANCIA_DESCUENTO
 
 
 class ReservaService:
@@ -191,7 +208,7 @@ class ReservaService:
                 "el alquiler ya se facturó en la cuenta corriente",
             )
 
-        duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        duracion = dias_facturables(reserva.fecha_inicio, reserva.hora_inicio, reserva.fecha_fin, reserva.hora_fin)
         pedidos = {aid: cant for aid, cant in solicitados}
 
         if pedidos:
@@ -335,7 +352,7 @@ class ReservaService:
         dispararía. Es el mismo criterio que ya aplica `sincronizar_adicionales`
         y el cotizador.
         """
-        duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        duracion = dias_facturables(reserva.fecha_inicio, reserva.hora_inicio, reserva.fecha_fin, reserva.hora_fin)
         for ra in reserva.adicionales:
             if ra.unidad_cobro == "por_dia":
                 ra.subtotal = self._subtotal_adicional(
@@ -359,7 +376,7 @@ class ReservaService:
         alquiler cambia. Corregir una reserva de $100.000 a $140.000 dejaba la
         cobertura cobrando el 30% de la cifra vieja, en silencio.
         """
-        duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        duracion = dias_facturables(reserva.fecha_inicio, reserva.hora_inicio, reserva.fecha_fin, reserva.hora_fin)
         for ra in reserva.adicionales:
             a = ra.adicional
             if a is None or a.porcentaje_sobre_alquiler is None:
@@ -444,6 +461,7 @@ class ReservaService:
         condicion_pago: str = "contado",
         condicion_pago_ancla: str | None = None,
         condicion_pago_fecha_ancla: date | None = None,
+        condicion_pago_texto: str | None = None,
         tipo_factura: str | None = None,
         factura_a_nombre_de: str | None = None,
         echeq_banco: str | None = None,
@@ -557,8 +575,10 @@ class ReservaService:
         # es lo único que permite auditar un descuento después (ítem 22).
         tarifa_id = None
         precio_lista: Decimal | None = None
-        # Mínimo un día: retiro y devolución el mismo día es un alquiler de un día.
-        duracion = duracion_facturable_dias(fecha_inicio, fecha_fin)
+        # Mínimo un día: retiro y devolución el mismo día es un alquiler de un
+        # día. Y una devolución que se pasa una hora o más del horario de
+        # retiro suma un día (A1): ya no hace falta tildar "late check-in".
+        duracion = dias_facturables(fecha_inicio, hora_inicio, fecha_fin, hora_fin)
 
         # **El precio de lista sale del mismo motor que el precio cobrado.**
         #
@@ -588,6 +608,8 @@ class ReservaService:
                 adicionales=None,
                 fecha_nacimiento=nacimiento,
                 mismo_dia_es_un_dia=True,
+                hora_inicio=hora_inicio,
+                hora_fin=hora_fin,
             )
             precio_lista = cotizacion_lista.total
         except (BusinessRuleError, NotFoundError):
@@ -646,14 +668,13 @@ class ReservaService:
         # guardando la diferencia, y `descuento_autorizado_por` sigue diciendo
         # quién la autorizó. Lo que se saca es la puerta, no el registro.
         descuento_autorizado_por = None
-        if precio_lista is not None and precio_total is not None and precio_total != precio_lista:
-            es_descuento = precio_total < precio_lista
+        if (
+            precio_lista is not None and precio_total is not None
+            and abs(Decimal(str(precio_total)) - Decimal(str(precio_lista))) >= TOLERANCIA_DESCUENTO
+        ):
+            es_descuento = es_descuento_que_pide_motivo(precio_total, precio_lista)
             if es_descuento and (not descuento_motivo or not descuento_motivo.strip()):
-                raise BusinessRuleError(
-                    "descuento_sin_motivo",
-                    f"El precio cargado (${precio_total}) es menor al precio de lista "
-                    f"(${precio_lista}) — hace falta un motivo para la diferencia",
-                )
+                raise BusinessRuleError("descuento_sin_motivo", MENSAJE_DESCUENTO_SIN_MOTIVO)
             if not es_descuento and (not descuento_motivo or not descuento_motivo.strip()):
                 descuento_motivo = "Precio acordado por encima del de lista"
             descuento_autorizado_por = usuario_id
@@ -692,6 +713,7 @@ class ReservaService:
                 condicion_pago=condicion_pago,
                 condicion_pago_ancla=condicion_pago_ancla,
                 condicion_pago_fecha_ancla=condicion_pago_fecha_ancla if condicion_pago_ancla == "fecha_especifica" else None,
+                condicion_pago_texto=(condicion_pago_texto or "").strip() or None,
                 tipo_factura=tipo_factura if con_factura else None,
                 factura_a_nombre_de=factura_a_nombre_de if con_factura else None,
                 echeq_banco=echeq_banco,
@@ -712,6 +734,24 @@ class ReservaService:
                 usuario_id=usuario_id,
             )
             self.reserva_repo.create(reserva)
+
+            # Adicionales contratados (coberturas y extras). Van fuera de
+            # precio_total: se suman recién al facturar, igual que
+            # cargo_late_checkout. Ver Reserva.total_adicionales.
+            #
+            # Se sincronizan **antes** de asentar la seña, y no después como
+            # antes: sin los adicionales el total de la reserva no se conoce, y
+            # "pagado" tiene que ser ese total (abajo).
+            self.sincronizar_adicionales(reserva, adicionales)
+
+            # **"Pagado" es todo lo que la reserva cobra, no el precio del
+            # auto.** La pantalla mandaba como anticipo sólo `precio_total`, así
+            # que una reserva con seguro quedaba "pagada" y con el seguro
+            # pendiente para siempre (plan 27/09, txt 14). El total lo decide
+            # el servidor, que es quien sabe cuánto suman los adicionales.
+            if estado_pago == "pagado":
+                anticipo_monto = self.total_a_cobrar(reserva)
+                reserva.anticipo_monto = anticipo_monto
 
             # Si el medio de pago (previsto, o el del anticipo ya cobrado) es
             # "echeq", se crea el Echeq vinculado a esta reserva — puede
@@ -768,11 +808,6 @@ class ReservaService:
                     usuario_id,
                     con_credito=not es_echeq,
                 )
-
-            # Adicionales contratados (coberturas y extras). Van fuera de
-            # precio_total: se suman recién al facturar, igual que
-            # cargo_late_checkout. Ver Reserva.total_adicionales.
-            self.sincronizar_adicionales(reserva, adicionales)
 
             # Actualizar estado del vehículo a reservado si corresponde.
             # En una reserva por categoría no hay auto que marcar: marcar uno
@@ -838,6 +873,10 @@ class ReservaService:
         anticipo_fecha: date | None = None,
         anticipo_medio_pago: str | None = None,
         adicionales: list[tuple[int, int]] | None = None,
+        condicion_pago: str | None = None,
+        condicion_pago_ancla: str | None = None,
+        condicion_pago_fecha_ancla: date | None = None,
+        condicion_pago_texto: str | None = None,
     ) -> tuple[Reserva, list[dict]]:
         """Actualiza una reserva en estado pendiente, confirmada, activa o vencida (D8).
 
@@ -986,13 +1025,27 @@ class ReservaService:
                 kwargs["anticipo_fecha"] = anticipo_fecha
             if anticipo_medio_pago is not None:
                 kwargs["anticipo_medio_pago"] = anticipo_medio_pago
+            if condicion_pago is not None:
+                kwargs["condicion_pago"] = condicion_pago
+            if condicion_pago_ancla is not None:
+                kwargs["condicion_pago_ancla"] = condicion_pago_ancla
+                kwargs["condicion_pago_fecha_ancla"] = (
+                    condicion_pago_fecha_ancla if condicion_pago_ancla == "fecha_especifica" else None
+                )
+            if condicion_pago_texto is not None:
+                # Un texto vacío es "borrar la aclaración", no "no tocarla".
+                kwargs["condicion_pago_texto"] = condicion_pago_texto.strip() or None
             self.reserva_repo.update(reserva, **kwargs)
 
             # Los adicionales se sincronizan después de aplicar las fechas
             # nuevas: si la reserva se alargó, los que se cobran por día
-            # tienen que rendir la duración nueva, no la vieja.
+            # tienen que rendir la duración nueva, no la vieja. Los horarios
+            # también cuentan: correr la devolución dos horas suma un día (A1).
             self.sincronizar_adicionales(reserva, adicionales)
-            if (fecha_inicio is not None or fecha_fin is not None) and reserva.adicionales:
+            cambio_duracion = any(
+                v is not None for v in (fecha_inicio, fecha_fin, hora_inicio, hora_fin)
+            )
+            if cambio_duracion and reserva.adicionales:
                 self.recalcular_adicionales_por_duracion(reserva)
             # Una cobertura por porcentaje se calcula **contra el precio del
             # alquiler**, así que cambiarlo la cambia. Va acá y no dentro de
@@ -1001,6 +1054,12 @@ class ReservaService:
             # `if solicitados is None: return`.
             if precio_total is not None and reserva.adicionales:
                 self.recalcular_adicionales_por_porcentaje(reserva)
+
+            # "Pagado" es el total, no el precio del auto. Se normaliza
+            # después de sincronizar los adicionales, que es cuando el total
+            # recién se conoce. Mismo criterio que `create()`.
+            if estado_pago == "pagado":
+                reserva.anticipo_monto = self.total_a_cobrar(reserva)
 
         # D-48: si se cambió el auto de una reserva que ya tiene contrato
         # firmado, ese contrato quedó nombrando un vehículo que no es. Se anula
@@ -1089,7 +1148,7 @@ class ReservaService:
             tarifa_id = reserva.tarifa_aplicada_id
         else:
             # Calcular tarifa y precio total
-            duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
+            duracion = dias_facturables(reserva.fecha_inicio, reserva.hora_inicio, reserva.fecha_fin, reserva.hora_fin)
             tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
             try:
                 cot = cotizar_por_bandas(

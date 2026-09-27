@@ -20,7 +20,7 @@ from app.schemas.alquiler import (
 )
 from app.services.alquiler_service import AlquilerService
 from app.services.email_service import EmailService
-from app.domain.tarifas import calcular_duracion_dias
+from app.domain.tarifas import dias_facturables
 
 router = APIRouter(prefix="/alquileres", tags=["Alquileres"])
 
@@ -177,8 +177,9 @@ def extender_alquiler(
     try:
         alquiler_antes = svc.get(alquiler_id)
         fecha_fin_anterior = alquiler_antes.reserva.fecha_fin
-        duracion_anterior = calcular_duracion_dias(
-            alquiler_antes.reserva.fecha_inicio, fecha_fin_anterior
+        r_antes = alquiler_antes.reserva
+        duracion_anterior = dias_facturables(
+            r_antes.fecha_inicio, r_antes.hora_inicio, fecha_fin_anterior, r_antes.hora_fin,
         )
         precio_anterior = alquiler_antes.reserva.precio_total
 
@@ -196,8 +197,9 @@ def extender_alquiler(
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    duracion_nueva = calcular_duracion_dias(
-        alquiler.reserva.fecha_inicio, alquiler.reserva.fecha_fin
+    duracion_nueva = dias_facturables(
+        alquiler.reserva.fecha_inicio, alquiler.reserva.hora_inicio,
+        alquiler.reserva.fecha_fin, alquiler.reserva.hora_fin,
     )
     precio_nuevo = alquiler.reserva.precio_total
     diferencia = None

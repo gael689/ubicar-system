@@ -21,6 +21,8 @@ from reportlab.lib.units import mm
 from reportlab.lib.colors import HexColor, white
 from reportlab.pdfgen import canvas
 
+from app.domain.tarifas import dias_facturables
+
 # **El logo va en blanco, no el de siempre.** El de siempre es tinta azul
 # oscura sobre transparente, y acá se dibuja encima de la banda de marca, que
 # también es oscura: el resultado era un logo que no se veía. Es la misma
@@ -193,8 +195,9 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
         categoria = getattr(reserva, "categoria", None)
         y = _seccion(c, "CATEGORÍA CONTRATADA", margin, y, width)
         filas = [("Categoría", categoria.nombre if categoria else "—")]
-        if categoria is not None and getattr(categoria, "ejemplo_modelos", None):
-            filas.append(("Modelos", categoria.ejemplo_modelos))
+        modelo = _un_modelo(getattr(categoria, "ejemplo_modelos", None)) if categoria else None
+        if modelo:
+            filas.append(("Modelo", f"{modelo} o similar"))
         filas.append(("Vehículo asignado", "Se asigna al momento de la entrega"))
         y = _tabla_dos_columnas(c, filas, margin, y, width)
 
@@ -215,18 +218,17 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
         ("Devolución", f"{_fecha_larga(fecha_dev)} · {_hora(hora_dev)} hs"),
         ("Lugar de devolución", reserva.lugar_devolucion or "—"),
     ]
-    # Cuando la devolución acordada no coincide con el fin del período que se
-    # cobra, se dice: sin esta línea el cliente vería una fecha de devolución
-    # que no cierra con la cantidad de días que le facturamos, y esa es
-    # justamente la conversación incómoda que el papel tiene que evitar.
-    if fecha_dev != reserva.fecha_fin or hora_dev != reserva.hora_fin:
-        filas_periodo.append(
-            ("Período facturado",
-             f"hasta el {_fecha_larga(reserva.fecha_fin)} · {_hora(reserva.hora_fin)} hs"),
-        )
+    # Acá había una fila "Período facturado" cuando la devolución acordada no
+    # coincidía con el fin del período. Se sacó (plan 27/09, txt 6): desde que
+    # el día extra por horario se cobra solo (`tarifas.dias_facturables`), la
+    # devolución pactada **es** el fin del período, y la fila sólo confundía.
     y = _tabla_dos_columnas(c, filas_periodo, margin, y, width, ancho_label=42 * mm)
 
-    dias = (reserva.fecha_fin - reserva.fecha_inicio).days or 1
+    # Los días que se cobran, con la misma regla que la cotización: devolver
+    # una hora o más después del horario de retiro es un día más.
+    dias = dias_facturables(
+        reserva.fecha_inicio, reserva.hora_inicio, reserva.fecha_fin, reserva.hora_fin,
+    )
     c.setFont("Helvetica-Oblique", 9)
     c.setFillColor(_MUTED)
     c.drawString(margin, y, f"Duración estimada: {dias} día{'s' if dias != 1 else ''}.")
@@ -307,10 +309,15 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
         ("Forma de pago", _FORMA_PAGO_LABEL.get(reserva.forma_pago_prevista, reserva.forma_pago_prevista or "A convenir")),
         ("Condición de pago", _CONDICION_PAGO_LABEL.get(reserva.condicion_pago, reserva.condicion_pago or "Contado")),
     ]
-    if reserva.anticipo_monto:
-        filas_pago.append(("Anticipo abonado", _money(reserva.anticipo_monto)))
-        saldo = total_general - Decimal(str(reserva.anticipo_monto))
-        filas_pago.append(("Saldo pendiente", _money(saldo)))
+    # La aclaración libre (migración 097) va debajo, sin etiqueta propia: es
+    # la continuación de la condición, no otro dato.
+    aclaracion = (getattr(reserva, "condicion_pago_texto", None) or "").strip()
+    if aclaracion:
+        filas_pago += [("", linea) for linea in _wrap(aclaracion, 70)]
+    # Sin "Anticipo abonado" ni "Saldo pendiente" (plan 27/09, txt 14): el
+    # estado de pago ya está en el recuadro del total, y el saldo impreso
+    # quedaba viejo en cuanto entraba otro pago — o peor, decía "pendiente"
+    # en una reserva pagada cuando el anticipo no incluía los adicionales.
     if reserva.garantia_tipo and reserva.garantia_tipo != "no_aplica":
         filas_pago.append(("Garantía", f"{reserva.garantia_tipo.capitalize()} · {_money(reserva.garantia_monto)}"))
     y = _tabla_dos_columnas(c, filas_pago, margin, y, width, ancho_label=42 * mm)
@@ -417,6 +424,21 @@ def _seccion(c: canvas.Canvas, titulo: str, margin: float, y: float, width: floa
     c.setLineWidth(1)
     c.line(margin, y, width - margin, y)
     return y - 5 * mm
+
+
+def _un_modelo(ejemplos: str | None) -> str | None:
+    """
+    El primer modelo de `Categoria.ejemplo_modelos` ("Cronos, Onix, 208").
+
+    El PDF imprimía la lista entera, y el cliente la leía como una promesa de
+    poder elegir entre esos autos (plan 27/09, txt 13). Uno solo, con "o
+    similar", es lo que se le puede cumplir.
+    """
+    if not ejemplos:
+        return None
+    for sep in (",", "/", ";", " o ", " y ", "\n"):
+        ejemplos = ejemplos.split(sep)[0]
+    return ejemplos.strip() or None
 
 
 def _tabla_dos_columnas(

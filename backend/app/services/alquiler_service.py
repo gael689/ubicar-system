@@ -18,7 +18,7 @@ from app.domain.cuenta_corriente import calcular_vencimiento
 from app.domain.enums import EstadoReserva, EstadoVehiculo, DecisionExcedente
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.tarifas import (
-    seleccionar_tarifa, cotizar_por_bandas, duracion_facturable_dias, canal_de_origen,
+    seleccionar_tarifa, cotizar_por_bandas, dias_facturables, canal_de_origen,
     TarifaInfo,
 )
 from app.domain.transiciones import estado_tras_checkout, estado_tras_checkin
@@ -733,7 +733,9 @@ class AlquilerService:
             )
 
         # Recalcular tarifa con la nueva duración
-        nueva_duracion = duracion_facturable_dias(reserva.fecha_inicio, nueva_fecha_fin)
+        nueva_duracion = dias_facturables(
+            reserva.fecha_inicio, reserva.hora_inicio, nueva_fecha_fin, nueva_hora_fin,
+        )
         tarifas_info, categoria_id = self._cargar_tarifas_info(reserva.vehiculo_id)
 
         fecha_fin_anterior = reserva.fecha_fin
@@ -1129,7 +1131,9 @@ class AlquilerService:
         el excedente a la tarifa diaria suelta (más cara que la de un alquiler
         largo) sería defendible, pero es una decisión comercial que nadie tomó.
         """
-        duracion = duracion_facturable_dias(reserva.fecha_inicio, reserva.fecha_fin)
+        duracion = dias_facturables(
+            reserva.fecha_inicio, reserva.hora_inicio, reserva.fecha_fin, reserva.hora_fin,
+        )
 
         # El precio pactado manda sobre cualquier recálculo: es el que el
         # cliente aceptó, e incluye el descuento que se le haya hecho.

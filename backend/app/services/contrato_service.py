@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessRuleError, NotFoundError
 from app.domain import contrato_clausulado
+from app.domain.tarifas import dias_facturables
 from app.models.adicional import Adicional
 from app.models.alquiler import Alquiler
 from app.models.cliente import Cliente, ConductorAdicional
@@ -290,8 +291,10 @@ class ContratoService:
         propio contrato (cláusula 6) se reserva el derecho de aumentar.
         """
         lineas = []
-        # Mínimo un día: retiro y devolución el mismo día es un alquiler de un día.
-        dias = max((r.fecha_fin - r.fecha_inicio).days, 1)
+        # Mínimo un día: retiro y devolución el mismo día es un alquiler de un
+        # día. Y la misma regla de horario que la cotización (A1): si no, el
+        # contrato diría 3 días a un unitario inflado cuando se cobraron 4.
+        dias = dias_facturables(r.fecha_inicio, r.hora_inicio, r.fecha_fin, r.hora_fin)
         # El recargo por edad ya no existe (D-38, retirado): la edad decide
         # si la persona puede alquilar (D-51) pero no cuánto paga. Antes esto
         # imprimía además una línea "Conductor joven (19 años)", que le dice
@@ -413,6 +416,11 @@ class ContratoService:
                 ),
             }
             for a in coberturas_contratadas
+            # **Las incluidas no se listan como "contratadas"** (plan 27/09,
+            # txt 5): el anverso ya imprime siempre la Exención por Daños
+            # (LDW), y una reserva vieja que la tenía tildada como opción la
+            # mostraba dos veces. Sí siguen contando para la franquicia, arriba.
+            if not (a.adicional is not None and a.adicional.incluido)
         ]
         ids_contratadas = {a.adicional_id for a in r.adicionales}
 

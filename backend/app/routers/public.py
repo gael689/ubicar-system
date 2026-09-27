@@ -212,6 +212,11 @@ class CotizarPublicoRequest(BaseModel):
     fecha_inicio: date
     fecha_fin: date
     categoria_id: int
+    # Horarios (A1): devolver una hora o más después del horario de retiro se
+    # cotiza con un día más. Opcionales para no romper a un navegador con la
+    # versión vieja del sitio cargada; sin ellos se cotiza sólo por fechas.
+    hora_inicio: time | None = None
+    hora_fin: time | None = None
     adicionales: list[AdicionalElegido] = []
     fecha_nacimiento: date | None = None
     # La declarada en el buscador de la portada. Sostiene el precio en los
@@ -292,6 +297,8 @@ def cotizar_publico(payload: CotizarPublicoRequest, db: Session = Depends(get_db
             fecha_nacimiento=payload.fecha_nacimiento,
             edad_conductor=payload.edad,
             porcentaje_anticipo=anticipo,
+            hora_inicio=payload.hora_inicio,
+            hora_fin=payload.hora_fin,
         )
 
     try:

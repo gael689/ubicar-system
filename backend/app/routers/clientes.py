@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_current_user
@@ -10,6 +10,7 @@ from app.schemas.cliente import (
     ClienteContactoCreate, ClienteContactoResponse,
 )
 from app.services.cliente_service import ClienteService
+from app.services.reserva_documento_service import regenerar_pdfs_en_segundo_plano
 
 router = APIRouter(prefix="/clientes", tags=["Clientes"])
 
@@ -59,11 +60,32 @@ def get_cliente(
 def update_cliente(
     cliente_id: int,
     payload: ClienteUpdate,
+    background: BackgroundTasks,
     service: ClienteService = Depends(get_cliente_service),
-    _: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
 ):
     cliente = service.update(cliente_id, payload)
+    # Completar los datos del cliente (el DNI que llega al retirar, el
+    # domicilio) cambia lo que dice el PDF de sus reservas abiertas: se rehace
+    # el archivado de cada una (plan 27/09, A2). Las cerradas no se tocan —
+    # su PDF es la constancia de lo que se pactó en su momento.
+    abiertas = _reservas_abiertas_del_cliente(db, cliente_id)
+    background.add_task(
+        regenerar_pdfs_en_segundo_plano, abiertas, current_user.id, False,
+    )
     return ok(ClienteResponse.model_validate(cliente), "Cliente actualizado")
+
+
+def _reservas_abiertas_del_cliente(db: Session, cliente_id: int) -> list[int]:
+    from app.models.reserva import Reserva
+
+    cerradas = ("finalizada", "cancelada", "sin_disponibilidad")
+    return [
+        rid for (rid,) in db.query(Reserva.id)
+        .filter(Reserva.cliente_id == cliente_id, Reserva.estado.notin_(cerradas))
+        .all()
+    ]
 
 @router.delete("/{cliente_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_cliente(

@@ -33,10 +33,11 @@ cobrara el día de devolución, este motor daría un total distinto al que el
 sistema viene calculando desde siempre.
 """
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.core.exceptions import BusinessRuleError
+from app.domain.tarifas import dias_facturables
 
 
 CENTAVO = Decimal("0.01")
@@ -464,6 +465,8 @@ def cotizar(
     adicionales: list[AdicionalSolicitado] | None = None,
     porcentaje_anticipo: int | None = None,
     mismo_dia_es_un_dia: bool = False,
+    hora_inicio: time | str | None = None,
+    hora_fin: time | str | None = None,
 ) -> Cotizacion:
     """
     Cotiza un alquiler resolviendo el precio día por día.
@@ -490,6 +493,10 @@ def cotizar(
         mismo_dia_es_un_dia: el mostrador puede alquilar de 07:30 a 18:40 del
             mismo día; eso se cobra como **un día** (el de retiro). La web
             sigue exigiendo al menos una noche, por eso es opt-in.
+        hora_inicio / hora_fin: si llegan los dos, una devolución que se pasa
+            una hora o más del horario de retiro cobra un día más
+            (`tarifas.dias_facturables`). El día extra es el de devolución,
+            y se cotiza con sus propias reglas de calendario.
     """
     duracion_dias = (fecha_fin - fecha_inicio).days
     if mismo_dia_es_un_dia and duracion_dias == 0:
@@ -499,6 +506,8 @@ def cotizar(
             "rango_invalido",
             "La fecha de fin debe ser posterior a la de inicio",
         )
+    if (fecha_fin - fecha_inicio).days >= 1:
+        duracion_dias = dias_facturables(fecha_inicio, hora_inicio, fecha_fin, hora_fin)
 
     dias: list[DiaCotizado] = []
     subtotal = Decimal("0")

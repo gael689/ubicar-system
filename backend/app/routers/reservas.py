@@ -16,7 +16,9 @@ from app.adapters.storage import IStorage
 from app.core.deps import get_db, get_current_user, get_storage
 from app.domain.enums import EstadoReserva
 from app.models.reserva import Reserva
-from app.services.reserva_documento_service import ReservaDocumentoService
+from app.services.reserva_documento_service import (
+    ReservaDocumentoService, regenerar_pdfs_en_segundo_plano,
+)
 from app.core.exceptions import ConflictError, NotFoundError, BusinessRuleError
 from app.core.responses import ok, paginated
 from app.models.usuario import Usuario
@@ -270,6 +272,7 @@ def create_reserva(
             condicion_pago=payload.condicion_pago,
             condicion_pago_ancla=payload.condicion_pago_ancla,
             condicion_pago_fecha_ancla=payload.condicion_pago_fecha_ancla,
+            condicion_pago_texto=payload.condicion_pago_texto,
             tipo_factura=payload.tipo_factura,
             factura_a_nombre_de=payload.factura_a_nombre_de,
             echeq_banco=payload.echeq_banco,
@@ -447,6 +450,7 @@ def pre_checkin(
 def update_reserva(
     reserva_id: int,
     payload: ReservaUpdate,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -470,6 +474,11 @@ def update_reserva(
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))
     except (NotFoundError, BusinessRuleError) as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # El PDF archivado en la ficha del cliente se rehace con los datos nuevos
+    # (plan 27/09, A2). Después de contestar, igual que al crear: tarda y no es
+    # lo que el mostrador está esperando ver.
+    background.add_task(regenerar_pdfs_en_segundo_plano, [reserva.id], current_user.id)
 
     return ok(
         {**ReservaResponse.model_validate(reserva).model_dump(), "warnings": warnings},

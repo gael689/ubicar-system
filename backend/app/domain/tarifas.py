@@ -27,7 +27,7 @@ cargadas —que es el estado de la base hoy— la descomposición da N bloques d
 1 día, o sea exactamente `días × monto`, igual que antes.
 """
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.domain.enums import TipoTarifa
@@ -109,6 +109,68 @@ def duracion_facturable_dias(fecha_inicio: date, fecha_fin: date) -> int:
     dice "cuánto dura" (y ahí 0 es lo correcto). Esto es sólo para cotizar.
     """
     return max((fecha_fin - fecha_inicio).days, 1)
+
+
+# Cuánto puede pasarse la devolución del horario de retiro sin que se cobre un
+# día más. Con 59 minutos, retirar a las 10:00 y devolver a las 10:59 sigue
+# siendo N días; a las 11:00 ya es N+1. No confundir con
+# `control_24hs.GRACIA_MINUTOS` (40): ésa es la tolerancia sobre la devolución
+# **real**, cuando el auto vuelve tarde respecto de lo pactado. Ésta decide
+# cuánto se cotiza **antes**, con los horarios que se acuerdan al reservar.
+TOLERANCIA_DEVOLUCION_MINUTOS = 59
+
+
+def _minutos(hora: time | str | None) -> int | None:
+    """Minutos desde medianoche. Acepta `time` o "HH:MM[:SS]" (lo que manda el front)."""
+    if hora is None or hora == "":
+        return None
+    if isinstance(hora, str):
+        partes = hora.split(":")
+        return int(partes[0]) * 60 + int(partes[1])
+    return hora.hour * 60 + hora.minute
+
+
+def dia_extra_por_horario(hora_inicio: time | str | None, hora_fin: time | str | None) -> bool:
+    """
+    ¿La devolución se pasa del horario de retiro lo suficiente como para
+    cobrar un día más? Sin alguno de los dos horarios, no: se cotiza como
+    antes, sólo por fechas.
+    """
+    ini, fin = _minutos(hora_inicio), _minutos(hora_fin)
+    if ini is None or fin is None:
+        return False
+    return fin - ini > TOLERANCIA_DEVOLUCION_MINUTOS
+
+
+def dias_facturables(
+    fecha_inicio: date,
+    hora_inicio: time | str | None,
+    fecha_fin: date,
+    hora_fin: time | str | None,
+) -> int:
+    """
+    **Los días que se cobran, mirando también el horario** (plan 27/09, A1).
+
+    Un día de alquiler son 24 horas desde el retiro. Retirar el lunes a las
+    10:00 y devolver el miércoles a las 14:00 son 2 días y 4 horas: se cobran
+    **3**. Antes eso se resolvía con un tilde de "late check-in" y un cargo
+    escrito a mano, y cuando alguien se olvidaba del tilde el rato de más se
+    regalaba. Ahora es la regla, y el día extra entra a la cotización como un
+    día más (puede hasta cambiar de banda: 6 días + horas → semana).
+
+    - Diferencia de fechas, **+1 si la hora de devolución supera a la de
+      retiro en una hora o más** (tolerancia `TOLERANCIA_DEVOLUCION_MINUTOS`).
+    - Retiro y devolución el mismo día: **1 día**, sea cual sea el horario.
+      Es la regla del mostrador de siempre (07:30 a 18:40 es un día).
+    - Mínimo 1.
+    - Sin horarios se comporta exactamente como `duracion_facturable_dias`.
+    """
+    dias = (fecha_fin - fecha_inicio).days
+    if dias < 1:
+        return 1
+    if dia_extra_por_horario(hora_inicio, hora_fin):
+        dias += 1
+    return dias
 
 
 def canal_de_origen(origen: str | None) -> str:

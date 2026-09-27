@@ -190,6 +190,10 @@ class PagoWebService:
             canal="web",
             adicionales=adicionales or [],
             fecha_nacimiento=fecha_nacimiento,
+            # El horario del hold: devolver una hora o más después del de
+            # retiro es un día más (A1), igual que en el mostrador.
+            hora_inicio=hold.hora_inicio,
+            hora_fin=hold.hora_fin,
             # **Imprescindible.** El descuento por duración depende de cuánto
             # adelanta (`aplica_descuento_por_duracion`). Sin esto, el total que
             # se cobra sale sin descuento aunque el cliente haya elegido pagar
@@ -775,6 +779,10 @@ class PagoWebService:
             canal="web",
             adicionales=adicionales or [],
             fecha_nacimiento=fecha_nacimiento,
+            # El horario del hold: devolver una hora o más después del de
+            # retiro es un día más (A1), igual que en el mostrador.
+            hora_inicio=hold.hora_inicio,
+            hora_fin=hold.hora_fin,
             porcentaje_anticipo=porcentaje_anticipo,
         )
         total = Decimal(str(cotizacion.total))
