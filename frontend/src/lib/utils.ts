@@ -110,6 +110,52 @@ export function formatDate(dateStr: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
+/**
+ * La fecha de hoy **en la hora de Argentina**, como `YYYY-MM-DD`.
+ *
+ * `new Date().toISOString().slice(0, 10)` es UTC: después de las 21:00 ya dice
+ * mañana. Con eso un cobro de la noche caía en la caja del día siguiente, y el
+ * backend rechazaba el pago por "fecha futura" — el "a veces no deja pagar".
+ * Toda fecha por defecto de un formulario sale de acá.
+ */
+export function hoyLocal(desplazamientoDias = 0): string {
+  const d = new Date();
+  if (desplazamientoDias) d.setDate(d.getDate() + desplazamientoDias);
+  return fechaLocal(d);
+}
+
+/** Un `Date` como `YYYY-MM-DD` en hora local (no UTC). */
+export function fechaLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+/**
+ * Lleva la vista al campo que tiene el problema y le pone el foco.
+ *
+ * Pedido del mostrador: *"cuando hay un error, que siempre te lleve al error"*.
+ * Un aviso arriba de todo obliga a buscar qué faltó; esto scrollea hasta el
+ * campo. Los campos se marcan con `data-campo="nombre"`; si no hay campo, se
+ * busca `[data-error-banner]` para al menos mostrar el mensaje.
+ *
+ * Se llama después del render que muestra el error (por eso el `setTimeout`).
+ */
+export function irAlError(campo?: string | null, raiz: ParentNode = document): void {
+  setTimeout(() => {
+    const el =
+      (campo ? raiz.querySelector<HTMLElement>(`[data-campo="${campo}"]`) : null) ??
+      raiz.querySelector<HTMLElement>('[data-error-banner]');
+    if (!el) return;
+    el.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    const foco = el.matches('input,select,textarea,button')
+      ? el
+      : el.querySelector<HTMLElement>('input,select,textarea');
+    foco?.focus?.({ preventScroll: true });
+  }, 50);
+}
+
 export function calcularDias(fechaInicio: string, fechaFin: string): number {
   const inicio = new Date(fechaInicio);
   const fin = new Date(fechaFin);
@@ -127,6 +173,11 @@ export function calcularDias(fechaInicio: string, fechaFin: string): number {
  * "vehiculo_con_reservas|..." adelante a la frase.
  */
 function soloElMensaje(detail: string): string {
+  // Los errores de regla de negocio llegan como `[codigo] mensaje`. El código
+  // entre corchetes es para la UI, no para el mostrador: leer
+  // "[descuento_sin_motivo] El precio…" es leer una variable.
+  const corchete = /^\[([a-z0-9_]+)\]\s*/.exec(detail);
+  if (corchete) return detail.slice(corchete[0].length);
   const partes = detail.split('|');
   // Un código no tiene espacios. Si el primer tramo los tiene, el `|` era
   // parte del texto y no un separador.
@@ -141,7 +192,11 @@ function soloElMensaje(detail: string): string {
 export function codigoDeError(err: unknown): string | null {
   if (!axios.isAxiosError(err)) return null;
   const detail = err.response?.data?.detail;
-  if (typeof detail !== 'string') return null;
+  if (typeof detail !== 'string') {
+    return typeof detail?.code === 'string' ? detail.code : null;
+  }
+  const corchete = /^\[([a-z0-9_]+)\]/.exec(detail);
+  if (corchete) return corchete[1];
   const codigo = detail.split('|')[0];
   return codigo && !codigo.includes(' ') && detail.includes('|') ? codigo : null;
 }
