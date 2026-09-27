@@ -139,12 +139,28 @@ export function useAnularContrato() {
  * Es para cambiar el conductor —o cualquier dato— de un contrato ya emitido
  * sin dejar la reserva sin contrato entre dos clics.
  */
+/** Lo que agrega el regenerar: si se llevó puesta la franquicia vigente. */
+export interface AvisoRegenerar {
+  franquicia_anulada?: boolean;
+  aviso?: string | null;
+}
+export type ContratoRegenerado = Contrato & AvisoRegenerar;
+
 export function useRegenerarContrato() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, motivo }: { id: number; motivo: string }) => {
-      const res = await api.post<{ data: Contrato }>(`/contratos/${id}/regenerar`, { motivo });
-      return res.data.data;
+    mutationFn: async ({ id, motivo }: { id: number; motivo: string }): Promise<ContratoRegenerado> => {
+      const res = await api.post<{ data: ContratoRegenerado } & AvisoRegenerar>(
+        `/contratos/${id}/regenerar`, { motivo },
+      );
+      // El aviso de la franquicia puede venir adentro de `data` o al lado:
+      // se toma de donde esté, y si no viene (backend viejo) queda undefined.
+      const d = res.data.data;
+      return {
+        ...d,
+        franquicia_anulada: d.franquicia_anulada ?? res.data.franquicia_anulada,
+        aviso: d.aviso ?? res.data.aviso,
+      };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });

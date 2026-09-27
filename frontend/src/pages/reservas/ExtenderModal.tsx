@@ -5,7 +5,7 @@ import { useTarifasCategoria } from '@/hooks/useCategorias';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { cn, extractError, formatMiles, hoyLocal, irAlError, redondear2 } from '@/lib/utils';
-import { resumenPago } from '@/lib/pagoReserva';
+import { useResumenPago } from '@/hooks/usePagos';
 import { InputMoneda } from '@/components/shared/InputMoneda';
 import type { ExtenderResponse, Reserva } from '@/types';
 
@@ -168,7 +168,7 @@ export function ExtenderModal({
     if (diasAgregados > 0) setPrecioPorDia(redondear2(val / diasAgregados));
   }
 
-  const pagoOriginal = resumenPago(reserva);
+  const pagoOriginal = useResumenPago(reserva);
 
   function fallar(mensaje: string, campo?: string) {
     setLocalError(mensaje);
@@ -251,6 +251,15 @@ export function ExtenderModal({
                   <span className="text-white font-bold text-base">{formatMoney(montoExtension)}</span>
                 </div>
               )}
+              {/* Los adicionales por día también se estiran con el alquiler:
+                  si no se dice, el operador cree que cobró todo con la
+                  extensión y el seguro de los días nuevos aparece después. */}
+              {Number(resultado.adicionales_extension ?? 0) > 0 && (
+                <div className="col-span-2 rounded-xl bg-slate-50 border border-slate-200 p-3 flex justify-between items-center">
+                  <span className="text-slate-600 text-sm">Adicionales por los días nuevos</span>
+                  <span className="text-slate-800 font-bold text-base">{formatMoney(resultado.adicionales_extension!)}</span>
+                </div>
+              )}
             </div>
 
             {/* **La renovación del contrato, que es lo que se pidió.**
@@ -306,10 +315,12 @@ export function ExtenderModal({
             <span className="text-slate-500">Alquiler original</span>
             {pagoOriginal.pagado ? (
               <span className="rounded-full bg-success/15 px-3 py-1 text-xs font-semibold text-success">Pagado</span>
-            ) : pagoOriginal.total > 0 ? (
+            ) : pagoOriginal.saldo != null && pagoOriginal.saldo > 0 ? (
               <span className="rounded-full bg-warning/20 px-3 py-1 text-xs font-semibold text-foreground">
                 Saldo {formatMoney(pagoOriginal.saldo)}
               </span>
+            ) : pagoOriginal.fuente === 'cuenta_corriente' ? (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Ver cuenta corriente</span>
             ) : (
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Sin precio cargado</span>
             )}

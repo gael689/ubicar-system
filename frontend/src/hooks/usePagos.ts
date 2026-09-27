@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type {
-  Pago, PagoCreate, CajaData, MetodoPago, MovimientoCaja, MovimientoCajaCreate, PagoPendiente,
+  Pago, PagoCreate, CajaData, MetodoPago, MovimientoCaja, MovimientoCajaCreate, PagoPendiente, Reserva,
 } from '@/types';
+import { resumenPago, type ResumenPago } from '@/lib/pagoReserva';
 
 const KEY = 'pagos';
 
@@ -82,6 +83,17 @@ export function useCobrablesDeCliente(clienteId: number | null) {
     },
     enabled: clienteId != null,
   });
+}
+
+/**
+ * El resumen de pago de una reserva con la fuente correcta. Con el auto
+ * afuera, lo cobrado no está en la reserva: se pide lo cobrable del cliente
+ * (la misma consulta que usa la caja, así que suele estar en caché).
+ */
+export function useResumenPago(reserva: Reserva): ResumenPago {
+  const conAlquilerAbierto = !!reserva.alquiler_id && reserva.alquiler_estado === 'activo';
+  const { data: cobrables } = useCobrablesDeCliente(conAlquilerAbierto ? reserva.cliente_id : null);
+  return resumenPago(reserva, cobrables);
 }
 
 export function useCajaDia(fecha: string) {

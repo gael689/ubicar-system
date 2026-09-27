@@ -652,8 +652,19 @@ function RegenerarDialog({
       if (cambiarConductores && ids.join(',') !== inicial.join(',')) {
         await cambiar.mutateAsync({ reservaId, conductorIds: ids });
       }
-      await regenerar.mutateAsync({ id: contrato.id, motivo: motivo.trim() });
-      toast.success('Contrato regenerado');
+      const nuevo = await regenerar.mutateAsync({ id: contrato.id, motivo: motivo.trim() });
+      if (nuevo?.franquicia_anulada) {
+        // La franquicia vieja quedó anulada con el contrato: si el operador no
+        // se entera, el cliente se va sin franquicia firmada. El aviso lleva
+        // al formulario para generarla, que aparece abajo del contrato nuevo.
+        toast.warning('La franquicia se anuló: generala de nuevo', {
+          description: nuevo.aviso || undefined,
+          duration: 15000,
+          action: { label: 'Generar franquicia', onClick: () => irAlError('pagare_monto') },
+        });
+      } else {
+        toast.success('Contrato regenerado');
+      }
       onClose();
     } catch (e) {
       setError(extractError(e));

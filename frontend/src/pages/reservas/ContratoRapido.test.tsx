@@ -55,6 +55,7 @@ vi.mock('@/components/clientes/SelectorConductores', () => ({
 vi.mock('@/lib/api', () => ({ default: { post: vi.fn(), get: vi.fn() }, api: { post: vi.fn(), get: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+import api from '@/lib/api';
 import { ContratoRapidoModal } from './ContratoRapidoModal';
 
 /** Lo que devuelve axios cuando el pedido salió y nunca volvió nada. */
@@ -192,6 +193,52 @@ describe('El motivo de un precio menor', () => {
 
     await waitFor(() => expect(createReserva).toHaveBeenCalledTimes(2));
     expect(createReserva.mock.calls[1][0].descuento_motivo).toBe('Cliente frecuente');
+  });
+});
+
+describe('Guardas del botón', () => {
+  it('el motivo pedido por el servidor se retira si cambia el precio', async () => {
+    const user = userEvent.setup();
+    const err = new AxiosError('Request failed with status code 422', 'ERR_BAD_REQUEST');
+    err.response = {
+      status: 422, statusText: 'Unprocessable', headers: {}, config: {} as never,
+      data: { detail: '[descuento_sin_motivo] El precio es menor al de lista: indicá el motivo.' },
+    };
+    createReserva.mockRejectedValueOnce(err);
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+    await cargarLoMinimo(user);
+    await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
+    expect(await screen.findByPlaceholderText(/Motivo del precio menor/)).toBeTruthy();
+
+    const precio = screen.getByPlaceholderText('140.000');
+    await user.clear(precio);
+    await user.type(precio, '200000');
+    expect(screen.queryByPlaceholderText(/Motivo del precio menor/)).toBeNull();
+  });
+
+  it('dos clics rápidos con un cliente nuevo lo dan de alta una sola vez', async () => {
+    const user = userEvent.setup();
+    let soltarAlta: (v: unknown) => void = () => {};
+    const post = vi.mocked(api.post);
+    post.mockReset();
+    post.mockImplementation(() => new Promise(r => { soltarAlta = r; }) as never);
+    createReserva.mockResolvedValue({ reserva: { id: 50 }, warnings: [] });
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+
+    await user.type(screen.getByPlaceholderText(/Buscar por nombre/i), 'Carla Nueva');
+    await user.selectOptions(screen.getAllByRole('combobox')[0], '7');
+    const precio = screen.getByPlaceholderText('140.000');
+    await user.clear(precio);
+    await user.type(precio, '140000');
+
+    const boton = screen.getByRole('button', { name: /Crear y generar contrato/ });
+    await user.click(boton);
+    await user.click(boton);
+    soltarAlta({ data: { data: { id: 99 } } });
+
+    await waitFor(() => expect(createReserva).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(createReserva.mock.calls[0][0].cliente_id).toBe(99);
   });
 });
 

@@ -105,8 +105,14 @@ export function ConductoresTab({ clienteId }: Props) {
         destructive
         loading={deleteConductor.isPending}
         onConfirm={async () => {
-          if (deleteTarget) {
+          if (!deleteTarget) return;
+          try {
             await deleteConductor.mutateAsync(deleteTarget.id);
+          } catch {
+            // El toast con el motivo ya lo muestra el `onError` de la
+            // mutación; acá sólo se evita el rechazo sin atrapar, que dejaba
+            // el diálogo abierto y colgado.
+          } finally {
             setDeleteTarget(null);
           }
         }}

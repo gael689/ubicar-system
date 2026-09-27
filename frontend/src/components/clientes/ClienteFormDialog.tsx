@@ -96,8 +96,11 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
   const esEmpresa = tipoCliente === 'empresa';
   const existentes = (cliente?.conductores_adicionales ?? []).filter(c => c.activo);
 
+  // **Se resetea al abrir o al cambiar de cliente, no en cada refetch.** Con
+  // `cliente` (el objeto) en las dependencias, el refetch que dispara guardar
+  // un conductor re-corría esto a mitad del envío y vaciaba lo pendiente.
   useEffect(() => {
-    if (!open) return;
+    if (!open || enviando.current) return;
     setStep(isEdit ? 'form' : 'onboarding');
     setNuevos([]);
     setErroresConductor({});
@@ -137,7 +140,8 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
       representante_nombre: '', representante_dni: '', representante_cargo: '',
       representante_telefono: '', representante_email: '',
     });
-  }, [open, cliente, isEdit, reset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cliente?.id]);
 
   const elegirTipo = (tipo: 'particular' | 'empresa') => {
     setValue('tipo', tipo);
@@ -213,14 +217,25 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: Props) {
         await update.mutateAsync({ id: cliente.id, body: payload });
         // Los cambios de conductores también se guardan al editar. Antes el
         // formulario de edición los mostraba y los descartaba al guardar.
-        for (const c of conductores) {
-          await api.post(`/clientes/${cliente.id}/conductores`, borradorAPayload(c));
-        }
-        for (const id of aQuitar) {
-          await api.delete(`/clientes/${cliente.id}/conductores/${id}`);
-        }
-        if (conductores.length || aQuitar.length) {
-          qc.invalidateQueries({ queryKey: ['clientes'] });
+        //
+        // **Cada uno sale de la lista apenas se guarda.** Son llamadas
+        // sueltas: si falla la tercera, las dos primeras ya están en la base,
+        // y reintentar con la lista entera las duplicaba.
+        let cambio = false;
+        try {
+          for (const c of conductores) {
+            await api.post(`/clientes/${cliente.id}/conductores`, borradorAPayload(c));
+            cambio = true;
+            setNuevos(prev => prev.filter(x => x !== c));
+          }
+          for (const id of aQuitar) {
+            await api.delete(`/clientes/${cliente.id}/conductores/${id}`);
+            cambio = true;
+            setAQuitar(prev => prev.filter(x => x !== id));
+          }
+        } finally {
+          // También si falló a mitad: lo que sí se guardó tiene que verse.
+          if (cambio) qc.invalidateQueries({ queryKey: ['clientes'] });
         }
       } else {
         await create.mutateAsync({

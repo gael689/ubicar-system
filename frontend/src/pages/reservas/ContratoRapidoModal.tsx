@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Calendar, Car, FileSignature, MapPin, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
@@ -173,7 +173,34 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
     && sugerido - Number(precioTotal) >= TOLERANCIA_DESCUENTO;
   const pideMotivo = esDescuento || motivoPedidoPorServidor;
 
+  // El "pedido por el servidor" vale para el precio que se rechazó: si cambia
+  // el precio, el auto, las fechas o quién maneja, el de lista es otro y la
+  // pantalla vuelve a decidir sola si hace falta el motivo.
+  const coberturaElegida = cobertura;
+  const conductoresClave = conductorIds.join(',');
+  useEffect(() => {
+    setMotivoPedidoPorServidor(false);
+  }, [precioTotal, vehiculoId, fechaInicio, horaInicio, fechaFin, horaFin, conductoresClave, coberturaElegida]);
+
+  // **Guarda contra el doble clic sobre todo `crear`.** El `loading` del
+  // botón recién arranca con `createReserva`, después del alta del cliente:
+  // dos clics rápidos daban de alta al cliente nuevo dos veces.
+  const creandoRef = useRef(false);
+  const [creando, setCreando] = useState(false);
+
   async function crear() {
+    if (creandoRef.current) return;
+    creandoRef.current = true;
+    setCreando(true);
+    try {
+      await crearReserva();
+    } finally {
+      creandoRef.current = false;
+      setCreando(false);
+    }
+  }
+
+  async function crearReserva() {
     setError('');
     if (!clienteId && busqueda.trim().length < 3) {
       fallar('Elegí un cliente de la lista, o escribí su nombre para darlo de alta.', 'cliente');
@@ -618,9 +645,9 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
             {reservaId === null ? 'Cancelar' : 'Listo'}
           </button>
           {reservaId === null && (
-            <button type="button" onClick={crear} disabled={loading}
+            <button type="button" onClick={crear} disabled={loading || creando}
               className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2 shadow-sm">
-              {loading && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
+              {(loading || creando) && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
               Crear y generar contrato
             </button>
           )}

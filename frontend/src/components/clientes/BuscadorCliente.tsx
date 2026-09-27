@@ -54,7 +54,9 @@ export function BuscadorCliente({ valor, onCambiar, origenAlta, placeholder, cla
     setBuscando(true);
     const t = setTimeout(async () => {
       try {
-        const { data } = await api.get('/clientes', { params: { search: termino, page_size: 8, activo: true } });
+        // El backend lee el término como `q` (`search` se ignoraba y volvía la
+        // primera página sin filtrar). Los inactivos ya quedan afuera por defecto.
+        const { data } = await api.get('/clientes', { params: { q: termino, page_size: 8 } });
         if (!cancelado) setResultados(data?.data ?? data?.items ?? []);
       } catch {
         if (!cancelado) setResultados([]);

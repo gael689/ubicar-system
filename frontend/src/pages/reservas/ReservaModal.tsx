@@ -16,6 +16,7 @@ import api from '@/lib/api';
 import { codigoDeError, extractError, fechaLocal, formatDate, formatDocumento, formatMiles, hoyLocal, irAlError, redondear2 } from '@/lib/utils';
 import { avisoDiaExtra, diasFacturables } from '@/lib/dias';
 import { InputMoneda } from '@/components/shared/InputMoneda';
+import { ESTADO_PAGO_LABEL, resumenPago } from '@/lib/pagoReserva';
 import { toast } from 'sonner';
 import type { Adicional, CategoriaConCupo, Reserva, ReservaCreate, ReservaUpdate, Semaforo, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
 
@@ -122,6 +123,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       ? reserva.conductor_ids
       : (reserva?.conductor_id ? [reserva.conductor_id] : [])
   );
+  // Si el cliente lo acaba de elegir la persona en esta pantalla. Sólo en ese
+  // caso se preselecciona su único conductor: al editar, o al retomar un
+  // borrador que decía "maneja el titular", la lista vacía es una decisión y
+  // preseleccionar sumaba un conductor sin que nadie lo pidiera.
+  const [clienteElegidoAhora, setClienteElegidoAhora] = useState(false);
   const { data: conductoresCliente } = useConductores(clienteId ? Number(clienteId) : 0);
   const [fechaInicio, setFechaInicio]         = useState(reserva?.fecha_inicio ?? initialFechaInicio ?? today());
   const [horaInicio, setHoraInicio]           = useState(reserva ? formatTime(reserva.hora_inicio) : '10:00');
@@ -235,6 +241,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const selectCliente = (c: { id: number; nombre_completo: string; tipo?: string; razon_social?: string | null; condicion_pago_default?: string | null }) => {
     setClienteId(c.id.toString());
+    setClienteElegidoAhora(true);
     setConductorIds([]);
     setClientSearch(c.nombre_completo);
     setClientDropdownOpen(false);
@@ -1029,6 +1036,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * auto, y una reserva con seguro quedaba pagada y con el seguro pendiente.
    */
   const cargoLateHeredado = lateHeredado ? Number(reserva?.cargo_late_checkout ?? 0) : 0;
+  // Lo que ya se cobró, para mostrarlo (sólo lectura) al editar. Con el auto
+  // entregado no sale de la reserva: `resumenPago` lo manda a la cuenta corriente.
+  const pagoActual = reserva ? resumenPago(reserva) : null;
   const totalACobrar = redondear2((Number(precioTotal) || 0) + totalAdicionales + cargoLateHeredado);
 
   /**
@@ -1155,7 +1165,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       errorEnPaso('Falta la fecha desde la que se cuenta el plazo de pago.', 5, 'condicion_pago_fecha_ancla');
       return;
     }
-    if (estadoPago === 'anticipo') {
+    // Al editar el pago no se toca (ver el payload): no se valida lo que no viaja.
+    if (!isEdit && estadoPago === 'anticipo') {
       if (!anticipoMonto) {
         errorEnPaso('Falta el monto del anticipo.', 5, 'anticipo_monto');
         return;
@@ -1172,7 +1183,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         return;
       }
     }
-    if (estadoPago === 'pagado') {
+    if (!isEdit && estadoPago === 'pagado') {
       if (!anticipoFecha || !anticipoMedioPago) {
         errorEnPaso('Falta la fecha o el medio del pago.', 5, anticipoFecha ? 'anticipo_medio_pago' : 'anticipo_fecha');
         return;
@@ -1234,13 +1245,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             })),
           }),
           forma_pago_prevista: formaPagoPrevista || null,
-          estado_pago: estadoPago,
-          // "Pagado" es el total a cobrar, no el precio del auto. El backend
-          // lo normaliza igual; mandarlo bien evita que la pantalla y el
-          // servidor digan dos números distintos.
-          anticipo_monto: estadoPago === 'anticipo' ? parseFloat(anticipoMonto as string) : (estadoPago === 'pagado' ? totalACobrar : null),
-          anticipo_fecha: estadoPago !== 'pendiente' ? anticipoFecha : null,
-          anticipo_medio_pago: estadoPago !== 'pendiente' ? anticipoMedioPago : null,
+          // **Sin `estado_pago` ni anticipo al editar.** Marcar "abonó" en el
+          // formulario no es cobrar: no deja `Pago` ni recibo, y el backend
+          // terminaba inventando un anticipo. Los cobros van por la caja
+          // (`registrar-cobro`); acá el estado del pago se muestra y nada más.
           condicion_pago: condicionPago,
           ...(condicionPagoAncla ? {
             condicion_pago_ancla: condicionPagoAncla,
@@ -1399,6 +1407,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     if (!borrador) return;
     const d = borrador.datos as typeof borradorActual;
     setClienteId(d.clienteId); setClientSearch(d.clientSearch);
+    setClienteElegidoAhora(false);
     // Un borrador anterior a los conductores múltiples trae `conductorId`.
     const viejo = (d as { conductorId?: string }).conductorId;
     setConductorIds(Array.isArray(d.conductorIds) ? d.conductorIds : (viejo ? [Number(viejo)] : []));
@@ -1866,6 +1875,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 fechaInicio={fechaInicio}
                 fechaFin={fechaFin}
                 excluirReservaId={reserva?.id ?? null}
+                preseleccionarUnico={!isEdit && clienteElegidoAhora}
               />
             </div>
           )}
@@ -2393,12 +2403,26 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </div>
 
               <div className="space-y-4 pt-3 border-t border-slate-200">
-                <p className="text-sm font-semibold text-slate-700">Factura, forma de pago y anticipo</p>
+                <p className="text-sm font-semibold text-slate-700">
+                  {isEdit ? 'Factura, forma de pago y cobros' : 'Factura, forma de pago y anticipo'}
+                </p>
+                {/* Al editar, la factura no se guarda (la edición de la reserva
+                    no la recibe): mostrar los campos editables hacía creer que
+                    el cambio quedaba. Se muestra lo que quedó y nada más. */}
+                {isEdit ? (
+                  <p className="text-sm text-slate-600" data-testid="factura-solo-lectura">
+                    {conFactura
+                      ? `Con factura${tipoFactura ? ` ${tipoFactura}` : ''}${facturaANombreDe ? ` a nombre de ${facturaANombreDe}` : ''}.`
+                      : 'Sin factura.'}{' '}
+                    <span className="text-slate-500">La factura se define al crear la reserva y no se cambia desde acá.</span>
+                  </p>
+                ) : (
                 <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                   <input type="checkbox" checked={conFactura} onChange={e => setConFactura(e.target.checked)} className="accent-primary w-4 h-4" />
                   Con factura
                 </label>
-                {conFactura && (
+                )}
+                {!isEdit && conFactura && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-1">
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium text-slate-600">Tipo de factura</label>
@@ -2446,6 +2470,24 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   </div>
                 </div>
 
+                {isEdit ? (
+                  <div className="space-y-1 pt-2 border-t border-slate-200" data-testid="pago-solo-lectura">
+                    <label className="text-sm font-medium text-slate-600">Estado del pago</label>
+                    <p className="text-sm text-slate-700">
+                      {pagoActual == null || pagoActual.fuente === 'cuenta_corriente'
+                        ? 'El auto ya se entregó: lo cobrado y el saldo están en la cuenta corriente del cliente.'
+                        : pagoActual.pagado
+                          ? 'Pagada'
+                          : (pagoActual.cobrado ?? 0) > 0
+                            ? `Cobrado $${formatMiles(pagoActual.cobrado ?? 0)} · saldo $${formatMiles(pagoActual.saldo ?? 0)}`
+                            : ESTADO_PAGO_LABEL.pendiente}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Para registrar un cobro usá "Cobrar" en la Caja o la cuenta corriente del cliente:
+                      así queda el pago con su recibo. Desde acá no se cambia.
+                    </p>
+                  </div>
+                ) : (<>
                 <div className="space-y-2 pt-2 border-t border-slate-200">
                   <label className="text-sm font-medium text-slate-600">¿El cliente ya abonó algo?</label>
                   <div className="flex flex-wrap gap-x-5 gap-y-2">
@@ -2511,6 +2553,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                     </div>
                   </div>
                 )}
+                </>)}
 
                 {!isEdit && requiereDatosEcheq && (
                   <div className="space-y-2 pt-2 border-t border-slate-200">

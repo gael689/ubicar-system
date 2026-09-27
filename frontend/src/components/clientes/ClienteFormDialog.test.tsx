@@ -17,7 +17,8 @@ vi.mock('@/hooks/useClientes', () => ({
   useAddConductor: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConductores: () => ({ data: [] }),
 }));
-vi.mock('@/lib/api', () => ({ default: { post: vi.fn(), delete: vi.fn() }, api: {} }));
+const post = vi.fn();
+vi.mock('@/lib/api', () => ({ default: { post: (...a: unknown[]) => post(...a), delete: vi.fn() }, api: {} }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { ClienteFormDialog } from './ClienteFormDialog';
@@ -36,6 +37,7 @@ function renderizar() {
 beforeEach(() => {
   cleanup();
   crear.mockReset();
+  post.mockReset();
 });
 
 describe('Alta de empresa', () => {
@@ -100,5 +102,37 @@ describe('Alta de particular', () => {
     await waitFor(() => expect(crear).toHaveBeenCalled());
     expect(crear.mock.calls[0][0].conductores).toEqual([]);
     expect(crear.mock.calls[0][0].representante_nombre).toBeNull();
+  });
+});
+
+describe('Edición con conductores nuevos', () => {
+  it('si falla uno a mitad, reintentar no duplica los que ya se guardaron', async () => {
+    const user = userEvent.setup();
+    const cliente: any = {
+      id: 7, nombre_completo: 'Juan Pérez', dni_cuit: '30111222', telefono: '2915550000',
+      tipo: 'particular', es_frecuente: false, conductores_adicionales: [],
+    };
+    const qc = new QueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <ClienteFormDialog open onOpenChange={vi.fn()} cliente={cliente} />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Agregar conductor/ }));
+    await user.click(screen.getByRole('button', { name: /Agregar conductor/ }));
+    const nombres = screen.getAllByPlaceholderText('María García');
+    await user.type(nombres[0], 'Ana Uno');
+    await user.type(nombres[1], 'Beto Dos');
+
+    post.mockResolvedValueOnce({ data: {} }).mockRejectedValueOnce(new Error('se cortó'));
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+
+    post.mockResolvedValue({ data: {} });
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(3));
+    // El reintento manda sólo el que faltaba.
+    expect(post.mock.calls[2][1]).toEqual(expect.objectContaining({ nombre_completo: 'Beto Dos' }));
   });
 });

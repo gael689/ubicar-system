@@ -12,7 +12,7 @@ import {
 } from '@/hooks/useGastos';
 import { useServicios, useCrearServicio, useEliminarServicio } from '@/hooks/useServicios';
 import type { Servicio, ServicioCreate, TipoServicio } from '@/types';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, hoyLocal } from '@/lib/utils';
 
 type Mode = null | 'rapido' | 'mantenimiento';
 
@@ -202,7 +202,8 @@ function GastoRapidoForm({ onSubmit, onCancel, loading }: {
 }) {
   const [descripcion, setDescripcion] = useState('');
   const [monto, setMonto] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  // Hoy en hora local: `toISOString()` es UTC y después de las 21 ya es mañana.
+  const [fecha, setFecha] = useState(hoyLocal());
 
   const handle = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,7 +255,8 @@ function MantenimientoForm({ kmActual, kmProximoService, kmEntreServices, onSubm
 }) {
   const [tipo, setTipo] = useState<TipoServicio>('service_general');
   const [descripcion, setDescripcion] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  // Hoy en hora local: `toISOString()` es UTC y después de las 21 ya es mañana.
+  const [fecha, setFecha] = useState(hoyLocal());
   const [kmRealizado, setKmRealizado] = useState(kmActual);
   const [proximoKm, setProximoKm] = useState<number | ''>(
     kmProximoService > 0 ? kmProximoService : kmActual + kmEntreServices

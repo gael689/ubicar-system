@@ -8,6 +8,7 @@ import { api, pesos, urlFoto } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { CategoriaDisponible, EscalonDuracion, MotivoSolicitud } from "@/lib/types";
 import { AhorroPorDuracion } from "./AhorroPorDuracion";
+import { diasFacturables } from "@/lib/dias";
 import { BuscadorRango, type RangoBusqueda } from "./BuscadorRango";
 import { DialogoContactame } from "./DialogoContactame";
 import { CartelDerivacion, SEGUIR_WEB_LABEL } from "./CartelDerivacion";
@@ -76,18 +77,10 @@ export function Paso1Vehiculo({
 
   const buscado = Boolean(rango.fechaInicio && rango.fechaFin && rango.lugarRetiro);
 
-  // Los mismos días que cobra el backend: el de devolución no se cuenta.
-  const dias =
-    rango.fechaInicio && rango.fechaFin
-      ? Math.max(
-          0,
-          Math.round(
-            (new Date(`${rango.fechaFin}T12:00:00`).getTime() -
-              new Date(`${rango.fechaInicio}T12:00:00`).getTime()) /
-              86_400_000,
-          ),
-        )
-      : 0;
+  // Los mismos días que cobra el backend, **con el horario**: devolver una
+  // hora o más después del horario de retiro suma un día. Contando sólo las
+  // fechas, el "un día más y ahorrás" ofrecía un escalón que ya tenía.
+  const dias = diasFacturables(rango.fechaInicio, rango.horaInicio, rango.fechaFin, rango.horaFin);
 
   useEffect(() => {
     // Rango fuera de la ventana: no tiene sentido pedirle disponibilidad al

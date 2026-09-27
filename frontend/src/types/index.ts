@@ -978,10 +978,9 @@ export interface ReservaUpdate {
   fecha_devolucion_acordada?: string | null;
   cargo_late_checkout?: number;
   forma_pago_prevista?: string | null;
-  estado_pago?: string | null;
-  anticipo_monto?: number | null;
-  anticipo_fecha?: string | null;
-  anticipo_medio_pago?: string | null;
+  // Sin `estado_pago` ni `anticipo_*`: al editar, la plata no se toca. Un
+  // cobro entra por `registrar-cobro` (la caja), que deja el `Pago` y el
+  // crédito; derivarlo del radio del formulario inventaba cobros.
   // La condición de pago se puede corregir después de guardar. `''` en el
   // texto borra la aclaración; omitirlo no la toca.
   condicion_pago?: string;
@@ -1113,6 +1112,8 @@ export interface ExtenderResponse {
   diferencia: string | null;
   dias_agregados?: number;
   precio_extension?: string | null;
+  /** Lo que suman los adicionales por día (seguro, silla…) por los días nuevos. */
+  adicionales_extension?: number | string | null;
 }
 
 // ─── Fase 3: Ocupación (Calendario) ──────────────────────────────────────────

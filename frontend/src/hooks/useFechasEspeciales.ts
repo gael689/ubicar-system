@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CACHE } from '@/lib/queryClient';
+import { fechaLocal } from '@/lib/utils';
 import type { FechaEspecial, FechaEspecialCreate } from '@/types';
 
 const KEY = 'fechas-especiales';
@@ -69,7 +70,8 @@ export function indexarPorDia(fechas: FechaEspecial[]): Map<string, FechaEspecia
     const cursor = new Date(`${f.fecha_desde}T12:00:00`);
     const fin = new Date(`${f.fecha_hasta}T12:00:00`);
     while (cursor <= fin) {
-      const clave = cursor.toISOString().slice(0, 10);
+      // Local, no UTC: el cursor es mediodía de acá y la clave tiene que ser ese día.
+      const clave = fechaLocal(cursor);
       const previas = mapa.get(clave);
       if (previas) previas.push(f);
       else mapa.set(clave, [f]);

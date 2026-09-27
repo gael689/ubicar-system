@@ -9,7 +9,8 @@ import { CancelarReservaDialog, type DatosDeCancelacion } from '@/components/res
 import { cn, extractError, formatCurrency, formatMiles } from '@/lib/utils';
 import type { Reserva, ApiResponse } from '@/types';
 import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR, CONDICION_PAGO_LABEL } from '@/lib/constants';
-import { ESTADO_PAGO_LABEL, FORMA_PAGO_LABEL, resumenPago } from '@/lib/pagoReserva';
+import { ESTADO_PAGO_LABEL, FORMA_PAGO_LABEL } from '@/lib/pagoReserva';
+import { useResumenPago } from '@/hooks/usePagos';
 import { ReservaModal } from './ReservaModal';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { CheckoutModal } from './CheckoutModal';
@@ -463,6 +464,8 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   );
 }
 
+const ESTADO_PAGO_COLOR_NEUTRO = 'bg-muted text-muted-foreground border-border';
+
 const ESTADO_PAGO_COLOR: Record<string, string> = {
   pagado: 'bg-success/15 text-success border-success/30',
   anticipo: 'bg-warning/15 text-foreground border-warning/40',
@@ -470,8 +473,17 @@ const ESTADO_PAGO_COLOR: Record<string, string> = {
 };
 
 function EstadoDelPago({ reserva, onVerCuenta }: { reserva: Reserva; onVerCuenta: () => void }) {
-  const { total, cobrado, saldo, pagado } = resumenPago(reserva);
-  const estado = pagado ? 'pagado' : (reserva.estado_pago ?? 'pendiente');
+  const { total, cobrado, saldo, pagado, fuente } = useResumenPago(reserva);
+  // Una reserva cancelada no le debe nada a nadie desde esta pantalla: sin
+  // rojo de deuda. Si quedó una seña a devolver, se ve en la cuenta corriente.
+  const cancelada = reserva.estado === 'cancelada';
+  // Con saldo no puede decir "Pagada" aunque `estado_pago` lo diga; y si los
+  // números viven en la cuenta corriente, tampoco se afirma "Sin cobrar".
+  const estado = pagado
+    ? 'pagado'
+    : fuente === 'cuenta_corriente'
+      ? null
+      : (reserva.estado_pago === 'pagado' ? 'anticipo' : (reserva.estado_pago ?? 'pendiente'));
   // `condicion_pago_texto` lo suma otro cambio (condición a medida); si
   // todavía no viene, se muestra la condición del catálogo.
   const condicionTexto = (reserva as Reserva & { condicion_pago_texto?: string | null }).condicion_pago_texto;
@@ -487,20 +499,41 @@ function EstadoDelPago({ reserva, onVerCuenta }: { reserva: Reserva; onVerCuenta
       <div className="flex-1 min-w-0 space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estado del pago</p>
-          <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold', ESTADO_PAGO_COLOR[estado] ?? ESTADO_PAGO_COLOR.pendiente)}>
-            {ESTADO_PAGO_LABEL[estado] ?? estado}
-          </span>
+          {estado && (
+            <span className={cn(
+              'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold',
+              cancelada ? ESTADO_PAGO_COLOR_NEUTRO : (ESTADO_PAGO_COLOR[estado] ?? ESTADO_PAGO_COLOR.pendiente),
+            )}>
+              {ESTADO_PAGO_LABEL[estado] ?? estado}
+            </span>
+          )}
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
           {forma && (<><dt className="text-muted-foreground">Forma prevista</dt><dd className="text-foreground">{forma}</dd></>)}
           {condicion && (<><dt className="text-muted-foreground">Condición</dt><dd className="text-foreground">{condicion}</dd></>)}
-          <dt className="text-muted-foreground">Cobrado</dt>
-          <dd className="text-foreground tabular-nums">{formatCurrency(cobrado)} de {formatCurrency(total)}</dd>
-          <dt className="text-muted-foreground">Saldo</dt>
-          <dd className={cn('font-bold tabular-nums', saldo > 0 ? 'text-danger' : 'text-success')}>
-            {saldo > 0 ? formatCurrency(saldo) : 'Nada pendiente'}
-          </dd>
+          {cobrado != null && total != null && (
+            <>
+              <dt className="text-muted-foreground">Cobrado</dt>
+              <dd className="text-foreground tabular-nums">{formatCurrency(cobrado)} de {formatCurrency(total)}</dd>
+            </>
+          )}
+          {saldo != null && !cancelada && (
+            <>
+              <dt className="text-muted-foreground">Saldo</dt>
+              <dd className={cn('font-bold tabular-nums', saldo > 0 ? 'text-danger' : 'text-success')}>
+                {saldo > 0 ? formatCurrency(saldo) : 'Nada pendiente'}
+              </dd>
+            </>
+          )}
         </dl>
+        {fuente === 'cuenta_corriente' && !cancelada && (
+          <p className="text-xs text-muted-foreground">
+            El auto ya se entregó: lo cobrado y el saldo están en la cuenta corriente del cliente.
+          </p>
+        )}
+        {cancelada && (
+          <p className="text-xs text-muted-foreground">Reserva cancelada: no queda saldo por cobrar de esta reserva.</p>
+        )}
         <button
           type="button"
           onClick={onVerCuenta}

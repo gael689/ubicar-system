@@ -19,6 +19,7 @@ import { Paso4Pago } from "./Paso4Pago";
 import { ResumenReserva } from "./ResumenReserva";
 import { PieReserva } from "./PieReserva";
 import type { RangoBusqueda } from "./BuscadorRango";
+import { sumarDias } from "@/lib/dias";
 
 const CLIENTE_VACIO: DatosCliente = {
   nombre: "", apellido: "", dni: "", email: "", telefono: "",
@@ -318,9 +319,14 @@ export function FlujoReserva() {
                 onEstirarDuracion={(diasNuevos) => {
                   // Se mueve la devolución, no el retiro: el cliente ya
                   // decidió cuándo lo necesita, lo negociable es hasta cuándo.
-                  const fin = new Date(`${rango.fechaInicio}T12:00:00`);
-                  fin.setDate(fin.getDate() + diasNuevos);
-                  setRango({ ...rango, fechaFin: fin.toISOString().split("T")[0] });
+                  // La hora de devolución pasa a ser la de retiro: si quedaba
+                  // más tarde, el backend cobraba N + 1 días y el escalón
+                  // ofrecido no era el que se cotizaba.
+                  setRango({
+                    ...rango,
+                    fechaFin: sumarDias(rango.fechaInicio, diasNuevos),
+                    horaFin: rango.horaInicio,
+                  });
                   setCategoria(null);
                   setCotizacion(null);
                 }}

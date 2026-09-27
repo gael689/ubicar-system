@@ -29,12 +29,19 @@ export function datosInicialesPagare(p: PagarePreparado | undefined): DatosPagar
     monto: p ? Math.round(p.monto_sugerido) : '',
     codeudores: [],
     // Un particular firma él mismo. Una empresa tiene que elegir: la empresa,
-    // su representante o un conductor son obligados distintos.
-    deudor: p?.requiere_elegir_deudor ? '' : 'cliente',
+    // su representante o un conductor son obligados distintos. Si el backend
+    // ofrece un solo posible (empresa sin representante ni conductores), no
+    // hay nada que elegir: se toma ese, porque si no la emisión quedaba
+    // bloqueada para siempre esperando una elección sin opciones.
+    deudor: !p?.requiere_elegir_deudor
+      ? 'cliente'
+      : p.deudores_posibles?.length === 1 ? claveDeudor(p.deudores_posibles[0]) : '',
   };
 }
 
-const claveDeudor = (d: DeudorPosible) => (d.tipo === 'conductor' ? `conductor:${d.conductor_id}` : d.tipo);
+function claveDeudor(d: DeudorPosible): string {
+  return d.tipo === 'conductor' ? `conductor:${d.conductor_id}` : d.tipo;
+}
 
 /** "CUIT" o "DNI". Los pagarés viejos no traen el tipo: se deduce de los dígitos. */
 export function etiquetaDocumento(p: Pick<PersonaPagare, 'dni' | 'tipo_documento'>): 'CUIT' | 'DNI' {
@@ -133,7 +140,9 @@ export function FormPagare({
       {/* Quién es el deudor. Para un particular es él; para una empresa se
           elige explícitamente, porque la empresa, su representante y un
           conductor son tres obligados distintos. */}
-      {posibles.length > 1 ? (
+      {/* El fieldset sale siempre que haya que elegir, aunque sea una sola
+          opción: así se ve quién firma y la opción queda marcada. */}
+      {posibles.length > 1 || (preparado.requiere_elegir_deudor && posibles.length > 0) ? (
         <fieldset className="space-y-1.5" data-campo="pagare_deudor">
           <legend className="text-muted-foreground">
             Firma como deudor{preparado.requiere_elegir_deudor && <span className="text-danger"> *</span>}

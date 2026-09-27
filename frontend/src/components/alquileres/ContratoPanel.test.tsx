@@ -48,8 +48,9 @@ vi.mock('@/components/clientes/SelectorConductores', () => ({
   ),
 }));
 vi.mock('@/lib/api', () => ({ default: {}, api: { get: vi.fn() } }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
+import { toast } from 'sonner';
 import { ContratoPanel } from './ContratoPanel';
 
 const SNAPSHOT: any = {
@@ -152,6 +153,28 @@ describe('Generar contrato y franquicia', () => {
     );
   });
 
+  it('una empresa con un solo deudor posible lo trae elegido y deja emitir', async () => {
+    // El backend pide elegir para toda empresa; con una sola opción no había
+    // radios y la emisión quedaba bloqueada para siempre.
+    const user = userEvent.setup();
+    preparadoPagare = {
+      ...PREPARADO,
+      requiere_elegir_deudor: true,
+      deudores_posibles: [
+        { tipo: 'cliente', conductor_id: null, nombre: 'Transportes SA', dni: '30712345678', tipo_documento: 'CUIT', rol: 'La empresa' },
+      ],
+    };
+    crearContrato.mockImplementation((_p, opts) => opts?.onSuccess?.());
+    render(<ContratoPanel reservaId={9} />);
+
+    expect(screen.getByLabelText(/Transportes SA/)).toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Generar contrato y franquicia' }));
+    expect(crearPagare).toHaveBeenCalledWith(
+      expect.objectContaining({ deudor: { tipo: 'cliente', conductor_id: null } }),
+      expect.anything(),
+    );
+  });
+
   it('destildado, sale el contrato solo', async () => {
     const user = userEvent.setup();
     crearContrato.mockImplementation((_p, opts) => opts?.onSuccess?.());
@@ -213,6 +236,24 @@ describe('Con el contrato emitido', () => {
 
     await waitFor(() => expect(regenerar).toHaveBeenCalledWith({ id: 4, motivo: 'Cambió el chofer' }));
     expect(cambiarConductores).toHaveBeenCalledWith({ reservaId: 9, conductorIds: [9] });
+  });
+
+  it('si el regenerar anuló la franquicia, avisa que hay que generarla de nuevo', async () => {
+    const user = userEvent.setup();
+    contratoActual = contrato();
+    regenerar.mockResolvedValue({ ...contrato({ id: 5 }), franquicia_anulada: true, aviso: 'La P-00000012 quedó anulada.' });
+    render(<ContratoPanel reservaId={9} />);
+    await user.click(screen.getByRole('button', { name: /Regenerar/ }));
+    await user.type(screen.getByPlaceholderText(/Cambió el conductor/), 'Domicilio');
+    await user.click(ultimo(screen.getAllByRole('button', { name: /^Regenerar$/ })));
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(
+      'La franquicia se anuló: generala de nuevo',
+      expect.objectContaining({
+        description: 'La P-00000012 quedó anulada.',
+        action: expect.objectContaining({ label: 'Generar franquicia' }),
+      }),
+    ));
   });
 
   it('la firma en el mostrador pide un recuadro por co-deudor', async () => {

@@ -656,3 +656,30 @@ describe('Plan 27/09 — encabezado, lugares y horario', () => {
     expect(screen.queryByText(/late check-in/i)).not.toBeInTheDocument();
   });
 });
+
+describe('Editar una reserva: la plata no se toca desde acá', () => {
+  const RESERVA: any = {
+    id: 77, cliente_id: 1, vehiculo_id: 10, categoria_id: 1, estado: 'confirmada',
+    fecha_inicio: HOY, hora_inicio: '10:00:00', fecha_fin: HOY, hora_fin: '18:00:00',
+    lugar_entrega: 'Paraguay 241', lugar_devolucion: 'Paraguay 241',
+    precio_total: '100000', total_adicionales: '0', cargo_late_checkout: '0',
+    estado_pago: 'anticipo', anticipo_monto: '30000', con_factura: true, tipo_factura: 'A',
+    factura_a_nombre_de: 'Juan Pérez', condicion_pago: 'contado', conductor_ids: [],
+    adicionales: [], cliente: { id: 1, nombre_completo: 'Juan Pérez' },
+  };
+
+  it('el estado del pago y la factura se muestran sin poder cambiarlos', () => {
+    abrir({ reserva: RESERVA });
+    const pago = screen.getByTestId('pago-solo-lectura');
+    expect(pago.textContent).toContain('Cobrado $30.000 · saldo $70.000');
+    expect(pago.textContent).toContain('Cobrar');
+    expect(screen.queryByText('¿El cliente ya abonó algo?')).toBeNull();
+    expect(screen.getByTestId('factura-solo-lectura').textContent).toContain('Con factura A a nombre de Juan Pérez');
+    expect(screen.queryByRole('checkbox', { name: /Con factura/ })).toBeNull();
+  });
+
+  it('con el auto entregado manda a la cuenta corriente en vez de afirmar un saldo', () => {
+    abrir({ reserva: { ...RESERVA, alquiler_id: 5, alquiler_estado: 'activo' } });
+    expect(screen.getByTestId('pago-solo-lectura').textContent).toContain('cuenta corriente');
+  });
+});
