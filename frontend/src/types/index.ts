@@ -1049,6 +1049,8 @@ export interface PreviewExcedente {
 export interface ExtenderRequest {
   nueva_fecha_fin: string;
   nueva_hora_fin: string;
+  /** Lo que valen los días agregados. Obligatorio (o `precio_total`, legado). */
+  precio_extension?: number | null;
   precio_total?: number | null;
   // La diferencia se asienta siempre en la cuenta corriente; cobrarla en el
   // acto es opcional (el default del negocio es que se pague al devolver).
@@ -1069,6 +1071,8 @@ export interface ExtenderResponse {
   precio_anterior: string | null;
   precio_nuevo: string | null;
   diferencia: string | null;
+  dias_agregados?: number;
+  precio_extension?: string | null;
 }
 
 // ─── Fase 3: Ocupación (Calendario) ──────────────────────────────────────────

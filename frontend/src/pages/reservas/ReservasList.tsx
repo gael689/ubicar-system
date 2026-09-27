@@ -757,13 +757,11 @@ export function ReservasList() {
       {extenderReserva && extenderReserva.alquiler_id && (
         <ExtenderModal
           alquilerId={extenderReserva.alquiler_id}
-          reservaId={extenderReserva.id}
+          reserva={extenderReserva}
           vehiculoInfo={extenderReserva.vehiculo ? `${extenderReserva.vehiculo.marca} ${extenderReserva.vehiculo.modelo} (${extenderReserva.vehiculo.patente})` : `Veh. ${extenderReserva.vehiculo_id}`}
           clienteNombre={extenderReserva.cliente?.nombre_completo ?? `Cliente ${extenderReserva.cliente_id}`}
-          fechaInicioActual={extenderReserva.fecha_inicio}
           fechaFinActual={extenderReserva.fecha_fin}
           horaFinActual={extenderReserva.hora_fin}
-          precioTotalActual={extenderReserva.precio_total}
           onClose={() => setExtenderReserva(null)}
           onSuccess={() => { setExtenderReserva(null); loadReservas(); }}
         />

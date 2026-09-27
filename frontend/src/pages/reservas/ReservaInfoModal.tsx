@@ -132,13 +132,11 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
     return (
       <ExtenderModal
         alquilerId={reserva.alquiler_id}
-        reservaId={reserva.id}
+        reserva={reserva}
         vehiculoInfo={reserva.vehiculo ? `${reserva.vehiculo.marca} ${reserva.vehiculo.modelo} (${reserva.vehiculo.patente})` : `Veh. ${reserva.vehiculo_id}`}
         clienteNombre={reserva.cliente?.nombre_completo ?? `Cliente ${reserva.cliente_id}`}
-        fechaInicioActual={reserva.fecha_inicio}
         fechaFinActual={reserva.fecha_fin}
         horaFinActual={reserva.hora_fin}
-        precioTotalActual={reserva.precio_total}
         onClose={() => setExtenderOpen(false)}
         onSuccess={() => { setExtenderOpen(false); handleSuccess(); }}
       />
