@@ -8,17 +8,17 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { hoyLocal } from '@/lib/utils';
+import { MEDIOS_PAGO, MEDIOS_QUE_NO_SON_PLATA, opcionesDeMedio } from '@/lib/mediosPago';
 
-/** Los mismos valores que `Pago.medio_pago` en el backend. */
-export const MEDIOS_DE_COBRO = [
-  { value: 'efectivo', label: 'Efectivo' },
-  { value: 'transferencia', label: 'Transferencia' },
-  { value: 'tarjeta', label: 'Tarjeta' },
-  { value: 'cheque', label: 'Cheque' },
-  { value: 'echeq', label: 'Echeq' },
-  { value: 'mercado_pago', label: 'Mercado Pago' },
-  { value: 'wapa', label: 'Wapa (Patagonia)' },
-] as const;
+/**
+ * La lista común de medios (`lib/mediosPago.ts`) sin "cuenta corriente": acá
+ * se registra plata que entró — una multa o un daño que se deja a cuenta no
+ * se cobra, ya está en la cuenta del cliente.
+ */
+const MEDIOS_DE_COBRO = opcionesDeMedio(
+  MEDIOS_PAGO.filter(m => !MEDIOS_QUE_NO_SON_PLATA.includes(m)),
+);
 
 export interface DatosDeCobro {
   medio_pago: string;
@@ -56,7 +56,7 @@ export function CobroDialog({
   loading = false,
   onConfirm,
 }: CobroDialogProps) {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyLocal();
   const [medioPago, setMedioPago] = useState('efectivo');
   const [fecha, setFecha] = useState(hoy);
 

@@ -421,8 +421,9 @@ class PagoWebService:
         # sale como crítica (lo decide `avisar_reserva_web` mirando el estado).
         if resolucion.acreditar or resolucion.requiere_persona:
             NotificacionService(self.db).avisar_reserva_web(reserva)
-            # Y por mail, al equipo y al cliente. No levanta nunca: que falle
-            # un envío no puede tumbar la acreditación de un pago que ya entró.
+            # Y el comprobante por mail al cliente (al equipo le alcanza la
+            # campana). No levanta nunca: que falle un envío no puede tumbar la
+            # acreditación de un pago que ya entró.
             notificar_reserva_pagada(self.db, reserva, pago_web)
 
         self.db.commit()
@@ -855,17 +856,13 @@ class PagoWebService:
         # avisar que la reserva existe. Antes de esto, el camino de
         # transferencia —el único que hoy puede cobrar de verdad, sin
         # credenciales de Mercado Pago— entraba en silencio total: cero
-        # campana, cero mail. Nunca puede tumbar la reserva ya creada.
+        # campana. El aviso es sólo en la plataforma: al equipo no se le manda
+        # mail. Nunca puede tumbar la reserva ya creada.
         try:
             from app.services.notificacion_service import NotificacionService
             NotificacionService(self.db).avisar_reserva_web(reserva)
         except Exception:
             logger.exception("[Transferencia] falló el aviso instantáneo de la reserva #%s", reserva.id)
-        try:
-            from app.services.email_reservas import notificar_reserva_transferencia_pendiente
-            notificar_reserva_transferencia_pendiente(self.db, reserva, anticipo)
-        except Exception:
-            logger.exception("[Transferencia] falló el mail de la reserva #%s", reserva.id)
 
         return self._respuesta_transferencia(reserva, anticipo)
 

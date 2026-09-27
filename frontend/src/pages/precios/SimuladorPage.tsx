@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { useCategorias } from '@/hooks/useCategorias';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, hoyLocal } from '@/lib/utils';
 import type { Cotizacion } from '@/types';
 
 /**
@@ -24,7 +24,7 @@ const MOTIVO_TEXTO: Record<string, string> = {
 };
 
 function hoyISO() {
-  return new Date().toISOString().split('T')[0];
+  return hoyLocal();
 }
 
 function sumarDias(iso: string, dias: number) {

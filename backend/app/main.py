@@ -32,7 +32,8 @@ def _sincronizar_estados() -> None:
     """
     Job del scheduler: pone al día los estados que dependen del reloj
     (`confirmada` → `activa` cuando llega la hora de retiro, `activa` →
-    `vencida` cuando pasa la de devolución).
+    `vencida` cuando pasa la de devolución). Sólo para reservas cuyo auto
+    salió de verdad: sin check-out, la reserva sigue `confirmada`.
 
     **Existe para que las pantallas no escriban.** Esto vivía adentro del
     listado de reservas y del calendario, o sea que dos de las pantallas más
@@ -62,7 +63,7 @@ def _sincronizar_estados() -> None:
         db.close()
 
 
-def _correr_motor_notificaciones(con_digest: bool = False) -> None:
+def _correr_motor_notificaciones() -> None:
     """
     Job del scheduler: corre todas las reglas del catálogo
     (domain/notificaciones_reglas.py), persiste lo nuevo, auto-resuelve lo
@@ -72,10 +73,12 @@ def _correr_motor_notificaciones(con_digest: bool = False) -> None:
     las 08:00. Una reserva web que entra el sábado a la tarde quedaba sin
     ningún barrido de red-de-seguridad hasta el lunes a la mañana — el aviso
     instantáneo (`avisar_reserva_web`) podía fallar en silencio y nadie se
-    enteraba durante 36 horas. Ahora corre cada 30 minutos (ver `lifespan`);
-    el digest matutino por mail —que si saliera cada 30 minutos sería spam,
-    no un resumen— sigue siendo sólo de las 08:00, con `con_digest=True`.
+    enteraba durante 36 horas. Ahora corre cada 30 minutos (ver `lifespan`).
+
+    El resumen de las 08:00 por mail ya no existe (27/09/2026): al equipo no
+    se le manda ningún mail, todo queda en la campana.
     """
+    from app.services.hold_service import HoldService
     from app.services.notificacion_service import NotificacionService
 
     db = SessionLocal()
@@ -98,13 +101,13 @@ def _correr_motor_notificaciones(con_digest: bool = False) -> None:
             resultado["creadas"], resultado["resueltas"], escaladas, resultado["evaluadas"],
         )
 
-        if con_digest:
-            enviados = service.enviar_digest_matutino()
-            # El commit es por el registro en `emails_enviados`: sin él, un
-            # digest que no salió no queda anotado en ningún lado.
-            db.commit()
-            if enviados:
-                logger.info("[Scheduler] Digest matutino enviado a %s destinatarios", enviados)
+        # Housekeeping de los holds de la web: sólo existía en el endpoint de
+        # cron externo, que en Railway nadie llama, así que la tabla crecía sin
+        # límite. Un hold vencido ya no ocupa cupo; esto sólo borra la fila.
+        holds = HoldService(db).limpiar_vencidos()
+        db.commit()
+        if holds:
+            logger.info("[Scheduler] %s holds vencidos limpiados", holds)
     except Exception:
         db.rollback()
         logger.exception("[Scheduler] Falló la corrida del motor de notificaciones")
@@ -165,24 +168,23 @@ async def lifespan(app: FastAPI):
     from apscheduler.triggers.interval import IntervalTrigger
 
     scheduler = AsyncIOScheduler(timezone=TZ_ARGENTINA)
-    # La corrida de las 08:00 es la que manda el digest — una vez al día,
-    # como corresponde a un resumen.
+    # A las 08:00 corre igual que siempre, para que la campana esté al día
+    # cuando abre el mostrador (antes esta corrida mandaba además el resumen
+    # por mail, que se sacó).
     scheduler.add_job(
         _correr_motor_notificaciones,
         CronTrigger(hour=8, minute=0, timezone=TZ_ARGENTINA),
-        kwargs={"con_digest": True},
         id="motor_notificaciones_diario",
         replace_existing=True,
     )
-    # El resto del día corre sin digest, cada 30 minutos (plan de conexión
-    # 13/08, punto 1.6): es lo que hace que una reserva web sin atender
-    # escale de `alta` a `crítica` en horas y no al día siguiente, y lo que
-    # mantiene el calendario de ocupación al día sin depender de que alguien
-    # lo tenga abierto (C-12).
+    # El resto del día, cada 30 minutos (plan de conexión 13/08, punto 1.6):
+    # es lo que hace que una reserva web sin atender escale de `alta` a
+    # `crítica` en horas y no al día siguiente, y lo que mantiene el
+    # calendario de ocupación al día sin depender de que alguien lo tenga
+    # abierto (C-12).
     scheduler.add_job(
         _correr_motor_notificaciones,
         IntervalTrigger(minutes=30),
-        kwargs={"con_digest": False},
         id="motor_notificaciones_frecuente",
         replace_existing=True,
     )
@@ -199,7 +201,7 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     logger.info(
         "Scheduler iniciado — estados cada 5 min, motor de notificaciones cada "
-        "30 min, digest a las 08:00 ART"
+        "30 min (y a las 08:00 ART)"
     )
     yield
     scheduler.shutdown(wait=False)

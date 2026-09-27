@@ -21,14 +21,15 @@ los otros funcionen.
 el de prueba de Resend, así que la copia del cliente **no se manda**: queda
 registrada como `omitido` en el panel de mails, con el motivo escrito, y el
 cliente se queda con el botón de la pantalla y el link —que sí funcionan—.
-El equipo recibe el aviso igual. Cuando el dominio esté verificado, alcanza
-con cambiar `FROM_EMAIL` y reintentar desde el panel.
+Cuando el dominio esté verificado, alcanza con cambiar `FROM_EMAIL` y
+reintentar desde el panel.
+
+**Al equipo ya no se le manda copia** (27/09/2026: las notificaciones internas
+van sólo a la plataforma). La firma queda en el historial de la campana.
 """
 import logging
 
 from sqlalchemy.orm import Session
-
-from app.services.email_reservas import destinatarios_equipo
 
 logger = logging.getLogger(__name__)
 
@@ -78,47 +79,28 @@ def _html_cliente(contrato, empresa: dict) -> str:
     """
 
 
-def _html_equipo(contrato) -> str:
-    reserva = contrato.reserva
-    aceptaciones = contrato.firma_aceptaciones or []
-    firmado = contrato.firmado_at.strftime("%d/%m/%Y %H:%M") if contrato.firmado_at else "—"
-    return f"""
-    <div style="font-family:system-ui,-apple-system,sans-serif;max-width:520px;color:#111">
-      <h2 style="margin:0 0 12px">Contrato firmado desde el link</h2>
-      <table style="font-size:14px;border-collapse:collapse">
-        <tr><td style="padding:2px 12px 2px 0;color:#555">Contrato</td>
-            <td><strong>{contrato.numero_formateado}</strong></td></tr>
-        <tr><td style="padding:2px 12px 2px 0;color:#555">Reserva</td>
-            <td>{f"#{reserva.id}" if reserva else "—"}</td></tr>
-        <tr><td style="padding:2px 12px 2px 0;color:#555">Firmó</td>
-            <td>{contrato.firmado_por_nombre or "—"} — DNI {contrato.firmado_por_dni or "—"}</td></tr>
-        <tr><td style="padding:2px 12px 2px 0;color:#555">Cuándo</td>
-            <td>{firmado} (UTC)</td></tr>
-        <tr><td style="padding:2px 12px 2px 0;color:#555">Desde</td>
-            <td>{contrato.firma_ip or "—"}</td></tr>
-        <tr><td style="padding:2px 12px 2px 0;color:#555">Aceptó</td>
-            <td>{len(aceptaciones)} declaraciones</td></tr>
-      </table>
-      <p style="color:#555;font-size:13px;margin-top:16px">
-        El PDF va adjunto. El detalle de qué aceptó, con el texto completo,
-        queda guardado en el contrato.
-      </p>
-    </div>
-    """
-
 
 def notificar_contrato_firmado(db: Session, contrato) -> None:
     """
-    Manda las dos copias. **Nunca levanta**: el cliente ya firmó y la firma ya
-    está guardada; que falle un mail no puede devolverle un error que lo deje
-    pensando que no quedó.
+    Manda la copia al cliente. **Nunca levanta**: el cliente ya firmó y la
+    firma ya está guardada; que falle un mail no puede devolverle un error que
+    lo deje pensando que no quedó.
     """
     try:
+        email_cliente = _email_del_cliente(contrato)
+        if not email_cliente:
+            # Sin destinatario no hay nada que armar: generar los PDFs para
+            # tirarlos sería trabajo de más en el momento de la firma.
+            logger.info(
+                "[Contratos] %s firmado sin email de cliente: no se manda copia",
+                contrato.numero_formateado,
+            )
+            return
+
         from app.services.contrato_service import ContratoService
         from app.services.email_service import EmailService
 
         svc = ContratoService(db)
-        emails = EmailService(db)
         pdf = svc.generar_pdf(contrato.id)
         adjunto = [(f"contrato_{contrato.numero_formateado}.pdf", pdf)]
 
@@ -134,33 +116,15 @@ def notificar_contrato_firmado(db: Session, contrato) -> None:
             )
         empresa = (contrato.snapshot or {}).get("empresa") or svc.datos_empresa()
 
-        for destino in destinatarios_equipo(db):
-            emails.registrar_y_enviar(
-                tipo="contrato_firmado_equipo",
-                destinatario=destino,
-                asunto=f"Contrato firmado — {contrato.numero_formateado}",
-                html=_html_equipo(contrato),
-                entidad_tipo="contrato",
-                entidad_id=contrato.id,
-                adjuntos=adjunto,
-            )
-
-        email_cliente = _email_del_cliente(contrato)
-        if email_cliente:
-            emails.registrar_y_enviar(
-                tipo="contrato_firmado",
-                destinatario=email_cliente,
-                asunto=f"Tu contrato firmado — {contrato.numero_formateado}",
-                html=_html_cliente(contrato, empresa),
-                entidad_tipo="contrato",
-                entidad_id=contrato.id,
-                adjuntos=adjunto,
-            )
-        else:
-            logger.info(
-                "[Contratos] %s firmado sin email de cliente: no se manda copia",
-                contrato.numero_formateado,
-            )
+        EmailService(db).registrar_y_enviar(
+            tipo="contrato_firmado",
+            destinatario=email_cliente,
+            asunto=f"Tu contrato firmado — {contrato.numero_formateado}",
+            html=_html_cliente(contrato, empresa),
+            entidad_tipo="contrato",
+            entidad_id=contrato.id,
+            adjuntos=adjunto,
+        )
     except Exception:
         logger.exception(
             "[Contratos] falló el aviso de firma de %s", getattr(contrato, "id", "?")

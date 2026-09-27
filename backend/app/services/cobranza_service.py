@@ -98,6 +98,47 @@ def monto_cobrado(db: Session, alquiler: Alquiler) -> Decimal:
     )
 
 
+def montos_cobrados(db: Session, alquileres: list[Alquiler]) -> dict[int, Decimal]:
+    """
+    `monto_cobrado` para muchos alquileres, **en dos consultas** y no dos por
+    alquiler. Mismo criterio exacto: los `Pago` del alquiler más el cobro
+    online de su reserva (vía `PagoWeb.pago_id`), sin anulados, sin repetir, y
+    sin lo anotado a cuenta corriente.
+
+    Existe para las listas (cobros pendientes): llamar `monto_cobrado` por fila
+    era una consulta de `PagoWeb` más una por pago online, por cada alquiler.
+    """
+    from app.models.pago import Pago
+    from app.models.pago_web import PagoWeb
+    from app.services.caja_service import es_plata_que_entro
+
+    if not alquileres:
+        return {}
+    por_id = {a.id: a for a in alquileres}
+    alquiler_de_reserva = {a.reserva_id: a.id for a in alquileres}
+
+    online = dict(
+        db.query(PagoWeb.pago_id, PagoWeb.reserva_id)
+        .filter(PagoWeb.reserva_id.in_(alquiler_de_reserva), PagoWeb.pago_id.isnot(None))
+        .all()
+    )
+    pagos = (
+        db.query(Pago)
+        .filter(
+            Pago.anulado.is_(False),
+            Pago.alquiler_id.in_(por_id) | Pago.id.in_(online or [-1]),
+        )
+        .all()
+    )
+    cobrado = {aid: Decimal("0") for aid in por_id}
+    for p in pagos:
+        aid = p.alquiler_id if p.alquiler_id in por_id else alquiler_de_reserva.get(online.get(p.id))
+        if aid is None or not es_plata_que_entro(p.medio_pago):
+            continue
+        cobrado[aid] += Decimal(str(p.monto))
+    return cobrado
+
+
 def saldo_pendiente(db: Session, alquiler: Alquiler) -> Decimal:
     """Lo facturado menos lo cobrado. Puede dar negativo (se cobró de más)."""
     return monto_facturado(alquiler) - monto_cobrado(db, alquiler)

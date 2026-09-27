@@ -37,11 +37,11 @@ interface Props {
  *
  * ### Por qué tolera no tener API
  *
- * Esta pantalla vive en **dos lugares**: dentro del sistema (con sesión de
- * Clerk) y como build suelto (`cotizador.html`), que se abre sin login. En el
- * segundo, `/clientes` responde 401 — y eso **no es un error a mostrar**: es el
- * modo esperado. Cuando pasa, el componente se convierte en tres campos de
- * texto y el cotizador sigue funcionando igual que siempre.
+ * Esta pantalla vivía en dos lugares: dentro del sistema (con sesión de
+ * Clerk) y como build suelto sin login (`cotizador.html`, retirado el
+ * 27/09/2026). Si `/clientes` responde 401 —una sesión vencida— eso **no es un
+ * error a mostrar**: el componente se convierte en tres campos de texto y el
+ * cotizador sigue funcionando igual que siempre.
  */
 export function SelectorCliente({ valor, onCambiar }: Props) {
   const [busqueda, setBusqueda] = useState('');

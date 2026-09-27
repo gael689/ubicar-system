@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CACHE } from '@/lib/queryClient';
-import type { FechaEspecial, FechaEspecialCreate, FechaEspecialUpdate } from '@/types';
+import type { FechaEspecial, FechaEspecialCreate } from '@/types';
 
 const KEY = 'fechas-especiales';
 
@@ -38,15 +38,6 @@ export function useCrearFechaEspecial() {
   return useMutation({
     mutationFn: (payload: FechaEspecialCreate) =>
       api.post<{ data: FechaEspecial }>('/fechas-especiales', payload),
-    onSuccess: invalidar,
-  });
-}
-
-export function useActualizarFechaEspecial() {
-  const invalidar = useInvalidar();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: FechaEspecialUpdate }) =>
-      api.patch<{ data: FechaEspecial }>(`/fechas-especiales/${id}`, payload),
     onSuccess: invalidar,
   });
 }

@@ -4,8 +4,6 @@ import type {
   EstadoReserva,
   MotivoSolicitud,
   EstadoEcheq,
-  TipoDocumento,
-  TipoGasto,
   TipoTarifa,
   TipoDanio,
   SeveridadDanio,
@@ -209,29 +207,6 @@ export const ZONAS_DANIO = [
   'Interior / tapizado', 'Tablero',
 ];
 
-// ─── Documentos del vehículo ─────────────────────────────────────────────────
-
-export const TIPO_DOCUMENTO_LABEL: Record<TipoDocumento, string> = {
-  poliza: 'Póliza',
-  vtv: 'VTV',
-  clausulas: 'Cláusulas',
-  otro: 'Otro',
-};
-
-// ─── Gastos ──────────────────────────────────────────────────────────────────
-
-export const TIPO_GASTO_LABEL: Record<TipoGasto, string> = {
-  service: 'Service',
-  combustible: 'Combustible',
-  cubiertas: 'Cubiertas',
-  reparacion: 'Reparación',
-  seguro: 'Seguro',
-  patente: 'Patente',
-  vtv: 'VTV',
-  lavado: 'Lavado',
-  otro: 'Otro',
-};
-
 // ─── Tarifas ─────────────────────────────────────────────────────────────────
 
 export const TIPO_TARIFA_LABEL: Record<TipoTarifa, string> = {
@@ -252,10 +227,6 @@ export const METODO_PAGO_LABEL: Record<string, string> = {
   mercado_pago: 'Mercado Pago',
   wapa: 'Wapa',
 };
-
-// ─── Constantes de negocio ───────────────────────────────────────────────────
-
-export const GRACE_PERIOD_MINUTES = 40;
 
 // ─── Navegación ──────────────────────────────────────────────────────────────
 

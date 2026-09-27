@@ -18,6 +18,7 @@ from app.models.cliente import Cliente
 from app.models.cuenta_corriente import CuentaCorriente, MovimientoCuentaCorriente
 from app.services import cobranza_service as cobranza
 from app.services.aging_service import AgingService
+from app.services.caja_service import MEDIOS_QUE_NO_SON_PLATA
 
 router = APIRouter(prefix="/reportes", tags=["Reportes"])
 
@@ -202,7 +203,16 @@ def reporte_ingresos(
             Gasto.anulado == False,
         ).all()
 
-        total_ingresos = sum(float(p.monto) for p in pagos_mes)
+        # Mismo criterio que la caja y los cobros: lo anotado "a cuenta
+        # corriente" no es plata que entró. Va en su propia línea para que no
+        # parezca que desapareció, pero no suma a los ingresos (si sumara, el
+        # reporte del mes no coincidiría con la suma de las cajas del mes).
+        total_ingresos = sum(
+            float(p.monto) for p in pagos_mes if p.medio_pago not in MEDIOS_QUE_NO_SON_PLATA
+        )
+        total_a_cuenta = sum(
+            float(p.monto) for p in pagos_mes if p.medio_pago in MEDIOS_QUE_NO_SON_PLATA
+        )
         total_egresos = sum(float(g.monto) for g in gastos_mes)
 
         por_medio: dict[str, float] = {}
@@ -216,6 +226,7 @@ def reporte_ingresos(
                 "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
             ][mes - 1],
             "ingresos": total_ingresos,
+            "a_cuenta": total_a_cuenta,
             "egresos": total_egresos,
             "margen": total_ingresos - total_egresos,
             "por_medio_pago": por_medio,
@@ -277,7 +288,12 @@ def reporte_flota(
         pagos_por_alquiler = {
             aid: total or Decimal("0")
             for aid, total in db.query(Pago.alquiler_id, func.sum(Pago.monto))
-            .filter(Pago.alquiler_id.in_(alquiler_ids), Pago.anulado == False)
+            .filter(
+                Pago.alquiler_id.in_(alquiler_ids),
+                Pago.anulado == False,
+                # "A cuenta corriente" no es plata que entró (ver `/ingresos`).
+                Pago.medio_pago.notin_(MEDIOS_QUE_NO_SON_PLATA),
+            )
             .group_by(Pago.alquiler_id)
             .all()
         }

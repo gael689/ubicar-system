@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { useRecibosCliente, useCrearRecibo, useAnularRecibo, descargarPdfRecibo } from '@/hooks/useRecibos';
 import { ESTADO_RECIBO_LABEL, ESTADO_RECIBO_COLOR, MEDIO_PAGO_RECIBO_LABEL } from '@/lib/constants';
-import { formatCurrency, formatDate, extractError, cn } from '@/lib/utils';
+import { formatCurrency, formatDate, extractError, cn, hoyLocal } from '@/lib/utils';
 import type { MedioPagoRecibo, Recibo } from '@/types';
 
 const schema = z.object({
@@ -37,7 +37,7 @@ export function RecibosTab({ clienteId }: Props) {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: hoyLocal(),
       medio_pago: 'efectivo',
       concepto: 'Pago a cuenta',
     },
@@ -47,7 +47,7 @@ export function RecibosTab({ clienteId }: Props) {
     try {
       await crear.mutateAsync({ ...data, cliente_id: clienteId });
       toast.success('Recibo emitido');
-      reset({ fecha: new Date().toISOString().slice(0, 10), medio_pago: 'efectivo', concepto: 'Pago a cuenta' });
+      reset({ fecha: hoyLocal(), medio_pago: 'efectivo', concepto: 'Pago a cuenta' });
       setShowForm(false);
     } catch (err) {
       toast.error(extractError(err));

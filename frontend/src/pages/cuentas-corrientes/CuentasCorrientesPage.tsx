@@ -10,7 +10,7 @@ import {
   useMovimientosCC,
   useAgregarMovimiento,
 } from '@/hooks/useCuentasCorrientes';
-import { formatCurrency, formatDate, extractError } from '@/lib/utils';
+import { formatCurrency, formatDate, extractError, hoyLocal } from '@/lib/utils';
 import type { CuentaCorriente, MovimientoCC } from '@/types';
 
 const movSchema = z.object({
@@ -50,7 +50,7 @@ function CCDetalle({
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<MovForm>({
     resolver: zodResolver(movSchema),
-    defaultValues: { tipo: 'credito', fecha: new Date().toISOString().slice(0, 10) },
+    defaultValues: { tipo: 'credito', fecha: hoyLocal() },
   });
 
   async function onSubmit(data: MovForm) {

@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { useReporteIngresos, useReporteFlota } from '@/hooks/useReportes';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, hoyLocal } from '@/lib/utils';
 
 const COLORES = ['#407EC9', '#8BB8E8', '#34d399', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -143,8 +143,8 @@ function ReporteIngresos() {
 }
 
 function ReporteFlota() {
-  const hoy = new Date().toISOString().slice(0, 10);
-  const hace30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const hoy = hoyLocal();
+  const hace30 = hoyLocal(-30);
   const [desde, setDesde] = useState(hace30);
   const [hasta, setHasta] = useState(hoy);
 

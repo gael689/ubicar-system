@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
@@ -22,7 +22,9 @@ from app.schemas.recibo import ReciboDePagoRequest, ReciboResponse
 from app.services.recibo_service import ReciboService
 from app.services import auditoria_service
 from app.services import cobranza_service as cobranza
-from app.services.caja_service import CajaService, MEDIOS_QUE_NO_SON_PLATA
+# `es_plata_que_entro` se usa en `create_pago` y no estaba importado: todo cobro
+# suelto desde la caja terminaba en un NameError (500) antes del commit.
+from app.services.caja_service import CajaService, MEDIOS_QUE_NO_SON_PLATA, es_plata_que_entro
 from app.models.movimiento_caja import MovimientoCaja
 from app.models.recibo import Recibo
 
@@ -213,12 +215,127 @@ def list_pagos(
         page=page,
         page_size=page_size,
     )
+    # El total es **plata que entró**, con el mismo criterio que la caja del
+    # día y los reportes: lo anotado a cuenta corriente va aparte. Antes este
+    # total lo sumaba y el de la caja no, así que el mismo día daba dos números
+    # distintos según la pantalla.
     resp["resumen"] = {
-        "total": float(sum(desglose.values())),
+        "total": float(sum(v for m, v in desglose.items() if m not in MEDIOS_QUE_NO_SON_PLATA)),
+        "total_a_cuenta": float(sum(v for m, v in desglose.items() if m in MEDIOS_QUE_NO_SON_PLATA)),
         "cantidad": total,
         "por_medio": {m: float(desglose.get(m, 0)) for m in MEDIOS_PAGO},
     }
     return resp
+
+
+# Qué tan adelante mira "Cobros pendientes" en las reservas que todavía no
+# salieron. Una reserva de dentro de dos meses sin seña no es un cobro
+# pendiente de hoy: es una reserva. Listarlas todas llenaba la lista de cosas
+# que nadie tiene que cobrar esta semana y escondía las que sí.
+DIAS_RESERVAS_PENDIENTES = 7
+
+
+def cobros_pendientes(
+    db: Session, hoy: date | None = None, cliente_id: int | None = None
+) -> list[dict]:
+    """
+    Lo que falta cobrar **ahora**:
+
+    1. Alquileres **abiertos** (el auto está afuera) con saldo. Los que ya
+       volvieron y deben algo son deuda de cuenta corriente, y se miran ahí.
+    2. Reservas sin alquiler (`pendiente`/`confirmada`) cuyo retiro es en los
+       próximos `DIAS_RESERVAS_PENDIENTES` días o ya pasó, con saldo.
+
+    Los montos salen de los mismos cálculos que usa el resto del sistema
+    (`cobranza_service` para el alquiler, `ReservaService.total_a_cobrar` para
+    la reserva): una fórmula propia acá ya había divergido una vez.
+
+    **Sin N+1**: antes cargaba *todos* los alquileres de la historia —incluidos
+    los terminados y cancelados— y hacía varias consultas por cada uno.
+
+    Con `cliente_id` es lo cobrable de **ese** cliente, sin la ventana de días:
+    es lo que ofrece el buscador del formulario de cobro de la caja.
+    """
+    from sqlalchemy import exists
+    from sqlalchemy.orm import joinedload, selectinload
+
+    from app.services.reserva_service import ReservaService
+
+    hoy = hoy or date.today()
+    pendientes = []
+
+    abiertos = (
+        db.query(Alquiler)
+        .options(
+            joinedload(Alquiler.reserva).joinedload(Reserva.cliente),
+            joinedload(Alquiler.reserva).selectinload(Reserva.adicionales),
+        )
+        .filter(Alquiler.checkin_fecha.is_(None))
+    )
+    if cliente_id is not None:
+        abiertos = abiertos.join(Reserva, Reserva.id == Alquiler.reserva_id).filter(
+            Reserva.cliente_id == cliente_id
+        )
+    abiertos = abiertos.all()
+    cobrado = cobranza.montos_cobrados(db, abiertos)
+    for a in abiertos:
+        reserva = a.reserva
+        if reserva is None:
+            continue
+        monto_total = cobranza.monto_facturado(a)
+        monto_abonado = cobrado.get(a.id, Decimal("0"))
+        saldo = monto_total - monto_abonado
+        if saldo > 0:
+            pendientes.append({
+                "tipo": "alquiler_checkout",
+                "id_origen": a.id,
+                "reserva_id": reserva.id,
+                "cliente_id": reserva.cliente_id,
+                "cliente": reserva.cliente.nombre_completo if reserva.cliente else "Sin cliente",
+                "monto_total": float(monto_total),
+                "monto_abonado": float(monto_abonado),
+                "saldo_pendiente": float(saldo),
+                "fecha_creacion": a.checkout_fecha.isoformat(),
+                "fecha_referencia": a.checkout_fecha.isoformat(),
+                "notas": f"Reserva #{reserva.id} — el auto está afuera",
+            })
+
+    svc = ReservaService(db)
+    reservas = (
+        db.query(Reserva)
+        .options(joinedload(Reserva.cliente), selectinload(Reserva.adicionales))
+        .filter(
+            Reserva.estado.in_(["pendiente", "confirmada"]),
+            ~exists().where(Alquiler.reserva_id == Reserva.id),
+        )
+    )
+    if cliente_id is not None:
+        reservas = reservas.filter(Reserva.cliente_id == cliente_id)
+    else:
+        reservas = reservas.filter(
+            Reserva.fecha_inicio <= hoy + timedelta(days=DIAS_RESERVAS_PENDIENTES)
+        )
+    reservas = reservas.order_by(Reserva.fecha_inicio, Reserva.id).all()
+    for r in reservas:
+        monto_total = svc.total_a_cobrar(r)
+        monto_abonado = Decimal(str(r.anticipo_monto or 0))
+        saldo = monto_total - monto_abonado
+        if saldo > 0:
+            pendientes.append({
+                "tipo": "reserva",
+                "id_origen": r.id,
+                "reserva_id": r.id,
+                "cliente_id": r.cliente_id,
+                "cliente": r.cliente.nombre_completo if r.cliente else "Sin cliente",
+                "monto_total": float(monto_total),
+                "monto_abonado": float(monto_abonado),
+                "saldo_pendiente": float(saldo),
+                "fecha_creacion": r.created_at.isoformat() if r.created_at else "",
+                "fecha_referencia": r.fecha_inicio.isoformat(),
+                "notas": f"Retira el {r.fecha_inicio.strftime('%d/%m')}",
+            })
+
+    return pendientes
 
 
 @router.get("/pendientes")
@@ -226,69 +343,19 @@ def get_pagos_pendientes(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    pendientes = []
+    return ok(cobros_pendientes(db))
 
-    # 1. Alquileres con saldo deudor
-    alquileres = db.query(Alquiler).all()
-    for a in alquileres:
-        reserva = a.reserva
-        if not reserva:
-            continue
 
-        # Lo facturado y lo cobrado los calcula `cobranza_service`, que es el
-        # único lugar donde vive esta fórmula. Antes estaba copiada acá y en
-        # `notificaciones_reglas.saldo_pendiente_al_finalizar`, las dos veces
-        # sumando `a.pagos` — que **no incluye el cobro online**: ese `Pago`
-        # nace con `alquiler_id=None` porque el alquiler todavía no existe. El
-        # alquiler pagado por la web figuraba pidiendo la seña que ya había
-        # cobrado. Ver `PLAN_DINERO.md` §1.5.a.
-        monto_total = float(cobranza.monto_facturado(a))
-        monto_abonado = float(cobranza.monto_cobrado(db, a))
-        saldo_pendiente = monto_total - monto_abonado
-
-        if saldo_pendiente > 0:
-            cliente = reserva.cliente.nombre_completo if reserva.cliente else "Desconocido"
-            pendientes.append({
-                "tipo": "alquiler_checkout",
-                "id_origen": a.id,
-                "cliente": cliente,
-                "monto_total": monto_total,
-                "monto_abonado": monto_abonado,
-                "saldo_pendiente": saldo_pendiente,
-                "fecha_creacion": a.checkout_fecha.isoformat(),
-                "notas": f"Reserva #{reserva.id} - Saldo de alquiler"
-            })
-            
-    # 2. Reservas sin Alquiler (estado pendiente o confirmada) con saldo
-    reservas = db.query(Reserva).filter(Reserva.estado.in_(["pendiente", "confirmada"])).all()
-    for r in reservas:
-        # Check if Alquiler exists for this Reserva
-        alquiler = db.query(Alquiler).filter(Alquiler.reserva_id == r.id).first()
-        if alquiler:
-            continue
-            
-        monto_total = (
-            float(r.precio_total or 0)
-            + float(r.cargo_late_checkout or 0)
-            + float(r.total_adicionales)
-        )
-        monto_abonado = float(r.anticipo_monto or 0)
-        saldo_pendiente = monto_total - monto_abonado
-        
-        if saldo_pendiente > 0:
-            cliente = r.cliente.nombre_completo if r.cliente else "Desconocido"
-            pendientes.append({
-                "tipo": "reserva",
-                "id_origen": r.id,
-                "cliente": cliente,
-                "monto_total": monto_total,
-                "monto_abonado": monto_abonado,
-                "saldo_pendiente": saldo_pendiente,
-                "fecha_creacion": r.created_at.isoformat() if r.created_at else "",
-                "notas": r.notas
-            })
-            
-    return ok(pendientes)
+@router.get("/a-cobrar")
+def get_a_cobrar_de_cliente(
+    cliente_id: int = Query(...),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """Los alquileres abiertos y las reservas sin retirar de un cliente, con su
+    saldo. Alimenta el buscador del formulario de cobro de la caja, que antes
+    pedía tipear el número de alquiler a mano."""
+    return ok(cobros_pendientes(db, cliente_id=cliente_id))
 
 
 @router.get("/caja/dia")
@@ -340,7 +407,10 @@ def caja_dia(
         # que no parezca que desaparecio del total.
         "total_a_cuenta": total_a_cuenta,
         "total_egresos": total_egresos,
-        "balance": total_ingresos - total_egresos,
+        # Ingresos (sin lo anotado a cuenta) menos gastos del día. Se llamaba
+        # "balance" y se leía como "lo que hay en la caja", que es otra cosa:
+        # eso lo contesta `donde_esta_la_plata`.
+        "resultado_del_dia": total_ingresos - total_egresos,
         "por_medio_pago": por_medio,
         "cobros": cobros_detalle,
         "gastos": gastos_resp,

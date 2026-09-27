@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
-import type { ApiResponse, NotificacionesResponse, NotificacionItem, PreferenciaNotificacion, PaginatedResponse } from '@/types';
+import type { ApiResponse, NotificacionesResponse, NotificacionItem, PaginatedResponse } from '@/types';
 
 export function useNotificaciones() {
   return useQuery({
@@ -86,26 +86,5 @@ export function useDescartarNotificacion() {
       return data.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notificaciones'] }),
-  });
-}
-
-export function usePreferenciasNotificacion() {
-  return useQuery({
-    queryKey: ['notificaciones', 'preferencias'],
-    queryFn: async () => {
-      const { data } = await api.get<ApiResponse<PreferenciaNotificacion[]>>('/notificaciones/preferencias');
-      return data.data;
-    },
-  });
-}
-
-export function useSetPreferenciaNotificacion() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (payload: { tipo_regla: string; canales: string[]; anticipacion_dias: number | null; activo: boolean }) => {
-      const { data } = await api.put('/notificaciones/preferencias', payload);
-      return data.data;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notificaciones', 'preferencias'] }),
   });
 }

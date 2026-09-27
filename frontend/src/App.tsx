@@ -65,9 +65,9 @@ export default function App() {
         <Route path="/contratos" element={<AppLayout title="Contratos"><ContratosPage /></AppLayout>} />
         <Route path="/cotizador" element={<AppLayout title="Cotizador" fullBleed><CotizadorPage /></AppLayout>} />
         <Route path="/finanzas" element={<AppLayout title="Finanzas"><FinanzasPage /></AppLayout>} />
-        <Route path="/caja" element={<Navigate to="/finanzas" replace />} />
-        <Route path="/cuentas-corrientes" element={<Navigate to="/finanzas" replace />} />
-        <Route path="/echeqs" element={<Navigate to="/finanzas" replace />} />
+        <Route path="/caja" element={<Navigate to="/finanzas?tab=caja" replace />} />
+        <Route path="/cuentas-corrientes" element={<Navigate to="/finanzas?tab=cc" replace />} />
+        <Route path="/echeqs" element={<Navigate to="/finanzas?tab=echeqs" replace />} />
         <Route path="/reportes" element={<AppLayout title="Reportes"><ReportesPage /></AppLayout>} />
         <Route path="/notificaciones" element={<AppLayout title="Notificaciones"><NotificacionesPage /></AppLayout>} />
         <Route path="/configuracion" element={<AppLayout title="Configuración"><ConfiguracionPage /></AppLayout>} />

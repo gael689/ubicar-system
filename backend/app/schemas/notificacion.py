@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import Literal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 UrgenciaNotificacion = Literal["critica", "alta", "media", "baja"]
 EstadoNotificacion = Literal["pendiente", "enviada", "leida", "pospuesta", "descartada", "resuelta"]
@@ -40,27 +40,3 @@ class GenerarNotificacionesResponse(BaseModel):
     creadas: int
     resueltas: int
     evaluadas: int
-
-
-class PreferenciaNotificacionRequest(BaseModel):
-    tipo_regla: str
-    canales: list[Literal["in_app", "email", "push", "whatsapp"]] = ["in_app"]
-    anticipacion_dias: int | None = None
-    activo: bool = True
-
-    @field_validator("tipo_regla")
-    @classmethod
-    def _tipo_no_vacio(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("tipo_regla es obligatorio")
-        return v
-
-
-class PreferenciaNotificacionResponse(BaseModel):
-    id: int
-    usuario_id: int
-    tipo_regla: str
-    canales: list[str]
-    anticipacion_dias: int | None
-    activo: bool
-    model_config = {"from_attributes": True}

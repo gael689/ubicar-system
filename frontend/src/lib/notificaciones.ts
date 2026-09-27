@@ -10,15 +10,19 @@
  *
  * **Si se agrega una regla en `domain/notificaciones_reglas.py`, va acá.**
  */
-export const TIPO_GRUPO: Record<string, string> = {
+const TIPO_GRUPO: Record<string, string> = {
   entrega_hoy: '🚗 Entregas de hoy',
   devolucion_hoy: '🏁 Devoluciones de hoy',
   checkout_pendiente: '🚗 Checkouts pendientes',
   checkin_vencido: '🏁 Devoluciones vencidas',
   contrato_no_firmado: '📝 Contratos',
   contrato_sin_emitir: '📝 Contratos',
+  contrato_sin_firmar_auto_afuera: '📝 Contratos',
+  // Sólo historial: nace resuelta, no suma a la campana.
+  contrato_firmado: '📝 Contratos',
   reserva_pendiente_24hs: '📋 Reservas sin confirmar',
   echeq_proximo: '💰 Echeqs',
+  // Ya no se genera (es un escalón de `echeq_proximo`); queda por el historial.
   echeq_vence_hoy: '💰 Echeqs',
   echeq_sin_acreditar: '💰 Echeqs',
   echeq_rechazado: '💰 Echeqs',
@@ -47,6 +51,9 @@ export const TIPO_GRUPO: Record<string, string> = {
   multa_vencida: '⚠️ Multas',
   reserva_web_nueva: '🌐 Reservas web',
   reserva_web_sin_atender: '🌐 Reservas web',
+  reserva_web_sin_asignar: '🌐 Reservas web',
+  reserva_web_esperando_transferencia: '🌐 Reservas web',
+  solicitud_contacto: '🌐 Reservas web',
   // Una devolución o un contracargo de Mercado Pago. El asiento se revierte
   // solo (la plata ya volvió al cliente); lo que sigue —el auto, la respuesta—
   // necesita una persona, y de eso avisa esto.
@@ -63,7 +70,7 @@ export const TIPO_GRUPO: Record<string, string> = {
   datos_por_completar: '📌 Falta completar',
 };
 
-export const GRUPO_OTROS = 'Otros';
+const GRUPO_OTROS = 'Otros';
 
 export function grupoDe(tipo: string): string {
   return TIPO_GRUPO[tipo] ?? GRUPO_OTROS;

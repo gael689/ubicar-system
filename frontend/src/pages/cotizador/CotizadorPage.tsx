@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { hoyLocal } from '@/lib/utils';
 import { Inbox, FileDown, RefreshCw, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -100,10 +101,9 @@ function formItemToData(f: FormItem): ItemCotizacion {
 }
 
 // ─── Helpers de fecha ─────────────────────────────────────────────────────────
-function today(): string { return new Date().toISOString().split('T')[0]; }
+function today(): string { return hoyLocal(); }
 function plusDays(n: number): string {
-  const d = new Date(); d.setDate(d.getDate() + n);
-  return d.toISOString().split('T')[0];
+  return hoyLocal(n);
 }
 /**
  * El número de cotización: cinco dígitos, correlativo.
@@ -325,8 +325,8 @@ export function CotizadorPage() {
     try {
       await api.post('/cotizador/presupuestos', {
         cliente_id: clienteId,
-        fecha_inicio: primero.fecha_desde || new Date().toISOString().split('T')[0],
-        fecha_fin: primero.fecha_hasta || new Date().toISOString().split('T')[0],
+        fecha_inicio: primero.fecha_desde || hoyLocal(),
+        fecha_fin: primero.fecha_hasta || hoyLocal(),
         // El presupuesto guarda un unitario y el cotizador arma varios ítems:
         // se registra el total repartido, que es el número que el cliente vio.
         tarifa_unitaria: totalCotizado / dias,

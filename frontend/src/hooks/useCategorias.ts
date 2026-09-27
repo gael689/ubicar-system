@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import api from '@/lib/api';
 import { CACHE } from '@/lib/queryClient';
 import { extractError } from '@/lib/utils';
-import type { ApiResponse, Categoria, CategoriaCreate, CategoriaUpdate } from '@/types';
+import type { ApiResponse, Categoria, CategoriaUpdate } from '@/types';
 import type { Tarifa, TarifaCreate } from '@/hooks/useTarifas';
 
 const KEY = 'categorias';
@@ -21,21 +21,6 @@ export function useCategorias(incluirInactivas = false) {
   });
 }
 
-export function useCreateCategoria() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (body: CategoriaCreate) => {
-      const { data } = await api.post<ApiResponse<Categoria>>('/categorias', body);
-      return data.data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [KEY] });
-      toast.success('Categoría creada');
-    },
-    onError: (err) => toast.error(extractError(err)),
-  });
-}
-
 export function useUpdateCategoria() {
   const qc = useQueryClient();
   return useMutation({
@@ -46,20 +31,6 @@ export function useUpdateCategoria() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
       toast.success('Categoría actualizada');
-    },
-    onError: (err) => toast.error(extractError(err)),
-  });
-}
-
-export function useDeactivateCategoria() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      await api.delete(`/categorias/${id}`);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [KEY] });
-      toast.success('Categoría desactivada');
     },
     onError: (err) => toast.error(extractError(err)),
   });

@@ -13,7 +13,7 @@ import {
   useAgingCliente,
 } from '@/hooks/useCuentasCorrientes';
 import { NATURALEZA_LABEL, NATURALEZA_COLOR } from '@/lib/constants';
-import { formatCurrency, formatDate, extractError } from '@/lib/utils';
+import { formatCurrency, formatDate, extractError, hoyLocal } from '@/lib/utils';
 
 const movSchema = z.object({
   tipo: z.enum(['debito', 'credito']),
@@ -61,7 +61,7 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<MovForm>({
     resolver: zodResolver(movSchema),
-    defaultValues: { tipo: 'credito', fecha: new Date().toISOString().slice(0, 10) },
+    defaultValues: { tipo: 'credito', fecha: hoyLocal() },
   });
 
   async function onSubmit(data: MovForm) {
@@ -69,7 +69,7 @@ export function CuentaCorrienteTab({ clienteId, clienteNombre }: Props) {
     try {
       await agregar.mutateAsync({ ...data, alquiler_id: data.alquiler_id || null });
       toast.success('Movimiento registrado');
-      reset({ tipo: 'credito', fecha: new Date().toISOString().slice(0, 10) });
+      reset({ tipo: 'credito', fecha: hoyLocal() });
       setShowForm(false);
     } catch (err) {
       toast.error(extractError(err));

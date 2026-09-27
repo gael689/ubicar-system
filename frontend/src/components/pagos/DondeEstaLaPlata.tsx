@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Banknote, Landmark, ArrowDownLeft, ShieldCheck, Undo2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { useCrearMovimientoCaja } from '@/hooks/usePagos';
+import { MotivoDialog } from '@/components/shared/MotivoDialog';
+import { useAnularMovimientoCaja, useCrearMovimientoCaja } from '@/hooks/usePagos';
 import { formatCurrency, formatDate, extractError } from '@/lib/utils';
 import type { DondeEstaLaPlata as Datos, MovimientoCaja, TipoMovimientoCaja } from '@/types';
 
@@ -22,10 +23,27 @@ const TIPO_ICONO: Record<TipoMovimientoCaja, typeof Landmark> = {
   reembolso: Undo2,
 };
 
-/** El reembolso no se carga desde acá: revierte también la cuenta corriente. */
-const TIPOS_CARGABLES: TipoMovimientoCaja[] = [
-  'deposito_banco', 'retiro', 'garantia_recibida', 'garantia_devuelta',
-];
+/**
+ * Lo único que se carga a mano: lo que ningún evento del sistema dispara solo.
+ *
+ * - El reembolso no: revierte también la cuenta corriente (va por el
+ *   reintegro al cliente).
+ * - Las garantías tampoco: las registra solas el check-out (entra) y el
+ *   check-in (vuelve). Cargarlas además acá las contaba dos veces en el
+ *   efectivo del cajón.
+ */
+const TIPOS_CARGABLES: TipoMovimientoCaja[] = ['deposito_banco', 'retiro'];
+
+/**
+ * Se puede anular desde acá lo que se cargó a mano. Una garantía atada a un
+ * alquiler la escribió el check-out o el check-in, y un reembolso revirtió
+ * también la cuenta del cliente: anularlos sueltos dejaría la caja
+ * contradiciendo a lo que los generó.
+ */
+function esManual(m: MovimientoCaja): boolean {
+  if (m.tipo === 'deposito_banco' || m.tipo === 'retiro') return true;
+  return (m.tipo === 'garantia_recibida' || m.tipo === 'garantia_devuelta') && m.alquiler_id == null;
+}
 
 interface Props {
   fecha: string;
@@ -47,6 +65,8 @@ interface Props {
  */
 export function DondeEstaLaPlata({ fecha, datos, movimientos = [] }: Props) {
   const crear = useCrearMovimientoCaja();
+  const anular = useAnularMovimientoCaja();
+  const [anulando, setAnulando] = useState<MovimientoCaja | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [tipo, setTipo] = useState<TipoMovimientoCaja>('deposito_banco');
   const [monto, setMonto] = useState('');
@@ -70,6 +90,17 @@ export function DondeEstaLaPlata({ fecha, datos, movimientos = [] }: Props) {
       setMonto('');
       setMotivo('');
       setAbierto(false);
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  }
+
+  async function confirmarAnulacion(motivo: string) {
+    if (!anulando) return;
+    try {
+      await anular.mutateAsync({ id: anulando.id, motivo });
+      toast.success('Movimiento anulado');
+      setAnulando(null);
     } catch (e) {
       toast.error(extractError(e));
     }
@@ -173,11 +204,35 @@ export function DondeEstaLaPlata({ fecha, datos, movimientos = [] }: Props) {
                 >
                   {m.efecto_en_caja >= 0 ? '+' : '−'}{formatCurrency(Math.abs(m.efecto_en_caja))}
                 </span>
+                {esManual(m) && (
+                  <button
+                    type="button"
+                    onClick={() => setAnulando(m)}
+                    className="shrink-0 text-xs text-muted-foreground hover:text-danger"
+                    title="Anular este movimiento"
+                  >
+                    Anular
+                  </button>
+                )}
               </div>
             );
           })}
         </div>
       )}
+
+      <MotivoDialog
+        open={anulando !== null}
+        onOpenChange={open => !open && setAnulando(null)}
+        title="Anular el movimiento"
+        description={
+          anulando
+            ? `${TIPO_LABEL[anulando.tipo]} de ${formatCurrency(anulando.monto)}. No se borra: queda anulado y deja de contar en el efectivo del cajón. Escribí por qué.`
+            : ''
+        }
+        confirmLabel="Anular movimiento"
+        loading={anular.isPending}
+        onConfirm={confirmarAnulacion}
+      />
     </div>
   );
 }

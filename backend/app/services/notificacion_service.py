@@ -20,10 +20,9 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import case, exists, extract, func, or_
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.core.exceptions import NotFoundError
 from app.domain.notificaciones_reglas import evaluar_todas
-from app.models.notificacion import Notificacion, NotificacionVista, PreferenciaNotificacion
+from app.models.notificacion import Notificacion, NotificacionVista
 
 ESTADOS_ACTIVOS = ("pendiente", "enviada", "pospuesta")
 
@@ -44,6 +43,9 @@ TIPOS_DE_ESTADO_CONTINUO = frozenset({
     "service_km_proximo",
     "vehiculo_fuera_servicio_prolongado",
     "datos_por_completar",
+    # Un contrato sin firmar es un aviso por reserva, que sube de urgencia a
+    # medida que se acerca la entrega: el motor le actualiza texto y urgencia.
+    "contrato_no_firmado",
 })
 REAVISO_DIAS = 7
 
@@ -60,6 +62,20 @@ TIPOS_ESCALONADOS = frozenset({
     "doc_cliente_por_vencer",
     "doc_cliente_vencido",
     "licencia_cliente_por_vencer",
+    # Un echeq: "se cobra en N días" y después "se cobra hoy", una sola fila.
+    "echeq_proximo",
+})
+
+# Una reserva web es **un** aviso. El instantáneo (`reserva_web_nueva`, al
+# entrar) y las reglas que la siguen reclamando (sin atender, sin asignar,
+# esperando la transferencia) hablaban de la misma reserva, y la campana
+# mostraba dos o tres filas por cada una. Mientras el instantáneo siga abierto
+# —o alguien lo haya descartado hace poco—, las reglas no suman otra fila: son
+# la red de seguridad para cuando el instantáneo no existe o ya se resolvió.
+TIPOS_REGLA_RESERVA_WEB = frozenset({
+    "reserva_web_sin_atender",
+    "reserva_web_sin_asignar",
+    "reserva_web_esperando_transferencia",
 })
 
 # Tipos de aviso instantáneo (`generar_una`, no catalogados) que escalan solos
@@ -107,7 +123,7 @@ class NotificacionService:
         clave) y auto-resuelve lo que ya no aparece. No hace commit — lo hace
         el caller (router o scheduler)."""
         hoy = hoy or date.today()
-        candidatos = evaluar_todas(self.db, hoy)
+        candidatos = self._sin_repetir_reserva_web(evaluar_todas(self.db, hoy), hoy)
 
         claves_generadas = {_clave_dedupe(c) for c in candidatos}
         existentes = {
@@ -153,6 +169,39 @@ class NotificacionService:
             "resueltas": resueltas + colapsadas,
             "evaluadas": len(candidatos),
         }
+
+    def _sin_repetir_reserva_web(self, candidatos: list[dict], hoy: date) -> list[dict]:
+        """
+        Saca los candidatos de las reglas de reserva web cuya reserva ya tiene
+        su aviso instantáneo (`reserva_web_nueva`) abierto, o descartado hace
+        menos de `REAVISO_DIAS`. Ver `TIPOS_REGLA_RESERVA_WEB`.
+
+        Al sacarlos de los candidatos, `_auto_resolver` además resuelve las
+        filas de esas reglas que ya se habían acumulado: la campana se limpia
+        sola en la próxima corrida.
+        """
+        ids = {
+            c["entidad_id"] for c in candidatos
+            if c["tipo"] in TIPOS_REGLA_RESERVA_WEB and c["entidad_tipo"] == "reserva"
+        }
+        if not ids:
+            return candidatos
+        limite = datetime.combine(hoy - timedelta(days=REAVISO_DIAS), time.min)
+        con_aviso = {
+            eid for (eid,) in self.db.query(Notificacion.entidad_id).filter(
+                Notificacion.tipo == "reserva_web_nueva",
+                Notificacion.entidad_tipo == "reserva",
+                Notificacion.entidad_id.in_(ids),
+                or_(
+                    Notificacion.estado.in_(ESTADOS_ACTIVOS),
+                    (Notificacion.estado == "descartada") & (Notificacion.created_at >= limite),
+                ),
+            ).all()
+        }
+        return [
+            c for c in candidatos
+            if not (c["tipo"] in TIPOS_REGLA_RESERVA_WEB and c["entidad_id"] in con_aviso)
+        ]
 
     def _ya_avisados_de_estado_continuo(
         self, candidatos: list[dict], hoy: date
@@ -251,7 +300,7 @@ class NotificacionService:
             colapsadas += 1
         return colapsadas
 
-    def generar_una(self, candidato: dict) -> Notificacion | None:
+    def generar_una(self, candidato: dict, solo_historial: bool = False) -> Notificacion | None:
         """Crea una notificación puntual fuera del ciclo del motor — para
         eventos instantáneos que no deben esperar a la corrida de las 08:00
         (ej: echeq rechazado al registrarlo). Idempotente por clave_dedupe.
@@ -262,6 +311,11 @@ class NotificacionService:
         corrida — y antes de esta columna eso las marcaba "resueltas" en el
         primer barrido, aunque nadie las hubiera atendido. Se resuelven a
         mano o cuando la entidad cambia de estado (`resolver_por_entidad`).
+
+        **`solo_historial=True`** la crea ya resuelta: queda registrado que
+        pasó (se ve en el historial) pero no suma a la campana. Es para los
+        hechos que son buenas noticias y no piden hacer nada, como que el
+        cliente firmó el contrato.
         """
         clave = _clave_dedupe(candidato)
         existe = self.db.query(Notificacion).filter(Notificacion.clave_dedupe == clave).first()
@@ -277,7 +331,8 @@ class NotificacionService:
             url_destino=candidato["url_destino"],
             fecha_objetivo=candidato["fecha_objetivo"],
             clave_dedupe=clave,
-            estado="pendiente",
+            estado="resuelta" if solo_historial else "pendiente",
+            resuelta_at=datetime.utcnow() if solo_historial else None,
             autoresoluble=False,
         )
         self.db.add(notif)
@@ -475,7 +530,7 @@ class NotificacionService:
         **`usuario_id` saca las que ese usuario ya marcó vistas** (C-9): es el
         acuse por usuario, no un `estado` global — que Franco la marque no la
         esconde para Martín, sólo para Franco. Sin `usuario_id` (llamadas
-        internas, digest) devuelve todo lo activo, sin filtrar por lectura de
+        internas) devuelve todo lo activo, sin filtrar por lectura de
         nadie.
         """
         ahora = datetime.utcnow()
@@ -566,7 +621,7 @@ class NotificacionService:
         la marca o si el motor la regenera con una `clave_dedupe` nueva.
 
         `leida_at` se sigue completando la primera vez, a título informativo
-        (para el historial y el digest), pero ya no decide si algo se ve.
+        (para el historial), pero ya no decide si algo se ve.
         """
         n = self.get(id)
         ya_vista = (
@@ -593,107 +648,3 @@ class NotificacionService:
         n.estado = "descartada"
         self.db.flush()
         return n
-
-    # ── Preferencias ─────────────────────────────────────────────────────
-
-    def list_preferencias(self, usuario_id: int) -> list[PreferenciaNotificacion]:
-        return (
-            self.db.query(PreferenciaNotificacion)
-            .filter(PreferenciaNotificacion.usuario_id == usuario_id)
-            .all()
-        )
-
-    def set_preferencia(
-        self, usuario_id: int, tipo_regla: str, canales: list[str], anticipacion_dias: int | None, activo: bool
-    ) -> PreferenciaNotificacion:
-        pref = (
-            self.db.query(PreferenciaNotificacion)
-            .filter(
-                PreferenciaNotificacion.usuario_id == usuario_id,
-                PreferenciaNotificacion.tipo_regla == tipo_regla,
-            )
-            .first()
-        )
-        if pref is None:
-            pref = PreferenciaNotificacion(usuario_id=usuario_id, tipo_regla=tipo_regla)
-            self.db.add(pref)
-        pref.canales = canales
-        pref.anticipacion_dias = anticipacion_dias
-        pref.activo = activo
-        self.db.flush()
-        return pref
-
-    # ── Digest matutino por email ───────────────────────────────────────
-    # Último canal a implementar (a pedido explícito del usuario). El motor
-    # ya corre a las 08:00 ART y persiste todo — esto sólo arma un resumen
-    # de lo activo en ese momento y lo manda por Resend. Sin destinatarios
-    # configurados (`settings.notificaciones_digest_destinatarios` vacío) no
-    # se manda nada; sin `resend_api_key` el intento queda registrado como
-    # fallido en `emails_enviados` (ver EmailService).
-
-    _ORDEN_URGENCIA = ("critica", "alta", "media", "baja")
-    _LABEL_URGENCIA = {
-        "critica": "🔴 CRÍTICO",
-        "alta": "🟠 ALTA",
-        "media": "🟡 MEDIA",
-        "baja": "⚪ BAJA",
-    }
-
-    def construir_digest(self, hoy: date | None = None) -> tuple[str, str] | None:
-        """Arma (asunto, html) del digest a partir de lo activo ahora mismo.
-        Devuelve None si no hay nada que avisar (no manda un mail vacío)."""
-        hoy = hoy or date.today()
-        items = self.list_activas()
-        if not items:
-            return None
-
-        por_urgencia: dict[str, list[Notificacion]] = {u: [] for u in self._ORDEN_URGENCIA}
-        for n in items:
-            por_urgencia.setdefault(n.urgencia, []).append(n)
-
-        bloques = []
-        for urgencia in self._ORDEN_URGENCIA:
-            notifs = por_urgencia.get(urgencia) or []
-            if not notifs:
-                continue
-            filas = "".join(
-                f"<li><strong>{n.titulo}</strong> — {n.descripcion}</li>"
-                for n in notifs
-            )
-            bloques.append(
-                f"<h3>{self._LABEL_URGENCIA[urgencia]} ({len(notifs)})</h3><ul>{filas}</ul>"
-            )
-
-        fecha_str = hoy.strftime("%d/%m/%Y")
-        html = f"<h2>Resumen de notificaciones — {fecha_str}</h2>{''.join(bloques)}"
-        asunto = f"Ubicar Rent — {len(items)} notificaciones activas ({fecha_str})"
-        return asunto, html
-
-    def enviar_digest_matutino(self, hoy: date | None = None) -> int:
-        """Arma el digest y lo manda a los destinatarios configurados.
-        Devuelve cuántos envíos se hicieron con éxito (0 si no hay nada que
-        avisar, no hay destinatarios, o falló Resend).
-
-        Pasa por `EmailService` como todo lo demás: así el digest que no salió
-        un martes queda registrado en el panel, en vez de perderse en el log
-        del servidor."""
-        from app.services.email_service import EmailService
-
-        destinatarios = [
-            d.strip() for d in settings.notificaciones_digest_destinatarios.split(",") if d.strip()
-        ]
-        if not destinatarios:
-            return 0
-        digest = self.construir_digest(hoy)
-        if digest is None:
-            return 0
-        asunto, html = digest
-        svc = EmailService(self.db)
-        enviados = 0
-        for destino in destinatarios:
-            registro = svc.registrar_y_enviar(
-                tipo="digest", destinatario=destino, asunto=asunto, html=html
-            )
-            if registro is not None and registro.estado == "enviado":
-                enviados += 1
-        return enviados

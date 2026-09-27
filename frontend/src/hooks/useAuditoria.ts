@@ -60,17 +60,3 @@ export function useOpcionesAuditoria() {
     staleTime: 5 * 60_000,
   });
 }
-
-/** Todo lo que le pasó a un registro puntual — para la ficha de una reserva o un cliente. */
-export function useHistorialDe(entidadTipo: string, entidadId: number | undefined) {
-  return useQuery({
-    queryKey: [KEY, entidadTipo, entidadId],
-    enabled: entidadId !== undefined,
-    queryFn: async () => {
-      const res = await api.get<{ data: RegistroAuditoria[] }>(
-        `/auditoria/${entidadTipo}/${entidadId}`
-      );
-      return res.data.data;
-    },
-  });
-}
