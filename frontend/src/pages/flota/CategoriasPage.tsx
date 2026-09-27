@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { FlotaTabs } from '@/components/flota/FlotaTabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -34,11 +34,7 @@ export function CategoriasPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/flota"><ArrowLeft className="h-4 w-4" /> Flota</Link>
-        </Button>
-      </div>
+      <FlotaTabs />
 
       <PageHeader
         title="Categorías de vehículo"

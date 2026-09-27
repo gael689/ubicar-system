@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import TYPE_CHECKING, List
-from sqlalchemy import String, Boolean, Date, DateTime, Enum, Integer, ForeignKey
+from sqlalchemy import String, Boolean, Date, DateTime, Enum, Integer, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -50,6 +50,11 @@ class Vehiculo(Base):
     km_entre_services: Mapped[int] = mapped_column(Integer, nullable=False, default=10000)
     orden: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Por qué y cuándo se dio de baja (migración 099). Sin esto, un auto
+    # inactivo no decía si se vendió, se chocó o se lo robaron. Se limpian al
+    # reactivar.
+    motivo_baja: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fecha_baja: Mapped[date | None] = mapped_column(Date, nullable=True)
     foto_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     # Cuándo entró al estado actual (Fase 2: regla "fuera de servicio > 7

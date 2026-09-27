@@ -8,11 +8,14 @@ Reglas:
 - Reactivación idempotente.
 - (Pendiente F3) No se puede dar de baja un vehículo con alquileres activos.
 """
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.adapters.storage import IStorage
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import BusinessRuleError, ConflictError, NotFoundError
 from app.models.vehiculo import Vehiculo
+from app.services import auditoria_service
 from app.repositories.vehiculo_repo import VehiculoRepository
 from app.schemas.vehiculo import VehiculoCreate, VehiculoResponse, VehiculoUpdate
 
@@ -128,9 +131,20 @@ class VehiculoService:
 
         return ReservaRepo(self.db).find_activas_para_vehiculo(vehiculo_id)
 
-    def deactivate(self, vehiculo_id: int, forzar: bool = False) -> Vehiculo:
+    def deactivate(
+        self,
+        vehiculo_id: int,
+        forzar: bool = False,
+        motivo: str | None = None,
+        usuario_id: int | None = None,
+    ) -> Vehiculo:
         """
         Baja lógica. NUNCA borra. Idempotente — si ya está inactivo, no falla.
+
+        **Pide el motivo** (vendido, siniestro, robo, fin de leasing, otro).
+        Antes era un "¿seguro?" sin más, y meses después nadie sabía por qué
+        ese auto estaba inactivo. Se guarda con la fecha y queda en la
+        auditoría.
 
         **Se niega si el vehículo tiene reservas vivas**, salvo que le pasen
         `forzar=True`. Antes no miraba nada: se podía dar de baja un auto que
@@ -142,8 +156,17 @@ class VehiculoService:
         para decidir hay que enterarse.
         """
         vehiculo = self.get(vehiculo_id)
+        if not vehiculo.activo:
+            return vehiculo
 
-        if not forzar and vehiculo.activo:
+        motivo_limpio = (motivo or "").strip()
+        if not motivo_limpio:
+            raise BusinessRuleError(
+                "motivo_baja_requerido",
+                "Indicá por qué se da de baja el vehículo.",
+            )
+
+        if not forzar:
             afectadas = self.reservas_que_bloquean(vehiculo_id)
             if afectadas:
                 afuera = sum(1 for r in afectadas if r.estado in ("activa", "vencida"))
@@ -158,14 +181,39 @@ class VehiculoService:
                 )
 
         vehiculo.activo = False
+        vehiculo.motivo_baja = motivo_limpio
+        vehiculo.fecha_baja = date.today()
+        auditoria_service.registrar(
+            self.db,
+            usuario_id=usuario_id,
+            accion="baja_vehiculo",
+            entidad_tipo="vehiculo",
+            entidad_id=vehiculo.id,
+            descripcion=f"Vehículo {vehiculo.patente} dado de baja — {motivo_limpio}",
+            datos_despues={"motivo_baja": motivo_limpio, "forzada": forzar},
+        )
         self.db.commit()
         self.db.refresh(vehiculo)
         return vehiculo
 
-    def reactivate(self, vehiculo_id: int) -> Vehiculo:
-        """Marca activo=true. Idempotente."""
+    def reactivate(self, vehiculo_id: int, usuario_id: int | None = None) -> Vehiculo:
+        """Marca activo=true y borra el motivo de la baja. Idempotente."""
         vehiculo = self.get(vehiculo_id)
+        if vehiculo.activo:
+            return vehiculo
+        motivo_anterior = vehiculo.motivo_baja
         vehiculo.activo = True
+        vehiculo.motivo_baja = None
+        vehiculo.fecha_baja = None
+        auditoria_service.registrar(
+            self.db,
+            usuario_id=usuario_id,
+            accion="reactivar_vehiculo",
+            entidad_tipo="vehiculo",
+            entidad_id=vehiculo.id,
+            descripcion=f"Vehículo {vehiculo.patente} reactivado",
+            datos_antes={"motivo_baja": motivo_anterior},
+        )
         self.db.commit()
         self.db.refresh(vehiculo)
         return vehiculo

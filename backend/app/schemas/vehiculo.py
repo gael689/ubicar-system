@@ -67,6 +67,8 @@ class VehiculoResponse(VehiculoBase):
     km_proximo_service: int
     orden: int
     activo: bool
+    motivo_baja: str | None = None
+    fecha_baja: date | None = None
     foto_url: str | None = None
     created_at: datetime
     categoria: CategoriaResumen | None = None

@@ -56,8 +56,35 @@ interface SidebarProps {
   mobileOpen?: boolean;
 }
 
+type NavItem = (typeof NAV_GROUPS)[number]['items'][number];
+
+function coincide(ruta: string, pathname: string): boolean {
+  return pathname === ruta || pathname.startsWith(ruta + '/');
+}
+
+/** Largo de la ruta del item que coincide con la actual (0 si ninguna). */
+function largoCoincidencia(item: NavItem, pathname: string): number {
+  const rutas = [item.path, ...(item.matches ?? [])].filter((r) => coincide(r, pathname));
+  return rutas.length ? Math.max(...rutas.map((r) => r.length)) : 0;
+}
+
 function isGroupActive(group: (typeof NAV_GROUPS)[number], pathname: string): boolean {
-  return group.items.some((i) => pathname === i.path || pathname.startsWith(i.path + '/'));
+  return group.items.some((i) => largoCoincidencia(i, pathname) > 0);
+}
+
+/**
+ * El item activo de un grupo: **el más específico**, no todos los que
+ * coinciden. Con `startsWith` a secas, en `/flota/categorias` se marcaban
+ * "Vehículos" (`/flota`) y "Categorías" a la vez.
+ */
+function itemActivo(group: (typeof NAV_GROUPS)[number], pathname: string): string | null {
+  let mejor: string | null = null;
+  let largo = 0;
+  for (const i of group.items) {
+    const l = largoCoincidencia(i, pathname);
+    if (l > largo) { largo = l; mejor = i.path; }
+  }
+  return mejor;
 }
 
 export function Sidebar({ onMobileClose, mobileOpen }: SidebarProps) {
@@ -215,7 +242,7 @@ export function Sidebar({ onMobileClose, mobileOpen }: SidebarProps) {
                   <div className="mt-0.5 ml-3.5 space-y-0.5 border-l border-border pl-3">
                     {group.items.map((item) => {
                       const Icon = ICONS[item.icon];
-                      const active = pathname === item.path || pathname.startsWith(item.path + '/');
+                      const active = itemActivo(group, pathname) === item.path;
                       return (
                         <NavLink
                           key={item.path}

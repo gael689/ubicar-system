@@ -349,7 +349,12 @@ export const NAV_ITEMS = [
 export interface NavGroup {
   label: string;
   icon: string;
-  items: { path: string; label: string; icon: string }[];
+  /**
+   * `matches`: otras rutas que también cuentan como "estar acá". La entrada
+   * única de Flota se marca activa en `/flota/categorias` y en `/multas`,
+   * que son pestañas de la misma sección.
+   */
+  items: { path: string; label: string; icon: string; matches?: string[] }[];
   // Se destaca con un color de texto distinto en vez de esconderlo bajo un
   // desplegable — reemplaza al viejo grupo "Más" (3 puntitos), que agrupaba
   // secciones secundarias detrás de un click extra.
@@ -368,15 +373,13 @@ export const NAV_GROUPS: NavGroup[] = [
     { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
     { path: '/contratos', label: 'Contratos', icon: 'FileText' },
   ] },
+  // **Una sola entrada** (pedido del 27/09). Vehículos, Categorías y precios
+  // y Multas son pestañas grandes arriba de la página (`FlotaTabs`); en el
+  // menú eran tres y, como `/flota/categorias` empieza con `/flota`, se
+  // marcaban dos a la vez. Las rutas siguen iguales: los avisos que mandan a
+  // `/flota/categorias` ("falta el precio real") llegan a su pestaña.
   { label: 'Flota', icon: 'Car', principal: true, items: [
-    { path: '/flota', label: 'Vehículos', icon: 'Car' },
-    // **Entra al menú.** Era la única pantalla con contenido propio que no
-    // figuraba en ningún lado: se llegaba sólo por un botón dentro de Flota.
-    // Y es donde se cargan los precios base y las franquicias — o sea, a donde
-    // apuntan dos de los avisos del sistema ("falta el precio real", "falta la
-    // franquicia"), que mandaban a una pantalla invisible.
-    { path: '/flota/categorias', label: 'Categorías y precios base', icon: 'Package' },
-    { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
+    { path: '/flota', label: 'Flota', icon: 'Car', matches: ['/multas'] },
   ] },
   { label: 'Clientes', icon: 'Users', principal: true, items: [
     { path: '/clientes', label: 'Clientes', icon: 'Users' },

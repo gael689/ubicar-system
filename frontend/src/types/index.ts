@@ -466,6 +466,9 @@ export interface Vehiculo {
   categoria?: CategoriaResumen | null;
   destino: DestinoVehiculo;
   activo: boolean;
+  /** Por qué y cuándo se dio de baja. `null` mientras está activo. */
+  motivo_baja?: string | null;
+  fecha_baja?: string | null;
   foto_url: string | null;
   created_at: string;
   vtv_vencimiento: string | null;

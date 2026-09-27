@@ -61,7 +61,7 @@ export default function App() {
           path="/clientes/:id"
           element={<AppLayout title="Clientes"><ClienteDetail /></AppLayout>}
         />
-        <Route path="/multas" element={<AppLayout title="Multas"><MultasPage /></AppLayout>} />
+        <Route path="/multas" element={<AppLayout title="Flota"><MultasPage /></AppLayout>} />
         <Route path="/contratos" element={<AppLayout title="Contratos"><ContratosPage /></AppLayout>} />
         <Route path="/cotizador" element={<AppLayout title="Cotizador" fullBleed><CotizadorPage /></AppLayout>} />
         <Route path="/finanzas" element={<AppLayout title="Finanzas"><FinanzasPage /></AppLayout>} />
