@@ -1,4 +1,4 @@
-"""Reservas fantasma: una reserva sin check-out vuelve a estar confirmada
+﻿"""Reservas fantasma: una reserva sin check-out vuelve a estar confirmada
 
 Hasta el 27/09/2026 el reloj (`ReservaService.sincronizar_estados_por_horario`)
 pasaba a `activa` toda reserva confirmada apenas llegaba la hora de retiro,
@@ -18,13 +18,13 @@ plata asociada. Ningún cambio de datos más allá del estado.
 
 Es idempotente: una segunda corrida no encuentra nada.
 
-Revision ID: 100_reservas_fantasma
-Revises: 096_pagare_franquicia
+Revision ID: 101_reservas_fantasma
+Revises: 100_representante_y_conductores
 """
 from alembic import op
 
-revision = "100_reservas_fantasma"
-down_revision = "096_pagare_franquicia"
+revision = "101_reservas_fantasma"
+down_revision = "100_representante_y_conductores"
 branch_labels = None
 depends_on = None
 
