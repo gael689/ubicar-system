@@ -32,7 +32,8 @@ def _sincronizar_estados() -> None:
     """
     Job del scheduler: pone al día los estados que dependen del reloj
     (`confirmada` → `activa` cuando llega la hora de retiro, `activa` →
-    `vencida` cuando pasa la de devolución).
+    `vencida` cuando pasa la de devolución). Sólo para reservas cuyo auto
+    salió de verdad: sin check-out, la reserva sigue `confirmada`.
 
     **Existe para que las pantallas no escriban.** Esto vivía adentro del
     listado de reservas y del calendario, o sea que dos de las pantallas más

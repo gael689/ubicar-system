@@ -136,24 +136,43 @@ class ReservaService:
         estado 'activa', quedaba IMPOSIBLE registrar una devolución tardía.
         Ahora pasa a 'vencida' — el auto sigue afuera, pero el check-in ya
         puede hacerse sobre ese estado (ver AlquilerService.checkin).
+
+        **Sólo mueve reservas cuyo auto salió de verdad** (tienen `Alquiler`).
+        Antes, llegada la hora de retiro, toda reserva confirmada pasaba a
+        `activa` aunque nadie hubiera hecho el check-out, y eso fabricaba
+        reservas fantasma: el calendario la mostraba como auto en la calle,
+        el aviso `checkout_pendiente` (que mira `confirmada` sin alquiler)
+        desaparecía justo cuando hacía falta, y pasada la devolución quedaba
+        `vencida` — un auto "que no volvió" que nunca se había ido. Ahora una
+        reserva sin check-out sigue `confirmada` y el aviso sigue ahí hasta que
+        alguien la entregue o la cancele.
         """
+        from sqlalchemy import exists
+
+        from app.models.alquiler import Alquiler
+
         now = datetime.now()
         current_date = now.date()
         current_time = now.time()
+        salio = exists().where(Alquiler.reserva_id == Reserva.id)
 
         with self.db.begin_nested():
-            # Confirmada -> Activa (ya pasó la fecha_inicio + hora_inicio)
+            # Confirmada -> Activa (ya pasó la fecha_inicio + hora_inicio y el
+            # auto salió). `checkout()` ya la deja activa; esto sólo cubre a
+            # una que haya quedado confirmada con el alquiler hecho.
             self.db.query(Reserva).filter(
                 Reserva.estado == EstadoReserva.CONFIRMADA.value,
                 (Reserva.fecha_inicio < current_date) |
-                ((Reserva.fecha_inicio == current_date) & (Reserva.hora_inicio <= current_time))
+                ((Reserva.fecha_inicio == current_date) & (Reserva.hora_inicio <= current_time)),
+                salio,
             ).update({"estado": EstadoReserva.ACTIVA.value}, synchronize_session=False)
 
             # Activa -> Vencida (ya pasó la fecha_fin + hora_fin y no hubo checkin)
             self.db.query(Reserva).filter(
                 Reserva.estado == EstadoReserva.ACTIVA.value,
                 (Reserva.fecha_fin < current_date) |
-                ((Reserva.fecha_fin == current_date) & (Reserva.hora_fin <= current_time))
+                ((Reserva.fecha_fin == current_date) & (Reserva.hora_fin <= current_time)),
+                salio,
             ).update({"estado": EstadoReserva.VENCIDA.value}, synchronize_session=False)
         self.db.commit()
 
