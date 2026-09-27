@@ -53,13 +53,24 @@ class ClienteService:
         # Migración 077: todo lo que entra por acá es del mostrador — este
         # service sólo lo alcanza alguien autenticado. El alta web tiene su
         # propio camino (`PagoWebService`) y se marca `web` allá.
-        cliente = Cliente(**data.model_dump(), origen="mostrador", creado_por=usuario_id)
+        datos = data.model_dump(exclude={"conductores"})
+        cliente = Cliente(**datos, origen="mostrador", creado_por=usuario_id)
+        # Los conductores viajan en la misma alta y se guardan en la misma
+        # transacción: si uno no es válido, no queda un cliente a medias que
+        # el reintento duplique (plan 27/09, A3).
+        for c in data.conductores:
+            cliente.conductores_adicionales.append(ConductorAdicional(**c.model_dump()))
         return self.repo.create(cliente)
 
     def update(self, id: int, data: ClienteUpdate) -> Cliente:
         cliente = self.get_by_id(id)
 
         update_data = data.model_dump(exclude_none=True)
+        # Un campo del representante que llega vacío es "borrarlo": el
+        # formulario manda "" y no `null`, y `exclude_none` no lo filtra.
+        for campo in [k for k in update_data if k.startswith("representante_")]:
+            if isinstance(update_data[campo], str):
+                update_data[campo] = update_data[campo].strip() or None
 
         # Validar DNI/CUIT único si lo están cambiando. Volver a poner el
         # marcador de pendiente —o dejarlo— no es cambiar a un DNI ocupado.

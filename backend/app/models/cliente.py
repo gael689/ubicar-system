@@ -76,6 +76,16 @@ class Cliente(Base):
     # Reutiliza los mismos valores que CuentaCorriente.condicion_pago.
     condicion_pago_default: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # ── Representante (migración 100) ────────────────────────────────────────
+    # Una empresa firma por medio de una persona. Antes no había dónde
+    # anotarla, y el contrato imprimía la razón social en el lugar del
+    # conductor. Sólo tiene sentido para `tipo='empresa'`; todo opcional.
+    representante_nombre: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    representante_dni: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    representante_cargo: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    representante_telefono: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    representante_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     conductores_adicionales: Mapped[list["ConductorAdicional"]] = relationship(
         back_populates="cliente", cascade="all, delete-orphan"
     )
@@ -92,7 +102,13 @@ class ConductorAdicional(Base):
     nombre_completo: Mapped[str] = mapped_column(String(255), nullable=False)
     dni: Mapped[str | None] = mapped_column(String(20), nullable=True)
     licencia_numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    licencia_vencimiento: Mapped[date] = mapped_column(Date(), nullable=False)
+    # Nullable desde la migración 100: exigirlo hacía que el formulario, que lo
+    # mandaba vacío, recibiera un 422 y el conductor no se guardara nunca — la
+    # causa raíz de "cargué el conductor y no salió en el contrato".
+    licencia_vencimiento: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    # La cláusula 2.h pide nombre, documento y dirección para autorizar a un
+    # conductor adicional. El contrato ya intentaba leerlo con `getattr`.
+    domicilio: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Quien maneja puede no ser quien paga: si la reserva designa un conductor
     # adicional, la edad y la licencia que valen son las suyas. Ya no cambia el
     # precio (se retiró el recargo por franja etaria, D-38); sigue decidiendo

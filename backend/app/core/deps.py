@@ -117,6 +117,7 @@ def _usuario_desde_clerk(db: Session, claims: dict) -> Usuario:
             # Dar de baja a alguien tiene que cortarle el acceso aunque su
             # sesión de Clerk siga viva.
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Usuario dado de baja")
+        _sincronizar_nombre(db, usuario, claims)
         return usuario
 
     admins = {s.strip() for s in (settings.clerk_admin_subs or "").split(",") if s.strip()}
@@ -135,8 +136,8 @@ def _usuario_desde_clerk(db: Session, claims: dict) -> Usuario:
     # de los contratos ("Usted fue atendido por: user_3HBPn…"). Si no hay un
     # nombre humano, se deja uno neutro y se corrige desde Usuarios.
     nombre = (
-        claims.get("name")
-        or " ".join(filter(None, [claims.get("first_name"), claims.get("last_name")])).strip()
+        _nombre_de_claims(claims)
+        or _nombre_desde_api_de_clerk(sub)
         or (email.split("@")[0] if claims.get("email") else "")
         or "Operador"
     )
@@ -148,6 +149,96 @@ def _usuario_desde_clerk(db: Session, claims: dict) -> Usuario:
     db.refresh(usuario)
     logger.info("[Clerk] admin inicial dado de alta: %s (%s)", nombre, email)
     return usuario
+
+
+# ─── El nombre que va al papel ───────────────────────────────────────────────
+#
+# "Usted fue atendido por" sale del nombre del usuario (plan 27/09, A4). El
+# token de sesión por defecto de Clerk **no trae el nombre**: el usuario se daba
+# de alta como "Operador" o con la parte local del mail, y como el login
+# devolvía al usuario existente sin mirar nada más, ese nombre de relleno
+# quedaba para siempre — y el contrato salía con el pie en blanco.
+#
+# Ahora, mientras el nombre guardado no sea presentable, cada login intenta
+# completarlo: primero con los claims (si alguien los agregó al template del
+# token), si no con la API de Clerk usando la secret key. Una vez que hay un
+# nombre de verdad no se vuelve a preguntar, y nada de esto puede tirar abajo
+# un request: si Clerk no contesta, se sigue con lo que había.
+
+_clerk_nombres_cache: dict[str, str | None] = {}
+
+
+def _nombre_de_claims(claims: dict) -> str:
+    return (
+        (claims.get("name") or "").strip()
+        or " ".join(filter(None, [claims.get("first_name"), claims.get("last_name")])).strip()
+    )
+
+
+def nombre_presentable(usuario: Usuario) -> bool:
+    """¿Este nombre puede ir impreso en un contrato?"""
+    nombre = (usuario.nombre or "").strip()
+    if not nombre or nombre.lower() in ("operador", "sistema"):
+        return False
+    if nombre.startswith("user_"):
+        return False
+    email = (usuario.email or "").strip().lower()
+    # La parte local del mail ("franco.ubicar") es lo que quedaba cuando el
+    # token traía el mail y no el nombre: técnicamente es algo, pero no es
+    # cómo se llama nadie.
+    if email and nombre.lower() == email.split("@")[0]:
+        return False
+    return True
+
+
+def _nombre_desde_api_de_clerk(sub: str) -> str:
+    """
+    `first_name + last_name` desde `GET /v1/users/{sub}` de Clerk.
+
+    Timeout corto, resultado cacheado por proceso (también el fracaso: si
+    Clerk no tiene el nombre no se le pregunta en cada request), y **nunca
+    levanta**: un login no puede fallar porque Clerk tarde.
+    """
+    if not settings.clerk_secret_key or not sub:
+        return ""
+    if sub in _clerk_nombres_cache:
+        return _clerk_nombres_cache[sub] or ""
+    nombre = ""
+    try:
+        import httpx
+
+        r = httpx.get(
+            f"https://api.clerk.com/v1/users/{sub}",
+            headers={"Authorization": f"Bearer {settings.clerk_secret_key}"},
+            timeout=3.0,
+        )
+        if r.status_code == 200:
+            datos = r.json() or {}
+            nombre = " ".join(
+                x.strip() for x in [datos.get("first_name") or "", datos.get("last_name") or ""] if x.strip()
+            )
+    except Exception:
+        logger.warning("[Clerk] no se pudo leer el nombre de %s", sub, exc_info=True)
+        # El fracaso no se cachea: puede ser un corte de red pasajero.
+        return ""
+    _clerk_nombres_cache[sub] = nombre or None
+    return nombre
+
+
+def _sincronizar_nombre(db: Session, usuario: Usuario, claims: dict) -> None:
+    if nombre_presentable(usuario):
+        return
+    nombre = _nombre_de_claims(claims) or _nombre_desde_api_de_clerk(usuario.auth_sub)
+    if not nombre or nombre == usuario.nombre:
+        return
+    try:
+        usuario.nombre = nombre[:255]
+        db.commit()
+        db.refresh(usuario)
+        logger.info("[Clerk] nombre del usuario %s actualizado a %s", usuario.id, nombre)
+    except Exception:
+        db.rollback()
+        logger.warning("[Clerk] no se pudo guardar el nombre de %s", usuario.id, exc_info=True)
 
 
 def get_db() -> Generator[Session, None, None]:

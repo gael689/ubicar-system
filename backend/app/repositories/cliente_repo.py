@@ -44,7 +44,10 @@ class ClienteRepository(BaseRepository[Cliente]):
             select(func.count()).select_from(stmt.subquery())
         ).scalar_one()
 
-        stmt = stmt.order_by(Cliente.nombre_completo).offset(skip).limit(limit)
+        # Del último agregado al primero (plan 27/09, A3): el que se busca casi
+        # siempre es el que se acaba de cargar, y por orden alfabético quedaba
+        # enterrado en la página 4. El `id` desempata altas del mismo instante.
+        stmt = stmt.order_by(Cliente.created_at.desc(), Cliente.id.desc()).offset(skip).limit(limit)
         items = list(self.db.execute(stmt).scalars().all())
         return items, total
 

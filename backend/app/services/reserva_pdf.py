@@ -174,8 +174,18 @@ def generar_pdf_reserva(reserva, cliente, vehiculo, conductor=None) -> bytes:
     ]
     if getattr(cliente, "tipo", None) == "empresa" and getattr(cliente, "razon_social", None):
         filas_cliente.insert(1, ("Razón social", cliente.razon_social))
-    if conductor is not None:
-        filas_cliente.append(("Conductor designado", conductor.nombre_completo))
+    if getattr(cliente, "tipo", None) == "empresa" and getattr(cliente, "representante_nombre", None):
+        filas_cliente.append(("Representante", cliente.representante_nombre))
+    # Hasta tres conductores desde la migración 100. `conductor` sigue
+    # llegando por compatibilidad: es el principal.
+    conductores = list(getattr(reserva, "conductores", None) or []) or (
+        [conductor] if conductor is not None else []
+    )
+    if conductores:
+        filas_cliente.append((
+            "Conductor designado" if len(conductores) == 1 else "Conductores",
+            ", ".join(c.nombre_completo for c in conductores),
+        ))
     y = _tabla_dos_columnas(c, filas_cliente, margin, y, width)
 
     # ── Bloque: vehículo ─────────────────────────────────────────────────

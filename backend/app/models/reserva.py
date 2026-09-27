@@ -1,6 +1,6 @@
 from datetime import date, time, datetime
 from decimal import Decimal
-from sqlalchemy import String, DateTime, Enum, ForeignKey, Time, Date, Boolean, Numeric, Text, Index, Integer
+from sqlalchemy import String, DateTime, Enum, ForeignKey, Time, Date, Boolean, Numeric, Text, Index, Integer, SmallInteger, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -168,6 +168,11 @@ class Reserva(Base):
     )
     cliente: Mapped["Cliente"] = relationship("Cliente")
     conductor: Mapped["ConductorAdicional"] = relationship("ConductorAdicional")
+    # Hasta tres conductores (migración 100). El primero es `conductor_id`.
+    conductores_asignados: Mapped[list["ReservaConductor"]] = relationship(
+        "ReservaConductor", cascade="all, delete-orphan",
+        order_by="ReservaConductor.orden",
+    )
     usuario: Mapped["Usuario"] = relationship("Usuario", foreign_keys=[usuario_id])
     tarifa_aplicada: Mapped["Tarifa"] = relationship("Tarifa", foreign_keys=[tarifa_aplicada_id])
     alquiler: Mapped["Alquiler"] = relationship("Alquiler", back_populates="reserva", uselist=False)
@@ -210,6 +215,24 @@ class Reserva(Base):
         ForeignKey("categorias.id"), nullable=True
     )
     upgrade_motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    @property
+    def conductores(self) -> list["ConductorAdicional"]:
+        """
+        Quienes van a manejar, en orden: el primero es el principal.
+
+        Una reserva cargada antes de la migración 100 —o armada a mano en un
+        test— puede tener `conductor_id` sin filas en la tabla nueva: se lo
+        toma igual, porque para el papel es el mismo conductor.
+        """
+        lista = [rc.conductor for rc in self.conductores_asignados if rc.conductor is not None]
+        if not lista and self.conductor is not None:
+            lista = [self.conductor]
+        return lista
+
+    @property
+    def conductor_ids(self) -> list[int]:
+        return [c.id for c in self.conductores]
 
     @property
     def alquiler_id(self) -> int | None:
@@ -307,3 +330,29 @@ class Reserva(Base):
     __table_args__ = (
         Index("ix_reservas_vehiculo_fecha_inicio", "vehiculo_id", "fecha_inicio"),
     )
+
+
+class ReservaConductor(Base):
+    """
+    Un conductor autorizado de una reserva (migración 100, máximo tres).
+
+    **`reservas.conductor_id` no se va**: sigue siendo el principal, el que
+    decide la edad mínima (D-51) y el que leen las reservas y los contratos
+    viejos. Esta tabla agrega a los otros dos sin cambiar el significado de
+    la columna.
+    """
+    __tablename__ = "reserva_conductores"
+    __table_args__ = (
+        UniqueConstraint("reserva_id", "conductor_id", name="uq_reserva_conductor"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reserva_id: Mapped[int] = mapped_column(
+        ForeignKey("reservas.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    conductor_id: Mapped[int] = mapped_column(
+        ForeignKey("conductores_adicionales.id"), nullable=False, index=True
+    )
+    orden: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1, server_default="1")
+
+    conductor: Mapped["ConductorAdicional"] = relationship("ConductorAdicional")

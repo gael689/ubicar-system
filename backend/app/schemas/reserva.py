@@ -77,7 +77,10 @@ class ConductorResumen(BaseModel):
     nombre_completo: str
     dni: str | None = None
     licencia_numero: str | None = None
-    licencia_vencimiento: date
+    # Opcional desde la migración 100: un conductor puede cargarse sin el
+    # vencimiento a mano, y exigirlo acá haría reventar la respuesta entera.
+    licencia_vencimiento: date | None = None
+    fecha_nacimiento: date | None = None
     model_config = {"from_attributes": True}
 
 
@@ -89,7 +92,11 @@ class ReservaCreate(BaseModel):
     vehiculo_id: int | None = None
     categoria_id: int | None = None
     cliente_id: int
+    # Compatibilidad: quien todavía manda un solo conductor. Si viene
+    # `conductor_ids`, manda esa lista (el primero es el principal).
     conductor_id: int | None = None
+    # Hasta tres conductores (migración 100). Lo valida el service.
+    conductor_ids: list[int] | None = None
     fecha_inicio: date
     hora_inicio: time
     fecha_fin: date
@@ -145,6 +152,9 @@ class ReservaUpdate(BaseModel):
     """Para edición (pendiente o confirmada según D8)."""
     vehiculo_id: int | None = None
     conductor_id: int | None = None
+    # `None` = no tocar; `[]` = sacar a todos los conductores (maneja el
+    # titular). Antes no había forma de quitar un conductor ya designado.
+    conductor_ids: list[int] | None = None
     fecha_inicio: date | None = None
     hora_inicio: time | None = None
     fecha_fin: date | None = None
@@ -230,7 +240,11 @@ class ReservaResponse(BaseModel):
     vehiculo_id: int | None
     categoria_id: int | None = None
     cliente_id: int
+    # Compatibilidad: quien todavía manda un solo conductor. Si viene
+    # `conductor_ids`, manda esa lista (el primero es el principal).
     conductor_id: int | None = None
+    # Hasta tres conductores (migración 100). Lo valida el service.
+    conductor_ids: list[int] | None = None
     fecha_inicio: date
     hora_inicio: time
     fecha_fin: date
@@ -285,6 +299,9 @@ class ReservaResponse(BaseModel):
     cliente: ClienteResumen | None = None
     categoria: CategoriaResumen | None = None
     conductor: ConductorResumen | None = None
+    # Todos los conductores, en orden (el primero es `conductor`).
+    conductor_ids: list[int] = Field(default_factory=list)
+    conductores: list[ConductorResumen] = Field(default_factory=list)
     alquiler_id: int | None = None
     alquiler_estado: str | None = None
     # D-34: constancia visible de que el auto salió sin contrato firmado.

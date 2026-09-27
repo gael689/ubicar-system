@@ -2,7 +2,7 @@ from app.models.usuario import Usuario
 from app.models.vehiculo import Vehiculo
 from app.models.cliente import Cliente, ConductorAdicional
 from app.models.tarifa import Tarifa
-from app.models.reserva import Reserva
+from app.models.reserva import Reserva, ReservaConductor
 from app.models.alquiler import Alquiler
 from app.models.contrato import Contrato
 from app.models.pago import Pago
@@ -40,7 +40,7 @@ __all__ = [
     "SolicitudContacto",
     "Hold", "PagoWeb", "Auditoria",
     "Usuario", "Vehiculo", "Cliente", "ConductorAdicional",
-    "Tarifa", "Reserva", "Alquiler", "Contrato", "Pago",
+    "Tarifa", "Reserva", "ReservaConductor", "Alquiler", "Contrato", "Pago",
     "CuentaCorriente", "MovimientoCuentaCorriente",
     "Echeq", "Gasto", "MovimientoCaja", "Documento", "Presupuesto", "TarjetaCliente",
     "Multa", "Servicio", "Danio", "FotoDanio", "FechaEspecial",

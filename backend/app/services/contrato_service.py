@@ -190,16 +190,23 @@ class ContratoService:
         vehiculo: Vehiculo | None = (
             self.db.get(Vehiculo, reserva.vehiculo_id) if reserva.vehiculo_id else None
         )
-        conductor: ConductorAdicional | None = (
-            self.db.get(ConductorAdicional, reserva.conductor_id) if reserva.conductor_id else None
-        )
+        # **Todos los conductores de la reserva, leídos en vivo** (plan 27/09,
+        # A3). Antes se leía sólo `conductor_id`, y como el alta del conductor
+        # fallaba en silencio (vencimiento vacío → 422), el contrato salía con
+        # el cliente —la empresa— impreso como "Conductor".
+        conductores: list[ConductorAdicional] = list(reserva.conductores)[:3]
 
         return {
             "empresa": self.datos_empresa(),
             "reserva_id": reserva.id,
             "alquiler_id": alquiler.id if alquiler else None,
             "cliente": self._bloque_cliente(cliente),
-            "conductor_adicional": self._bloque_conductor(conductor),
+            "representante": self._bloque_representante(cliente),
+            "conductores": [self._bloque_conductor(c) for c in conductores],
+            # Se sigue escribiendo la clave vieja con el primero: la leen los
+            # contratos emitidos antes de que hubiera varios y quien reimprima
+            # con un generador viejo.
+            "conductor_adicional": self._bloque_conductor(conductores[0] if conductores else None),
             "vehiculo": self._bloque_vehiculo(vehiculo, reserva),
             "servicio": self._bloque_servicio(alquiler, reserva),
             "cargos": self._bloque_cargos(reserva),
@@ -221,6 +228,7 @@ class ContratoService:
             "pais": "ARGENTINA",
             "telefono": c.telefono or "",
             "email": c.email or "",
+            "tipo": c.tipo or "particular",
             # Sólo si es empresa: un particular no tiene razón social y dejar
             # el campo vacío en el papel se lee como un dato faltante.
             "empresa": c.razon_social if c.tipo == "empresa" else "",
@@ -228,6 +236,18 @@ class ContratoService:
             "licencia_vencimiento": _iso(c.licencia_vencimiento),
             "licencia_pais": c.licencia_pais or "",
             "licencia_categoria": c.licencia_categoria or "",
+        }
+
+    def _bloque_representante(self, c: Cliente | None) -> dict:
+        """Quien firma por la empresa. Vacío para un particular."""
+        if not c or c.tipo != "empresa" or not (c.representante_nombre or "").strip():
+            return {}
+        return {
+            "nombre": c.representante_nombre.strip(),
+            "dni": (c.representante_dni or "").strip(),
+            "cargo": (c.representante_cargo or "").strip(),
+            "telefono": (c.representante_telefono or "").strip(),
+            "email": (c.representante_email or "").strip(),
         }
 
     def _bloque_conductor(self, c: ConductorAdicional | None) -> dict:
@@ -239,9 +259,10 @@ class ContratoService:
             "id": c.id,
             "nombre": c.nombre_completo,
             "dni": c.dni or "",
-            "domicilio": getattr(c, "domicilio", None) or "",
+            "domicilio": c.domicilio or "",
             "licencia_numero": c.licencia_numero or "",
             "licencia_vencimiento": _iso(c.licencia_vencimiento),
+            "fecha_nacimiento": _iso(c.fecha_nacimiento),
         }
 
     def _bloque_vehiculo(self, v: Vehiculo | None, reserva: Reserva) -> dict:
@@ -868,6 +889,46 @@ class ContratoService:
         )
         return contrato
 
+    def regenerar(self, contrato_id: int, motivo: str, usuario_id: int | None) -> Contrato:
+        """
+        Anula el contrato y emite uno nuevo **en un solo paso** (plan 27/09, A3).
+
+        El caso real es cambiar el conductor de un contrato ya emitido: antes
+        eran dos botones —Anular, después Generar— y entre uno y otro la reserva
+        quedaba sin contrato. Si la emisión falla, la anulación tampoco queda:
+        es una sola transacción.
+
+        El nuevo se arma **desde los datos vivos** (`preparar`), no copiando el
+        snapshot viejo: el punto es justamente que tome el conductor, el
+        domicilio o el precio que se corrigieron.
+        """
+        if not (motivo or "").strip():
+            raise BusinessRuleError("motivo_requerido", "Contá por qué se rehace el contrato.")
+        viejo = self.get(contrato_id)
+        if viejo.anulado:
+            raise BusinessRuleError(
+                "contrato_ya_anulado",
+                "Ese contrato ya está anulado: generá uno nuevo desde la reserva.",
+            )
+        reserva_id = viejo.reserva_id
+        with self.db.begin_nested():
+            self.anular(contrato_id, f"Regenerado: {motivo.strip()}", usuario_id)
+            nuevo = self.crear(reserva_id, None, usuario_id)
+            auditoria_service.registrar(
+                self.db,
+                usuario_id=usuario_id,
+                accion="regenerar_contrato",
+                entidad_tipo="contrato",
+                entidad_id=nuevo.id,
+                descripcion=(
+                    f"Contrato {viejo.numero_formateado} reemplazado por "
+                    f"{nuevo.numero_formateado}. Motivo: {motivo.strip()}"
+                ),
+                datos_antes={"contrato_id": viejo.id},
+                datos_despues={"contrato_id": nuevo.id},
+            )
+        return nuevo
+
     # ── Lectura ───────────────────────────────────────────────────────────
 
     def get(self, contrato_id: int) -> Contrato:
@@ -902,6 +963,9 @@ class ContratoService:
         return generar_pdf_contrato(contrato, plantilla, firma)
 
 
+NOMBRES_DE_RELLENO = {"operador", "sistema"}
+
+
 def _nombre_para_el_papel(usuario) -> str:
     """
     Cómo se llama el operador en el pie del contrato.
@@ -924,6 +988,11 @@ def _nombre_para_el_papel(usuario) -> str:
     def _presentable(valor: str | None) -> str:
         v = (valor or "").strip()
         if not v or v.startswith("user_") or v.endswith("@sin-email.clerk"):
+            return ""
+        # "Operador" es el nombre de relleno que deja el alta automática
+        # cuando Clerk no manda nombre (`core/deps.py`). Impreso, "Usted fue
+        # atendido por: Operador" no le dice nada a nadie.
+        if v.lower() in NOMBRES_DE_RELLENO:
             return ""
         return v
 

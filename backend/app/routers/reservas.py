@@ -243,6 +243,7 @@ def create_reserva(
             categoria_id=payload.categoria_id,
             cliente_id=payload.cliente_id,
             conductor_id=payload.conductor_id,
+            conductor_ids=payload.conductor_ids,
             fecha_inicio=payload.fecha_inicio,
             hora_inicio=payload.hora_inicio,
             fecha_fin=payload.fecha_fin,
@@ -389,6 +390,32 @@ def pre_checkout_previo(
         semaforo=semaforo,
         items=[BloqueoItemResponse(**i.__dict__) for i in items],
     ).model_dump())
+
+
+@router.get("/conductores-ocupados")
+def conductores_ocupados(
+    conductor_ids: str = Query(..., description="Ids separados por coma"),
+    fecha_inicio: date = Query(...),
+    fecha_fin: date = Query(...),
+    excluir_reserva_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Los conductores elegidos que ya figuran en otra reserva o alquiler que se
+    superpone con esas fechas. **La pantalla avisa y deja seguir**: no es un
+    bloqueo (plan 27/09, A3).
+
+    Va antes que `/{reserva_id}` por la misma razón que `pre-checkout-previo`.
+    """
+    try:
+        ids = [int(x) for x in conductor_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Lista de conductores inválida")
+    avisos = ReservaService(db).conductores_ocupados(
+        ids, fecha_inicio, fecha_fin, excluir_reserva_id=excluir_reserva_id,
+    )
+    return ok(avisos)
 
 
 @router.get("/{reserva_id}")

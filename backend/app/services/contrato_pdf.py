@@ -123,6 +123,17 @@ def _fila_repartida(
     return y + interlinea
 
 
+def etiqueta_documento(documento, es_empresa: bool = False) -> str:
+    """
+    "CUIT" o "DNI" según quién es. Una empresa siempre tiene CUIT; para una
+    persona, 11 dígitos son un CUIT/CUIL y cualquier otra cosa un DNI.
+
+    Antes el papel decía "DNI / CUIT" para todos, que es no decir nada.
+    """
+    digitos = "".join(ch for ch in str(documento or "") if ch.isdigit())
+    return "CUIT" if es_empresa or len(digitos) == 11 else "DNI"
+
+
 # ─── Anverso ─────────────────────────────────────────────────────────────────
 
 def _campo(
@@ -209,49 +220,79 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
     y = alto - _MARGEN - 26 * mm
     izq, der = _MARGEN, _MARGEN + col + 6 * mm
 
-    # ── Servicio (izq) y datos administrativos (der) ──────────────────────
+    # ── Retiro (izq) y Devolución (der) ───────────────────────────────────
+    # Pedido del cliente (27/09, txt 22): "la devolución por un lado y el
+    # retiro por el otro". Antes las dos iban apiladas en la columna izquierda
+    # como "Check Out"/"Check In" —jerga que el cliente no usa— y los km y el
+    # combustible quedaban sueltos debajo, sin decir si eran de la salida o de
+    # la vuelta.
     servicio = snap.get("servicio", {})
     vehiculo = snap.get("vehiculo", {})
+    en_blanco = "______________"
 
-    y_izq = _titulo_bloque(c, izq, y, col, "Datos del alquiler")
-    # Estas dos son las que traen el lugar de retiro completo — el valor más
-    # largo del bloque, y el que ya se estaba metiendo en la columna derecha.
-    y_izq = _campo(c, izq, y_izq, "Check Out",
-                   f"{_fecha(servicio.get('check_out_fecha'))} {servicio.get('check_out_hora') or ''} "
-                   f"{servicio.get('check_out_lugar') or ''}".strip(), ancho=col)
-    y_izq = _campo(c, izq, y_izq, "Check In",
-                   f"{_fecha(servicio.get('check_in_fecha'))} {servicio.get('check_in_hora') or ''} "
-                   f"{servicio.get('check_in_lugar') or ''}".strip(), ancho=col)
+    y_izq = _titulo_bloque(c, izq, y, col, "Retiro")
+    y_izq = _campo(c, izq, y_izq, "Fecha", _fecha(servicio.get("check_out_fecha")), ancho=col)
+    y_izq = _campo(c, izq, y_izq, "Hora", servicio.get("check_out_hora"), ancho=col)
+    # El lugar es el valor más largo del bloque ("Aeropuerto Comandante
+    # Espora"): con el ancho declarado se corta en vez de invadir la columna.
+    y_izq = _campo(c, izq, y_izq, "Lugar", servicio.get("check_out_lugar"), ancho=col)
     # Un contrato emitido antes de la entrega todavía no tiene km ni
     # combustible de salida. Se imprime una línea para completar a mano, no
     # "None km": el papel se firma en el mostrador y ese dato se anota ahí.
     _km = servicio.get("check_out_km")
     _comb = servicio.get("check_out_combustible")
-    y_izq = _campo(c, izq, y_izq, "Kilometraje", f"{_km} km" if _km is not None else "______________", ancho=col)
-    y_izq = _campo(
-        c, izq, y_izq, "Combustible salida",
-        f"{_comb} %" if _comb is not None else "______________", ancho=col,
-    )
-    y_izq = _campo(c, izq, y_izq, "Vehículo", vehiculo.get("descripcion") or "—", ancho=col)
+    y_izq = _campo(c, izq, y_izq, "Km salida", f"{_km} km" if _km is not None else en_blanco, ancho=col)
+    y_izq = _campo(c, izq, y_izq, "Combustible", f"{_comb} %" if _comb is not None else en_blanco, ancho=col)
 
-    y_der = _titulo_bloque(c, der, y, col, "Datos administrativos")
-    y_der = _campo(c, der, y_der, "Número de cliente", (snap.get("cliente") or {}).get("id"), ancho=col)
-    y_der = _campo(c, der, y_der, "Patente", vehiculo.get("patente"), ancho=col)
-    y_der = _campo(c, der, y_der, "Número Interno", vehiculo.get("interno"), ancho=col)
-    y_der = _campo(c, der, y_der, "Número de Reserva", snap.get("reserva_id"), ancho=col)
-    y_der = _campo(c, der, y_der, "Categoría", vehiculo.get("categoria"), ancho=col)
+    y_der = _titulo_bloque(c, der, y, col, "Devolución")
+    y_der = _campo(c, der, y_der, "Fecha", _fecha(servicio.get("check_in_fecha")), ancho=col)
+    y_der = _campo(c, der, y_der, "Hora", servicio.get("check_in_hora"), ancho=col)
+    y_der = _campo(c, der, y_der, "Lugar", servicio.get("check_in_lugar"), ancho=col)
+    # Los de llegada casi nunca se conocen al firmar: línea para completar.
+    _km_in = servicio.get("check_in_km")
+    _comb_in = servicio.get("check_in_combustible")
+    y_der = _campo(c, der, y_der, "Km llegada", f"{_km_in} km" if _km_in is not None else en_blanco, ancho=col)
+    y_der = _campo(c, der, y_der, "Combustible", f"{_comb_in} %" if _comb_in is not None else en_blanco, ancho=col)
 
-    y = min(y_izq, y_der) - 2 * mm
+    y = min(y_izq, y_der) - 1 * mm
 
-    # ── Conductor ─────────────────────────────────────────────────────────
+    # ── Vehículo y datos administrativos, debajo y en una sola franja ─────
+    y = _campo(c, izq, y, "Vehículo", vehiculo.get("descripcion") or "—", ancho=util)
+    admin = [
+        f"Cliente N° {(snap.get('cliente') or {}).get('id') or '—'}",
+        f"Reserva N° {snap.get('reserva_id') or '—'}",
+        f"Patente {vehiculo.get('patente') or '—'}",
+        f"Interno {vehiculo.get('interno') or '—'}",
+        f"Categoría {vehiculo.get('categoria') or '—'}",
+    ]
+    c.setFillColor(_GRIS)
+    y = _fila_repartida(c, izq, y, util, admin, tam=7) - 6 * mm
+    c.setFillColor(_TINTA)
+
+    # ── Arrendatario (izq) y conductores (der) ────────────────────────────
     cli = snap.get("cliente", {})
-    cond = snap.get("conductor_adicional", {})
+    rep = snap.get("representante") or {}
+    # `conductores` existe desde la migración 100. Un contrato anterior sólo
+    # tiene `conductor_adicional` (uno o ninguno) y se reimprime con ese.
+    conductores = snap.get("conductores")
+    if conductores is None:
+        viejo = snap.get("conductor_adicional") or {}
+        conductores = [viejo] if viejo.get("nombre") else []
+    conductores = [x for x in conductores if (x or {}).get("nombre")][:3]
+    es_empresa = cli.get("tipo") == "empresa" or bool(cli.get("empresa")) or bool(rep)
+    doc_cli = cli.get("dni_cuit")
+    etiqueta_doc = etiqueta_documento(doc_cli, es_empresa)
 
-    y_izq = _titulo_bloque(c, izq, y, col, "Conductor")
+    # Para una empresa el arrendatario es la empresa —con quien la representa—
+    # y quien maneja va aparte. Antes la empresa salía impresa bajo
+    # "Conductor", con los datos de licencia vacíos, y el chofer real sólo
+    # como "Segundo Conductor".
+    y_izq = _titulo_bloque(c, izq, y, col, "Arrendatario")
     c.setFont("Helvetica-Bold", 9)
     c.setFillColor(_TINTA)
-    c.drawString(izq, y_izq, (cli.get("nombre") or "—").upper())
-    y_izq -= 4 * mm
+    for linea in _wrap((cli.get("nombre") or "—").upper(), "Helvetica-Bold", 9, col) or ["—"]:
+        c.drawString(izq, y_izq, linea)
+        y_izq -= 4 * mm
     c.setFont("Helvetica", 7.5)
     for linea in [
         cli.get("domicilio") or "",
@@ -259,22 +300,62 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
         cli.get("pais") or "",
     ]:
         if linea:
-            c.drawString(izq, y_izq, linea)
-            y_izq -= 3.6 * mm
+            for parte in _wrap(linea, "Helvetica", 7.5, col):
+                c.drawString(izq, y_izq, parte)
+                y_izq -= 3.6 * mm
     y_izq -= 1 * mm
-    y_izq = _campo(c, izq, y_izq, "DNI / CUIT", cli.get("dni_cuit"), ancho=col)
-    y_izq = _campo(c, izq, y_izq, "Empresa", cli.get("empresa"), ancho=col)
-    y_izq = _campo(c, izq, y_izq, "Segundo Conductor", cond.get("nombre"), ancho=col)
+    y_izq = _campo(c, izq, y_izq, etiqueta_doc, doc_cli, ancho=col)
+    if cli.get("empresa"):
+        y_izq = _campo(c, izq, y_izq, "Razón social", cli.get("empresa"), ancho=col)
+    if rep.get("nombre"):
+        rep_txt = rep["nombre"] + (f" ({rep['cargo']})" if rep.get("cargo") else "")
+        y_izq = _campo(c, izq, y_izq, "Representante", rep_txt, ancho=col)
+        if rep.get("dni"):
+            y_izq = _campo(c, izq, y_izq, "DNI representante", rep.get("dni"), ancho=col)
+    if not es_empresa:
+        registro = ", ".join(x for x in [
+            cli.get("licencia_numero"),
+            _fecha(cli.get("licencia_vencimiento")) if cli.get("licencia_vencimiento") else "",
+            cli.get("licencia_pais"), cli.get("licencia_categoria"),
+        ] if x and x != "—")
+        y_izq = _campo(c, izq, y_izq, "Registro", registro, ancho=col)
 
-    y_der = _titulo_bloque(c, der, y, col, "Registro y condiciones")
-    registro = ", ".join(x for x in [
-        cli.get("licencia_numero"), _fecha(cli.get("licencia_vencimiento")),
-        cli.get("licencia_pais"), cli.get("licencia_categoria"),
-    ] if x and x != "—")
-    y_der = _campo(c, der, y_der, "Registro de Conductor", registro, ancho=col)
-    if cond.get("nombre"):
-        y_der = _campo(c, der, y_der, "Doc. 2° conductor", cond.get("dni"), ancho=col)
-        y_der = _campo(c, der, y_der, "Dom. 2° conductor", cond.get("domicilio"), ancho=col)
+    titulo_der = "Conductores autorizados" if len(conductores) > 1 else "Conductor"
+    y_der = _titulo_bloque(c, der, y, col, titulo_der)
+    if not conductores:
+        # Sin conductores designados maneja el titular (regla de siempre). Una
+        # empresa no maneja: se deja la línea para completar a mano.
+        c.setFont("Helvetica", 7.5)
+        c.setFillColor(_TINTA)
+        c.drawString(der, y_der, "El arrendatario." if not es_empresa else "A designar: ______________________")
+        y_der -= 4.2 * mm
+    for i, cond in enumerate(conductores, start=1):
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(_TINTA)
+        nombre = (cond.get("nombre") or "").upper()
+        if len(conductores) > 1:
+            nombre = f"{i}. {nombre}"
+        for linea in _wrap(nombre, "Helvetica-Bold", 8, col) or [nombre]:
+            c.drawString(der, y_der, linea)
+            y_der -= 3.6 * mm
+        # La cláusula 2.h pide nombre, documento y dirección para que la
+        # autorización del conductor sea válida.
+        licencia = cond.get("licencia_numero") or ""
+        if cond.get("licencia_vencimiento"):
+            licencia += f" (vto. {_fecha(cond.get('licencia_vencimiento'))})"
+        detalle = " · ".join([
+            f"DNI {cond['dni']}" if cond.get("dni") else "DNI ________",
+            f"Licencia {licencia.strip()}" if licencia.strip() else "Licencia ________",
+        ])
+        c.setFont("Helvetica", 7)
+        for linea in _wrap(detalle, "Helvetica", 7, col):
+            c.drawString(der, y_der, linea)
+            y_der -= 3.3 * mm
+        if cond.get("domicilio"):
+            for linea in _wrap(f"Domicilio: {cond['domicilio']}", "Helvetica", 7, col):
+                c.drawString(der, y_der, linea)
+                y_der -= 3.3 * mm
+        y_der -= 1 * mm
 
     y = min(y_izq, y_der) - 2 * mm
 

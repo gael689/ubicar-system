@@ -19,11 +19,33 @@ class ConductorAdicionalBase(BaseModel):
     nombre_completo: str
     dni: Optional[str] = None
     licencia_numero: Optional[str] = None
-    licencia_vencimiento: date
+    # **Opcional desde la migración 100.** Era `date` a secas y el formulario lo
+    # mandaba vacío: 422, el conductor no se guardaba y la pantalla no decía
+    # nada. Es la causa raíz de "cargué el conductor y no salió en el contrato".
+    licencia_vencimiento: Optional[date] = None
     # El recargo por edad (D-38) mira la edad de quien maneja. El campo existe
     # en el modelo desde la migración 044, pero no salía en la respuesta: la
     # pantalla de reservas no podía estimar el mismo precio que el backend.
     fecha_nacimiento: Optional[date] = None
+    # La cláusula 2.h del contrato lo pide para autorizar a un conductor.
+    domicilio: Optional[str] = None
+
+    _vencimiento_vacio = field_validator("licencia_vencimiento", mode="before")(_vacio_a_none)
+    _nacimiento_vacio = field_validator("fecha_nacimiento", mode="before")(_vacio_a_none)
+
+    @field_validator("nombre_completo")
+    @classmethod
+    def _nombre_no_vacio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("El conductor necesita un nombre")
+        return v.strip()
+
+    @field_validator("dni", "licencia_numero", "domicilio", mode="before")
+    @classmethod
+    def _texto_vacio_a_none(cls, v):
+        if isinstance(v, str):
+            return v.strip() or None
+        return v
 
 
 class ConductorAdicionalCreate(ConductorAdicionalBase):
@@ -83,6 +105,13 @@ class ClienteBase(BaseModel):
     licencia_desde: date | None = None
     condicion_pago_default: CondicionPagoDefault | None = None
 
+    # Representante de la empresa (migración 100). Sólo para `tipo='empresa'`.
+    representante_nombre: str | None = None
+    representante_dni: str | None = None
+    representante_cargo: str | None = None
+    representante_telefono: str | None = None
+    representante_email: str | None = None
+
     _licencia_vacia = field_validator("licencia_vencimiento", mode="before")(_vacio_a_none)
     _nacimiento_vacio = field_validator("fecha_nacimiento", mode="before")(_vacio_a_none)
     _licencia_desde_vacia = field_validator("licencia_desde", mode="before")(_vacio_a_none)
@@ -95,7 +124,11 @@ class ClienteBase(BaseModel):
 
 
 class ClienteCreate(ClienteBase):
-    pass
+    # **El cliente y sus conductores en una sola llamada** (plan 27/09, A3).
+    # Antes la pantalla creaba el cliente y después, aparte, cada conductor:
+    # si el conductor fallaba el cliente ya existía, y reintentar creaba un
+    # duplicado. Ahora es una transacción: entra todo o no entra nada.
+    conductores: list[ConductorAdicionalCreate] = []
 
 
 class ClienteUpdate(BaseModel):
@@ -120,6 +153,11 @@ class ClienteUpdate(BaseModel):
     licencia_pais: str | None = None
     licencia_desde: date | None = None
     condicion_pago_default: CondicionPagoDefault | None = None
+    representante_nombre: str | None = None
+    representante_dni: str | None = None
+    representante_cargo: str | None = None
+    representante_telefono: str | None = None
+    representante_email: str | None = None
 
     _licencia_vacia = field_validator("licencia_vencimiento", mode="before")(_vacio_a_none)
     _nacimiento_vacio = field_validator("fecha_nacimiento", mode="before")(_vacio_a_none)

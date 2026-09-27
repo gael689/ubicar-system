@@ -329,6 +329,29 @@ def anular_contrato(
     return ok(_respuesta(contrato), "Contrato anulado")
 
 
+@router.post("/{contrato_id}/regenerar", status_code=status.HTTP_201_CREATED)
+def regenerar_contrato(
+    contrato_id: int,
+    payload: AnularContratoRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Anula y vuelve a emitir en un paso, con los datos de hoy (el conductor que
+    se cambió, el domicilio que se corrigió). Ver `ContratoService.regenerar`.
+    """
+    svc = ContratoService(db)
+    try:
+        contrato = svc.regenerar(contrato_id, payload.motivo, current_user.id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except BusinessRuleError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    db.commit()
+    db.refresh(contrato)
+    return ok(_respuesta(contrato), "Contrato regenerado")
+
+
 # ─── Lectura ─────────────────────────────────────────────────────────────────
 
 @router.get("")

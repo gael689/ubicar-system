@@ -36,7 +36,7 @@ from app.domain.transiciones import (
 )
 from app.domain.ventana import VentanaReserva
 from app.models.pago import Pago
-from app.models.reserva import Reserva
+from app.models.reserva import Reserva, ReservaConductor
 from app.models.vehiculo import Vehiculo
 from app.models.cliente import Cliente, ConductorAdicional
 from app.models.tarifa import Tarifa
@@ -423,6 +423,102 @@ class ReservaService:
                 "El conductor seleccionado no pertenece al cliente de la reserva",
             )
 
+    MAX_CONDUCTORES = 3
+
+    @staticmethod
+    def normalizar_conductores(
+        conductor_ids: list[int] | None, conductor_id: int | None
+    ) -> list[int] | None:
+        """
+        La lista de conductores que pidió quien llama, sin repetidos.
+
+        `conductor_ids` manda; `conductor_id` sólo queda por compatibilidad con
+        quien todavía manda uno (la web, pantallas viejas). `None` = "no me
+        dijeron nada", que al editar significa no tocar.
+        """
+        if conductor_ids is None:
+            return [conductor_id] if conductor_id is not None else None
+        vistos: list[int] = []
+        for cid in conductor_ids:
+            if cid not in vistos:
+                vistos.append(cid)
+        return vistos
+
+    def _validar_conductores(self, ids: list[int], cliente_id: int) -> None:
+        if len(ids) > self.MAX_CONDUCTORES:
+            raise BusinessRuleError(
+                "demasiados_conductores",
+                f"Una reserva admite hasta {self.MAX_CONDUCTORES} conductores.",
+            )
+        for cid in ids:
+            self._validar_conductor(cid, cliente_id)
+
+    def _asignar_conductores(self, reserva: Reserva, ids: list[int]) -> None:
+        """
+        Reemplaza los conductores de la reserva. El primero es el principal y
+        queda también en `conductor_id`, que es lo que mira la edad mínima.
+        """
+        reserva.conductor_id = ids[0] if ids else None
+        actuales = {rc.conductor_id: rc for rc in reserva.conductores_asignados}
+        nuevos = []
+        for orden, cid in enumerate(ids, start=1):
+            rc = actuales.get(cid) or ReservaConductor(conductor_id=cid)
+            rc.orden = orden
+            nuevos.append(rc)
+        reserva.conductores_asignados = nuevos
+        self.db.flush()
+
+    def conductores_ocupados(
+        self,
+        conductor_ids: list[int],
+        fecha_inicio: date,
+        fecha_fin: date,
+        excluir_reserva_id: int | None = None,
+    ) -> list[dict]:
+        """
+        ¿Alguno de estos conductores ya tiene un auto en esas fechas?
+
+        **Es un aviso, no un bloqueo** (plan 27/09, A3): una empresa puede
+        mandar al mismo chofer a retirar dos autos, y el mostrador sabe cosas
+        que el sistema no. Pero que el sistema calle cuando la misma persona
+        figura manejando dos autos a la vez es lo que termina en una multa
+        imputada al conductor equivocado.
+        """
+        if not conductor_ids:
+            return []
+        activos = (
+            EstadoReserva.PENDIENTE.value, EstadoReserva.CONFIRMADA.value,
+            EstadoReserva.ACTIVA.value, EstadoReserva.VENCIDA.value,
+        )
+        ids = set(conductor_ids)
+        q = (
+            self.db.query(Reserva)
+            .filter(
+                Reserva.estado.in_(activos),
+                Reserva.fecha_inicio <= fecha_fin,
+                Reserva.fecha_fin >= fecha_inicio,
+            )
+        )
+        if excluir_reserva_id is not None:
+            q = q.filter(Reserva.id != excluir_reserva_id)
+
+        avisos = []
+        for r in q.all():
+            for c in r.conductores:
+                if c.id not in ids:
+                    continue
+                avisos.append({
+                    "conductor_id": c.id,
+                    "conductor_nombre": c.nombre_completo,
+                    "reserva_id": r.id,
+                    "estado": r.estado,
+                    "fecha_inicio": r.fecha_inicio.isoformat(),
+                    "fecha_fin": r.fecha_fin.isoformat(),
+                    "patente": r.vehiculo.patente if r.vehiculo else None,
+                    "cliente": r.cliente.nombre_completo if r.cliente else None,
+                })
+        return avisos
+
     def create(
         self,
         cliente_id: int,
@@ -456,6 +552,7 @@ class ReservaService:
         anticipo_fecha: date | None = None,
         anticipo_medio_pago: str | None = None,
         conductor_id: int | None = None,
+        conductor_ids: list[int] | None = None,
         con_factura: bool = False,
         descuento_motivo: str | None = None,
         condicion_pago: str = "contado",
@@ -513,8 +610,9 @@ class ReservaService:
         if not cliente or not cliente.activo:
             raise NotFoundError("Cliente", cliente_id)
 
-        if conductor_id is not None:
-            self._validar_conductor(conductor_id, cliente_id)
+        ids_conductores = self.normalizar_conductores(conductor_ids, conductor_id) or []
+        self._validar_conductores(ids_conductores, cliente_id)
+        conductor_id = ids_conductores[0] if ids_conductores else None
 
         # 2. Construir datetime completos para solapamiento
         inicio_dt = datetime.combine(fecha_inicio, hora_inicio)
@@ -734,6 +832,8 @@ class ReservaService:
                 usuario_id=usuario_id,
             )
             self.reserva_repo.create(reserva)
+            if ids_conductores:
+                self._asignar_conductores(reserva, ids_conductores)
 
             # Adicionales contratados (coberturas y extras). Van fuera de
             # precio_total: se suman recién al facturar, igual que
@@ -851,6 +951,7 @@ class ReservaService:
         usuario_id: int,
         vehiculo_id: int | None = None,
         conductor_id: int | None = None,
+        conductor_ids: list[int] | None = None,
         fecha_inicio: date | None = None,
         hora_inicio: time | None = None,
         fecha_fin: date | None = None,
@@ -927,8 +1028,15 @@ class ReservaService:
         # Si es confirmada, no se puede cambiar cliente
         # (vehiculo_id y fechas sí, según D8)
 
-        if conductor_id is not None:
-            self._validar_conductor(conductor_id, reserva.cliente_id)
+        # `conductor_ids=[]` saca a todos (maneja el titular); `None` no toca.
+        # Un `conductor_id` suelto —pantallas viejas— cambia sólo el principal
+        # y conserva a los demás.
+        if conductor_ids is None and conductor_id is not None:
+            otros = [c for c in reserva.conductor_ids if c != conductor_id]
+            conductor_ids = [conductor_id] + otros[: self.MAX_CONDUCTORES - 1]
+        ids_conductores = self.normalizar_conductores(conductor_ids, None)
+        if ids_conductores is not None:
+            self._validar_conductores(ids_conductores, reserva.cliente_id)
 
         # Se guarda antes de tocar nada: es con lo que se decide, al final, si
         # hubo reasignación de vehículo y qué hacer con el contrato (D-48).
@@ -963,8 +1071,6 @@ class ReservaService:
             kwargs = {}
             if vehiculo_id is not None:
                 kwargs["vehiculo_id"] = vehiculo_id
-            if conductor_id is not None:
-                kwargs["conductor_id"] = conductor_id
             if fecha_inicio is not None:
                 kwargs["fecha_inicio"] = fecha_inicio
             if hora_inicio is not None:
@@ -1036,6 +1142,8 @@ class ReservaService:
                 # Un texto vacío es "borrar la aclaración", no "no tocarla".
                 kwargs["condicion_pago_texto"] = condicion_pago_texto.strip() or None
             self.reserva_repo.update(reserva, **kwargs)
+            if ids_conductores is not None:
+                self._asignar_conductores(reserva, ids_conductores)
 
             # Los adicionales se sincronizan después de aplicar las fechas
             # nuevas: si la reserva se alargó, los que se cobran por día

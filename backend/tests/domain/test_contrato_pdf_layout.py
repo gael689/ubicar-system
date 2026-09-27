@@ -187,3 +187,60 @@ def test_ningun_texto_cae_fuera_de_la_hoja():
     pdf = generar_pdf_contrato(_contrato(EMPRESA_REAL), _PLANTILLA)
     fuera = [(y, t) for y, _x, _w, t in _runs_de_texto(pdf) if y < 0]
     assert not fuera, f"Texto fuera de la hoja: {fuera}"
+
+
+def test_el_caso_mas_cargado_entra_en_la_hoja_sin_pisar_la_firma():
+    """
+    Empresa con representante, tres conductores con domicilio, cargos con IVA,
+    coberturas contratadas y rechazadas (plan 27/09, A3 y A4). El anverso es
+    una sola hoja: si el contenido crece, la línea de firma queda clavada en
+    su mínimo y lo de arriba le cae encima sin ningún error.
+    """
+    contrato = _contrato(EMPRESA_REAL)
+    s = contrato.snapshot
+    s["servicio"] = {
+        "check_out_fecha": "2026-08-15", "check_out_hora": "10:00",
+        "check_out_lugar": "Aeropuerto Comandante Espora",
+        "check_in_fecha": "2026-08-20", "check_in_hora": "18:30",
+        "check_in_lugar": "Terminal de Ómnibus de Bahía Blanca",
+    }
+    s["cliente"] = {
+        "id": 321, "nombre": "TRANSPORTES Y LOGÍSTICA DEL SUR SOCIEDAD ANÓNIMA",
+        "dni_cuit": "30-71234567-8", "tipo": "empresa", "empresa": "Transportes y Logística del Sur S.A.",
+        "domicilio": "Avenida Doctor Alberto Cabrera 2415, Piso 9, Departamento A",
+        "localidad": "Bahía Blanca", "codigo_postal": "8000", "pais": "ARGENTINA",
+    }
+    s["representante"] = {"nombre": "Laura Díaz", "dni": "28111222", "cargo": "Apoderada"}
+    s["conductores"] = [
+        {"nombre": f"Conductor Número {i} Con Apellido Largo", "dni": f"3{i}111222",
+         "licencia_numero": f"B-{i}0000", "licencia_vencimiento": "2028-01-01",
+         "domicilio": "Calle Falsa 123, Bahía Blanca"}
+        for i in range(1, 4)
+    ]
+    s["vehiculo"] = {"descripcion": "VOLKSWAGEN AMAROK V6 HIGHLINE", "patente": "AB123CD",
+                     "interno": 17, "categoria": "Pick-up"}
+    s["cargos"] = {
+        "lineas": [{"concepto": f"Concepto {i}", "cantidad": 1, "valor_unitario": 1000, "total": 1000}
+                   for i in range(5)],
+        "descuento": 500, "valor_estimado": 4500, "discrimina_iva": True,
+        "kilometraje_segun_contrato": True,
+    }
+    s["coberturas"] = {
+        "contratadas": [{"nombre": "Mid Cover", "marca": "*", "descuento": 300000}],
+        "rechazadas": ["Top Cover", "Super Top Cover"],
+        "franquicia": 1200000,
+    }
+    s["aceptacion"] = (
+        "Por la presente acepto la información, los términos y condiciones que figuran "
+        "en el anverso y reverso del presente contrato."
+    )
+    pdf = generar_pdf_contrato(contrato, _PLANTILLA)
+    runs = _runs_de_texto(pdf)
+    problemas = _solapes(runs)
+    assert not problemas, "Texto encima de texto:\n" + "\n".join(problemas)
+
+    firma_y = next(y for y, _x, _w, t in runs if t.startswith("Firma del cliente"))
+    aceptacion_y = min(y for y, _x, _w, t in runs if "Por la presente acepto" in t or "anverso y reverso" in t)
+    # La línea de firma va debajo del párrafo de aceptación, con aire para
+    # que entre una firma de puño y letra.
+    assert aceptacion_y - firma_y > 30, (aceptacion_y, firma_y)
