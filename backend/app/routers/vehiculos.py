@@ -24,8 +24,16 @@ from app.services.tarifa_service import TarifaService
 from app.services.vehiculo_service import VehiculoService
 
 
+class BajaBody(BaseModel):
+    # Por qué se da de baja: vendido, siniestro, robo, fin de leasing u otro
+    # (con texto). Obligatorio; el service lo valida para que ningún camino
+    # lo saltee.
+    motivo: str | None = None
+
+
 class InactivarBody(BaseModel):
     confirmacion: bool = False
+    motivo: str | None = None
 
 router = APIRouter(prefix="/vehiculos", tags=["Vehículos"])
 
@@ -96,8 +104,9 @@ def update_vehiculo(
 @router.delete("/{vehiculo_id}")
 def deactivate_vehiculo(
     vehiculo_id: int,
+    body: BajaBody | None = Body(None),
     service: VehiculoService = Depends(_service),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     """
     Baja lógica. NUNCA elimina el registro. Reversible con
@@ -107,7 +116,9 @@ def deactivate_vehiculo(
     igual está `PATCH /vehiculos/{id}/inactivar`, que pide confirmación y deja
     ver antes qué reservas quedan afectadas.
     """
-    vehiculo = service.deactivate(vehiculo_id)
+    vehiculo = service.deactivate(
+        vehiculo_id, motivo=body.motivo if body else None, usuario_id=current_user.id,
+    )
     return ok(service.to_response(vehiculo), "Vehículo dado de baja")
 
 
@@ -125,9 +136,9 @@ def reorder_vehiculos(
 def reactivate_vehiculo(
     vehiculo_id: int,
     service: VehiculoService = Depends(_service),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
-    vehiculo = service.reactivate(vehiculo_id)
+    vehiculo = service.reactivate(vehiculo_id, usuario_id=current_user.id)
     return ok(service.to_response(vehiculo), "Vehículo reactivado")
 
 
@@ -238,10 +249,10 @@ def inactivar_vehiculo(
     body: InactivarBody,
     db: Session = Depends(get_db),
     service: VehiculoService = Depends(_service),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     """
-    D4: Inactiva el vehículo. Requiere confirmacion=true.
+    D4: Inactiva el vehículo. Requiere confirmacion=true y el motivo.
     Si hay reservas activas, el admin debe confirmar explícitamente.
     """
     if not body.confirmacion:
@@ -252,7 +263,9 @@ def inactivar_vehiculo(
     # `forzar=True`: acá la persona ya vio las reservas afectadas
     # (`GET /vehiculos/{id}/reservas-afectadas`) y confirmó igual. Este es el
     # camino para hacerlo a sabiendas; el DELETE es el que frena.
-    vehiculo = service.deactivate(vehiculo_id, forzar=True)
+    vehiculo = service.deactivate(
+        vehiculo_id, forzar=True, motivo=body.motivo, usuario_id=current_user.id,
+    )
     return ok(service.to_response(vehiculo), "Vehículo inactivado")
 
 

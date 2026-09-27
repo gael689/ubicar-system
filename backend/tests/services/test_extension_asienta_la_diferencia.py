@@ -14,6 +14,10 @@ de lo pactado primero— y el cobro es opcional en el mismo acto.
 from datetime import date, time
 from decimal import Decimal
 
+import pytest
+
+from app.core.exceptions import BusinessRuleError
+from app.models.alquiler import Alquiler
 from app.models.cuenta_corriente import CuentaCorriente, MovimientoCuentaCorriente
 from app.models.pago import Pago
 from app.schemas.alquiler import PagoInmediato
@@ -159,3 +163,121 @@ class TestExtenderBajandoElPrecio:
         credito = db.query(MovimientoCuentaCorriente).filter_by(tipo="credito").one()
         assert credito.naturaleza == "bonificacion"
         assert Decimal(str(credito.monto)) == Decimal("50000")
+
+
+class TestLaExtensionTraeSuPropioPrecio:
+    """
+    Pedido del mostrador (27/09): la extensión es un alquiler nuevo. Se carga
+    el precio de los días que se agregan —no el total— y se asienta sólo eso.
+    """
+
+    def test_precio_extension_suma_al_anterior_y_debita_solo_la_extension(
+        self, db, cliente, usuario, hacer_reserva, hacer_alquiler
+    ):
+        reserva, alquiler = _alquiler_con_debito(
+            db, cliente, usuario, hacer_reserva, hacer_alquiler, "400000"
+        )
+        AlquilerService(db).extender(
+            alquiler_id=alquiler.id,
+            nueva_fecha_fin=date(2026, 9, 8),
+            nueva_hora_fin=time(10, 0),
+            usuario_id=usuario.id,
+            precio_extension=Decimal("90000"),
+        )
+        db.flush()
+        db.refresh(reserva)
+
+        assert Decimal(str(reserva.precio_total)) == Decimal("490000")
+        ext = db.query(MovimientoCuentaCorriente).filter_by(naturaleza="extension").one()
+        assert Decimal(str(ext.monto)) == Decimal("90000")
+        assert _saldo(db, cliente.id) == Decimal("490000")
+
+    def test_sin_precio_no_se_extiende(
+        self, db, cliente, usuario, hacer_reserva, hacer_alquiler
+    ):
+        """
+        Antes, sin precio, se re-cotizaba el período entero y una banda más
+        barata terminaba en una bonificación que nadie había decidido.
+        """
+        reserva, alquiler = _alquiler_con_debito(
+            db, cliente, usuario, hacer_reserva, hacer_alquiler, "400000"
+        )
+        with pytest.raises(BusinessRuleError):
+            AlquilerService(db).extender(
+                alquiler_id=alquiler.id,
+                nueva_fecha_fin=date(2026, 9, 8),
+                nueva_hora_fin=time(10, 0),
+                usuario_id=usuario.id,
+            )
+        assert db.query(MovimientoCuentaCorriente).count() == 1
+
+    def test_precio_cero_no_se_acepta(
+        self, db, cliente, usuario, hacer_reserva, hacer_alquiler
+    ):
+        reserva, alquiler = _alquiler_con_debito(
+            db, cliente, usuario, hacer_reserva, hacer_alquiler, "400000"
+        )
+        with pytest.raises(BusinessRuleError):
+            AlquilerService(db).extender(
+                alquiler_id=alquiler.id,
+                nueva_fecha_fin=date(2026, 9, 8),
+                nueva_hora_fin=time(10, 0),
+                usuario_id=usuario.id,
+                precio_extension=Decimal("0"),
+            )
+
+    def test_anotar_en_la_cuenta_no_cancela_la_extension(
+        self, db, cliente, usuario, hacer_reserva, hacer_alquiler
+    ):
+        """`cuenta_corriente` no es plata que entró: la deuda de la extensión queda."""
+        reserva, alquiler = _alquiler_con_debito(
+            db, cliente, usuario, hacer_reserva, hacer_alquiler, "400000"
+        )
+        AlquilerService(db).extender(
+            alquiler_id=alquiler.id,
+            nueva_fecha_fin=date(2026, 9, 8),
+            nueva_hora_fin=time(10, 0),
+            usuario_id=usuario.id,
+            precio_extension=Decimal("90000"),
+            pago_inmediato=PagoInmediato(
+                monto=Decimal("90000"), medio_pago="cuenta_corriente", fecha=CHECKOUT
+            ),
+        )
+        db.flush()
+
+        assert _saldo(db, cliente.id) == Decimal("490000")
+
+
+class TestEndpointExtender:
+    API = "/api/v1"
+
+    def test_sin_precio_devuelve_422(
+        self, client, db, cliente, usuario, hacer_reserva, hacer_alquiler
+    ):
+        _, alquiler = _alquiler_con_debito(
+            db, cliente, usuario, hacer_reserva, hacer_alquiler, "400000"
+        )
+        r = client.patch(
+            f"{self.API}/alquileres/{alquiler.id}/extender",
+            json={"nueva_fecha_fin": "2026-09-08", "nueva_hora_fin": "10:00:00"},
+        )
+        assert r.status_code == 422
+
+    def test_devuelve_solo_lo_de_la_extension(
+        self, client, db, cliente, usuario, hacer_reserva, hacer_alquiler
+    ):
+        # La reserva de la fábrica va del 01/09 al 05/09.
+        _alquiler_con_debito(db, cliente, usuario, hacer_reserva, hacer_alquiler, "400000")
+        alquiler = db.query(Alquiler).one()
+        r = client.patch(
+            f"{self.API}/alquileres/{alquiler.id}/extender",
+            json={
+                "nueva_fecha_fin": "2026-09-07",
+                "nueva_hora_fin": "10:00:00",
+                "precio_extension": "80000",
+            },
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert Decimal(str(data["precio_extension"])) == Decimal("80000")
+        assert data["dias_agregados"] == 2

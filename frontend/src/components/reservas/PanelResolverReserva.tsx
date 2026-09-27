@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Check, Loader2, Car, Wallet, FileSignature, X, AlertTriangle, ArrowUpRight, ArrowDownRight,
-  Phone, Mail, CreditCard, MessageCircle,
+  Phone, Mail, CreditCard, MessageCircle, BookOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AccionesContrato } from '@/components/reservas/AccionesContrato';
@@ -12,7 +13,8 @@ import {
 } from '@/hooks/useResolverReserva';
 import { useRechazarReservaWeb } from '@/hooks/useReservasWeb';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
-import { cn, formatCurrency, formatDate, extractError } from '@/lib/utils';
+import { cn, formatCurrency, formatDate, extractError, hoyLocal } from '@/lib/utils';
+import { totalACobrar } from '@/lib/pagoReserva';
 import type { Reserva } from '@/types';
 
 /**
@@ -42,6 +44,7 @@ export function PanelResolverReserva({
   // Se trabaja sobre una copia viva: cada paso devuelve la reserva ya
   // actualizada, así el panel avanza sin esperar a que el listado refresque.
   const [reserva, setReserva] = useState<Reserva>(inicial);
+  const navigate = useNavigate();
 
   const total = totalACobrar(reserva);
   const cobrado = Number(reserva.anticipo_monto ?? 0);
@@ -159,6 +162,15 @@ export function PanelResolverReserva({
             }
           >
             <FormularioCobro reserva={reserva} saldo={saldo} onListo={aplicar} />
+            {/* Para ver todo lo que debe (o pagó) el cliente, no sólo esta
+                reserva, sin tener que ir a buscarlo a Clientes. */}
+            <button
+              type="button"
+              onClick={() => { onClose(); navigate(`/clientes/${reserva.cliente_id}?tab=cuenta-corriente`); }}
+              className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+            >
+              <BookOpen className="h-3.5 w-3.5" /> Ver cuenta corriente del cliente
+            </button>
           </Paso>
 
           <Paso
@@ -252,20 +264,6 @@ export function PanelResolverReserva({
   );
 }
 
-/**
- * El total real de la reserva.
- *
- * Los adicionales y el late checkout **viven fuera de `precio_total`** (ver
- * `Reserva.total_adicionales` en el backend): un saldo calculado sólo contra
- * `precio_total` cobra de menos, y la diferencia aparece en el mostrador.
- */
-function totalACobrar(r: Reserva): number {
-  return (
-    Number(r.precio_total ?? 0)
-    + Number(r.cargo_late_checkout ?? 0)
-    + Number(r.total_adicionales ?? 0)
-  );
-}
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
@@ -323,10 +321,14 @@ function Paso({
   );
 }
 
-const MEDIOS = ['transferencia', 'efectivo', 'tarjeta', 'mercado_pago', 'echeq', 'cheque'] as const;
+// Los del enum del backend (`schemas/pago.py::MedioPago`) que son plata que
+// entra. Faltaba Wapa, así que un cobro por Wapa no se podía cargar desde acá.
+// `cuenta_corriente` no va: esto registra un cobro, y "anotar en la cuenta" no
+// lo es (ver `caja_service.es_plata_que_entro`).
+const MEDIOS = ['transferencia', 'efectivo', 'tarjeta', 'mercado_pago', 'wapa', 'echeq', 'cheque'] as const;
 const MEDIO_LABEL: Record<string, string> = {
   transferencia: 'Transferencia', efectivo: 'Efectivo', tarjeta: 'Tarjeta',
-  mercado_pago: 'Mercado Pago', echeq: 'E-cheq', cheque: 'Cheque',
+  mercado_pago: 'Mercado Pago', wapa: 'Wapa (Patagonia)', echeq: 'E-cheq', cheque: 'Cheque',
 };
 
 /**
@@ -344,8 +346,15 @@ function FormularioCobro({
   // El saldo como default cubre al que paga todo junto; el que señó el 30%
   // lo pisa con lo que efectivamente transfirió.
   const [monto, setMonto] = useState(saldo > 0 ? String(saldo) : '');
-  const [medio, setMedio] = useState<string>(reserva.forma_pago_prevista ?? 'transferencia');
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  // La forma prevista sólo si es un medio de cobro: "cuenta corriente" no lo es.
+  const [medio, setMedio] = useState<string>(
+    reserva.forma_pago_prevista && (MEDIOS as readonly string[]).includes(reserva.forma_pago_prevista)
+      ? reserva.forma_pago_prevista
+      : 'transferencia',
+  );
+  // Fecha local: con UTC, después de las 21 h el default ya era mañana y el
+  // backend rechazaba el cobro por "fecha futura".
+  const [fecha, setFecha] = useState(hoyLocal());
   const [referencia, setReferencia] = useState('');
 
   if (saldo <= 0 && !esperandoPago) {
@@ -380,7 +389,7 @@ function FormularioCobro({
         <label className="space-y-1">
           <span className="text-xs text-muted-foreground">Fecha en que entró</span>
           <input
-            type="date" value={fecha} max={new Date().toISOString().slice(0, 10)}
+            type="date" value={fecha} max={hoyLocal()}
             onChange={e => setFecha(e.target.value)} className="input-base"
           />
         </label>

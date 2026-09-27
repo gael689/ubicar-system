@@ -102,8 +102,9 @@ export function useUpdateVehiculo() {
 export function useDeactivateVehiculo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => {
-      const { data } = await api.delete<ApiResponse<Vehiculo>>(`/vehiculos/${id}`);
+    // El motivo es obligatorio (vendido, siniestro, robo…): el backend lo pide.
+    mutationFn: async ({ id, motivo }: { id: number; motivo: string }) => {
+      const { data } = await api.delete<ApiResponse<Vehiculo>>(`/vehiculos/${id}`, { data: { motivo } });
       return data.data;
     },
     onSuccess: (vehiculo) => {
@@ -120,9 +121,9 @@ export function useDeactivateVehiculo() {
 export function useInactivarVehiculo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async ({ id, motivo }: { id: number; motivo: string }) => {
       const { data } = await api.patch<ApiResponse<Vehiculo>>(
-        `/vehiculos/${id}/inactivar`, { confirmacion: true },
+        `/vehiculos/${id}/inactivar`, { confirmacion: true, motivo },
       );
       return data.data;
     },

@@ -9,8 +9,8 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { BajaVehiculoDialog } from '@/components/flota/BajaVehiculoDialog';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { VehiculoFormDialog } from '@/components/flota/VehiculoFormDialog';
 import { TarifasTab } from '@/components/flota/TarifasTab';
@@ -22,16 +22,17 @@ import { DaniosTab } from '@/components/flota/DaniosTab';
 import { BloqueosTab } from '@/components/flota/BloqueosTab';
 
 import {
-  useDeactivateVehiculo,
-  useInactivarVehiculo,
   useReactivateVehiculo,
   useUploadFoto,
   useVehiculo,
 } from '@/hooks/useVehiculos';
 import { resolveAssetUrl } from '@/lib/api';
 import { ESTADO_VEHICULO_COLOR, ESTADO_VEHICULO_LABEL, TIPO_VEHICULO_LABEL } from '@/lib/constants';
-import { toast } from 'sonner';
-import { cn, codigoDeError, extractError, formatDate, formatNumber } from '@/lib/utils';
+import { cn, formatDate, formatNumber } from '@/lib/utils';
+
+// Pestañas grandes: con el tamaño por defecto eran chips de texto chico que
+// en el mostrador (y en el celular) costaba acertar.
+const TAB_CLS = 'px-4 py-2 text-sm font-semibold data-[state=active]:shadow-sm';
 
 export function FlotaDetail() {
   const { id } = useParams<{ id: string }>();
@@ -42,10 +43,7 @@ export function FlotaDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
-  const [conflicto, setConflicto] = useState<string | null>(null);
 
-  const deactivate = useDeactivateVehiculo();
-  const inactivar = useInactivarVehiculo();
   const reactivate = useReactivateVehiculo();
   const uploadFoto = useUploadFoto();
 
@@ -156,6 +154,17 @@ export function FlotaDetail() {
                   {' · '}
                   {vehiculo.color}
                 </div>
+                {/* Por qué está inactivo, a la vista: sin esto un auto dado
+                    de baja no decía si se vendió, se chocó o se lo robaron. */}
+                {inactivo && (
+                  <p className="rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-sm text-foreground">
+                    <span className="font-semibold">Dado de baja</span>
+                    {vehiculo.fecha_baja && <> el {formatDate(vehiculo.fecha_baja)}</>}
+                    {vehiculo.motivo_baja
+                      ? <> — {vehiculo.motivo_baja}</>
+                      : <span className="text-muted-foreground"> — sin motivo registrado</span>}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -193,15 +202,14 @@ export function FlotaDetail() {
 
       {/* Tabs */}
       <Tabs defaultValue="datos" className="w-full">
-        <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="datos">Datos</TabsTrigger>
-          <TabsTrigger value="tarifas">Tarifas</TabsTrigger>
-          <TabsTrigger value="documentos">Documentos</TabsTrigger>
-          <TabsTrigger value="gastos">Gastos / Mant.</TabsTrigger>
-          <TabsTrigger value="danios">Daños</TabsTrigger>
-          <TabsTrigger value="bloqueos">Bloqueos</TabsTrigger>
-          <TabsTrigger value="hist-reservas">Hist. Reservas</TabsTrigger>
-          <TabsTrigger value="hist-gastos">Hist. Gastos</TabsTrigger>
+        <TabsList className="flex-wrap h-auto gap-1 p-1.5">
+          <TabsTrigger className={TAB_CLS} value="datos">Datos</TabsTrigger>
+          <TabsTrigger className={TAB_CLS} value="tarifas">Tarifas</TabsTrigger>
+          <TabsTrigger className={TAB_CLS} value="documentos">Documentos</TabsTrigger>
+          <TabsTrigger className={TAB_CLS} value="gastos">Gastos y mantenimiento</TabsTrigger>
+          <TabsTrigger className={TAB_CLS} value="danios">Daños</TabsTrigger>
+          <TabsTrigger className={TAB_CLS} value="bloqueos">Bloqueos</TabsTrigger>
+          <TabsTrigger className={TAB_CLS} value="hist-reservas">Reservas</TabsTrigger>
         </TabsList>
 
         <TabsContent value="datos">
@@ -232,13 +240,16 @@ export function FlotaDetail() {
           <DocumentosTab vehiculoId={vehiculo.id} />
         </TabsContent>
 
-        <TabsContent value="gastos">
+        {/* "Hist. Gastos" era una pestaña aparte con lo mismo visto como
+            historial: ahora va abajo de gastos y mantenimiento. */}
+        <TabsContent value="gastos" className="space-y-4">
           <GastosMantenimientoTab
             vehiculoId={vehiculo.id}
             kmActual={vehiculo.km_actual}
             kmProximoService={vehiculo.km_proximo_service}
             kmEntreServices={vehiculo.km_entre_services}
           />
+          <HistorialTab vehiculoId={vehiculo.id} />
         </TabsContent>
 
         <TabsContent value="danios">
@@ -253,9 +264,7 @@ export function FlotaDetail() {
           <HistorialReservasTab vehiculoId={vehiculo.id} />
         </TabsContent>
 
-        <TabsContent value="hist-gastos">
-          <HistorialTab vehiculoId={vehiculo.id} />
-        </TabsContent>
+
       </Tabs>
 
       <VehiculoFormDialog
@@ -264,35 +273,10 @@ export function FlotaDetail() {
         vehiculo={vehiculo}
       />
 
-      <ConfirmDialog
-        open={deactivateOpen}
-        onOpenChange={(open) => { setDeactivateOpen(open); if (!open) setConflicto(null); }}
-        title={conflicto ? 'El vehículo tiene reservas sin cerrar' : 'Dar de baja vehículo'}
-        description={
-          conflicto
-            ? `${conflicto} Si lo das de baja igual, esas reservas quedan sobre un vehículo inactivo y hay que reasignarlas a mano.`
-            : `Esto marca a ${vehiculo.patente} como inactivo. No se elimina del sistema y podés reactivarlo cuando quieras.`
-        }
-        confirmLabel={conflicto ? 'Darlo de baja igual' : 'Dar de baja'}
-        destructive
-        loading={deactivate.isPending || inactivar.isPending}
-        onConfirm={async () => {
-          try {
-            // Segunda vuelta: la persona ya leyó qué reservas quedan afectadas.
-            if (conflicto) await inactivar.mutateAsync(vehiculo.id);
-            else await deactivate.mutateAsync(vehiculo.id);
-            setDeactivateOpen(false);
-            setConflicto(null);
-            navigate('/flota');
-          } catch (err) {
-            if (codigoDeError(err) === 'vehiculo_con_reservas') {
-              setConflicto(extractError(err));
-            } else {
-              toast.error(extractError(err));
-              setDeactivateOpen(false);
-            }
-          }
-        }}
+      <BajaVehiculoDialog
+        vehiculo={deactivateOpen ? vehiculo : null}
+        onOpenChange={setDeactivateOpen}
+        onHecho={() => navigate('/flota')}
       />
     </div>
   );

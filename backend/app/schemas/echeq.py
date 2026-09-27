@@ -17,8 +17,12 @@ class EcheqCreate(BaseModel):
     fecha_emision: date
     fecha_cobro: date
     contraparte: str
-    banco: str
-    numero_cheque: str
+    # Opcionales como en el modelo: el cheque se carga cuando llega la foto y a
+    # veces el banco o el número se completan después. Sin ellos el echeq queda
+    # "pendiente de completar" y encabeza la lista. La fecha de cobro sí es
+    # obligatoria: sin ella no hay aviso de vencimiento.
+    banco: str | None = None
+    numero_cheque: str | None = None
     cliente_id: int | None = None
     proveedor_nombre: str | None = None
     reserva_id: int | None = None

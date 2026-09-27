@@ -146,8 +146,9 @@ export interface EcheqCreate {
   fecha_emision: string;
   fecha_cobro: string;
   contraparte: string;
-  banco: string;
-  numero_cheque: string;
+  // Opcionales: sin ellos el echeq queda "pendiente de completar".
+  banco?: string | null;
+  numero_cheque?: string | null;
   cliente_id?: number | null;
   proveedor_nombre?: string | null;
   reserva_id?: number | null;
@@ -465,6 +466,9 @@ export interface Vehiculo {
   categoria?: CategoriaResumen | null;
   destino: DestinoVehiculo;
   activo: boolean;
+  /** Por qué y cuándo se dio de baja. `null` mientras está activo. */
+  motivo_baja?: string | null;
+  fecha_baja?: string | null;
   foto_url: string | null;
   created_at: string;
   vtv_vencimiento: string | null;
@@ -1059,6 +1063,8 @@ export interface PreviewExcedente {
 export interface ExtenderRequest {
   nueva_fecha_fin: string;
   nueva_hora_fin: string;
+  /** Lo que valen los días agregados. Obligatorio (o `precio_total`, legado). */
+  precio_extension?: number | null;
   precio_total?: number | null;
   // La diferencia se asienta siempre en la cuenta corriente; cobrarla en el
   // acto es opcional (el default del negocio es que se pague al devolver).
@@ -1079,6 +1085,8 @@ export interface ExtenderResponse {
   precio_anterior: string | null;
   precio_nuevo: string | null;
   diferencia: string | null;
+  dias_agregados?: number;
+  precio_extension?: string | null;
 }
 
 // ─── Fase 3: Ocupación (Calendario) ──────────────────────────────────────────

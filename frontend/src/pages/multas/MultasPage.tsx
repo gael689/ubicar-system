@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CobroDialog, type DatosDeCobro } from '@/components/shared/CobroDialog';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { FlotaTabs } from '@/components/flota/FlotaTabs';
 import { useMultas } from '@/hooks/useMultas';
 import { ESTADO_MULTA_LABEL, ESTADO_MULTA_COLOR, ESTADO_MULTA_COLOR_OUTLINE } from '@/lib/constants';
 import type { Multa, BusquedaMultaResult, EstadoMulta, EstadoMultaEditable, MultaCreate } from '@/types';
@@ -204,6 +205,7 @@ export function MultasPage() {
 
   return (
     <div className="space-y-6">
+      <FlotaTabs />
       <PageHeader
         title="Multas e Infracciones"
         description={`${total} multa${total !== 1 ? 's' : ''} registrada${total !== 1 ? 's' : ''}`}

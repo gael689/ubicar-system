@@ -85,11 +85,27 @@ class CheckinCreate(BaseModel):
 class ExtenderRequest(BaseModel):
     nueva_fecha_fin: date
     nueva_hora_fin: time
+    # Lo que valen los días que se agregan. La extensión es un alquiler nuevo:
+    # el precio del alquiler pasa a ser el anterior más esto, y se asienta un
+    # débito sólo por la extensión.
+    precio_extension: Decimal | None = None
+    # Compatibilidad: el total del alquiler ya extendido, como se mandaba antes.
+    # Si vienen los dos, manda `precio_extension`.
     precio_total: Decimal | None = None
     # El cliente paga la diferencia **al devolver el auto**, salvo que el
     # operador decida cobrarla en el momento. Si viene, se registra el cobro en
     # el mismo acto — igual que en el check-out y el check-in.
     pago_inmediato: PagoInmediato | None = None
+
+    @model_validator(mode="after")
+    def validar_precio(self) -> "ExtenderRequest":
+        # Sin precio se re-cotizaba el período entero, y si la banda nueva
+        # salía más barata quedaba asentada una bonificación que nadie decidió.
+        if self.precio_extension is None and self.precio_total is None:
+            raise ValueError("Falta el precio de la extensión")
+        if self.precio_extension is not None and self.precio_extension <= 0:
+            raise ValueError("El precio de la extensión tiene que ser mayor a cero")
+        return self
 
 
 # ── Response: excedente preview ───────────────────────────────────────────────
@@ -166,3 +182,7 @@ class ExtenderResponse(BaseModel):
     precio_anterior: Decimal | None
     precio_nuevo: Decimal | None
     diferencia: Decimal | None
+    # Lo de la extensión sola, que es lo que la pantalla muestra: el precio
+    # anterior del alquiler no se muestra (la extensión es un alquiler nuevo).
+    dias_agregados: int = 0
+    precio_extension: Decimal | None = None

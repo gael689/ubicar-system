@@ -194,22 +194,20 @@ class AlquilerService:
                 f"El km de salida ({checkout_km}) no puede ser menor al km actual del vehículo ({vehiculo.km_actual})",
             )
 
-        # D-34: el contrato no bloquea la entrega, pero si el auto sale sin
-        # firmar se exige un motivo y queda constancia visible en la ficha y
-        # en el listado. No alcanza con la advertencia: sin dejar rastro, "se
-        # entregó sin contrato" se vuelve invisible al día siguiente.
+        # D-34: el contrato no bloquea la entrega. Si el auto sale sin firmar
+        # queda la marca `entregado_sin_contrato` —visible en la ficha y en el
+        # listado hasta que se firme— y la advertencia.
+        #
+        # **El motivo ya no es obligatorio** (pedido del mostrador, 27/09): la
+        # pregunta "¿el cliente ya firmó?" en la entrega frenaba cada salida
+        # para escribir siempre lo mismo, y la marca alcanza para no perder el
+        # rastro. Si alguien manda un motivo, se guarda igual.
         warnings = []
         sin_contrato = False
         if not reserva.alquiler or not (reserva.alquiler.contrato_firmado if reserva.alquiler else False):
             if not self._tiene_contrato_firmado(reserva_id):
                 sin_contrato = True
                 warnings.append({"tipo": "contrato_no_firmado", "mensaje": "El contrato aún no está firmado"})
-                if not (motivo_sin_contrato or "").strip():
-                    raise BusinessRuleError(
-                        "motivo_sin_contrato_requerido",
-                        "El vehículo se está entregando sin contrato firmado. "
-                        "Indicá el motivo para dejarlo registrado.",
-                    )
 
         with self.db.begin_nested():
             # Crear alquiler
@@ -223,7 +221,7 @@ class AlquilerService:
                 checkout_registrado_en_tiempo_real=registrado_en_tiempo_real,
                 checkout_estado_limpieza=checkout_estado_limpieza,
                 entregado_sin_contrato=sin_contrato,
-                motivo_sin_contrato=motivo_sin_contrato if sin_contrato else None,
+                motivo_sin_contrato=((motivo_sin_contrato or "").strip() or None) if sin_contrato else None,
                 garantia_tipo=garantia_tipo,
                 garantia_monto=garantia_monto,
                 garantia_estado="retenida" if garantia_tipo and garantia_tipo != "no_aplica" else None,
@@ -675,9 +673,21 @@ class AlquilerService:
         usuario_id: int,
         precio_manual: Decimal | None = None,
         pago_inmediato: PagoInmediato | None = None,
+        precio_extension: Decimal | None = None,
     ) -> Alquiler:
         """
         Extiende un alquiler activo a una nueva fecha de fin.
+
+        **La extensión es un alquiler nuevo con su propio precio** (pedido del
+        mostrador, 27/09): se manda `precio_extension` —lo que valen los días
+        que se agregan— y el precio del alquiler pasa a ser el anterior más
+        eso. Se asienta un débito sólo por la extensión.
+
+        El precio es **obligatorio**. Antes, sin precio, se re-cotizaba el
+        período entero con la tarifa de lista, y si la banda nueva salía más
+        barata que lo pactado el sistema asentaba una *bonificación* que nadie
+        había decidido. `precio_manual` (el total del alquiler) se sigue
+        aceptando para no romper clientes viejos del endpoint.
 
         Recalcula tarifa (puede cambiar de banda), salvo que venga un
         `precio_manual` — la extensión respeta entonces el precio pactado
@@ -700,6 +710,17 @@ class AlquilerService:
         auto, pero si la paga en el momento se registra acá y no hay que ir a
         Caja por separado.
         """
+        if precio_extension is not None and precio_extension <= 0:
+            raise BusinessRuleError(
+                "precio_extension_invalido",
+                "El precio de la extensión tiene que ser mayor a cero.",
+            )
+        if precio_extension is None and precio_manual is None:
+            raise BusinessRuleError(
+                "precio_extension_requerido",
+                "Falta el precio de la extensión.",
+            )
+
         alquiler = self.get(alquiler_id)
         reserva = alquiler.reserva
 
@@ -757,7 +778,12 @@ class AlquilerService:
             nuevo_precio = precio_anterior
             nueva_tarifa_id = tarifa_anterior_id
 
-        if precio_manual is not None:
+        if precio_extension is not None:
+            # La tarifa aplicada no cambia: los días nuevos tienen su propio
+            # precio, no re-cotizan el alquiler entero.
+            nuevo_precio = Decimal(str(precio_anterior or 0)) + precio_extension
+            nueva_tarifa_id = tarifa_anterior_id
+        elif precio_manual is not None:
             nuevo_precio = precio_manual
 
         # Si la reserva estaba 'vencida' y la nueva fecha/hora de fin queda en el
@@ -850,21 +876,25 @@ class AlquilerService:
                 )
                 self.db.add(pago_extension)
                 self.db.flush()
-                self.cc_service.registrar_movimiento(
-                    cliente_id=reserva.cliente_id,
-                    tipo="credito",
-                    naturaleza="pago",
-                    concepto=(
-                        f"Cobro de la extensión — alquiler #{reserva.id} "
-                        f"({pago_extension.medio_pago})"
-                    ),
-                    monto=pago_inmediato.monto,
-                    fecha=pago_inmediato.fecha,
-                    creado_por=usuario_id,
-                    alquiler_id=alquiler.id,
-                    reserva_id=reserva.id,
-                    pago_id=pago_extension.id,
-                )
+                # "Anotar en la cuenta" no es plata que entró: acreditarlo
+                # borraría la deuda de la extensión que se acaba de asentar.
+                # Ver `caja_service.es_plata_que_entro`.
+                if es_plata_que_entro(pago_extension.medio_pago):
+                    self.cc_service.registrar_movimiento(
+                        cliente_id=reserva.cliente_id,
+                        tipo="credito",
+                        naturaleza="pago",
+                        concepto=(
+                            f"Cobro de la extensión — alquiler #{reserva.id} "
+                            f"({pago_extension.medio_pago})"
+                        ),
+                        monto=pago_inmediato.monto,
+                        fecha=pago_inmediato.fecha,
+                        creado_por=usuario_id,
+                        alquiler_id=alquiler.id,
+                        reserva_id=reserva.id,
+                        pago_id=pago_extension.id,
+                    )
             # Si el auto se queda 3 días más, el seguro cubre esos 3 días más.
             # Sólo se mueve la cantidad de días: el precio unitario pactado no
             # se toca (ver ReservaService.recalcular_adicionales_por_duracion).

@@ -188,7 +188,10 @@ def extender_alquiler(
             nueva_fecha_fin=payload.nueva_fecha_fin,
             nueva_hora_fin=payload.nueva_hora_fin,
             usuario_id=current_user.id,
-            precio_manual=payload.precio_total,
+            # Si viene `precio_extension`, manda ése; el total queda sólo por
+            # compatibilidad con quien todavía lo mande.
+            precio_manual=payload.precio_total if payload.precio_extension is None else None,
+            precio_extension=payload.precio_extension,
             pago_inmediato=payload.pago_inmediato,
         )
         db.commit()
@@ -216,6 +219,8 @@ def extender_alquiler(
             precio_anterior=precio_anterior,
             precio_nuevo=precio_nuevo,
             diferencia=diferencia,
+            dias_agregados=max(0, duracion_nueva - duracion_anterior),
+            precio_extension=diferencia,
         ).model_dump(),
         "Alquiler extendido",
     )

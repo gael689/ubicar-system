@@ -35,7 +35,6 @@ def _entregar(db, reserva, vehiculo, usuario, danios_ids):
         checkout_combustible=100,
         checkout_descripcion=None,
         usuario_id=usuario.id,
-        motivo_sin_contrato="Se firma en el mostrador",
         danios_ids=danios_ids,
     )
     db.flush()

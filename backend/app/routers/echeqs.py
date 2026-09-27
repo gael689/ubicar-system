@@ -1,5 +1,6 @@
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_current_user
@@ -53,8 +54,44 @@ def list_echeqs(
         q = q.filter(Echeq.tipo == tipo)
     if cliente_id:
         q = q.filter(Echeq.cliente_id == cliente_id)
-    echeqs = q.order_by(Echeq.fecha_cobro).all()
+    echeqs = q.order_by(*orden_de_trabajo()).all()
     return ok([_echeq_response(e, db) for e in echeqs])
+
+
+def orden_de_trabajo():
+    """
+    Primero lo que hay que hacer, después lo que ya pasó.
+
+    Ordenar sólo por `fecha_cobro` mezclaba cheques cobrados hace meses con
+    los que vencen mañana, y los que todavía no tienen fecha (los "pendientes
+    de completar", que son justo los que piden una acción) quedaban al final o
+    al principio según la base. El orden:
+
+    1. Pendientes de completar (en curso y sin banco, número o fecha).
+    2. En cartera (y el `pendiente` legado).
+    3. Depositados.
+    4. Endosados.
+    5. Cerrados: cobrados, rechazados, vencidos.
+
+    Adentro de cada grupo, por fecha de cobro, la más próxima primero y los
+    que no tienen fecha al final (portable: `NULLS LAST` no existe igual en
+    todas las bases).
+    """
+    abierto = Echeq.estado.in_(("pendiente", "en_cartera", "depositado", "endosado"))
+    incompleto = or_(Echeq.banco.is_(None), Echeq.numero_cheque.is_(None), Echeq.fecha_cobro.is_(None))
+    prioridad = case(
+        (and_(abierto, incompleto), 0),
+        (Echeq.estado.in_(("pendiente", "en_cartera")), 1),
+        (Echeq.estado == "depositado", 2),
+        (Echeq.estado == "endosado", 3),
+        else_=4,
+    )
+    return (
+        prioridad,
+        case((Echeq.fecha_cobro.is_(None), 1), else_=0),
+        Echeq.fecha_cobro.asc(),
+        Echeq.id.asc(),
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

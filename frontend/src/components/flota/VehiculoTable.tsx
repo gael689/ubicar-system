@@ -20,7 +20,7 @@ import {
 
 import { TIPO_VEHICULO_LABEL } from '@/lib/constants';
 import { resolveAssetUrl } from '@/lib/api';
-import { cn, formatNumber } from '@/lib/utils';
+import { cn, formatDate, formatNumber } from '@/lib/utils';
 import type { Vehiculo } from '@/types';
 
 interface Props {
@@ -99,8 +99,14 @@ export function VehiculoTable({ vehiculos, onEdit, onDeactivate, onReactivate }:
                     </span>
                   )}
                   {inactivo && (
-                    <span className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      Inactivo
+                    <span
+                      className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                      title={v.motivo_baja ? `Baja: ${v.motivo_baja}` : undefined}
+                    >
+                      {/* El motivo a la vista: "inactivo" solo no decía si se
+                          vendió, se chocó o se lo robaron. */}
+                      Baja{v.motivo_baja ? `: ${v.motivo_baja}` : ''}
+                      {v.fecha_baja ? ` · ${formatDate(v.fecha_baja)}` : ''}
                     </span>
                   )}
                   <ServiceBadge kmActual={v.km_actual} kmProximoService={v.km_proximo_service} />

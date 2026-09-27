@@ -1,13 +1,15 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Car, User, Calendar, MapPin, Clock, DollarSign, Pencil, XCircle, Flag, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Car, User, Calendar, MapPin, Clock, DollarSign, Pencil, XCircle, Flag, TrendingUp, AlertTriangle, Wallet, BookOpen } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useReservas } from '@/hooks/useReservas';
 import { CancelarReservaDialog, type DatosDeCancelacion } from '@/components/reservas/CancelarReservaDialog';
-import { extractError, formatMiles } from '@/lib/utils';
+import { cn, extractError, formatCurrency, formatMiles } from '@/lib/utils';
 import type { Reserva, ApiResponse } from '@/types';
-import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR } from '@/lib/constants';
+import { ESTADO_RESERVA_LABEL, ESTADO_RESERVA_COLOR, CONDICION_PAGO_LABEL } from '@/lib/constants';
+import { ESTADO_PAGO_LABEL, FORMA_PAGO_LABEL, resumenPago } from '@/lib/pagoReserva';
 import { ReservaModal } from './ReservaModal';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { CheckoutModal } from './CheckoutModal';
@@ -25,6 +27,7 @@ interface Props {
 
 export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props) {
   const { cancelarReserva, loading: cancelando } = useReservas();
+  const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkinOpen, setCheckinOpen] = useState(false);
@@ -132,13 +135,11 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
     return (
       <ExtenderModal
         alquilerId={reserva.alquiler_id}
-        reservaId={reserva.id}
+        reserva={reserva}
         vehiculoInfo={reserva.vehiculo ? `${reserva.vehiculo.marca} ${reserva.vehiculo.modelo} (${reserva.vehiculo.patente})` : `Veh. ${reserva.vehiculo_id}`}
         clienteNombre={reserva.cliente?.nombre_completo ?? `Cliente ${reserva.cliente_id}`}
-        fechaInicioActual={reserva.fecha_inicio}
         fechaFinActual={reserva.fecha_fin}
         horaFinActual={reserva.hora_fin}
-        precioTotalActual={reserva.precio_total}
         onClose={() => setExtenderOpen(false)}
         onSuccess={() => { setExtenderOpen(false); handleSuccess(); }}
       />
@@ -347,6 +348,18 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
             </div>
           )}
 
+          {/* **Estado del pago.** Pedido del mostrador (27/09): la ficha
+              mostraba el precio y, como mucho, el anticipo; para saber si el
+              cliente debía algo había que ir a Clientes, buscarlo y abrir su
+              cuenta corriente. Acá va el resumen y el botón que lleva directo. */}
+          <EstadoDelPago
+            reserva={reserva}
+            onVerCuenta={() => {
+              onClose();
+              navigate(`/clientes/${reserva.cliente_id}?tab=cuenta-corriente`);
+            }}
+          />
+
           {reserva.estado === 'cancelada' && reserva.motivo_cancelacion && (
             <div className="rounded-lg bg-danger/10 border border-danger/20 p-3">
               <p className="text-xs font-semibold text-danger uppercase tracking-wide mb-1">Motivo de cancelación</p>
@@ -446,6 +459,56 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
         loading={cancelando}
         onConfirm={handleCancelar}
       />
+    </div>
+  );
+}
+
+const ESTADO_PAGO_COLOR: Record<string, string> = {
+  pagado: 'bg-success/15 text-success border-success/30',
+  anticipo: 'bg-warning/15 text-foreground border-warning/40',
+  pendiente: 'bg-danger/10 text-danger border-danger/30',
+};
+
+function EstadoDelPago({ reserva, onVerCuenta }: { reserva: Reserva; onVerCuenta: () => void }) {
+  const { total, cobrado, saldo, pagado } = resumenPago(reserva);
+  const estado = pagado ? 'pagado' : (reserva.estado_pago ?? 'pendiente');
+  // `condicion_pago_texto` lo suma otro cambio (condición a medida); si
+  // todavía no viene, se muestra la condición del catálogo.
+  const condicionTexto = (reserva as Reserva & { condicion_pago_texto?: string | null }).condicion_pago_texto;
+  const condicion = condicionTexto
+    || (reserva.condicion_pago ? (CONDICION_PAGO_LABEL[reserva.condicion_pago] ?? reserva.condicion_pago) : null);
+  const forma = reserva.forma_pago_prevista
+    ? (FORMA_PAGO_LABEL[reserva.forma_pago_prevista] ?? reserva.forma_pago_prevista)
+    : null;
+
+  return (
+    <div className="flex items-start gap-3">
+      <Wallet className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estado del pago</p>
+          <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold', ESTADO_PAGO_COLOR[estado] ?? ESTADO_PAGO_COLOR.pendiente)}>
+            {ESTADO_PAGO_LABEL[estado] ?? estado}
+          </span>
+        </div>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+          {forma && (<><dt className="text-muted-foreground">Forma prevista</dt><dd className="text-foreground">{forma}</dd></>)}
+          {condicion && (<><dt className="text-muted-foreground">Condición</dt><dd className="text-foreground">{condicion}</dd></>)}
+          <dt className="text-muted-foreground">Cobrado</dt>
+          <dd className="text-foreground tabular-nums">{formatCurrency(cobrado)} de {formatCurrency(total)}</dd>
+          <dt className="text-muted-foreground">Saldo</dt>
+          <dd className={cn('font-bold tabular-nums', saldo > 0 ? 'text-danger' : 'text-success')}>
+            {saldo > 0 ? formatCurrency(saldo) : 'Nada pendiente'}
+          </dd>
+        </dl>
+        <button
+          type="button"
+          onClick={onVerCuenta}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+        >
+          <BookOpen className="h-3.5 w-3.5" /> Ver cuenta corriente
+        </button>
+      </div>
     </div>
   );
 }
