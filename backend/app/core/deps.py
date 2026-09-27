@@ -167,6 +167,14 @@ def _usuario_desde_clerk(db: Session, claims: dict) -> Usuario:
 
 _clerk_nombres_cache: dict[str, str | None] = {}
 
+# Los fracasos (Clerk caído, timeout, un 5xx) se recuerdan **un rato**, no para
+# siempre y no nada. Sin esto, con Clerk caído cada request de un usuario con
+# nombre de relleno esperaba los 3 s del timeout: la app entera se arrastraba
+# por un dato cosmético. Cacharlo para siempre tampoco: un corte pasajero
+# dejaría el nombre sin completar hasta reiniciar el proceso.
+_clerk_fallos: dict[str, float] = {}
+CLERK_REINTENTO_SEGUNDOS = 600
+
 
 def _nombre_de_claims(claims: dict) -> str:
     return (
@@ -203,6 +211,9 @@ def _nombre_desde_api_de_clerk(sub: str) -> str:
         return ""
     if sub in _clerk_nombres_cache:
         return _clerk_nombres_cache[sub] or ""
+    fallo = _clerk_fallos.get(sub)
+    if fallo is not None and time.monotonic() - fallo < CLERK_REINTENTO_SEGUNDOS:
+        return ""
     nombre = ""
     try:
         import httpx
@@ -212,15 +223,23 @@ def _nombre_desde_api_de_clerk(sub: str) -> str:
             headers={"Authorization": f"Bearer {settings.clerk_secret_key}"},
             timeout=3.0,
         )
-        if r.status_code == 200:
-            datos = r.json() or {}
-            nombre = " ".join(
-                x.strip() for x in [datos.get("first_name") or "", datos.get("last_name") or ""] if x.strip()
-            )
+        if r.status_code != 200:
+            # Un 5xx o un 429 es Clerk con problemas, no "el usuario no tiene
+            # nombre": se reintenta pasado el rato, igual que un timeout.
+            logger.warning("[Clerk] %s al leer el nombre de %s", r.status_code, sub)
+            _clerk_fallos[sub] = time.monotonic()
+            return ""
+        datos = r.json() or {}
+        nombre = " ".join(
+            x.strip() for x in [datos.get("first_name") or "", datos.get("last_name") or ""] if x.strip()
+        )
     except Exception:
         logger.warning("[Clerk] no se pudo leer el nombre de %s", sub, exc_info=True)
-        # El fracaso no se cachea: puede ser un corte de red pasajero.
+        _clerk_fallos[sub] = time.monotonic()
         return ""
+    _clerk_fallos.pop(sub, None)
+    # La respuesta buena se cachea para siempre, también si vino sin nombre:
+    # eso no cambia hasta que alguien lo cargue en Clerk.
     _clerk_nombres_cache[sub] = nombre or None
     return nombre
 

@@ -342,14 +342,21 @@ def regenerar_contrato(
     """
     svc = ContratoService(db)
     try:
-        contrato = svc.regenerar(contrato_id, payload.motivo, current_user.id)
+        contrato, franquicia_anulada, aviso = svc.regenerar(
+            contrato_id, payload.motivo, current_user.id
+        )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except BusinessRuleError as e:
         raise HTTPException(status_code=409, detail=str(e))
     db.commit()
     db.refresh(contrato)
-    return ok(_respuesta(contrato), "Contrato regenerado")
+    # El contrato de siempre, más si se cayó la franquicia en el camino: el
+    # nuevo nace sin ella y la pantalla tiene que decirlo.
+    datos = _respuesta(contrato).model_dump()
+    datos["franquicia_anulada"] = franquicia_anulada
+    datos["aviso"] = aviso
+    return ok(datos, "Contrato regenerado")
 
 
 # ─── Lectura ─────────────────────────────────────────────────────────────────

@@ -186,3 +186,7 @@ class ExtenderResponse(BaseModel):
     # anterior del alquiler no se muestra (la extensión es un alquiler nuevo).
     dias_agregados: int = 0
     precio_extension: Decimal | None = None
+    # Lo que suman los adicionales que se cobran por día (el seguro, la silla)
+    # en los días agregados. Se debita aparte de `precio_extension`: el total
+    # de la extensión para el cliente es la suma de los dos.
+    adicionales_extension: Decimal = Decimal("0")

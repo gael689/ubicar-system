@@ -183,6 +183,10 @@ class ReservaUpdate(BaseModel):
     adicionales: list[AdicionalSolicitadoRequest] | None = None
     # Pago
     forma_pago_prevista: str | None = None
+    # **Se aceptan y se ignoran** (`ReservaService.update`): lo cobrado se
+    # deriva de los `Pago` de seña, y la plata nueva entra por
+    # `POST /reservas/{id}/registrar-cobro`. Siguen en el schema para no romper a quien
+    # todavía manda el formulario entero.
     estado_pago: str | None = None
     anticipo_monto: Decimal | None = None
     anticipo_fecha: date | None = None

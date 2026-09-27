@@ -898,10 +898,37 @@ class AlquilerService:
             # Si el auto se queda 3 días más, el seguro cubre esos 3 días más.
             # Sólo se mueve la cantidad de días: el precio unitario pactado no
             # se toca (ver ReservaService.recalcular_adicionales_por_duracion).
+            #
+            # **Y lo que suman esos días se asienta**, que es lo que faltaba.
+            # Los adicionales se agrandaban en la reserva pero el débito era sólo
+            # `precio_extension`: `cobranza.monto_facturado` (que lee la reserva)
+            # decía una deuda y el ledger otra, y el seguro de los días nuevos
+            # no se le reclamaba a nadie. Se asienta aparte y no sumado al de
+            # arriba para que la ficha diga qué es cada cosa: la pantalla de
+            # Extender muestra el precio de la extensión, y este débito es lo
+            # que el router devuelve como `adicionales_extension`.
             if reserva.adicionales:
                 # Import local: a nivel de módulo sería un ciclo.
                 from app.services.reserva_service import ReservaService
+                adicionales_antes = Decimal(str(reserva.total_adicionales))
                 ReservaService(self.db).recalcular_adicionales_por_duracion(reserva)
+                adicionales_extension = Decimal(str(reserva.total_adicionales)) - adicionales_antes
+                if adicionales_extension > 0:
+                    self.cc_service.registrar_movimiento(
+                        cliente_id=reserva.cliente_id,
+                        tipo="debito",
+                        naturaleza="extension",
+                        concepto=(
+                            f"Extensión de alquiler #{reserva.id} — adicionales por "
+                            f"día hasta {nueva_fecha_fin}"
+                        ),
+                        monto=adicionales_extension,
+                        fecha=hoy,
+                        creado_por=usuario_id,
+                        condicion=reserva.condicion_pago,
+                        alquiler_id=alquiler.id,
+                        reserva_id=reserva.id,
+                    )
 
         logger.info(
             "alquiler_extendido",

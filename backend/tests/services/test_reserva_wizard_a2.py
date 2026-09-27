@@ -97,12 +97,18 @@ class TestPagadoEsElTotal:
         assert Decimal(str(reserva.anticipo_monto)) == Decimal("105000")
         assert ReservaService(db).saldo_pendiente(reserva) == 0
 
-    def test_al_editar_a_pagado_tambien(self, db, cliente, usuario, vehiculo, gps):
+    def test_al_editar_no_se_anota_plata_que_no_entro(self, db, cliente, usuario, vehiculo, gps):
+        """
+        Editar no crea ningún `Pago`: marcar "pagado" desde la edición
+        anotaba un anticipo sin plata detrás. Lo cobrado se registra con
+        `registrar_cobro()`; el PATCH ignora `estado_pago` y `anticipo_monto`.
+        """
         reserva = _crear(db, cliente, usuario, vehiculo, adicionales=[(gps.id, 1)])
         reserva, _ = ReservaService(db).update(
             reserva.id, usuario.id, estado_pago="pagado", anticipo_monto=Decimal("100000"),
         )
-        assert Decimal(str(reserva.anticipo_monto)) == Decimal("105000")
+        assert not reserva.anticipo_monto
+        assert reserva.estado_pago == "pendiente"
 
     def test_una_sena_parcial_no_se_toca(self, db, cliente, usuario, vehiculo, gps):
         reserva = _crear(

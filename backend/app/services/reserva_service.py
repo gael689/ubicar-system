@@ -427,14 +427,26 @@ class ReservaService:
         cliente = self.db.get(Cliente, cliente_id)
         return cliente.fecha_nacimiento if cliente else None
 
-    def _validar_conductor(self, conductor_id: int, cliente_id: int) -> None:
-        """El conductor tiene que ser un conductor adicional activo del propio cliente."""
+    def _validar_conductor(
+        self, conductor_id: int, cliente_id: int, exigir_activo: bool = True,
+    ) -> None:
+        """
+        El conductor tiene que ser un conductor adicional del propio cliente, y
+        activo **si se lo está sumando ahora**.
+
+        `exigir_activo=False` es para el que ya estaba asignado: la pantalla de
+        edición manda la lista completa de conductores, así que dar de baja a
+        uno en la ficha del cliente dejaba la reserva sin poder editarse —ni
+        para corregir una nota— con un "no existe" que no explicaba nada. Que
+        se lo haya dado de baja después no invalida que manejaba en esta
+        reserva; lo que no se puede es sumar a uno dado de baja.
+        """
         conductor = (
             self.db.query(ConductorAdicional)
             .filter(ConductorAdicional.id == conductor_id)
             .first()
         )
-        if not conductor or not conductor.activo:
+        if not conductor or (exigir_activo and not conductor.activo):
             raise NotFoundError("Conductor adicional", conductor_id)
         if conductor.cliente_id != cliente_id:
             raise BusinessRuleError(
@@ -463,14 +475,17 @@ class ReservaService:
                 vistos.append(cid)
         return vistos
 
-    def _validar_conductores(self, ids: list[int], cliente_id: int) -> None:
+    def _validar_conductores(
+        self, ids: list[int], cliente_id: int, ya_asignados: set[int] | None = None,
+    ) -> None:
         if len(ids) > self.MAX_CONDUCTORES:
             raise BusinessRuleError(
                 "demasiados_conductores",
                 f"Una reserva admite hasta {self.MAX_CONDUCTORES} conductores.",
             )
+        ya_asignados = ya_asignados or set()
         for cid in ids:
-            self._validar_conductor(cid, cliente_id)
+            self._validar_conductor(cid, cliente_id, exigir_activo=cid not in ya_asignados)
 
     def _asignar_conductores(self, reserva: Reserva, ids: list[int]) -> None:
         """
@@ -1055,7 +1070,20 @@ class ReservaService:
             conductor_ids = [conductor_id] + otros[: self.MAX_CONDUCTORES - 1]
         ids_conductores = self.normalizar_conductores(conductor_ids, None)
         if ids_conductores is not None:
-            self._validar_conductores(ids_conductores, reserva.cliente_id)
+            # Sólo los que se suman ahora tienen que estar activos: los que ya
+            # manejaban en esta reserva siguen valiendo aunque después se los
+            # haya dado de baja (ver `_validar_conductor`).
+            self._validar_conductores(
+                ids_conductores, reserva.cliente_id, ya_asignados=set(reserva.conductor_ids),
+            )
+
+        # La duración facturable **antes** de tocar nada: es contra lo que se
+        # decide, al final, si hay que recalcular los adicionales por día.
+        dias_antes = dias_facturables(
+            reserva.fecha_inicio, reserva.hora_inicio, reserva.fecha_fin, reserva.hora_fin,
+        )
+        # Qué plata respaldan los `Pago` de seña, leído antes del PATCH.
+        senas_registradas = self._senas_registradas(reserva)
 
         # Se guarda antes de tocar nada: es con lo que se decide, al final, si
         # hubo reasignación de vehículo y qué hacer con el contrato (D-48).
@@ -1142,14 +1170,29 @@ class ReservaService:
                 kwargs.setdefault("hora_devolucion_acordada", h_fin)
             if forma_pago_prevista is not None:
                 kwargs["forma_pago_prevista"] = forma_pago_prevista
-            if estado_pago is not None:
-                kwargs["estado_pago"] = estado_pago
-            if anticipo_monto is not None:
-                kwargs["anticipo_monto"] = anticipo_monto
-            if anticipo_fecha is not None:
-                kwargs["anticipo_fecha"] = anticipo_fecha
-            if anticipo_medio_pago is not None:
-                kwargs["anticipo_medio_pago"] = anticipo_medio_pago
+            # ── Lo cobrado no se edita: se registra ──────────────────────
+            #
+            # `estado_pago` y `anticipo_monto` **se ignoran a propósito**. Editar
+            # no crea ningún `Pago` ni ningún crédito, así que aceptarlos era
+            # anotar plata que no entró: a una reserva "pagada" a la que se le
+            # sumaba un adicional se le subía el anticipo al total nuevo sin un
+            # peso detrás. Desaparecía de `/pagos/pendientes`, cancelarla
+            # reintegraba plata nunca cobrada y la seña retenida debitaba de más.
+            #
+            # La plata que entra va por `registrar_cobro()`, que sí la asienta;
+            # acá el anticipo se **deriva** de los `Pago` de seña (más abajo). Se
+            # ignoran en silencio y no con un error porque la pantalla vieja
+            # manda el formulario entero en cada edición.
+            #
+            # La fecha y el medio sólo se aceptan en una reserva sin ningún
+            # `Pago` registrado (datos de antes de la migración 079): ahí son la
+            # única constancia, y la rama de compatibilidad de `cancelar()` los
+            # usa para asentar el crédito que falta.
+            if senas_registradas is None:
+                if anticipo_fecha is not None:
+                    kwargs["anticipo_fecha"] = anticipo_fecha
+                if anticipo_medio_pago is not None:
+                    kwargs["anticipo_medio_pago"] = anticipo_medio_pago
             if condicion_pago is not None:
                 kwargs["condicion_pago"] = condicion_pago
             if condicion_pago_ancla is not None:
@@ -1169,11 +1212,32 @@ class ReservaService:
             # tienen que rendir la duración nueva, no la vieja. Los horarios
             # también cuentan: correr la devolución dos horas suma un día (A1).
             self.sincronizar_adicionales(reserva, adicionales)
-            cambio_duracion = any(
-                v is not None for v in (fecha_inicio, fecha_fin, hora_inicio, hora_fin)
+            # **Sólo si la duración facturable cambió de verdad.** Antes alcanzaba
+            # con que el PATCH trajera cualquier fecha u hora —y la pantalla las
+            # manda siempre—, así que guardar una nota recalculaba los
+            # adicionales por día.
+            #
+            # **Y nunca con el auto afuera**: el check-out ya facturó los
+            # adicionales en la cuenta corriente, y recalcularlos acá dejaba la
+            # reserva cobrando una cosa y el libro otra. Los días que se agregan
+            # con el auto en la calle van por `AlquilerService.extender`, que
+            # asienta lo que agrega.
+            dias_despues = dias_facturables(
+                reserva.fecha_inicio, reserva.hora_inicio, reserva.fecha_fin, reserva.hora_fin,
             )
-            if cambio_duracion and reserva.adicionales:
-                self.recalcular_adicionales_por_duracion(reserva)
+            hay_por_dia = any(ra.unidad_cobro == "por_dia" for ra in reserva.adicionales)
+            if dias_despues != dias_antes and hay_por_dia:
+                if reserva.alquiler is None:
+                    self.recalcular_adicionales_por_duracion(reserva)
+                else:
+                    warnings.append({
+                        "tipo": "adicionales_no_recalculados",
+                        "mensaje": (
+                            "El auto ya salió: los adicionales por día no se "
+                            "recalcularon con las fechas nuevas. Para sumar días "
+                            "usá Extender, que los cobra."
+                        ),
+                    })
             # Una cobertura por porcentaje se calcula **contra el precio del
             # alquiler**, así que cambiarlo la cambia. Va acá y no dentro de
             # `sincronizar_adicionales` porque un PATCH que sólo corrige el
@@ -1182,11 +1246,14 @@ class ReservaService:
             if precio_total is not None and reserva.adicionales:
                 self.recalcular_adicionales_por_porcentaje(reserva)
 
-            # "Pagado" es el total, no el precio del auto. Se normaliza
-            # después de sincronizar los adicionales, que es cuando el total
-            # recién se conoce. Mismo criterio que `create()`.
-            if estado_pago == "pagado":
-                reserva.anticipo_monto = self.total_a_cobrar(reserva)
+            # El anticipo y el estado de pago se derivan de lo cobrado, contra
+            # el total nuevo. Va después de sincronizar los adicionales, que es
+            # cuando el total recién se conoce: sumarle un seguro a una reserva
+            # pagada la deja en "anticipo", que es la verdad — falta cobrar el
+            # seguro. Con el auto afuera no se toca: la seña ya se aplicó
+            # contra el débito del check-out.
+            if reserva.alquiler is None:
+                self._derivar_estado_de_cobro(reserva, senas_registradas)
 
         # D-48: si se cambió el auto de una reserva que ya tiene contrato
         # firmado, ese contrato quedó nombrando un vehículo que no es. Se anula
@@ -1385,15 +1452,33 @@ class ReservaService:
             EstadoReserva.SIN_DISPONIBILIDAD.value,
             EstadoReserva.REVISION_SIN_CUPO.value,
         )
-        if reserva.estado not in CANCELABLES:
+        # **`activa` y `vencida` sin alquiler también**: son las reservas
+        # fantasma que fabricaba el reloj viejo (ver migración 101), que las
+        # pasaba a `activa` al llegar la hora de retiro aunque el auto no
+        # saliera. La migración sólo devuelve a `confirmada` las que todavía no
+        # terminaron; las pasadas quedaban sin salida posible —no se podían
+        # cancelar, ni hacerles check-out, ni check-in— y las que tienen plata
+        # el script de limpieza no las toca a propósito, para que las resuelva
+        # una persona. Esta es esa salida, con la seña retenida o reintegrada
+        # como en cualquier otra cancelación.
+        #
+        # Con alquiler, en cambio, el auto está en la calle: eso se cierra con
+        # el check-in, no cancelando.
+        es_fantasma = (
+            reserva.estado in (EstadoReserva.ACTIVA.value, EstadoReserva.VENCIDA.value)
+            and reserva.alquiler is None
+        )
+        if reserva.estado not in CANCELABLES and not es_fantasma:
             raise ConflictError(f"estado_invalido|No se puede cancelar una reserva en estado '{reserva.estado}'")
         if not motivo or not motivo.strip():
             raise BusinessRuleError("motivo_requerido", "Cancelar una reserva requiere un motivo")
 
         # Sólo una reserva **confirmada** tenía el auto marcado: las de la web
         # que esperan pago no ocupan calendario, así que no hay nada que
-        # devolver a "disponible".
-        era_confirmada = reserva.estado == EstadoReserva.CONFIRMADA.value
+        # devolver a "disponible". La fantasma también lo tenía: era una
+        # confirmada a la que el reloj le cambió el nombre.
+        estado_antes = reserva.estado
+        era_confirmada = reserva.estado == EstadoReserva.CONFIRMADA.value or es_fantasma
 
         with self.db.begin_nested():
             if reserva.anticipo_monto and reserva.anticipo_monto > 0 and responsable == "ubicar":
@@ -1457,8 +1542,9 @@ class ReservaService:
 
             self.reserva_repo.update(reserva, estado=EstadoReserva.CANCELADA.value, motivo_cancelacion=motivo)
 
-            # Actualizar estado del vehículo si era confirmada
-            if era_confirmada:
+            # Actualizar estado del vehículo si era confirmada. Una reserva por
+            # categoría no tiene auto que liberar.
+            if era_confirmada and reserva.vehiculo is not None:
                 otras = self.reserva_repo.count_confirmadas_activas(
                     reserva.vehiculo_id, excluir_id=id
                 )
@@ -1481,7 +1567,7 @@ class ReservaService:
                     f"({reserva.vehiculo.patente if reserva.vehiculo else 'sin vehículo'}, "
                     f"{reserva.fecha_inicio} a {reserva.fecha_fin}). Motivo: {motivo}"
                 ),
-                datos_antes={"estado": EstadoReserva.CONFIRMADA.value if era_confirmada else EstadoReserva.PENDIENTE.value},
+                datos_antes={"estado": estado_antes},
                 datos_despues={
                     "estado": EstadoReserva.CANCELADA.value,
                     "motivo": motivo,
@@ -1657,6 +1743,49 @@ class ReservaService:
             + Decimal(str(reserva.cargo_late_checkout or 0))
             + Decimal(str(reserva.total_adicionales))
         )
+
+    def _senas_registradas(self, reserva: Reserva) -> Decimal | None:
+        """
+        Lo que suman los `Pago` de seña vivos de la reserva (los de antes del
+        check-out: `alquiler_id` vacío), o `None` si **nunca** se registró
+        ninguno.
+
+        El `None` distingue la reserva de antes de la migración 079, que tiene
+        `anticipo_monto` anotado sin ningún `Pago` detrás: a ésa no hay de qué
+        derivarle el anticipo, y pisarlo con cero borraría la única constancia
+        de una seña que sí se cobró. Si hubo pagos y se anularon todos, la suma
+        es cero, y es la verdad.
+        """
+        pagos = (
+            self.db.query(Pago.monto, Pago.anulado)
+            .filter(Pago.reserva_id == reserva.id, Pago.alquiler_id.is_(None))
+            .all()
+        )
+        if not pagos:
+            return None
+        return sum(
+            (Decimal(str(monto)) for monto, anulado in pagos if not anulado), Decimal("0")
+        )
+
+    def _derivar_estado_de_cobro(self, reserva: Reserva, senas: Decimal | None) -> None:
+        """
+        `anticipo_monto` = la suma de los `Pago` de seña, y `estado_pago` según
+        cubra o no el total. Mismo criterio que `registrar_cobro()`: sin precio
+        cargado no se puede afirmar que esté pagada.
+
+        Sin `Pago` registrado (reserva vieja, o todavía impaga) el anticipo
+        anotado se conserva tal cual, y el estado se recalcula sólo si hay algo
+        anotado: una reserva impaga sigue como estaba.
+        """
+        if senas is not None:
+            reserva.anticipo_monto = senas
+        cobrado = Decimal(str(reserva.anticipo_monto or 0))
+        if cobrado <= 0:
+            if senas is not None:
+                reserva.estado_pago = "pendiente"
+            return
+        total = self.total_a_cobrar(reserva)
+        reserva.estado_pago = "pagado" if total > 0 and cobrado >= total else "anticipo"
 
     def saldo_pendiente(self, reserva: Reserva) -> Decimal:
         return self.total_a_cobrar(reserva) - Decimal(str(reserva.anticipo_monto or 0))

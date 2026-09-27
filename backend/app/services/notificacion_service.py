@@ -49,6 +49,23 @@ TIPOS_DE_ESTADO_CONTINUO = frozenset({
 })
 REAVISO_DIAS = 7
 
+# Estado continuo **que escala**: el mismo asunto sube de urgencia a medida que
+# se acerca una fecha (el contrato sin firmar: `media` a 2-3 días de la
+# entrega, `alta` el día anterior y el mismo día). Para éstos la regla general
+# de arriba callaba justo el aviso que importa: descartar el de "entrega en 3
+# días" —o que se resolviera porque se regeneró el contrato— silenciaba por
+# siete días el del día de la entrega.
+#
+# Para estos tipos:
+#   - una fila **resuelta** no silencia nada: si el problema volvió (el contrato
+#     regenerado tampoco está firmado), se vuelve a avisar;
+#   - una **descartada** silencia sólo mientras la urgencia no suba: quien
+#     descartó el "media" se entera del "alta", pero no recibe otro "alta" al
+#     día siguiente. Es el mismo principio de no repetir cada día, medido en
+#     escalones y no en días.
+TIPOS_QUE_ESCALAN = frozenset({"contrato_no_firmado"})
+RANGO_URGENCIA = {"baja": 0, "media": 1, "alta": 2, "critica": 3}
+
 # Avisos **escalonados**: el mismo asunto avisa en pocos momentos espaciados
 # (deuda a los 7, 15 y 30 días; un vencimiento a los 15 y a los 3). Cada
 # escalón es una fila propia (`escalon` en la clave), y **el nuevo reemplaza al
@@ -138,6 +155,9 @@ class NotificacionService:
         creadas = 0
         for c in candidatos:
             clave = _clave_dedupe(c)
+            if c["tipo"] in TIPOS_QUE_ESCALAN:
+                creadas += self._avisar_escalable(c, clave, hoy)
+                continue
             if clave in existentes:
                 continue
             if c["tipo"] in TIPOS_DE_ESTADO_CONTINUO:
@@ -202,6 +222,70 @@ class NotificacionService:
             c for c in candidatos
             if not (c["tipo"] in TIPOS_REGLA_RESERVA_WEB and c["entidad_id"] in con_aviso)
         ]
+
+    def _avisar_escalable(self, c: dict, clave: str, hoy: date) -> int:
+        """
+        Crea —o reabre— el aviso de un tipo de `TIPOS_QUE_ESCALAN`. Devuelve 1
+        si quedó un aviso nuevo en la campana, 0 si no.
+
+        **Reabre en vez de insertar** cuando ya hay una fila con la misma clave
+        (la clave es única y para el contrato no cambia: tipo + reserva + fecha
+        de entrega). Reabrirla también borra los "visto" de esa fila: el aviso
+        subió de escalón y tiene que volver a verse.
+        """
+        filas = (
+            self.db.query(Notificacion)
+            .filter(
+                Notificacion.tipo == c["tipo"],
+                Notificacion.entidad_tipo == c["entidad_tipo"],
+                Notificacion.entidad_id == c["entidad_id"],
+            )
+            .all()
+        )
+        # Abierta: `_refrescar_texto` le sube la urgencia, no hace falta otra.
+        if any(n.estado in ESTADOS_ACTIVOS for n in filas):
+            return 0
+
+        rango = RANGO_URGENCIA.get(c["urgencia"], 0)
+        limite = datetime.combine(hoy - timedelta(days=REAVISO_DIAS), time.min)
+        for n in filas:
+            if n.estado != "descartada":
+                continue
+            # La descartada cuenta si es de este mismo asunto (misma clave) o
+            # reciente — una de hace meses, de otra entrega, no calla nada.
+            relevante = n.clave_dedupe == clave or (n.created_at and n.created_at >= limite)
+            if relevante and RANGO_URGENCIA.get(n.urgencia, 0) >= rango:
+                return 0
+
+        existente = next((n for n in filas if n.clave_dedupe == clave), None)
+        if existente is not None:
+            existente.estado = "pendiente"
+            existente.titulo = c["titulo"]
+            existente.descripcion = c["descripcion"]
+            existente.urgencia = c["urgencia"]
+            existente.url_destino = c["url_destino"]
+            existente.resuelta_at = None
+            existente.posponer_hasta = None
+            self.db.query(NotificacionVista).filter(
+                NotificacionVista.notificacion_id == existente.id
+            ).delete(synchronize_session=False)
+            return 1
+
+        self.db.add(Notificacion(
+            tipo=c["tipo"],
+            titulo=c["titulo"],
+            descripcion=c["descripcion"],
+            urgencia=c["urgencia"],
+            entidad_tipo=c["entidad_tipo"],
+            entidad_id=c["entidad_id"],
+            url_destino=c["url_destino"],
+            fecha_objetivo=c["fecha_objetivo"],
+            clave_dedupe=clave,
+            estado="pendiente",
+        ))
+        # Sin flush, dos candidatos iguales en la misma corrida no se verían.
+        self.db.flush()
+        return 1
 
     def _ya_avisados_de_estado_continuo(
         self, candidatos: list[dict], hoy: date

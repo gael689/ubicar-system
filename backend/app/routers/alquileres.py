@@ -3,6 +3,7 @@ from __future__ import annotations
 Router de Alquileres — Fase 3 completo.
 """
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -182,6 +183,9 @@ def extender_alquiler(
             r_antes.fecha_inicio, r_antes.hora_inicio, fecha_fin_anterior, r_antes.hora_fin,
         )
         precio_anterior = alquiler_antes.reserva.precio_total
+        # Se copia como número: `r_antes` es el mismo objeto que `extender`
+        # modifica, y leerlo después ya daría el valor nuevo.
+        adicionales_anterior = Decimal(str(r_antes.total_adicionales))
 
         alquiler = svc.extender(
             alquiler_id=alquiler_id,
@@ -221,6 +225,11 @@ def extender_alquiler(
             diferencia=diferencia,
             dias_agregados=max(0, duracion_nueva - duracion_anterior),
             precio_extension=diferencia,
+            # Lo que suman los adicionales por día en los días agregados. Se
+            # asienta aparte del precio de la extensión (ver `extender`).
+            adicionales_extension=(
+                Decimal(str(alquiler.reserva.total_adicionales)) - adicionales_anterior
+            ),
         ).model_dump(),
         "Alquiler extendido",
     )

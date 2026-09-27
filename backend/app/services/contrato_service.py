@@ -889,8 +889,18 @@ class ContratoService:
         )
         return contrato
 
-    def regenerar(self, contrato_id: int, motivo: str, usuario_id: int | None) -> Contrato:
+    def regenerar(
+        self, contrato_id: int, motivo: str, usuario_id: int | None,
+    ) -> tuple[Contrato, bool, str | None]:
         """
+        Devuelve `(contrato_nuevo, franquicia_anulada, aviso)`.
+
+        **La franquicia no se regenera sola, y eso se avisa.** Anular el
+        contrato anula su pagaré (se emiten como un par, ver `anular`), pero el
+        contrato nuevo nace sin ninguno: hay que volver a emitirla y que el
+        cliente la firme otra vez. Antes pasaba en silencio y la reserva
+        quedaba sin franquicia sin que nadie lo notara hasta el reclamo.
+
         Anula el contrato y emite uno nuevo **en un solo paso** (plan 27/09, A3).
 
         El caso real es cambiar el conductor de un contrato ya emitido: antes
@@ -911,6 +921,11 @@ class ContratoService:
                 "Ese contrato ya está anulado: generá uno nuevo desde la reserva.",
             )
         reserva_id = viejo.reserva_id
+        from app.services.pagare_service import PagareService
+
+        pagare_viejo = PagareService(self.db).de_contrato(viejo.id)
+        franquicia_anulada = pagare_viejo is not None
+        franquicia_firmada = bool(pagare_viejo and pagare_viejo.firmado)
         with self.db.begin_nested():
             self.anular(contrato_id, f"Regenerado: {motivo.strip()}", usuario_id)
             nuevo = self.crear(reserva_id, None, usuario_id)
@@ -925,9 +940,16 @@ class ContratoService:
                     f"{nuevo.numero_formateado}. Motivo: {motivo.strip()}"
                 ),
                 datos_antes={"contrato_id": viejo.id},
-                datos_despues={"contrato_id": nuevo.id},
+                datos_despues={"contrato_id": nuevo.id, "franquicia_anulada": franquicia_anulada},
             )
-        return nuevo
+        aviso = None
+        if franquicia_anulada:
+            aviso = (
+                "Se anuló también la franquicia"
+                + (", que ya estaba firmada" if franquicia_firmada else "")
+                + ". Emitila de nuevo para que el cliente la firme con el contrato nuevo."
+            )
+        return nuevo, franquicia_anulada, aviso
 
     # ── Lectura ───────────────────────────────────────────────────────────
 

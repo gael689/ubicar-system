@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -13,7 +14,7 @@ from app.models.presupuesto import Presupuesto
 from app.models.vehiculo import Vehiculo
 from app.models.tarifa import Tarifa
 from app.domain.enums import TipoTarifa
-from app.domain.tarifas import cotizar_por_bandas, TarifaInfo
+from app.domain.tarifas import cotizar_por_bandas, dias_facturables, TarifaInfo
 from app.schemas.presupuesto import PresupuestoCreate, PresupuestoResponse
 from app.utils.helpers import calcular_dias
 
@@ -30,6 +31,8 @@ def calcular_cotizacion(
     categoria_id: int | None = Query(None, description="Categoría, si todavía no se eligió vehículo puntual"),
     fecha_inicio: str = Query(...),
     fecha_fin: str = Query(...),
+    hora_inicio: str | None = Query(None, description="HH:MM del retiro (opcional)"),
+    hora_fin: str | None = Query(None, description="HH:MM de la devolución (opcional)"),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
@@ -39,7 +42,18 @@ def calcular_cotizacion(
     general). El operador puede editar el monto sugerido a mano — esto es
     sólo un punto de partida, no un precio final.
     """
-    dias = calcular_dias(fecha_inicio, fecha_fin)
+    # **Con horarios, los días son los que se cobran** (`dias_facturables`):
+    # devolver dos horas más tarde que el retiro suma un día, igual que al
+    # reservar. Cotizar sólo por fechas sugería un precio más bajo que el que
+    # la reserva después cobraba. Sin horarios se comporta como antes, así que
+    # quien no los manda no nota nada.
+    try:
+        dias = dias_facturables(
+            date.fromisoformat(fecha_inicio), hora_inicio or None,
+            date.fromisoformat(fecha_fin), hora_fin or None,
+        )
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha u hora inválida.")
 
     categoria_efectiva = categoria_id
     if vehiculo_id is not None:

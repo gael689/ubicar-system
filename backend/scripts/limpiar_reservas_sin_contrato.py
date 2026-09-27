@@ -26,14 +26,15 @@ ningún contrato sin anular, y además:
       defecto): nadie la va a retomar.
 
 **Las que tienen plata no se tocan.** Si hay un pago sin anular, un pago web
-aprobado, movimientos de cuenta corriente, echeqs, movimientos de caja o una
+que no haya sido rechazado, movimientos de cuenta corriente, echeqs, movimientos de caja o una
 seña anotada en la reserva, se listan aparte para que las resuelva una
 persona: cancelar una reserva con plata adentro sin devolverla ni aplicarla
 deja al cliente con un crédito que nadie ve.
 
 **Qué hace con cada una** (sólo con `--confirmar`, todo en una transacción):
 `estado = cancelada` con el motivo "Limpieza: reserva sin contrato", deja
-constancia en la auditoría, resuelve sus notificaciones y libera el hold de la
+constancia en la auditoría, libera el auto si quedó `reservado` por ella
+(como `ReservaService.cancelar`), resuelve sus notificaciones y libera el hold de la
 web si quedaba uno. Nunca un DELETE: la reserva sigue en la base, cancelada.
 
 **Dry-run por default a propósito**, como el reset: esto toca la base real.
@@ -56,6 +57,7 @@ from app.models.movimiento_caja import MovimientoCaja
 from app.models.pago import Pago
 from app.models.pago_web import PagoWeb
 from app.models.reserva import Reserva
+from app.utils.helpers import fecha_hoy_argentina
 
 MOTIVO = "Limpieza: reserva sin contrato"
 DIAS_WEB_POR_DEFECTO = 7
@@ -77,8 +79,13 @@ def _plata_asociada(db: Session, reserva: Reserva) -> list[str]:
     motivos = []
     if db.query(exists().where(Pago.reserva_id == rid, Pago.anulado.is_(False))).scalar():
         motivos.append("pagos")
-    if db.query(exists().where(PagoWeb.reserva_id == rid, PagoWeb.estado == "aprobado")).scalar():
-        motivos.append("pago web aprobado")
+    # Todo pago web que no terminó rechazado puede tener plata atada: un
+    # `pendiente` o un `iniciado` puede acreditarse mañana, un `revision` es
+    # justamente algo que tiene que mirar una persona, y un `devuelto` es plata
+    # que entró y salió — hay que ver que el libro lo diga. Sólo `rechazado`
+    # es seguro que nunca movió nada.
+    if db.query(exists().where(PagoWeb.reserva_id == rid, PagoWeb.estado != "rechazado")).scalar():
+        motivos.append("pago web")
     if db.query(exists().where(MovimientoCuentaCorriente.reserva_id == rid)).scalar():
         motivos.append("cuenta corriente")
     if db.query(exists().where(Echeq.reserva_id == rid)).scalar():
@@ -129,11 +136,32 @@ def cancelar(db: Session, reservas: list[Reserva]) -> int:
     from app.services import auditoria_service
     from app.services.notificacion_service import NotificacionService
 
+    from app.domain.enums import EstadoVehiculo
+    from app.domain.transiciones import estado_tras_cancelar_reserva_confirmada
+    from app.repositories.reserva_repo import ReservaRepo
+
     notificaciones = NotificacionService(db)
+    repo = ReservaRepo(db)
     for r in reservas:
         antes = r.estado
         r.estado = "cancelada"
         r.motivo_cancelacion = MOTIVO
+        # El flush va antes de contar: la sesión no autoflushea, y sin esto la
+        # reserva recién cancelada —o la anterior del mismo auto— seguiría
+        # contando como que lo tiene tomado.
+        db.flush()
+        # **El auto se libera igual que en `ReservaService.cancelar`.** Una
+        # confirmada —o una fantasma `activa`/`vencida`, que era una confirmada
+        # con otro nombre— tenía el auto marcado `reservado`; cancelarla sin
+        # esto lo dejaba fuera de circulación sin ninguna reserva detrás.
+        if antes in ("confirmada", "activa", "vencida") and r.vehiculo is not None:
+            otras = repo.count_confirmadas_activas(r.vehiculo_id, excluir_id=r.id)
+            nuevo = estado_tras_cancelar_reserva_confirmada(
+                EstadoVehiculo(r.vehiculo.estado),
+                tiene_otras_reservas_confirmadas=(otras > 0),
+            )
+            if nuevo.value != r.vehiculo.estado:
+                r.vehiculo.estado = nuevo.value
         # El hold de la web, si quedó vigente, deja de sostener cupo.
         db.query(Hold).filter(Hold.reserva_id == r.id, Hold.estado == "vigente").update(
             {"estado": "liberado"}, synchronize_session=False
@@ -195,7 +223,9 @@ def main() -> None:
     try:
         print(f"Contra: {engine.url.render_as_string(hide_password=True)}")
         print(f"Web colgadas: creadas hace más de {dias_web} día(s)\n")
-        sel = seleccionar(db, date.today(), dias_web)
+        # "Hoy" en Argentina: el contenedor corre en UTC, y a partir de las 21 h
+        # `date.today()` ya es mañana — se cancelarían las que terminan hoy.
+        sel = seleccionar(db, date.fromisoformat(fecha_hoy_argentina()), dias_web)
         _imprimir(sel)
         if not confirmar:
             print("\nDRY-RUN: no se cambió nada. Para cancelar de verdad: --confirmar")
