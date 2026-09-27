@@ -12,7 +12,8 @@ import { useDisponibilidadInterna, useVehiculosLibres } from '@/hooks/useDisponi
 import { useBorradorReserva, haceCuanto } from '@/hooks/useBorradorReserva';
 import { usePreCheckoutPrevio } from '@/hooks/useSemaforo';
 import api from '@/lib/api';
-import { extractError, formatDate, formatDocumento, formatMiles, redondear2 } from '@/lib/utils';
+import { codigoDeError, extractError, fechaLocal, formatDate, formatDocumento, formatMiles, hoyLocal, irAlError, redondear2 } from '@/lib/utils';
+import { avisoDiaExtra, diasFacturables } from '@/lib/dias';
 import { InputMoneda } from '@/components/shared/InputMoneda';
 import { toast } from 'sonner';
 import type { Adicional, CategoriaConCupo, Reserva, ReservaCreate, ReservaUpdate, Semaforo, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
@@ -56,15 +57,33 @@ const MOTIVO_CORTO: Record<string, string> = {
 const LUGARES_FALLBACK = ['Paraguay 241', 'Alsina 350', 'Aeropuerto Comandante Espora'];
 
 function formatTime(t: string) { return t.slice(0, 5); }
-function today() { return new Date().toISOString().split('T')[0]; }
+// Hoy **en hora local**: `toISOString()` es UTC y después de las 21:00 ya dice
+// mañana. Ver `hoyLocal`.
+function today() { return hoyLocal(); }
 function formatFecha(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; }
 
-/** Suma días a una fecha ISO sin pasar por Date local (evita corrimientos de zona). */
+/** Suma días a una fecha ISO. Al mediodía y leída en hora local: sin corrimientos de zona. */
 function sumarDias(iso: string, dias: number): string {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + dias);
-  return d.toISOString().split('T')[0];
+  return fechaLocal(d);
 }
+
+/** Las condiciones de pago, como se leen en pantalla y en el resumen. */
+const CONDICIONES_PAGO = [
+  { value: 'contado', label: 'Contado' },
+  { value: 'cta_cte_15', label: '15 días' },
+  { value: 'cta_cte_30', label: '30 días' },
+  { value: 'cta_cte_60', label: '60 días' },
+  { value: 'cta_cte_90', label: '90 días' },
+];
+
+/**
+ * Por debajo de un peso no es un descuento: es redondeo. Misma tolerancia que
+ * el backend (`reserva_service.TOLERANCIA_DESCUENTO`); si no coinciden, la
+ * pantalla deja pasar un precio que el servidor rechaza, o al revés.
+ */
+const TOLERANCIA_DESCUENTO = 1;
 
 // Un `<input type="date">` vacío obliga a tipear el año entero, y el año casi
 // siempre es el corriente. Arrancando con una fecha real, el campo ya viene con
@@ -129,7 +148,6 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     const valores = (item?.valor ?? '').split(',').map(s => s.trim()).filter(Boolean);
     return valores.length ? valores : LUGARES_FALLBACK;
   }, [configItems]);
-  const esLugarPersonalizado = (v: string) => !!v && !lugares.includes(v);
 
   /**
    * Si el mostrador está pidiendo garantía/depósito al armar una reserva.
@@ -154,37 +172,19 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       (item.valor ?? '').trim().toLowerCase(),
     );
   }, [configItems]);
-  const [entregaEsOtro, setEntregaEsOtro]         = useState(esLugarPersonalizado(reserva?.lugar_entrega ?? ''));
-  const [devolucionEsOtro, setDevolucionEsOtro]   = useState(esLugarPersonalizado(reserva?.lugar_devolucion ?? ''));
-  // Los dos flags de arriba se calculan en el primer render, cuando la
-  // configuración todavía puede no haber llegado y `lugares` es el fallback.
-  // Si la lista real trae un lugar más, una reserva vieja con ese lugar
-  // aparecería marcada como "Otro" sin serlo. Se corrige **una sola vez**, al
-  // llegar la config: volver a correrlo en cada cambio pisaría el "Otro" que
-  // la persona acaba de tildar y todavía no completó.
-  const lugaresSincronizados = useRef(false);
-  useEffect(() => {
-    if (lugaresSincronizados.current || !configItems) return;
-    lugaresSincronizados.current = true;
-    setEntregaEsOtro(esLugarPersonalizado(reserva?.lugar_entrega ?? ''));
-    setDevolucionEsOtro(esLugarPersonalizado(reserva?.lugar_devolucion ?? ''));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [configItems]);
+  // **Ya no hay estado "Otro"** (plan 27/09, txt 4). El campo de texto está
+  // siempre a la vista y los botones de los lugares habituales lo completan.
+  // Con el "Otro" había que acertar primero el botón para que apareciera el
+  // campo, y una dirección vieja que no estaba en la lista se veía como si no
+  // hubiera lugar cargado.
   const [notas, setNotas]                     = useState(reserva?.notas ?? '');
   const [observaciones, setObservaciones]     = useState(reserva?.observaciones ?? '');
-  const [lateCheckout, setLateCheckout]       = useState(reserva?.late_checkout ?? false);
-  const [horaDevolucionAcordada, setHoraDevolucionAcordada] = useState(
-    reserva?.hora_devolucion_acordada ? formatTime(reserva.hora_devolucion_acordada) : ''
-  );
-  // La fecha de la devolución acordada. **Es lo que faltaba** para poder
-  // escribir "lo devuelve a las 08:30 del día siguiente": sin ella el sistema
-  // entendía 08:30 del día de fin, o sea antes del horario pactado.
-  const [fechaDevolucionAcordada, setFechaDevolucionAcordada] = useState(
-    reserva?.fecha_devolucion_acordada ?? ''
-  );
-  const [cargoLateCheckout, setCargoLateCheckout] = useState<number | ''>(
-    reserva ? parseFloat(reserva.cargo_late_checkout) : ''
-  );
+  // **El late check-in dejó de ser un tilde con un cargo escrito a mano** (A1).
+  // Devolver una hora o más después del horario de retiro ya se cotiza como un
+  // día más (`lib/dias.ts`, `tarifas.dias_facturables`), así que la devolución
+  // acordada es directamente `fecha_fin`/`hora_fin`. Las reservas viejas que
+  // tenían un acuerdo cargado lo conservan: acá sólo se muestra, no se pisa.
+  const lateHeredado = Boolean(reserva?.late_checkout);
 
   // Garantía
   const [garantiaTipo, setGarantiaTipo]                   = useState(reserva?.garantia_tipo ?? 'no_aplica');
@@ -284,10 +284,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    */
   const nombreClientePendiente = clienteId ? '' : clientSearch.trim();
 
-  // Los días que se cobran: el mismo día es **un** día, no cero.
-  const duracionDias = fechaInicio && fechaFin && fechaFin >= fechaInicio
-    ? Math.max(1, Math.round((new Date(fechaFin).getTime() - new Date(fechaInicio).getTime()) / 86400000))
-    : 0;
+  // Los días que se cobran: el mismo día es **un** día, no cero; y devolver
+  // una hora o más después del horario de retiro suma uno (A1). La regla es la
+  // del backend (`tarifas.dias_facturables`), espejada en `lib/dias.ts`.
+  const duracionDias = diasFacturables(fechaInicio, horaInicio, fechaFin, horaFin);
+  const avisoDiaDeMas = avisoDiaExtra(fechaInicio, horaInicio, fechaFin, horaFin);
 
   // Precio
   const initialPrecioTotal  = reserva?.precio_total ? parseFloat(reserva.precio_total as string) : 0;
@@ -306,6 +307,17 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     Object.fromEntries((reserva?.adicionales ?? []).map(a => [a.adicional_id, a.cantidad]))
   );
   const { data: catalogoAdicionales = [] } = useAdicionales();
+  /**
+   * Las coberturas **incluidas** en el precio (la Exención por Daños, LDW).
+   *
+   * No se ofrecen como opción (plan 27/09, txt 5): aparecían como un botón más
+   * al lado de Top Cover y Super Top Cover, y elegirla no cambiaba nada salvo
+   * que el contrato la imprimía dos veces. Se muestran como texto: vienen.
+   */
+  const coberturasIncluidas = useMemo(
+    () => catalogoAdicionales.filter(a => a.grupo === 'cobertura' && a.incluido),
+    [catalogoAdicionales],
+  );
   // Después del check-out el alquiler ya se facturó en la cuenta corriente:
   // el backend rechaza el cambio, así que acá no se ofrece.
   const adicionalesBloqueados = Boolean(reserva?.alquiler_id);
@@ -362,6 +374,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     reserva?.condicion_pago_ancla ?? ''
   );
   const [condicionPagoFechaAncla, setCondicionPagoFechaAncla] = useState(reserva?.condicion_pago_fecha_ancla ?? '');
+  // Lo que las opciones fijas no alcanzan a decir: "50% al retirar y el resto a
+  // 15 días", "paga la empresa contra factura". Sale en el PDF (migración 097).
+  const [condicionPagoTexto, setCondicionPagoTexto] = useState(reserva?.condicion_pago_texto ?? '');
   const [tipoFactura, setTipoFactura] = useState<'A' | 'B' | 'C' | ''>(reserva?.tipo_factura ?? '');
   const [facturaANombreDe, setFacturaANombreDe] = useState(reserva?.factura_a_nombre_de ?? '');
   const [echeqBanco, setEcheqBanco] = useState(reserva?.echeq_banco ?? '');
@@ -395,16 +410,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    */
   const [paso, setPaso] = useState(1);
   const [errorPaso, setErrorPaso] = useState('');
-  /**
-   * Si el detalle de pago está abierto.
-   *
-   * Arranca cerrado en una reserva nueva —el default cubre casi todos los
-   * casos— y abierto si ya hay algo cargado, para no esconder datos que
-   * alguien puso.
-   */
-  const [pagoDetalladoAbierto, setPagoDetalladoAbierto] = useState(
-    Boolean(reserva?.con_factura || reserva?.forma_pago_prevista || (reserva?.estado_pago && reserva.estado_pago !== 'pendiente'))
-  );
+  // "Factura, forma de pago y anticipo" estaba plegado y ahora va siempre
+  // abierto (plan 27/09, txt 11): plegado, nadie se enteraba de que ahí se
+  // marcaba que el cliente ya había pagado, y la reserva quedaba "pendiente".
   /** Editando no hay pasos: se muestra todo junto para corregir un dato suelto. */
   const enPasos = !isEdit;
 
@@ -552,34 +560,65 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * con la categoría pedida primero—; con la flota entera salen todos, y los
    * comprometidos van marcados.
    */
+  type OpcionVehiculo = { id: number; etiqueta: string; ocupado: boolean; categoriaId: number | null };
   const opcionesVehiculo = useMemo(() => {
+    let grupos: { nombre: string; vehiculos: OpcionVehiculo[] }[];
     // Editando no hay consulta de libres (el auto no se cambia desde esta
     // pantalla, el select esta deshabilitado): se muestra la flota entera para
     // que el auto que la reserva ya tiene siga apareciendo.
     if (isEdit || verTodaLaFlota) {
-      return vehiculosPorCategoria.map(g => ({
+      grupos = vehiculosPorCategoria.map(g => ({
         nombre: g.nombre,
         vehiculos: g.vehiculos.map(v => ({
           id: v.id,
           etiqueta: `${v.patente} · ${v.marca} ${v.modelo}`,
-          ocupado: !idsLibres.has(v.id),
+          ocupado: !isEdit && !idsLibres.has(v.id),
+          categoriaId: v.categoria_id ?? null,
         })),
       }));
+    } else {
+      const porCategoria = new Map<string, OpcionVehiculo[]>();
+      for (const v of libres?.vehiculos ?? []) {
+        const nombre = v.categoria_nombre ?? 'Sin categoría';
+        const lista = porCategoria.get(nombre) ?? [];
+        lista.push({
+          id: v.id,
+          etiqueta: `${v.patente} · ${v.marca} ${v.modelo}`
+            + (v.es_downgrade ? ' · categoría menor' : ''),
+          ocupado: false,
+          categoriaId: v.categoria_id,
+        });
+        porCategoria.set(nombre, lista);
+      }
+      grupos = [...porCategoria.entries()].map(([nombre, vehiculos]) => ({ nombre, vehiculos }));
     }
-    const porCategoria = new Map<string, { id: number; etiqueta: string; ocupado: boolean }[]>();
-    for (const v of libres?.vehiculos ?? []) {
-      const nombre = v.categoria_nombre ?? 'Sin categoría';
-      const lista = porCategoria.get(nombre) ?? [];
-      lista.push({
+    // **Con una categoría elegida, sólo sus unidades** (plan 27/09, txt 13).
+    // El selector listaba la flota entera de todas las categorías y era fácil
+    // asignar un auto de otra por error. El resto sigue a un click, detrás de
+    // "Ver toda la flota".
+    if (!isEdit && !verTodaLaFlota && categoriaId != null) {
+      grupos = grupos
+        .map(g => ({ ...g, vehiculos: g.vehiculos.filter(v => v.categoriaId === categoriaId) }))
+        .filter(g => g.vehiculos.length > 0);
+    }
+    return grupos;
+  }, [isEdit, verTodaLaFlota, vehiculosPorCategoria, libres, idsLibres, categoriaId]);
+
+  /**
+   * Las unidades de la categoría elegida, libres o no, para asignar el auto
+   * desde el resumen (paso 6). Las comprometidas van marcadas: asignarlas se
+   * puede, igual que en el paso 3, y el solape queda como advertencia.
+   */
+  const unidadesDeLaCategoria = useMemo(() => {
+    if (categoriaId == null) return [];
+    return vehiculosActivos
+      .filter(v => v.destino !== 'uber' && v.categoria_id === categoriaId)
+      .map(v => ({
         id: v.id,
-        etiqueta: `${v.patente} · ${v.marca} ${v.modelo}`
-          + (v.es_downgrade ? ' · categoría menor' : ''),
-        ocupado: false,
-      });
-      porCategoria.set(nombre, lista);
-    }
-    return [...porCategoria.entries()].map(([nombre, vehiculos]) => ({ nombre, vehiculos }));
-  }, [isEdit, verTodaLaFlota, vehiculosPorCategoria, libres, idsLibres]);
+        etiqueta: `${v.patente} · ${v.marca} ${v.modelo}`,
+        ocupado: Boolean(libres) && !idsLibres.has(v.id),
+      }));
+  }, [vehiculosActivos, categoriaId, libres, idsLibres]);
 
   /**
    * El auto elegido está comprometido en estas fechas.
@@ -782,7 +821,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * puertas. Todo lo que era una advertencia sigue siendo una advertencia y se
    * ve en el resumen del paso 6, donde todavía se puede guardar igual.
    */
-  function faltaEnElPaso(n: number): string {
+  function faltaEnElPaso(n: number): { mensaje: string; campo: string } | null {
     // **Un cliente que todavía no existe no frena la reserva.** Con alguien
     // enfrente esperando, mandarlo a la pantalla de Clientes a cargar un alta
     // entera y volver a empezar es lo que hace que la reserva se anote en un
@@ -791,39 +830,47 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     //
     // Lo único que sigue siendo obligatorio es **saber a nombre de quién es**.
     if (n === 1 && !clienteId && nombreClientePendiente.length < 3) {
-      return 'Poné al menos el nombre del cliente.';
+      return { mensaje: 'Poné al menos el nombre del cliente.', campo: 'cliente' };
     }
     if (n === 2) {
-      if (!fechaInicio || !fechaFin) return 'Faltan las fechas.';
+      if (!fechaInicio || !fechaFin) return { mensaje: 'Faltan las fechas.', campo: 'fechas' };
       if (!devolucionPosterior) {
-        return fechaFin === fechaInicio
-          ? 'Si se devuelve el mismo día, la hora de devolución tiene que ser posterior a la de retiro.'
-          : 'La devolución tiene que ser posterior al retiro.';
+        return {
+          mensaje: fechaFin === fechaInicio
+            ? 'Si se devuelve el mismo día, la hora de devolución tiene que ser posterior a la de retiro.'
+            : 'La devolución tiene que ser posterior al retiro.',
+          campo: 'fecha_fin',
+        };
       }
-      if (!lugarEntrega) return 'Falta el lugar de retiro.';
-      if (!lugarDevolucion) return 'Falta el lugar de devolución.';
+      if (!lugarEntrega.trim()) return { mensaje: 'Falta el lugar de retiro.', campo: 'lugar_entrega' };
+      if (!lugarDevolucion.trim()) return { mensaje: 'Falta el lugar de devolución.', campo: 'lugar_devolucion' };
     }
     // El paso 3 no exige auto: reservar sólo por categoría es válido. Lo único
     // que no se puede es no elegir ninguna de las dos cosas.
     if (n === 3 && !vehiculoId && !categoriaManualId) {
-      return 'Elegí un auto, o al menos la categoría.';
+      return { mensaje: 'Elegí un auto, o al menos la categoría.', campo: 'vehiculo' };
     }
     if (n === 4 && (precioTotal === '' || Number(precioTotal) <= 0)) {
-      return 'Falta el precio.';
+      return { mensaje: 'Falta el precio.', campo: 'precio' };
     }
     if (n === 4 && esDescuento && !descuentoMotivo.trim()) {
-      return 'El precio es menor al de lista: escribí el motivo.';
+      return { mensaje: 'El precio es menor al de lista: indicá el motivo.', campo: 'descuento_motivo' };
     }
     if (n === 5 && !isEdit && !condicionPagoAncla) {
-      return 'Elegí en qué momento se cobra.';
+      return { mensaje: 'Elegí en qué momento se cobra.', campo: 'condicion_pago_ancla' };
     }
-    return '';
+    return null;
   }
 
   function siguientePaso() {
     const falta = faltaEnElPaso(paso);
-    setErrorPaso(falta);
-    if (falta) return;
+    setErrorPaso(falta?.mensaje ?? '');
+    if (falta) {
+      // Que el botón lleve al campo: el mensaje solo, al lado de "Siguiente",
+      // obligaba a buscar qué faltó.
+      irAlError(falta.campo);
+      return;
+    }
     setPaso(p => Math.min(6, p + 1));
   }
 
@@ -876,6 +923,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       ? {
           fecha_inicio: fechaInicio,
           fecha_fin: fechaFin,
+          // Con los horarios: devolver una hora o más después del retiro es
+          // un día más, y el precio de lista tiene que traerlo (A1).
+          hora_inicio: horaInicio + ':00',
+          hora_fin: horaFin + ':00',
           vehiculo_id: vehiculoId ? Number(vehiculoId) : null,
           // Cuando no se eligió auto, la reserva viaja con la categoría: es lo
           // que descuenta cupo mientras la unidad puntual está sin decidir.
@@ -933,22 +984,6 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   }, [cotizacionLista, duracionDias]);
 
   /**
-   * Lo que hay cargado detrás del plegado, en una línea.
-   *
-   * Sin esto, plegar esconde información y quien mira no sabe si hay algo
-   * adentro. El resumen es lo que permite tenerlo cerrado sin perderlo de
-   * vista.
-   */
-  const resumenPagoDetallado = useMemo(() => {
-    const partes: string[] = [];
-    if (conFactura) partes.push('con factura');
-    if (formaPagoPrevista) partes.push(formaPagoPrevista.replace(/_/g, ' '));
-    if (estadoPago === 'anticipo' && anticipoMonto) partes.push(`anticipo $${Number(anticipoMonto).toLocaleString('es-AR')}`);
-    if (estadoPago === 'pagado') partes.push('ya pagado');
-    return partes.join(' · ');
-  }, [conFactura, formaPagoPrevista, estadoPago, anticipoMonto]);
-
-  /**
    * La diferencia contra el precio de lista, partida en dos.
    *
    * **Cobrar de menos hay que explicarlo; cobrar de más, no.** Del mostrador:
@@ -962,15 +997,29 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * con el cliente enfrente para que alguien escriba "le cobré más" es una
    * puerta sin nada del otro lado. La diferencia se sigue guardando igual.
    */
-  const hayDiferenciaDePrecio = precioListaEstimado !== null && precioTotal !== ''
-    && Math.round(precioTotal) !== Math.round(precioListaEstimado);
-  const esDescuento = hayDiferenciaDePrecio
-    && Math.round(precioTotal as number) < Math.round(precioListaEstimado as number);
-  const esRecargo = hayDiferenciaDePrecio && !esDescuento;
-  const diferenciaPrecio = hayDiferenciaDePrecio
-    ? Math.abs(Math.round(precioTotal as number) - Math.round(precioListaEstimado as number))
+  //
+  // **Se compara igual que el backend: una diferencia de menos de un peso no
+  // cuenta** (`TOLERANCIA_DESCUENTO`). Antes se comparaban los dos números
+  // redondeados, que no es lo mismo: $39.999,50 contra $40.000 redondeaba
+  // igual acá y el servidor lo rechazaba igual pidiendo un motivo que la
+  // pantalla nunca había pedido.
+  const diferenciaCruda = precioListaEstimado !== null && precioTotal !== ''
+    ? Number(precioTotal) - precioListaEstimado
     : 0;
+  const hayDiferenciaDePrecio = Math.abs(diferenciaCruda) >= TOLERANCIA_DESCUENTO;
+  const esDescuento = hayDiferenciaDePrecio && diferenciaCruda < 0;
+  const esRecargo = hayDiferenciaDePrecio && !esDescuento;
+  const diferenciaPrecio = hayDiferenciaDePrecio ? redondear2(Math.abs(diferenciaCruda)) : 0;
   const requiereDatosEcheq = formaPagoPrevista === 'echeq' || (estadoPago !== 'pendiente' && anticipoMedioPago === 'echeq');
+
+  /**
+   * **Lo que se cobra en total**: el auto más los adicionales (y el cargo de
+   * un late check-in viejo, si la reserva lo tenía). Es lo que significa
+   * "Abonó el total" (plan 27/09, txt 14): antes se mandaba sólo el precio del
+   * auto, y una reserva con seguro quedaba pagada y con el seguro pendiente.
+   */
+  const cargoLateHeredado = lateHeredado ? Number(reserva?.cargo_late_checkout ?? 0) : 0;
+  const totalACobrar = redondear2((Number(precioTotal) || 0) + totalAdicionales + cargoLateHeredado);
 
   /**
    * Falla el guardado y **te lleva al paso donde está el campo**.
@@ -980,13 +1029,40 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * el resumen — con el control a dos pantallas de distancia y un mensaje que
    * no decía a dónde volver.
    */
-  function errorEnPaso(mensaje: string, n: number) {
+  function errorEnPaso(mensaje: string, n: number, campo?: string) {
     setLocalError(mensaje);
-    if (!enPasos) return;
-    setPaso(n);
-    // Si el campo está detrás del plegado del paso 5, abrirlo: mandar al paso
-    // correcto y dejar el control escondido no resuelve nada.
-    if (n === 5) setPagoDetalladoAbierto(true);
+    if (enPasos) setPaso(n);
+    // Después del cambio de paso, al campo (o al cartel del error si el campo
+    // no está a la vista). `irAlError` espera al render.
+    irAlError(campo);
+  }
+
+  /**
+   * Un rechazo del backend, llevado al paso y al campo que lo resuelven.
+   *
+   * El servidor valida lo mismo que la pantalla y alguna cosa más (el
+   * solapamiento, el precio de lista con los datos de ese instante). Antes
+   * todo eso terminaba en un cartel rojo al pie del resumen, con el campo a
+   * dos pasos de distancia.
+   */
+  function errorDelServidor(err: unknown) {
+    const mensaje = extractError(err, 'No se pudo guardar la reserva.');
+    const destino: Record<string, [number, string]> = {
+      descuento_sin_motivo: [4, 'descuento_motivo'],
+      solapamiento: [3, 'vehiculo'],
+      vehiculo_no_se_alquila: [3, 'vehiculo'],
+      fechas_invalidas: [2, 'fecha_fin'],
+      ancla_requerida: [5, 'condicion_pago_ancla'],
+      fecha_ancla_requerida: [5, 'condicion_pago_ancla'],
+    };
+    const codigo = codigoDeError(err);
+    const ir = codigo ? destino[codigo] : undefined;
+    if (ir) {
+      errorEnPaso(mensaje, ir[0], ir[1]);
+    } else {
+      setLocalError(mensaje);
+      irAlError();
+    }
   }
 
   async function handleSubmit(e: React.FormEvent | React.MouseEvent) {
@@ -1022,62 +1098,73 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     // más abajo. El DNI y el teléfono quedan reclamados por la campana y se
     // completan cuando la persona esté enfrente.
     if (!clienteId && nombreClientePendiente.length < 3) {
-      errorEnPaso('Falta el cliente: elegí uno de la lista o escribí su nombre.', 1);
+      errorEnPaso('Falta el cliente: elegí uno de la lista o escribí su nombre.', 1, 'cliente');
       return;
     }
     if (!fechaInicio || !fechaFin) {
-      errorEnPaso('Faltan las fechas del alquiler.', 2);
+      errorEnPaso('Faltan las fechas del alquiler.', 2, 'fechas');
       return;
     }
     if (!vehiculoId && !categoriaManualId) {
-      errorEnPaso('Elegí un vehículo, o al menos la categoría que se reservó.', 3);
+      errorEnPaso('Elegí un vehículo, o al menos la categoría que se reservó.', 3, 'vehiculo');
       return;
     }
-    if (!lugarEntrega || !lugarDevolucion) {
-      errorEnPaso('Complete el lugar de entrega y de devolución.', 2);
-      return;
-    }
-    if (!devolucionPosterior) {
-      errorEnPaso('La devolución tiene que ser posterior al retiro (si es el mismo día, con una hora más tarde).', 2);
-      return;
-    }
-    if (!precioTotal) {
-      errorEnPaso('La cotización es obligatoria. Ingrese el precio total o por día.', 4);
-      return;
-    }
-    if (!isEdit && esDescuento && !descuentoMotivo.trim()) {
-      errorEnPaso(`El precio cargado es menor al de lista ($${formatMiles(precioListaEstimado)}) — indique el motivo de la diferencia.`, 4);
-      return;
-    }
-    if (garantiaTipo !== 'no_aplica' && !garantiaMonto) {
-      errorEnPaso('Ingrese el monto de garantía.', 5);
-      return;
-    }
-    if (!isEdit && !condicionPagoAncla) {
-      setLocalError(
-        condicionPago === 'contado'
-          ? 'Indique en qué momento se cobra: al entregar el auto, al devolverlo, u otra fecha.'
-          : 'Indique a partir de cuándo se cuentan los días de la condición de pago (check-out, check-in, u otra fecha).'
+    if (!lugarEntrega.trim() || !lugarDevolucion.trim()) {
+      errorEnPaso(
+        'Falta el lugar de retiro o de devolución.', 2,
+        lugarEntrega.trim() ? 'lugar_devolucion' : 'lugar_entrega',
       );
       return;
     }
-    if (!isEdit && condicionPagoAncla === 'fecha_especifica' && !condicionPagoFechaAncla) {
-      errorEnPaso('Ingrese la fecha a partir de la cual se cuenta el plazo de pago.', 5);
+    if (!devolucionPosterior) {
+      errorEnPaso('La devolución tiene que ser posterior al retiro (si es el mismo día, con una hora más tarde).', 2, 'fecha_fin');
+      return;
+    }
+    if (!precioTotal) {
+      errorEnPaso('Falta el precio: cargá el total o el precio por día.', 4, 'precio');
+      return;
+    }
+    if (!isEdit && esDescuento && !descuentoMotivo.trim()) {
+      errorEnPaso('El precio es menor al de lista: indicá el motivo.', 4, 'descuento_motivo');
+      return;
+    }
+    if (garantiaTipo !== 'no_aplica' && !garantiaMonto) {
+      errorEnPaso('Falta el monto de la garantía.', 5, 'garantia_monto');
+      return;
+    }
+    if (!isEdit && !condicionPagoAncla) {
+      errorEnPaso(
+        condicionPago === 'contado'
+          ? 'Elegí en qué momento se cobra: al entregar el auto, al devolverlo, u otra fecha.'
+          : 'Elegí desde cuándo se cuentan los días del plazo de pago.',
+        5, 'condicion_pago_ancla',
+      );
+      return;
+    }
+    if (condicionPagoAncla === 'fecha_especifica' && !condicionPagoFechaAncla) {
+      errorEnPaso('Falta la fecha desde la que se cuenta el plazo de pago.', 5, 'condicion_pago_fecha_ancla');
       return;
     }
     if (estadoPago === 'anticipo') {
-      if (!anticipoMonto || !anticipoFecha || !anticipoMedioPago) {
-        errorEnPaso('Si hubo un anticipo, complete el monto, fecha y medio de pago.', 5);
+      if (!anticipoMonto) {
+        errorEnPaso('Falta el monto del anticipo.', 5, 'anticipo_monto');
         return;
       }
-      if (parseFloat(anticipoMonto as string) >= parseFloat(String(precioTotal))) {
-        errorEnPaso('El anticipo debe ser menor al precio total. Si abonó el total, seleccione "Abonó el total".', 5);
+      if (!anticipoFecha || !anticipoMedioPago) {
+        errorEnPaso('Falta la fecha o el medio de pago del anticipo.', 5, anticipoFecha ? 'anticipo_medio_pago' : 'anticipo_fecha');
+        return;
+      }
+      // Contra el total a cobrar —auto más adicionales—, no contra el precio
+      // del auto solo: con un seguro contratado, un anticipo igual al precio
+      // del auto es un anticipo, no el pago total.
+      if (parseFloat(anticipoMonto as string) >= totalACobrar) {
+        errorEnPaso('El anticipo cubre el total: marcá "Abonó el total".', 5, 'anticipo_monto');
         return;
       }
     }
     if (estadoPago === 'pagado') {
       if (!anticipoFecha || !anticipoMedioPago) {
-        errorEnPaso('Si abonó el total, complete la fecha y medio de pago.', 5);
+        errorEnPaso('Falta la fecha o el medio del pago.', 5, anticipoFecha ? 'anticipo_medio_pago' : 'anticipo_fecha');
         return;
       }
     }
@@ -1125,16 +1212,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           notas: notas || null,
           observaciones: observaciones || null,
           precio_total: precioTotal || null,
-          // La devolución acordada ahora se puede corregir después de guardar.
-          // `late_checkout: false` es la señal de apagado que el backend usa
-          // para limpiar la fecha, la hora y el cargo — un `null` no viajaría,
-          // porque el router filtra el payload con `exclude_none`.
-          late_checkout: lateCheckout,
-          ...(lateCheckout ? {
-            hora_devolucion_acordada: horaDevolucionAcordada ? horaDevolucionAcordada + ':00' : null,
-            fecha_devolucion_acordada: fechaDevolucionAcordada || null,
-            cargo_late_checkout: cargoLateCheckout === '' ? 0 : Number(cargoLateCheckout),
-          } : {}),
+          // Sin `late_checkout` ni cargo: desde A1 el horario de devolución se
+          // cobra solo. Una reserva vieja con un acuerdo cargado lo conserva
+          // porque no se manda nada que lo pise.
           // Sólo se mandan si se pueden cambiar: después del check-out el
           // backend los rechaza, y mandarlos igual rompería la edición.
           ...(adicionalesBloqueados ? {} : {
@@ -1144,9 +1224,19 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           }),
           forma_pago_prevista: formaPagoPrevista || null,
           estado_pago: estadoPago,
-          anticipo_monto: estadoPago === 'anticipo' ? parseFloat(anticipoMonto as string) : (estadoPago === 'pagado' ? parseFloat(String(precioTotal)) : null),
+          // "Pagado" es el total a cobrar, no el precio del auto. El backend
+          // lo normaliza igual; mandarlo bien evita que la pantalla y el
+          // servidor digan dos números distintos.
+          anticipo_monto: estadoPago === 'anticipo' ? parseFloat(anticipoMonto as string) : (estadoPago === 'pagado' ? totalACobrar : null),
           anticipo_fecha: estadoPago !== 'pendiente' ? anticipoFecha : null,
           anticipo_medio_pago: estadoPago !== 'pendiente' ? anticipoMedioPago : null,
+          condicion_pago: condicionPago,
+          ...(condicionPagoAncla ? {
+            condicion_pago_ancla: condicionPagoAncla,
+            condicion_pago_fecha_ancla: condicionPagoAncla === 'fecha_especifica' ? condicionPagoFechaAncla || null : null,
+          } : {}),
+          // `''` borra la aclaración: el backend distingue vacío de "no tocar".
+          condicion_pago_texto: condicionPagoTexto.trim(),
         };
         // Los avisos se propagan: entre ellos viene el de D-48, que dice que
         // se anuló un contrato firmado porque se le cambió el auto. Tirarlos
@@ -1172,10 +1262,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           lugar_devolucion: lugarDevolucion,
           notas: notas || null,
           observaciones: observaciones || null,
-          late_checkout: lateCheckout,
-          hora_devolucion_acordada: lateCheckout && horaDevolucionAcordada ? horaDevolucionAcordada + ':00' : null,
-          fecha_devolucion_acordada: lateCheckout ? (fechaDevolucionAcordada || null) : null,
-          cargo_late_checkout: lateCheckout && cargoLateCheckout !== '' ? Number(cargoLateCheckout) : 0,
+          // El late check-in ya no se carga a mano (A1): la devolución pactada
+          // es `fecha_fin`/`hora_fin`, y el rato de más ya está en el precio.
+          late_checkout: false,
+          cargo_late_checkout: 0,
           precio_total: precioTotal || null,
           adicionales: Object.entries(adicionales).map(([id, cantidad]) => ({
             adicional_id: Number(id), cantidad,
@@ -1187,7 +1277,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           garantia_tarjeta_titular: garantiaTipo === 'tarjeta' ? garantiaTarjetaTitular || null : null,
           forma_pago_prevista: formaPagoPrevista || null,
           estado_pago: estadoPago,
-          anticipo_monto: estadoPago === 'anticipo' ? parseFloat(anticipoMonto as string) : (estadoPago === 'pagado' ? parseFloat(String(precioTotal)) : null),
+          anticipo_monto: estadoPago === 'anticipo' ? parseFloat(anticipoMonto as string) : (estadoPago === 'pagado' ? totalACobrar : null),
           anticipo_fecha: estadoPago !== 'pendiente' ? anticipoFecha : null,
           anticipo_medio_pago: estadoPago !== 'pendiente' ? anticipoMedioPago : null,
           con_factura: conFactura,
@@ -1198,6 +1288,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           // semanas. Ver el selector más abajo.
           condicion_pago_ancla: condicionPagoAncla || null,
           condicion_pago_fecha_ancla: condicionPagoAncla === 'fecha_especifica' ? condicionPagoFechaAncla || null : null,
+          condicion_pago_texto: condicionPagoTexto.trim() || null,
           tipo_factura: conFactura ? (tipoFactura || null) : null,
           factura_a_nombre_de: conFactura ? (facturaANombreDe.trim() || null) : null,
           echeq_banco: requiereDatosEcheq ? (echeqBanco.trim() || null) : null,
@@ -1216,13 +1307,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         descargarPdfReserva(r.id).catch(() => {});
         onSuccess(r, w);
       }
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      if (detail?.code === 'solapamiento') {
-        setLocalError(detail.message);
-      } else {
-        setLocalError(typeof detail === 'string' ? detail : 'Error al guardar la reserva');
-      }
+    } catch (err: unknown) {
+      errorDelServidor(err);
     }
   }
 
@@ -1237,18 +1323,24 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * Lo que si estaba mal era que el auto y la fecha que la persona acababa de
    * clickear quedaran invisibles hasta el paso 3, como si el click no hubiera
    * hecho nada. Esto los muestra arriba, en todos los pasos.
+   *
+   * **Se arma con lo elegido ahora, no con lo que vino del calendario**
+   * (plan 27/09, txt 12). Antes salía de `initialVehiculoId` y nunca se
+   * actualizaba: se cambiaba el auto en el paso 3 y el encabezado seguía
+   * nombrando el primero, o sea que el resumen decía una cosa y el
+   * encabezado otra.
    */
   const precargado = useMemo(() => {
     if (isEdit) return null;
     const partes: string[] = [];
-    if (initialVehiculoId) {
-      const v = vehiculosActivos.find(x => x.id === initialVehiculoId);
-      if (v) partes.push(`${v.patente} · ${v.marca} ${v.modelo}`);
+    if (vehiculoSeleccionado) {
+      partes.push(`${vehiculoSeleccionado.patente} · ${vehiculoSeleccionado.marca} ${vehiculoSeleccionado.modelo}`);
+    } else if (categoriaNombreElegida) {
+      partes.push(`${categoriaNombreElegida} — sin asignar`);
     }
-    if (initialFechaInicio) partes.push(`retiro ${formatFecha(initialFechaInicio)}`);
+    if (fechaInicio && (initialFechaInicio || partes.length)) partes.push(`retiro ${formatFecha(fechaInicio)}`);
     return partes.length ? partes.join(' · ') : null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit, initialVehiculoId, initialFechaInicio, vehiculosActivos]);
+  }, [isEdit, vehiculoSeleccionado, categoriaNombreElegida, fechaInicio, initialFechaInicio]);
 
   /**
    * Lo que se guarda del formulario a medio cargar.
@@ -1263,24 +1355,21 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     clienteId, clientSearch, conductorId,
     vehiculoId, categoriaManualId,
     fechaInicio, horaInicio, fechaFin, horaFinPropia,
-    lugarEntrega, lugarDevolucion, entregaEsOtro, devolucionEsOtro,
-    lateCheckout, horaDevolucionAcordada, fechaDevolucionAcordada, cargoLateCheckout,
+    lugarEntrega, lugarDevolucion,
     precioTotal, precioPorDia, descuentoMotivo, adicionales, conFactura,
     garantiaTipo, garantiaMonto,
     formaPagoPrevista, estadoPago, anticipoMonto, anticipoFecha, anticipoMedioPago,
-    condicionPago, condicionPagoAncla, condicionPagoFechaAncla,
+    condicionPago, condicionPagoAncla, condicionPagoFechaAncla, condicionPagoTexto,
     tipoFactura, facturaANombreDe,
     echeqBanco, echeqNumeroCheque, echeqFechaCobro,
     notas, observaciones,
   }), [
     paso, clienteId, clientSearch, conductorId, vehiculoId, categoriaManualId,
     fechaInicio, horaInicio, fechaFin, horaFinPropia, lugarEntrega, lugarDevolucion,
-    entregaEsOtro, devolucionEsOtro, lateCheckout, horaDevolucionAcordada,
-    fechaDevolucionAcordada,
-    cargoLateCheckout, precioTotal, precioPorDia, descuentoMotivo, adicionales,
+    precioTotal, precioPorDia, descuentoMotivo, adicionales,
     conFactura, garantiaTipo, garantiaMonto, formaPagoPrevista, estadoPago,
     anticipoMonto, anticipoFecha, anticipoMedioPago, condicionPago,
-    condicionPagoAncla, condicionPagoFechaAncla, tipoFactura, facturaANombreDe,
+    condicionPagoAncla, condicionPagoFechaAncla, condicionPagoTexto, tipoFactura, facturaANombreDe,
     echeqBanco, echeqNumeroCheque, echeqFechaCobro, notas, observaciones,
   ]);
 
@@ -1303,13 +1392,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     setFechaInicio(d.fechaInicio); setHoraInicio(d.horaInicio); setFechaFin(d.fechaFin);
     setHoraFinPropia(d.horaFinPropia ?? null);
     setLugarEntrega(d.lugarEntrega); setLugarDevolucion(d.lugarDevolucion);
-    setEntregaEsOtro(d.entregaEsOtro); setDevolucionEsOtro(d.devolucionEsOtro);
-    // La sincronización de lugares corre una sola vez al llegar la config y
-    // pisaría los dos flags de arriba; acá se da por hecha.
-    lugaresSincronizados.current = true;
-    setLateCheckout(d.lateCheckout); setHoraDevolucionAcordada(d.horaDevolucionAcordada);
-    setFechaDevolucionAcordada(d.fechaDevolucionAcordada);
-    setCargoLateCheckout(d.cargoLateCheckout);
+    // Un borrador guardado antes de A1 puede traer el late check-in manual y
+    // los flags de "Otro": se ignoran. El horario ya se cobra solo y el lugar
+    // está en su campo de texto.
     setPrecioTotal(d.precioTotal); setPrecioPorDia(d.precioPorDia);
     setDescuentoMotivo(d.descuentoMotivo); setAdicionales(d.adicionales);
     setConFactura(d.conFactura);
@@ -1319,6 +1404,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     setAnticipoMedioPago(d.anticipoMedioPago);
     setCondicionPago(d.condicionPago); setCondicionPagoAncla(d.condicionPagoAncla);
     setCondicionPagoFechaAncla(d.condicionPagoFechaAncla);
+    setCondicionPagoTexto(d.condicionPagoTexto ?? '');
     setTipoFactura(d.tipoFactura); setFacturaANombreDe(d.facturaANombreDe);
     setEcheqBanco(d.echeqBanco); setEcheqNumeroCheque(d.echeqNumeroCheque);
     setEcheqFechaCobro(d.echeqFechaCobro);
@@ -1352,12 +1438,13 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   Paso {paso} de 6 · {PASOS_WIZARD[paso - 1].ayuda}
                 </p>
               )}
-              {/* Lo que vino del calendario. Sin esto, el click en la celda no
-                  se ve reflejado en ningun lado hasta el paso 3. */}
+              {/* Lo elegido hasta ahora (auto o categoría, y el retiro). Sin
+                  esto, el click en la celda del calendario no se ve reflejado
+                  en ningún lado hasta el paso 3. */}
               {precargado && (
                 <p className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
                   <Calendar className="h-3 w-3" />
-                  Desde el calendario: {precargado}
+                  {precargado}
                 </p>
               )}
             </div>
@@ -1610,11 +1697,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                     onClick={() => setVerTodaLaFlota(v => !v)}
                     className="text-[11px] font-medium text-primary hover:underline"
                   >
-                    {verTodaLaFlota ? 'Ver sólo los libres' : 'Ver toda la flota'}
+                    {verTodaLaFlota
+                      ? (categoriaNombreElegida ? `Ver sólo ${categoriaNombreElegida} libres` : 'Ver sólo los libres')
+                      : 'Ver toda la flota'}
                   </button>
                 )}
               </div>
               <select
+                data-campo="vehiculo"
                 value={vehiculoId}
                 onChange={e => elegirVehiculo(e.target.value)}
                 disabled={isEdit}
@@ -1637,8 +1727,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </select>
               {!isEdit && rangoElegido && !verTodaLaFlota && (
                 <p className="text-[11px] text-slate-500">
-                  Sólo los que están libres en estas fechas, con el tiempo de preparación
-                  entre alquileres ya descontado.
+                  {categoriaNombreElegida
+                    ? `Sólo los ${categoriaNombreElegida} libres en estas fechas`
+                    : 'Sólo los que están libres en estas fechas'}
+                  , con el tiempo de preparación entre alquileres ya descontado.
                 </p>
               )}
               {vehiculoOcupadoEnElRango && (
@@ -1661,6 +1753,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
                 <input
+                  data-campo="cliente"
                   type="text"
                   placeholder="Buscar por nombre, DNI o CUIT..."
                   value={clientSearch}
@@ -1772,7 +1865,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-slate-400" /> Inicio *
               </label>
-              <div className="flex gap-2">
+              <div className="flex gap-2" data-campo="fechas">
                 <input type="date" value={fechaInicio} min={FECHA_MIN} max={FECHA_MAX}
                   onChange={e => {
                     const nueva = e.target.value;
@@ -1792,7 +1885,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <Calendar className="w-4 h-4 text-slate-400" /> Fin *
                 {duracionDias > 0 && <span className="text-primary font-normal">({duracionDias} día{duracionDias !== 1 ? 's' : ''})</span>}
               </label>
-              <div className="flex gap-2">
+              <div className="flex gap-2" data-campo="fecha_fin">
                 <input type="date" value={fechaFin} min={fechaInicio || FECHA_MIN} max={FECHA_MAX}
                   onChange={e => setFechaFin(e.target.value)}
                   className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" required />
@@ -1804,8 +1897,25 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   La devolución tiene que ser después del retiro. Si es el mismo día, poné una hora más tarde.
                 </p>
               )}
+              {/* Informativo, no un error: el día extra es la regla (A1). Se
+                  dice acá, donde se elige la hora, para que no sorprenda en el
+                  precio del paso 4. */}
+              {devolucionPosterior && avisoDiaDeMas && (
+                <p className="text-xs leading-snug text-sky-800 bg-sky-50 border border-sky-200 rounded-md px-2 py-1">
+                  {avisoDiaDeMas}
+                </p>
+              )}
             </div>
           </div>
+          {lateHeredado && (
+            <p className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Esta reserva tiene una devolución acordada cargada a mano
+              {reserva?.fecha_devolucion_acordada && ` para el ${formatFecha(reserva.fecha_devolucion_acordada)}`}
+              {reserva?.hora_devolucion_acordada && ` a las ${formatTime(reserva.hora_devolucion_acordada)}`}
+              {cargoLateHeredado > 0 && `, con un cargo de $${formatMiles(cargoLateHeredado)}`}.
+              Se conserva como estaba; las reservas nuevas ya cobran el horario solas.
+            </p>
+          )}
 
           {/* Reserva retroactiva: se avisa, no se bloquea.
 
@@ -1819,169 +1929,46 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             </p>
           )}
 
-          {/* Devolución en otro horario — el "late check-in".
+          {/* Acá estaba el tilde "Devuelve en otro horario (late check-in)" con
+              su fecha, su hora y un cargo escrito a mano. Se sacó (plan 27/09,
+              A1): el horario de devolución se carga arriba, junto al de
+              retiro, y si se pasa una hora o más se cobra un día más solo. El
+              cargo manual era un número que alguien tenía que acordarse de
+              poner, y cuando no se acordaba, el rato de más se regalaba. */}
 
-              **Tres cosas cambiaron acá, y las tres salieron del mostrador.**
-
-              1. *Se llamaba "Late Checkout", y está al revés.* Check-out es
-                 cuando **entregamos** el auto; check-in es cuando nos lo
-                 devuelven. Lo que se acuerda acá es una devolución más tarde,
-                 o sea un late check-in.
-
-              2. *Ahora tiene fecha.* Sin ella no se podía escribir el caso más
-                 común: se vende medio día más y el auto vuelve a las 08:30 del
-                 día siguiente. Con la hora sola el sistema leía 08:30 del día
-                 de fin —ocho horas antes del horario pactado— y terminaba sin
-                 cobrar nada. Textual: *"el sistema piensa que son las 8:30 hs
-                 del mismo día que devuelve"*.
-
-              3. *Ya no está detrás de `!isEdit`.* Se puede corregir después de
-                 guardar: *"a la hora de editar una reserva ya hecha no nos deja
-                 modificar el late check-in ni el adicional que se cobra por el
-                 mismo"*.
-
-              **Va en azul y no en el naranja de advertencia.** Acordar una
-              devolución más tarde es una venta: el cliente paga un cargo extra.
-              Estaba pintado con `bg-warning` por arrastre, así que la pantalla
-              mostraba como problema algo que es plata que entra. */}
-          <div className="rounded-xl bg-ubicar-dark p-4 space-y-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <input id="late-checkin" type="checkbox" checked={lateCheckout}
-                onChange={e => {
-                  const activo = e.target.checked;
-                  setLateCheckout(activo);
-                  // Al prender, los campos arrancan en la devolución normal:
-                  // así se corrige lo que cambió en vez de tipearlo entero.
-                  if (activo) {
-                    if (!fechaDevolucionAcordada) setFechaDevolucionAcordada(fechaFin);
-                    if (!horaDevolucionAcordada) setHoraDevolucionAcordada(horaFin);
-                  }
-                }}
-                className="w-4 h-4 accent-white" />
-              <label htmlFor="late-checkin" className="text-sm text-white font-semibold flex items-center gap-2 cursor-pointer">
-                <Clock className="w-5 h-5" /> Devuelve en otro horario (late check-in)
-              </label>
-            </div>
-            {!lateCheckout ? (
-              <p className="text-[11px] leading-snug text-white/70">
-                Sin esto, el auto se devuelve el {fechaFin ? formatFecha(fechaFin) : 'día de fin'} a
-                las {horaFin}{horaFin === horaInicio ? ' — la misma hora en que se retira' : ''}.
-              </p>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/90">Día en que lo devuelve</label>
-                    <input type="date" value={fechaDevolucionAcordada}
-                      min={fechaInicio || undefined}
-                      onChange={e => setFechaDevolucionAcordada(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-white/40 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-white/60" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/90">Hora acordada</label>
-                    <input type="time" value={horaDevolucionAcordada} onChange={e => setHoraDevolucionAcordada(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-white/40 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-white/60" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/90">Cargo adicional</label>
-                    <InputMoneda value={cargoLateCheckout} onChange={setCargoLateCheckout}
-                      placeholder="25.000"
-                      className="w-full px-3 py-2 rounded-lg border border-white/40 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-white/60" />
-                  </div>
-                </div>
-                {/* El resumen en una línea. Son dos fechas distintas, y
-                    confundirlas es exactamente lo que pasó. */}
-                <p className="text-[11px] leading-snug text-white/80">
-                  Se factura hasta el <strong>{fechaFin ? formatFecha(fechaFin) : '—'} {horaFin}</strong>
-                  {' '}y el auto vuelve el{' '}
-                  <strong>
-                    {fechaDevolucionAcordada ? formatFecha(fechaDevolucionAcordada) : '—'}{' '}
-                    {horaDevolucionAcordada || '—'}
-                  </strong>
-                  {cargoLateCheckout !== '' && Number(cargoLateCheckout) > 0
-                    ? `, con un cargo de $${formatMiles(cargoLateCheckout)}.`
-                    : '.'}
-                </p>
-                {fechaDevolucionAcordada && fechaFin && fechaDevolucionAcordada < fechaFin && (
-                  <p className="text-[11px] leading-snug text-amber-200">
-                    Lo devuelve antes de que termine el período facturado. Los días
-                    pactados se cobran igual — si hay que cobrar menos, corregí el precio.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Lugares */}
+          {/* Lugares. **El campo de texto está siempre a la vista** (plan
+              27/09, txt 4): los botones de los lugares habituales lo
+              completan, y cualquier otra dirección se escribe directo. Antes
+              había que apretar "Otro" para que apareciera el campo. */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-slate-400" /> Lugar de entrega *
-              </label>
-              <div className="flex gap-1.5 flex-wrap">
-                {lugares.map(l => (
-                  <button key={l} type="button"
-                    onClick={() => { setLugarEntrega(l); setEntregaEsOtro(false); }}
-                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                      !entregaEsOtro && lugarEntrega === l
-                        ? 'bg-primary/15 border-primary/35 text-primary'
-                        : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10 hover:border-primary/25'
-                    }`}
-                  >
-                    {l}
-                  </button>
-                ))}
-                <button type="button"
-                  onClick={() => setEntregaEsOtro(true)}
-                  className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                    entregaEsOtro
-                      ? 'bg-primary/15 border-primary/35 text-primary'
-                      : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10 hover:border-primary/25'
-                  }`}
-                >
-                  Otro
-                </button>
-              </div>
-              {entregaEsOtro && (
-                <input type="text" value={lugarEntrega} onChange={e => setLugarEntrega(e.target.value)}
-                  placeholder="Dirección específica"
+            {([
+              { campo: 'lugar_entrega', titulo: 'Lugar de entrega *', valor: lugarEntrega, set: setLugarEntrega },
+              { campo: 'lugar_devolucion', titulo: 'Lugar de devolución *', valor: lugarDevolucion, set: setLugarDevolucion },
+            ] as const).map(l => (
+              <div key={l.campo} className="space-y-1.5">
+                <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-slate-400" /> {l.titulo}
+                </label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {lugares.map(lugar => (
+                    <button key={lugar} type="button"
+                      onClick={() => l.set(lugar)}
+                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                        l.valor === lugar
+                          ? 'bg-primary/15 border-primary/35 text-primary'
+                          : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10 hover:border-primary/25'
+                      }`}
+                    >
+                      {lugar}
+                    </button>
+                  ))}
+                </div>
+                <input type="text" value={l.valor} onChange={e => l.set(e.target.value)}
+                  data-campo={l.campo}
+                  placeholder="O escribí otra dirección"
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" required />
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-slate-400" /> Lugar de devolución *
-              </label>
-              <div className="flex gap-1.5 flex-wrap">
-                {lugares.map(l => (
-                  <button key={l} type="button"
-                    onClick={() => { setLugarDevolucion(l); setDevolucionEsOtro(false); }}
-                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                      !devolucionEsOtro && lugarDevolucion === l
-                        ? 'bg-primary/15 border-primary/35 text-primary'
-                        : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10 hover:border-primary/25'
-                    }`}
-                  >
-                    {l}
-                  </button>
-                ))}
-                <button type="button"
-                  onClick={() => setDevolucionEsOtro(true)}
-                  className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                    devolucionEsOtro
-                      ? 'bg-primary/15 border-primary/35 text-primary'
-                      : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10 hover:border-primary/25'
-                  }`}
-                >
-                  Otro
-                </button>
               </div>
-              {devolucionEsOtro && (
-                <input type="text" value={lugarDevolucion} onChange={e => setLugarDevolucion(e.target.value)}
-                  placeholder="Dirección específica"
-                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" required />
-              )}
-            </div>
+            ))}
           </div>
 
           </div>
@@ -2089,7 +2076,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   }`}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5" data-campo="precio">
                 <label className="text-xs font-medium text-slate-600">Precio Total *</label>
                 <InputMoneda
                   value={precioTotal}
@@ -2128,13 +2115,20 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 ) : (
                   <>
                     {(['cobertura', 'extra'] as const).map(grupo => {
-                      const delGrupo = catalogoAdicionales.filter(a => a.grupo === grupo);
+                      // Las incluidas no son una opción: vienen (ver
+                      // `coberturasIncluidas`, más abajo como texto).
+                      const delGrupo = catalogoAdicionales.filter(a => a.grupo === grupo && !a.incluido);
                       if (delGrupo.length === 0) return null;
                       return (
                         <div key={grupo} className="space-y-1">
                           <p className="text-[11px] font-medium text-slate-500">
-                            {grupo === 'cobertura' ? 'Cobertura (elegí una)' : 'Extras'}
+                            {grupo === 'cobertura' ? 'Cobertura adicional (opcional, elegí una)' : 'Extras'}
                           </p>
+                          {grupo === 'cobertura' && coberturasIncluidas.length > 0 && (
+                            <p className="text-xs text-slate-600">
+                              Incluye: <strong>{coberturasIncluidas.map(a => a.nombre).join(', ')}</strong>
+                            </p>
+                          )}
                           {/* LA FRANQUICIA, que hasta ahora no aparecía en
                               ninguna parte del sistema interno — el sitio
                               público sí se la muestra al cliente al elegir
@@ -2278,6 +2272,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   precio de lista (${formatMiles(precioListaEstimado)}). Indicá el motivo — queda auditado.
                 </p>
                 <textarea
+                  data-campo="descuento_motivo"
                   value={descuentoMotivo}
                   onChange={e => setDescuentoMotivo(e.target.value)}
                   rows={2}
@@ -2291,24 +2286,21 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           )}
 
           {/* ── PASO 5 · ¿CÓMO SE PAGA? ─────────────────────────────────── */}
+          {/* **Letra más grande y todo a la vista** (plan 27/09, txt 11). Era el
+              paso con la letra más chica del wizard (11-12 px) y la parte de
+              factura y anticipo venía plegada: ahí se marca que el cliente ya
+              pagó, y plegada nadie la abría. */}
           {(!enPasos || paso === 5) && (
           <div className="space-y-5">
-            <div className="space-y-3 rounded-xl border-2 border-primary/20 bg-primary/5 p-4">
-            {!isEdit && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-600">Condición de pago *</label>
+            <div className="space-y-4 rounded-xl border-2 border-primary/20 bg-primary/5 p-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">Condición de pago *</label>
                 <div className="flex gap-2 flex-wrap">
-                  {[
-                    { value: 'contado', label: 'Contado (en el momento)' },
-                    { value: 'cta_cte_15', label: '15 días' },
-                    { value: 'cta_cte_30', label: '30 días' },
-                    { value: 'cta_cte_60', label: '60 días' },
-                    { value: 'cta_cte_90', label: '90 días' },
-                  ].map(o => (
+                  {CONDICIONES_PAGO.map(o => (
                     <button
                       key={o.value} type="button"
                       onClick={() => { setCondicionPago(o.value); }}
-                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                      className={`px-3.5 py-2 rounded-lg border text-sm font-medium transition-all ${
                         condicionPago === o.value ? 'bg-primary/15 border-primary/35 text-primary' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
                       }`}
                     >
@@ -2321,211 +2313,211 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                     vuelve pueden pasar semanas, y la fecha de vencimiento del
                     asiento en cuenta corriente sale de acá. Antes contado
                     asumía la entrega sin decirlo. */}
-                <div className="space-y-1.5 pt-1">
-                  <label className="text-xs font-medium text-slate-600">
+                <div className="space-y-2 pt-1" data-campo="condicion_pago_ancla">
+                  <label className="text-sm font-medium text-slate-600">
                     {condicionPago === 'contado'
-                      ? '¿En qué momento se cobra? *'
-                      : '¿A partir de cuándo se cuentan los días? *'}
+                      ? `¿En qué momento se cobra?${isEdit ? '' : ' *'}`
+                      : `¿A partir de cuándo se cuentan los días?${isEdit ? '' : ' *'}`}
                   </label>
-                    <div className="flex gap-2 flex-wrap items-center">
-                      {[
-                        { value: 'checkout', label: condicionPago === 'contado' ? 'Al entregar el auto' : 'Check-out (entrega)' },
-                        { value: 'checkin', label: condicionPago === 'contado' ? 'Al devolverlo' : 'Check-in (devolución)' },
-                        { value: 'fecha_especifica', label: 'Otra fecha' },
-                      ].map(o => (
-                        <button
-                          key={o.value} type="button"
-                          onClick={() => setCondicionPagoAncla(o.value as typeof condicionPagoAncla)}
-                          className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                            condicionPagoAncla === o.value ? 'bg-primary/15 border-primary/35 text-primary' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
-                          }`}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                      {condicionPagoAncla === 'fecha_especifica' && (
-                        <input
-                          type="date"
-                          value={condicionPagoFechaAncla}
-                          onChange={e => setCondicionPagoFechaAncla(e.target.value)}
-                          className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                        />
-                      )}
-                    </div>
+                  <div className="flex gap-2 flex-wrap items-center">
+                    {[
+                      { value: 'checkout', label: condicionPago === 'contado' ? 'Al entregar el auto' : 'Check-out (entrega)' },
+                      { value: 'checkin', label: condicionPago === 'contado' ? 'Al devolverlo' : 'Check-in (devolución)' },
+                      { value: 'fecha_especifica', label: 'Otra fecha' },
+                    ].map(o => (
+                      <button
+                        key={o.value} type="button"
+                        onClick={() => setCondicionPagoAncla(o.value as typeof condicionPagoAncla)}
+                        className={`px-3.5 py-2 rounded-lg border text-sm font-medium transition-all ${
+                          condicionPagoAncla === o.value ? 'bg-primary/15 border-primary/35 text-primary' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                    {condicionPagoAncla === 'fecha_especifica' && (
+                      <input
+                        type="date"
+                        data-campo="condicion_pago_fecha_ancla"
+                        value={condicionPagoFechaAncla}
+                        onChange={e => setCondicionPagoFechaAncla(e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    )}
+                  </div>
                   {condicionPago === 'contado' && condicionPagoAncla === 'checkin' && (
-                    <p className="text-[11px] text-slate-500 leading-snug">
+                    <p className="text-xs text-slate-500 leading-snug">
                       El saldo queda sin fecha de vencimiento hasta que el auto
                       vuelva: recién en el check-in se sabe qué día es.
                     </p>
                   )}
                 </div>
+                {/* Texto libre (migración 097): lo que se pacta de verdad no
+                    siempre entra en los botones. Sale en el PDF de la reserva. */}
+                <div className="space-y-1.5 pt-1">
+                  <label className="text-sm font-medium text-slate-600">
+                    Aclaración de la condición de pago <span className="font-normal text-slate-400">(opcional)</span>
+                  </label>
+                  <textarea
+                    data-campo="condicion_pago_texto"
+                    value={condicionPagoTexto}
+                    onChange={e => setCondicionPagoTexto(e.target.value)}
+                    rows={2}
+                    placeholder="Ej: 50% al retirar y el resto a 15 días. Sale en el PDF de la reserva."
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                  />
+                </div>
               </div>
-            )}
-            {/* **Lo que casi nunca se toca, plegado.** En la enorme mayoría de
-                las reservas la respuesta es "contado, al entregar, sin
-                anticipo", y todo esto —factura, forma de pago prevista,
-                anticipo, echeq— quedaba desplegado ocupando media pantalla para
-                no cambiar nada. Se abre cuando hace falta.
 
-                Se abre solo si ya hay algo cargado: editando una reserva que sí
-                tiene anticipo, esconderlo sería peor que mostrarlo de más. */}
-            <button
-              type="button"
-              onClick={() => setPagoDetalladoAbierto(v => !v)}
-              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-600 hover:bg-slate-50"
-            >
-              <span>
-                Factura, forma de pago y anticipo
-                {!pagoDetalladoAbierto && resumenPagoDetallado && (
-                  <span className="ml-1 font-normal text-slate-400">· {resumenPagoDetallado}</span>
+              <div className="space-y-4 pt-3 border-t border-slate-200">
+                <p className="text-sm font-semibold text-slate-700">Factura, forma de pago y anticipo</p>
+                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={conFactura} onChange={e => setConFactura(e.target.checked)} className="accent-primary w-4 h-4" />
+                  Con factura
+                </label>
+                {conFactura && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-1">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-slate-600">Tipo de factura</label>
+                      <div className="flex gap-2">
+                        {(['A', 'B', 'C'] as const).map(t => (
+                          <button
+                            key={t} type="button"
+                            onClick={() => setTipoFactura(t === tipoFactura ? '' : t)}
+                            className={`px-3.5 py-2 rounded-lg border text-sm font-medium transition-all ${
+                              tipoFactura === t ? 'bg-primary/15 border-primary/35 text-primary' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-slate-600">A nombre de</label>
+                      <input
+                        type="text"
+                        value={facturaANombreDe}
+                        onChange={e => setFacturaANombreDe(e.target.value)}
+                        placeholder="Razón social / nombre"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                  </div>
                 )}
-              </span>
-              <span className="text-slate-400">{pagoDetalladoAbierto ? 'Ocultar' : 'Cambiar'}</span>
-            </button>
 
-            {pagoDetalladoAbierto && (
-            <div className="space-y-3">
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input type="checkbox" checked={conFactura} onChange={e => setConFactura(e.target.checked)} className="accent-primary" />
-              Con factura
-            </label>
-            {conFactura && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-1">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-600">Tipo de factura</label>
-                  <div className="flex gap-2">
-                    {(['A', 'B', 'C'] as const).map(t => (
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <label className="text-sm font-medium text-slate-600">Forma de pago esperada (opcional)</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {['efectivo', 'transferencia', 'tarjeta', 'wapa', 'cheque', 'echeq', 'cuenta_corriente'].map(m => (
                       <button
-                        key={t} type="button"
-                        onClick={() => setTipoFactura(t === tipoFactura ? '' : t)}
-                        className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                          tipoFactura === t ? 'bg-primary/15 border-primary/35 text-primary' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
+                        key={m} type="button"
+                        onClick={() => setFormaPagoPrevista(m === formaPagoPrevista ? '' : m)}
+                        className={`px-3.5 py-2 rounded-lg border text-sm font-medium transition-all ${
+                          formaPagoPrevista === m ? 'bg-primary/15 border-primary/35 text-primary' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
-                        {t}
+                        {m.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-600">A nombre de</label>
-                  <input
-                    type="text"
-                    value={facturaANombreDe}
-                    onChange={e => setFacturaANombreDe(e.target.value)}
-                    placeholder="Razón social / nombre"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                </div>
-              </div>
-            )}
-            <div className="space-y-3 pt-2 border-t border-slate-200">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-600">Forma de pago esperada (opcional)</label>
-                <div className="flex gap-2 flex-wrap">
-                  {['efectivo', 'transferencia', 'tarjeta', 'wapa', 'cheque', 'echeq', 'cuenta_corriente'].map(m => (
-                    <button
-                      key={m} type="button"
-                      onClick={() => setFormaPagoPrevista(m === formaPagoPrevista ? '' : m)}
-                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                        formaPagoPrevista === m ? 'bg-primary/15 border-primary/35 text-primary' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      {m.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </button>
-                  ))}
-                </div>
-              </div>
 
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <label className="text-xs font-medium text-slate-600">¿El cliente ya abonó algo?</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                    <input type="radio" checked={estadoPago === 'pendiente'} onChange={() => setEstadoPago('pendiente')} className="accent-primary" />
-                    No, está pendiente
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                    <input type="radio" checked={estadoPago === 'anticipo'} onChange={() => setEstadoPago('anticipo')} className="accent-primary" />
-                    Abonó un anticipo
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                    <input type="radio" checked={estadoPago === 'pagado'} onChange={() => setEstadoPago('pagado')} className="accent-primary" />
-                    Abonó el total
-                  </label>
-                </div>
-              </div>
-
-              {estadoPago !== 'pendiente' && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                  {estadoPago === 'anticipo' && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-600">Monto anticipo *</label>
-                      <InputMoneda
-                        value={anticipoMonto === '' || anticipoMonto == null ? '' : Number(anticipoMonto)}
-                        onChange={v => setAnticipoMonto(v === '' ? '' : String(v))}
-                        placeholder="50.000"
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                    </div>
-                  )}
-                  {estadoPago === 'pagado' && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-600">Monto total</label>
-                      <input type="text" value={`$${formatMiles(precioTotal || 0)}`} disabled
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-500 text-sm" />
-                    </div>
-                  )}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-600">Fecha de pago *</label>
-                    <input type="date" value={anticipoFecha} onChange={e => setAnticipoFecha(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-600">Medio de pago *</label>
-                    <select value={anticipoMedioPago} onChange={e => setAnticipoMedioPago(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
-                      <option value="">Seleccionar...</option>
-                      <option value="efectivo">Efectivo</option>
-                      <option value="transferencia">Transferencia</option>
-                      <option value="tarjeta">Tarjeta</option>
-                      <option value="cheque">Cheque</option>
-                      <option value="echeq">Echeq</option>
-                      <option value="cuenta_corriente">Cuenta Cte.</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {!isEdit && requiereDatosEcheq && (
                 <div className="space-y-2 pt-2 border-t border-slate-200">
-                  <label className="text-xs font-medium text-slate-600">Datos del echeq (opcional)</label>
-                  <p className="text-xs text-slate-400">
-                    Podés completarlo ahora o dejarlo pendiente — se puede cargar después desde el cliente.
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-600">Banco</label>
-                      <input type="text" value={echeqBanco} onChange={e => setEcheqBanco(e.target.value)}
-                        placeholder="Ej: Banco Nación"
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-600">Número de cheque</label>
-                      <input type="text" value={echeqNumeroCheque} onChange={e => setEcheqNumeroCheque(e.target.value)}
-                        placeholder="Ej: 00012345"
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-600">Fecha de cobro</label>
-                      <input type="date" value={echeqFechaCobro} onChange={e => setEcheqFechaCobro(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                    </div>
+                  <label className="text-sm font-medium text-slate-600">¿El cliente ya abonó algo?</label>
+                  <div className="flex flex-wrap gap-x-5 gap-y-2">
+                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="radio" checked={estadoPago === 'pendiente'} onChange={() => setEstadoPago('pendiente')} className="accent-primary w-4 h-4" />
+                      No, está pendiente
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="radio" checked={estadoPago === 'anticipo'} onChange={() => setEstadoPago('anticipo')} className="accent-primary w-4 h-4" />
+                      Abonó un anticipo
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="radio" checked={estadoPago === 'pagado'} onChange={() => setEstadoPago('pagado')} className="accent-primary w-4 h-4" />
+                      Abonó el total
+                    </label>
                   </div>
                 </div>
-              )}
+
+                {estadoPago !== 'pendiente' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                    {estadoPago === 'anticipo' && (
+                      <div className="space-y-1.5" data-campo="anticipo_monto">
+                        <label className="text-sm font-medium text-slate-600">Monto anticipo *</label>
+                        <InputMoneda
+                          value={anticipoMonto === '' || anticipoMonto == null ? '' : Number(anticipoMonto)}
+                          onChange={v => setAnticipoMonto(v === '' ? '' : String(v))}
+                          placeholder="50.000"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                      </div>
+                    )}
+                    {estadoPago === 'pagado' && (
+                      <div className="space-y-1.5">
+                        {/* El total a cobrar: auto + adicionales (plan 27/09,
+                            txt 14). Antes mostraba y mandaba sólo el precio
+                            del auto, y el seguro quedaba pendiente. */}
+                        <label className="text-sm font-medium text-slate-600">Monto total</label>
+                        <input type="text" value={`$${formatMiles(totalACobrar)}`} disabled
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-600 text-sm" />
+                        {totalAdicionales > 0 && (
+                          <p className="text-xs text-slate-500">
+                            Auto ${formatMiles(Number(precioTotal) || 0)} + adicionales ${formatMiles(totalAdicionales)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-slate-600">Fecha de pago *</label>
+                      <input type="date" data-campo="anticipo_fecha" value={anticipoFecha} onChange={e => setAnticipoFecha(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-slate-600">Medio de pago *</label>
+                      <select data-campo="anticipo_medio_pago" value={anticipoMedioPago} onChange={e => setAnticipoMedioPago(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+                        <option value="">Seleccionar...</option>
+                        <option value="efectivo">Efectivo</option>
+                        <option value="transferencia">Transferencia</option>
+                        <option value="tarjeta">Tarjeta</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="echeq">Echeq</option>
+                        <option value="cuenta_corriente">Cuenta Cte.</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {!isEdit && requiereDatosEcheq && (
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <label className="text-sm font-medium text-slate-600">Datos del echeq (opcional)</label>
+                    <p className="text-xs text-slate-500">
+                      Podés completarlo ahora o dejarlo pendiente — se puede cargar después desde el cliente.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-600">Banco</label>
+                        <input type="text" value={echeqBanco} onChange={e => setEcheqBanco(e.target.value)}
+                          placeholder="Ej: Banco Nación"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-600">Número de cheque</label>
+                        <input type="text" value={echeqNumeroCheque} onChange={e => setEcheqNumeroCheque(e.target.value)}
+                          placeholder="Ej: 00012345"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-600">Fecha de cobro</label>
+                        <input type="date" value={echeqFechaCobro} onChange={e => setEcheqFechaCobro(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-            </div>
-            )}
-          </div>
 
           {/* Garantía / Depósito — va en el mismo paso que el pago: las dos
               cosas son "cómo se cubre la plata de este alquiler".
@@ -2545,7 +2537,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                     key={g.value}
                     type="button"
                     onClick={() => { setGarantiaTipo(g.value); if (g.value === 'no_aplica') setGarantiaMonto(''); }}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                    className={`px-3.5 py-2 rounded-lg border text-sm font-medium transition-all ${
                       garantiaTipo === g.value
                         ? 'bg-primary/15 border-primary/35 text-primary'
                         : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
@@ -2558,8 +2550,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
               {garantiaTipo !== 'no_aplica' && (
                 <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-600">Monto retenido *</label>
+                  <div className="space-y-1.5" data-campo="garantia_monto">
+                    <label className="text-sm font-medium text-slate-600">Monto retenido *</label>
                     <InputMoneda
                       value={garantiaMonto === '' || garantiaMonto == null ? '' : Number(garantiaMonto)}
                       onChange={v => setGarantiaMonto(v === '' ? '' : String(v))}
@@ -2578,13 +2570,13 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                           en texto plano es exactamente lo que no hay que hacer, y
                           para reconocer la tarjeta en el mostrador alcanzan los
                           últimos cuatro. Ver migración 078. */}
-                      <p className="text-[11px] text-slate-600 leading-snug">
+                      <p className="text-xs text-slate-600 leading-snug">
                         Anotá sólo los <strong>últimos cuatro dígitos</strong>. El sistema no
                         guarda el número completo ni el código de seguridad.
                       </p>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="col-span-2 space-y-1">
-                          <label className="text-xs text-slate-600">Titular</label>
+                          <label className="text-sm text-slate-600">Titular</label>
                           <input
                             type="text"
                             value={garantiaTarjetaTitular}
@@ -2594,7 +2586,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs text-slate-600">Últimos 4 dígitos</label>
+                          <label className="text-sm text-slate-600">Últimos 4 dígitos</label>
                           <input
                             type="text"
                             inputMode="numeric"
@@ -2606,7 +2598,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs text-slate-600">Vencimiento</label>
+                          <label className="text-sm text-slate-600">Vencimiento</label>
                           <input
                             type="text"
                             value={garantiaTarjetaVenc}
@@ -2648,11 +2640,17 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
             duracionDias={duracionDias}
             lugarEntrega={lugarEntrega}
             lugarDevolucion={lugarDevolucion}
+            horaFin={horaFin}
+            avisoDiaDeMas={avisoDiaDeMas}
             precioTotal={precioTotal === '' ? null : Number(precioTotal)}
             totalAdicionales={totalAdicionales}
             franquicia={franquiciaCobertura ?? franquiciaBase}
-            condicionPago={condicionPago}
+            condicionPago={CONDICIONES_PAGO.find(c => c.value === condicionPago)?.label ?? condicionPago}
+            condicionPagoTexto={condicionPagoTexto.trim()}
             semaforo={semaforoPrevio ?? null}
+            vehiculoId={vehiculoId}
+            unidades={unidadesDeLaCategoria}
+            onElegirVehiculo={elegirVehiculo}
           />
           )}
           {/* Dos campos, y no uno.
@@ -2710,9 +2708,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
           {/* Error */}
           {(error || localError) && (
-            <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 flex items-center gap-2">
+            <div data-error-banner className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-              <span>{localError || error}</span>
+              {/* El error del hook viene crudo ("[codigo] mensaje"); el local ya
+                  pasó por `extractError`. */}
+              <span>{localError || (error ?? '').replace(/^\[[a-z0-9_]+\]\s*/, '')}</span>
             </div>
           )}
         </form>
@@ -2810,21 +2810,27 @@ export const PASOS_WIZARD = [
  * faltaba la garantía o de que el precio no era el que se había acordado.
  */
 function ResumenReserva({
-  vehiculo, categoriaNombre, clienteNombre, fechaInicio, fechaFin, horaInicio,
-  duracionDias, lugarEntrega, lugarDevolucion, precioTotal, totalAdicionales,
-  franquicia, condicionPago, semaforo,
+  vehiculo, categoriaNombre, clienteNombre, fechaInicio, fechaFin, horaInicio, horaFin,
+  avisoDiaDeMas, duracionDias, lugarEntrega, lugarDevolucion, precioTotal, totalAdicionales,
+  franquicia, condicionPago, condicionPagoTexto, semaforo, vehiculoId, unidades, onElegirVehiculo,
 }: {
   vehiculo?: { patente: string; marca: string; modelo: string } | null;
   categoriaNombre?: string;
   clienteNombre: string;
-  fechaInicio: string; fechaFin: string; horaInicio: string;
+  fechaInicio: string; fechaFin: string; horaInicio: string; horaFin: string;
+  avisoDiaDeMas: string | null;
   duracionDias: number;
   lugarEntrega: string; lugarDevolucion: string;
   precioTotal: number | null; totalAdicionales: number;
   franquicia: number | null;
   condicionPago: string;
+  condicionPagoTexto: string;
   /** El semaforo del backend. `null` mientras la consulta viaja. */
   semaforo: Semaforo | null;
+  vehiculoId: string;
+  /** Las unidades de la categoría elegida, para asignar el auto desde acá. */
+  unidades: { id: number; etiqueta: string; ocupado: boolean }[];
+  onElegirVehiculo: (id: string) => void;
 }) {
   /**
    * Lo que falta **del formulario**, que es lo unico que el backend no puede
@@ -2852,13 +2858,34 @@ function ResumenReserva({
     <div className="space-y-3">
       <div className="rounded-xl border border-slate-200 bg-white p-4 divide-y divide-slate-100">
         <Fila k="Cliente" v={clienteNombre || '—'} />
-        <Fila
-          k="Vehículo"
-          v={vehiculo
-            ? `${vehiculo.patente} · ${vehiculo.marca} ${vehiculo.modelo}`
-            : (categoriaNombre ? `${categoriaNombre} — sin asignar` : '—')}
-        />
-        <Fila k="Período" v={`${formatDate(fechaInicio)} → ${formatDate(fechaFin)} · ${duracionDias} día${duracionDias !== 1 ? 's' : ''} · ${horaInicio}`} />
+        {/* **El auto se puede asignar acá mismo** (plan 27/09, txt 12), con
+            las unidades de la categoría elegida. Antes, llegar al resumen con
+            la reserva "sin asignar" obligaba a volver al paso 3 para elegirlo. */}
+        <div className="flex items-center justify-between gap-4 py-1.5">
+          <span className="text-xs text-slate-500">Vehículo</span>
+          {unidades.length > 0 ? (
+            <select
+              value={vehiculoId}
+              onChange={e => onElegirVehiculo(e.target.value)}
+              className="max-w-[60%] rounded-lg border border-slate-300 bg-white px-2 py-1 text-right text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="">{categoriaNombre ? `${categoriaNombre} — sin asignar` : 'Sin asignar'}</option>
+              {unidades.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.etiqueta}{u.ocupado ? ' — comprometido' : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-right text-sm font-medium text-slate-800">
+              {vehiculo
+                ? `${vehiculo.patente} · ${vehiculo.marca} ${vehiculo.modelo}`
+                : (categoriaNombre ? `${categoriaNombre} — sin asignar` : '—')}
+            </span>
+          )}
+        </div>
+        <Fila k="Período" v={`${formatDate(fechaInicio)} ${horaInicio} → ${formatDate(fechaFin)} ${horaFin} · ${duracionDias} día${duracionDias !== 1 ? 's' : ''}`} />
+        {avisoDiaDeMas && <Fila k="" v={<span className="text-xs font-normal text-sky-800">{avisoDiaDeMas}</span>} />}
         <Fila k="Retiro" v={lugarEntrega || '—'} />
         <Fila k="Devolución" v={lugarDevolucion || '—'} />
         <Fila
@@ -2879,6 +2906,9 @@ function ResumenReserva({
           v={franquicia !== null ? `$${franquicia.toLocaleString('es-AR')}` : 'sin cargar'}
         />
         <Fila k="Condición de pago" v={condicionPago} />
+        {condicionPagoTexto && (
+          <Fila k="" v={<span className="text-xs font-normal text-slate-600 whitespace-pre-line">{condicionPagoTexto}</span>} />
+        )}
       </div>
 
       {/* El semáforo, antes de guardar. Es la misma información que el listado

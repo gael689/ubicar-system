@@ -841,6 +841,8 @@ export interface Reserva {
   condicion_pago?: string;
   condicion_pago_ancla?: 'checkout' | 'checkin' | 'fecha_especifica' | null;
   condicion_pago_fecha_ancla?: string | null;
+  /** Aclaración libre de la condición de pago (migración 097). Sale en el PDF. */
+  condicion_pago_texto?: string | null;
   tipo_factura?: 'A' | 'B' | 'C' | null;
   factura_a_nombre_de?: string | null;
   echeq_banco?: string | null;
@@ -916,6 +918,8 @@ export interface ReservaCreate {
   condicion_pago?: string;
   condicion_pago_ancla?: 'checkout' | 'checkin' | 'fecha_especifica' | null;
   condicion_pago_fecha_ancla?: string | null;
+  /** Aclaración libre de la condición de pago (migración 097). Sale en el PDF. */
+  condicion_pago_texto?: string | null;
   tipo_factura?: 'A' | 'B' | 'C' | null;
   factura_a_nombre_de?: string | null;
   echeq_banco?: string | null;
@@ -948,6 +952,12 @@ export interface ReservaUpdate {
   anticipo_monto?: number | null;
   anticipo_fecha?: string | null;
   anticipo_medio_pago?: string | null;
+  // La condición de pago se puede corregir después de guardar. `''` en el
+  // texto borra la aclaración; omitirlo no la toca.
+  condicion_pago?: string;
+  condicion_pago_ancla?: 'checkout' | 'checkin' | 'fecha_especifica' | null;
+  condicion_pago_fecha_ancla?: string | null;
+  condicion_pago_texto?: string | null;
 }
 
 export interface ReservaConWarnings {
@@ -1566,6 +1576,10 @@ export interface CalcularPrecioRequest {
   // Sin ella no se aplica ningún recargo por franja etaria (D-38) y el total
   // sale igual — no valida nada, pero el precio cambia si está.
   fecha_nacimiento?: string | null;
+  /** "HH:MM:SS". Con los dos, devolver una hora o más después del horario de
+   *  retiro se cotiza con un día más (A1). */
+  hora_inicio?: string | null;
+  hora_fin?: string | null;
 }
 
 export interface DiaCalendarioPrecio {

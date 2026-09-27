@@ -13,7 +13,7 @@
  * los tests del backend, y duplicar esa verificación acá sólo agregaría un
  * lugar más donde el criterio puede divergir.
  */
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -67,6 +67,7 @@ vi.mock('@/lib/api', () => ({ default: { post: vi.fn(), get: vi.fn() }, api: { p
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { ReservaModal } from './ReservaModal';
+import { hoyLocal } from '@/lib/utils';
 
 // ─── Datos de base ────────────────────────────────────────────────────────────
 
@@ -89,7 +90,9 @@ const AUTO_SUV = {
  * proponer una entrega de hoy para que `aplicarRotacion` la acepte: si cae
  * otro día no se automatiza, y ese es justamente otro de los tests.
  */
-const HOY = new Date().toISOString().split('T')[0];
+// En hora local, igual que el formulario (`hoyLocal`): con `toISOString()`,
+// después de las 21:00 este "hoy" ya era mañana y la rotación no coincidía.
+const HOY = hoyLocal();
 
 function cupo(categorias: any[]) {
   return { fecha_inicio: HOY, fecha_fin: HOY, dias: 2, categorias };
@@ -245,7 +248,6 @@ describe('El orden de los pasos', () => {
     // nada.
     abrir({ initialVehiculoId: 10, initialFechaInicio: '2026-09-10' });
 
-    expect(screen.getByText(/Desde el calendario/)).toBeInTheDocument();
     expect(screen.getByText(/AA111AA/)).toBeInTheDocument();
     expect(screen.getByText(/retiro 10\/09\/2026/)).toBeInTheDocument();
   });
@@ -597,5 +599,60 @@ describe('El borrador de lo que quedó a medio cargar', () => {
     abrir();
     expect(screen.getByText(/Paso 1 de 6/)).toBeInTheDocument();
     expect(screen.queryByText(/a medio cargar/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Plan 27/09 — encabezado, lugares y horario', () => {
+  it('el encabezado sigue a lo elegido, no a lo que vino del calendario', async () => {
+    // El bug (txt 12): el encabezado se armaba con el auto inicial y nunca se
+    // actualizaba. Se cambiaba de auto y seguía nombrando el primero.
+    const user = userEvent.setup();
+    abrir({ initialVehiculoId: AUTO_COMPACTO.id, initialFechaInicio: HOY });
+    expect(screen.getByText(/AA111AA · Fiat Cronos/)).toBeInTheDocument();
+
+    await avanzarHasta(user, 3);
+    await user.click(screen.getByRole('button', { name: 'Cambiar' }));
+    await user.click(screen.getByText('SUV'));
+
+    expect(screen.getByText(/SUV — sin asignar/)).toBeInTheDocument();
+    expect(screen.queryByText(/AA111AA · Fiat Cronos/)).not.toBeInTheDocument();
+  });
+
+  it('el lugar se escribe siempre, y los botones lo completan', async () => {
+    // Sin "Otro" (txt 4): el campo está a la vista desde el principio.
+    const user = userEvent.setup();
+    abrir();
+    await avanzarHasta(user, 2);
+
+    const campos = screen.getAllByPlaceholderText(/O escribí otra dirección/) as HTMLInputElement[];
+    expect(campos).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Otro' })).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('button', { name: 'Paraguay 241' })[0]);
+    expect(campos[0].value).toBe('Paraguay 241');
+
+    await user.type(campos[1], 'Hotel Argos');
+    expect(campos[1].value).toBe('Hotel Argos');
+  });
+
+  it('avisa que devolver más tarde que el retiro cobra un día más', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await avanzarHasta(user, 2);
+
+    // Retiro 10:00 (default); la devolución a las 12:30.
+    const horas = screen.getAllByDisplayValue('10:00');
+    // `fireEvent` y no `user.type`: jsdom no tipea en un `<input type="time">`.
+    fireEvent.change(horas[1], { target: { value: '12:30' } });
+
+    expect(screen.getByText(/Devuelve 2 h 30 min después del horario de retiro: se cobra 1 día más/)).toBeInTheDocument();
+    expect(screen.getByText(/\(2 días\)/)).toBeInTheDocument();
+  });
+
+  it('ya no hay tilde de late check-in', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await avanzarHasta(user, 2);
+    expect(screen.queryByText(/late check-in/i)).not.toBeInTheDocument();
   });
 });

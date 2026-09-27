@@ -13,8 +13,10 @@ import { useConfiguracion } from '@/hooks/useConfiguracion';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
 import api from '@/lib/api';
 import {
-  extractError, formatDate, formatDocumento, formatMiles, mensajeSinRespuesta, redondear2, sinRespuesta,
+  codigoDeError, extractError, fechaLocal, formatDate, formatDocumento, formatMiles, hoyLocal, irAlError,
+  mensajeSinRespuesta, redondear2, sinRespuesta,
 } from '@/lib/utils';
+import { avisoDiaExtra, diasFacturables } from '@/lib/dias';
 import type { ApiResponse, Cliente, Reserva, ReservaCreate } from '@/types';
 
 interface Props {
@@ -27,12 +29,16 @@ interface Props {
 
 const LUGARES_FALLBACK = ['Paraguay 241', 'Alsina 350', 'Aeropuerto Comandante Espora'];
 
-function hoy() { return new Date().toISOString().split('T')[0]; }
+// Hoy en hora local (`toISOString()` es UTC: después de las 21:00 ya es mañana).
+function hoy() { return hoyLocal(); }
 function sumarDias(iso: string, dias: number): string {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + dias);
-  return d.toISOString().split('T')[0];
+  return fechaLocal(d);
 }
+
+/** Por debajo de un peso no es un descuento. Igual que el backend y el wizard. */
+const TOLERANCIA_DESCUENTO = 1;
 
 /**
  * El camino corto: cargar lo mínimo y salir con el contrato en la mano.
@@ -103,29 +109,44 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
   // el mostrador el auto sale y vuelve al mismo lado, y partirlo en dos
   // agregaría un paso al camino corto. Si difieren, se corrige editando la
   // reserva, igual que la garantía o la condición de pago.
-  const [lugar, setLugar] = useState('');
-  const [esOtro, setEsOtro] = useState(false);
-  const lugarElegido = (esOtro ? lugar : lugar || lugares[0] || '').trim();
+  //
+  // **Ya no hay botón "Otro"** (plan 27/09, txt 4): el campo de texto está
+  // siempre a la vista y los botones lo completan. `null` es "no lo tocaron":
+  // vale el primero de la lista, que es el caso de siempre.
+  const [lugar, setLugar] = useState<string | null>(null);
+  const lugarVisible = lugar ?? lugares[0] ?? '';
+  const lugarElegido = lugarVisible.trim();
 
   const [precioTotal, setPrecioTotal] = useState<number | ''>('');
   const [cobertura, setCobertura] = useState<number | ''>('');
+  // El motivo de cobrar menos que el de lista. **Antes esta pantalla no lo
+  // pedía ni lo mandaba**, y el backend lo exige: bajar el precio en el
+  // contrato rápido terminaba en un rechazo sin campo donde contestarlo.
+  const [descuentoMotivo, setDescuentoMotivo] = useState('');
+  const [motivoPedidoPorServidor, setMotivoPedidoPorServidor] = useState(false);
   const [error, setError] = useState('');
+
+  /** Muestra el error y lleva la vista al campo que lo resuelve. */
+  function fallar(mensaje: string, campo?: string) {
+    setError(mensaje);
+    irAlError(campo);
+  }
 
   /** La reserva creada. Mientras es `null`, se está cargando el formulario. */
   const [reservaId, setReservaId] = useState<number | null>(null);
 
   const clienteElegido = clientesData?.data?.find(c => String(c.id) === clienteId);
   const vehiculos = vehiculosData?.data ?? [];
-  const coberturas = catalogoAdicionales.filter(a => a.grupo === 'cobertura' && a.activo);
+  // Las incluidas (la Exención por Daños, LDW) no son una opción: vienen con
+  // el alquiler. Ofrecerlas en el desplegable hacía que el contrato las
+  // imprimiera dos veces (plan 27/09, txt 5).
+  const coberturas = catalogoAdicionales.filter(a => a.grupo === 'cobertura' && a.activo && !a.incluido);
+  const coberturasIncluidas = catalogoAdicionales.filter(a => a.grupo === 'cobertura' && a.activo && a.incluido);
 
-  const duracionDias = useMemo(() => {
-    if (!fechaInicio || !fechaFin || fechaFin < fechaInicio) return 0;
-    // El mismo día es un día de alquiler, no cero.
-    return Math.max(1, Math.round(
-      (new Date(`${fechaFin}T12:00:00`).getTime() - new Date(`${fechaInicio}T12:00:00`).getTime())
-      / 86400000,
-    ));
-  }, [fechaInicio, fechaFin]);
+  // El mismo día es un día de alquiler, no cero; y devolver una hora o más
+  // después del horario de retiro suma uno (A1, `lib/dias.ts`).
+  const duracionDias = diasFacturables(fechaInicio, horaInicio, fechaFin, horaFin);
+  const avisoDiaDeMas = avisoDiaExtra(fechaInicio, horaInicio, fechaFin, horaFin);
 
   // El precio lo sugiere el mismo motor que usa el wizard y el backend al
   // grabar: sin esto, el camino rápido daría precios distintos que el largo.
@@ -133,30 +154,40 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
     vehiculoId && duracionDias > 0
       ? {
           fecha_inicio: fechaInicio, fecha_fin: fechaFin,
+          hora_inicio: `${horaInicio}:00`, hora_fin: `${horaFin}:00`,
           vehiculo_id: Number(vehiculoId), categoria_id: null,
           canal: 'mostrador', adicionales: [], fecha_nacimiento: null,
         }
       : null,
   );
   const sugerido = cotizacion ? Number(cotizacion.subtotal_vehiculo ?? cotizacion.total ?? 0) : null;
+  // Misma comparación que el backend: un peso o más por debajo del de lista.
+  const esDescuento = sugerido !== null && sugerido > 0 && precioTotal !== ''
+    && sugerido - Number(precioTotal) >= TOLERANCIA_DESCUENTO;
+  const pideMotivo = esDescuento || motivoPedidoPorServidor;
 
   async function crear() {
     setError('');
     if (!clienteId && busqueda.trim().length < 3) {
-      setError('Elegí un cliente de la lista, o escribí su nombre para darlo de alta.');
+      fallar('Elegí un cliente de la lista, o escribí su nombre para darlo de alta.', 'cliente');
       return;
     }
-    if (!vehiculoId) { setError('Elegí el auto: el contrato tiene que decir cuál se entrega.'); return; }
+    if (!vehiculoId) { fallar('Elegí el auto: el contrato tiene que decir cuál se entrega.', 'vehiculo'); return; }
     if (!devolucionPosterior) {
-      setError(
+      fallar(
         fechaFin === fechaInicio
           ? 'Si se devuelve el mismo día, la hora de devolución tiene que ser posterior a la de retiro.'
           : 'La devolución tiene que ser posterior al retiro.',
+        'fecha_fin',
       );
       return;
     }
-    if (!lugarElegido) { setError('Escribí el lugar de retiro y devolución.'); return; }
-    if (!precioTotal || Number(precioTotal) <= 0) { setError('Falta el precio.'); return; }
+    if (!lugarElegido) { fallar('Escribí el lugar de retiro y devolución.', 'lugar'); return; }
+    if (!precioTotal || Number(precioTotal) <= 0) { fallar('Falta el precio.', 'precio'); return; }
+    if (pideMotivo && !descuentoMotivo.trim()) {
+      fallar('El precio es menor al de lista: indicá el motivo.', 'descuento_motivo');
+      return;
+    }
 
     // Fuera del `try` para que un reintento lo tenga a mano: si la reserva se
     // cae después de dar de alta al cliente, apretar de nuevo no puede volver
@@ -190,6 +221,10 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
         lugar_devolucion: lugarElegido,
         precio_total: Number(precioTotal),
         adicionales: cobertura === '' ? [] : [{ adicional_id: Number(cobertura), cantidad: 1 }],
+        descuento_motivo: descuentoMotivo.trim() || null,
+        // El late check-in manual ya no existe (A1): el horario se cobra solo.
+        late_checkout: false,
+        cargo_late_checkout: 0,
         // Contado al entregar: es lo que pasa en un contrato de mostrador. Si
         // fuera otra cosa, se corrige editando la reserva.
         condicion_pago: 'contado',
@@ -247,7 +282,15 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
         );
         return;
       }
-      setError(extractError(err));
+      // El precio de lista del servidor puede diferir del sugerido que se ve
+      // (se cotizó con otros datos, o la cotización no había llegado): si pide
+      // motivo, aparece el campo y se va ahí.
+      if (codigoDeError(err) === 'descuento_sin_motivo') {
+        setMotivoPedidoPorServidor(true);
+        fallar(extractError(err), 'descuento_motivo');
+        return;
+      }
+      fallar(extractError(err));
     }
   }
 
@@ -307,6 +350,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                 <div className="relative">
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
                   <input
+                    data-campo="cliente"
                     value={busqueda}
                     onChange={e => { setBusqueda(e.target.value); setClienteId(''); setListaAbierta(true); }}
                     onFocus={() => setListaAbierta(true)}
@@ -361,7 +405,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                 <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                   <Car className="w-4 h-4 text-slate-400" /> Auto *
                 </label>
-                <select value={vehiculoId} onChange={e => setVehiculoId(e.target.value)}
+                <select data-campo="vehiculo" value={vehiculoId} onChange={e => setVehiculoId(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
                   <option value="">Elegí el auto que se entrega</option>
                   {vehiculos.filter(v => v.destino !== 'uber').map(v => (
@@ -392,7 +436,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                     <Calendar className="w-4 h-4 text-slate-400" /> Devolución *
                     {duracionDias > 0 && <span className="text-primary font-normal">({duracionDias} día{duracionDias !== 1 ? 's' : ''})</span>}
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2" data-campo="fecha_fin">
                     <input type="date" value={fechaFin} min={fechaInicio}
                       onChange={e => setFechaFin(e.target.value)}
                       className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
@@ -402,6 +446,11 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                   {fechaInicio && fechaFin && !devolucionPosterior && (
                     <p className="text-[11px] leading-snug text-amber-700">
                       La devolución tiene que ser después del retiro. Si es el mismo día, poné una hora más tarde.
+                    </p>
+                  )}
+                  {devolucionPosterior && avisoDiaDeMas && (
+                    <p className="text-xs leading-snug text-sky-800 bg-sky-50 border border-sky-200 rounded-md px-2 py-1">
+                      {avisoDiaDeMas}
                     </p>
                   )}
                 </div>
@@ -415,36 +464,25 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                 <div className="flex gap-1.5 flex-wrap">
                   {lugares.map(l => (
                     <button key={l} type="button"
-                      onClick={() => { setLugar(l); setEsOtro(false); }}
+                      onClick={() => setLugar(l)}
                       className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                        !esOtro && lugarElegido === l
+                        lugarElegido === l
                           ? 'bg-primary/15 border-primary/35 text-primary'
                           : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10'
                       }`}>
                       {l}
                     </button>
                   ))}
-                  <button type="button"
-                    onClick={() => { setEsOtro(true); setLugar(''); }}
-                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                      esOtro
-                        ? 'bg-primary/15 border-primary/35 text-primary'
-                        : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10'
-                    }`}>
-                    Otro
-                  </button>
                 </div>
-                {esOtro && (
-                  <input type="text" value={lugar} onChange={e => setLugar(e.target.value)}
-                    placeholder="Dirección específica"
-                    autoFocus
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                )}
+                <input type="text" value={lugarVisible} onChange={e => setLugar(e.target.value)}
+                  data-campo="lugar"
+                  placeholder="O escribí otra dirección"
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
               </div>
 
               {/* Precio y cobertura */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="space-y-1.5">
+                <div className="space-y-1.5" data-campo="precio">
                   <label className="text-sm font-semibold text-slate-700">Precio total *</label>
                   <InputMoneda value={precioTotal} onChange={setPrecioTotal} placeholder="140.000"
                     className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
@@ -456,12 +494,25 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                       {duracionDias > 0 && ` (${formatMiles(sugerido / duracionDias)}/día)`}
                     </button>
                   )}
+                  {/* Compacto a propósito: una línea, no un cartel. Aparece
+                      sólo cuando el precio queda por debajo del de lista, que
+                      es cuando el backend lo exige. */}
+                  {pideMotivo && (
+                    <input
+                      data-campo="descuento_motivo"
+                      value={descuentoMotivo}
+                      onChange={e => setDescuentoMotivo(e.target.value)}
+                      placeholder="Motivo del precio menor (queda auditado) *"
+                      className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-slate-800 text-sm placeholder:text-amber-700/70 focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-semibold text-slate-700">Cobertura</label>
                   <select value={cobertura} onChange={e => setCobertura(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
-                    <option value="">Sólo el seguro obligatorio</option>
+                    <option value="">
+                      {coberturasIncluidas.length ? 'Sin cobertura adicional' : 'Sólo el seguro obligatorio'}
+                    </option>
                     {coberturas.map(c => (
                       <option key={c.id} value={c.id}>
                         {c.nombre}
@@ -470,11 +521,16 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                       </option>
                     ))}
                   </select>
+                  {coberturasIncluidas.length > 0 && (
+                    <p className="text-xs text-slate-600">
+                      Incluye: <strong>{coberturasIncluidas.map(c => c.nombre).join(', ')}</strong>
+                    </p>
+                  )}
                 </div>
               </div>
 
               {error && (
-                <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700 flex items-center gap-2">
+                <div data-error-banner className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
                   <span>{error}</span>
                 </div>

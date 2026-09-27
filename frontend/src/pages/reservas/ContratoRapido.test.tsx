@@ -1,5 +1,6 @@
 /**
- * El contrato rápido: el lugar "Otro", y la respuesta que no llega.
+ * El contrato rápido: el lugar, el motivo de un precio menor, y la respuesta
+ * que no llega.
  *
  * Dos reportes del mostrador, del mismo día:
  *
@@ -70,17 +71,19 @@ async function cargarLoMinimo(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('El lugar de retiro y devolución', () => {
-  it('"Otro" abre un campo libre y es lo que viaja en la reserva', async () => {
+  // Plan 27/09 (txt 4): ya no hay botón "Otro". El campo de texto está siempre
+  // a la vista, los botones lo completan, y cualquier otra dirección se
+  // escribe directo.
+  it('una dirección escrita a mano es lo que viaja en la reserva', async () => {
     const user = userEvent.setup();
     createReserva.mockResolvedValue({ reserva: { id: 41 }, warnings: [] });
     render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
 
     await cargarLoMinimo(user);
-    await user.click(screen.getByRole('button', { name: 'Otro' }));
-    await user.type(
-      screen.getByPlaceholderText('Dirección específica'),
-      'Villa Bordeu, ruta 33 km 4',
-    );
+    expect(screen.queryByRole('button', { name: 'Otro' })).toBeNull();
+    const campo = screen.getByPlaceholderText(/O escribí otra dirección/);
+    await user.clear(campo);
+    await user.type(campo, 'Villa Bordeu, ruta 33 km 4');
     await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
 
     await waitFor(() => expect(createReserva).toHaveBeenCalled());
@@ -89,12 +92,21 @@ describe('El lugar de retiro y devolución', () => {
     expect(payload.lugar_devolucion).toBe('Villa Bordeu, ruta 33 km 4');
   });
 
-  it('"Otro" vacío no deja crear: el contrato tiene que decir dónde', async () => {
+  it('los botones completan el campo', async () => {
+    const user = userEvent.setup();
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Alsina 350' }));
+    expect((screen.getByPlaceholderText(/O escribí otra dirección/) as HTMLInputElement).value)
+      .toBe('Alsina 350');
+  });
+
+  it('el campo vacío no deja crear: el contrato tiene que decir dónde', async () => {
     const user = userEvent.setup();
     render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
 
     await cargarLoMinimo(user);
-    await user.click(screen.getByRole('button', { name: 'Otro' }));
+    await user.clear(screen.getByPlaceholderText(/O escribí otra dirección/));
     await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
 
     expect(await screen.findByText(/Escribí el lugar de retiro/)).toBeTruthy();
@@ -111,6 +123,39 @@ describe('El lugar de retiro y devolución', () => {
 
     await waitFor(() => expect(createReserva).toHaveBeenCalled());
     expect(createReserva.mock.calls[0][0].lugar_entrega).toBe('Paraguay 241');
+  });
+});
+
+describe('El motivo de un precio menor', () => {
+  function descuentoSinMotivo() {
+    const err = new AxiosError('Request failed with status code 422', 'ERR_BAD_REQUEST');
+    err.response = {
+      status: 422, statusText: 'Unprocessable', headers: {}, config: {} as never,
+      data: { detail: '[descuento_sin_motivo] El precio es menor al de lista: indicá el motivo.' },
+    };
+    return err;
+  }
+
+  it('si el backend lo pide, aparece el campo y viaja en el reintento', async () => {
+    // Antes el contrato rápido no tenía dónde escribirlo: bajar el precio
+    // terminaba en un rechazo sin salida.
+    const user = userEvent.setup();
+    createReserva
+      .mockRejectedValueOnce(descuentoSinMotivo())
+      .mockResolvedValueOnce({ reserva: { id: 43 }, warnings: [] });
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+
+    await cargarLoMinimo(user);
+    await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
+
+    // El mensaje, sin el código entre corchetes.
+    expect(await screen.findByText('El precio es menor al de lista: indicá el motivo.')).toBeTruthy();
+    const motivo = screen.getByPlaceholderText(/Motivo del precio menor/);
+    await user.type(motivo, 'Cliente frecuente');
+    await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
+
+    await waitFor(() => expect(createReserva).toHaveBeenCalledTimes(2));
+    expect(createReserva.mock.calls[1][0].descuento_motivo).toBe('Cliente frecuente');
   });
 });
 
