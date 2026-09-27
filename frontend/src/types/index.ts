@@ -1416,15 +1416,6 @@ export interface NotificacionesResponse {
   urgentes: number;
 }
 
-export interface PreferenciaNotificacion {
-  id: number;
-  usuario_id: number;
-  tipo_regla: string;
-  canales: string[];
-  anticipacion_dias: number | null;
-  activo: boolean;
-}
-
 // ─── Configuración (Fase 3, ítem 40) ─────────────────────────────────────────
 
 export interface ConfiguracionItem {
@@ -1994,7 +1985,6 @@ export interface EstadoIntegracionEmail {
   remitente_de_prueba: boolean;
   /** Hay RESEND_API_KEY cargada. */
   configurado: boolean;
-  destinatarios_equipo: string[];
   /** `tipo` → nombre para mostrar. */
   tipos: Record<string, string>;
 }

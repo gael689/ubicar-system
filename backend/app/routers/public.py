@@ -701,15 +701,9 @@ def crear_solicitud_sin_cupo(payload: SolicitudSinCupoRequest, db: Session = Dep
 
     # Aviso en el acto: esperar al barrido de las 08:00 significa que una
     # solicitud del sábado a la tarde queda sin respuesta hasta el lunes.
+    # Sólo en la campana: al equipo no se le manda mail (pedido del cliente,
+    # 27/09/2026).
     NotificacionService(db).avisar_reserva_web(reserva)
-    # Plan de conexión (13/08), punto 1.4: antes esto avisaba sólo por
-    # campana. Un contacto sin cupo es una venta a recuperar — tiene que
-    # salir el mail igual que los otros dos caminos de reserva web.
-    try:
-        from app.services.email_reservas import avisar_al_equipo_solicitud_sin_cupo
-        avisar_al_equipo_solicitud_sin_cupo(db, reserva)
-    except Exception:
-        logger.exception("[Solicitudes] falló el mail de la solicitud sin cupo #%s", reserva.id)
     db.commit()
 
     return ok(
@@ -1178,8 +1172,12 @@ def _avisar_contrato_firmado_en_segundo_plano(contrato_id: int) -> None:
 
 def _avisar_contrato_firmado(db: Session, contrato) -> None:
     """
-    Avisa que el contrato se firmó: campana adentro, mail con el PDF adjunto
-    para el equipo y para el cliente.
+    Deja registrado que el contrato se firmó y le manda al cliente la copia
+    con el PDF adjunto.
+
+    La notificación nace **ya resuelta** (sólo historial): una firma es una
+    buena noticia que no pide hacer nada, y en la campana competía con los
+    avisos que sí. Al equipo no se le manda mail.
 
     **Nada de esto puede voltear la firma.** El cliente ya firmó; que falle un
     mail no puede devolver un error que lo deje pensando que no quedó.
@@ -1189,7 +1187,7 @@ def _avisar_contrato_firmado(db: Session, contrato) -> None:
 
     reserva = contrato.reserva
     try:
-        NotificacionService(db).generar_una({
+        NotificacionService(db).generar_una(solo_historial=True, candidato={
             "tipo": "contrato_firmado",
             "titulo": "Contrato firmado por el cliente",
             "descripcion": (
@@ -1463,18 +1461,14 @@ def crear_solicitud_contacto(
     db.add(solicitud)
     db.flush()
 
-    # El aviso y el mail no pueden voltear el guardado: si falla el correo, la
-    # solicitud ya está en la base y el mostrador la ve igual en la bandeja.
+    # El aviso no puede voltear el guardado: si falla, la solicitud ya está en
+    # la base y el mostrador la ve igual en la bandeja. Va sólo a la campana:
+    # al equipo no se le manda mail.
     try:
         from app.services.notificacion_service import NotificacionService
         NotificacionService(db).avisar_solicitud_contacto(solicitud)
     except Exception:
         logger.exception("[Contacto] falló el aviso de la solicitud #%s", solicitud.id)
-    try:
-        from app.services.email_reservas import avisar_al_equipo_solicitud_contacto
-        avisar_al_equipo_solicitud_contacto(db, solicitud)
-    except Exception:
-        logger.exception("[Contacto] falló el mail de la solicitud #%s", solicitud.id)
 
     db.commit()
     return ok(

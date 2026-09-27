@@ -68,10 +68,10 @@ class Settings(BaseSettings):
     # así que hoy este valor sólo puede ser `onboarding@resend.dev` y todos los
     # mails a clientes se registran como `omitido`.
     from_email: str = "noreply@ubicar-rent.com.ar"
-    # Destinatarios del digest matutino de notificaciones, separados por coma.
-    # Vacío = no se envía. Sin usuarios reales todavía (pre-Clerk), es la
-    # única forma de configurar a quién le llega. También es el respaldo de
-    # los avisos internos si `web.emails_aviso_reserva` está vacío.
+    # **Sin uso desde el 27/09/2026**: era a quién le llegaba el resumen de las
+    # 08:00 y los avisos internos por mail, que se sacaron (al equipo no se le
+    # manda mail, todo queda en la campana). Se deja declarada para que un
+    # entorno que todavía la tenga cargada no falle al arrancar.
     notificaciones_digest_destinatarios: str = ""
 
     # Pagos online (Mercado Pago — migración 051)

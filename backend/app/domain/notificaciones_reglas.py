@@ -115,40 +115,108 @@ def checkin_vencido(db: Session, hoy: date) -> list[dict]:
     return items
 
 
-def contrato_no_firmado_entrega_hoy(db: Session, hoy: date) -> list[dict]:
+DIAS_AVISO_CONTRATO_SIN_FIRMAR = 3
+
+
+def contrato_sin_firmar(db: Session, hoy: date) -> list[dict]:
+    """
+    El contrato de una entrega cercana (o de hoy) sigue sin firma: **un solo
+    aviso por reserva**, que sube de urgencia a medida que se acerca el día.
+
+    Antes eran dos reglas que se pisaban el día de la entrega:
+    `contrato_sin_firmar_entrega_proxima` (entidad contrato, mientras el auto
+    no salió) y `contrato_no_firmado` (entidad alquiler, el día que salió). El
+    mismo contrato sin firmar aparecía dos veces en la campana, o se
+    reemplazaba uno por otro a mitad del día con un aviso "nuevo". Ahora las
+    dos puntas son la misma fila (misma clave: tipo + reserva + fecha de
+    entrega) y el motor sólo le actualiza el texto y la urgencia.
+
+    - Entrega en 2 o 3 días: `media` — todavía hay margen para reenviar el link.
+    - Mañana, hoy, o ya salió hoy sin firma: `alta`.
+
+    Desde el día siguiente a la salida lo toma `contrato_sin_firmar_auto_afuera`,
+    que es el crítico y queda aparte. Si no hay ningún contrato emitido, el
+    que avisa es `contrato_sin_emitir`.
+    """
+    limite = hoy + timedelta(days=DIAS_AVISO_CONTRATO_SIN_FIRMAR)
+    avisos: dict[int, dict] = {}
+
+    # El auto todavía no salió: contrato emitido, sin firmar, entrega cerca.
+    contratos = (
+        db.query(Contrato)
+        .join(Reserva, Reserva.id == Contrato.reserva_id)
+        .filter(
+            Contrato.anulado.is_(False),
+            Contrato.activo.is_(True),
+            Contrato.firmado.is_(False),
+            Reserva.estado.in_(["pendiente", "confirmada"]),
+            Reserva.fecha_inicio >= hoy,
+            Reserva.fecha_inicio <= limite,
+        )
+        .all()
+    )
+    for c in contratos:
+        r = c.reserva
+        dias = (r.fecha_inicio - hoy).days
+        cuando = "hoy" if dias == 0 else "mañana" if dias == 1 else f"en {dias} días"
+        avisos[r.id] = {
+            "tipo": "contrato_no_firmado",
+            "titulo": f"Contrato sin firmar — entrega {cuando}",
+            "descripcion": (
+                f"{c.numero_formateado} — {_cliente_nombre(r.cliente)} — "
+                f"entrega {r.fecha_inicio.strftime('%d/%m')}"
+            ),
+            "urgencia": "alta" if dias <= 1 else "media",
+            "entidad_tipo": "reserva",
+            "entidad_id": r.id,
+            "url_destino": f"/reservas?reserva={r.id}",
+            "fecha_objetivo": r.fecha_inicio,
+        }
+
+    # El auto salió hoy y el contrato sigue sin firma. Sólo si hay contrato
+    # emitido: sin contrato el aviso es `contrato_sin_emitir`, no éste.
+    con_contrato = {
+        rid for (rid,) in db.query(Contrato.reserva_id).filter(Contrato.anulado.is_(False)).all()
+    }
     alquileres = (
         db.query(Alquiler)
         .join(Reserva, Reserva.id == Alquiler.reserva_id)
-        .filter(Alquiler.checkout_fecha == hoy, Alquiler.contrato_firmado.is_(False))
+        .filter(
+            Alquiler.checkout_fecha == hoy,
+            Alquiler.checkin_fecha.is_(None),
+            Alquiler.contrato_firmado.is_(False),
+        )
         .all()
     )
-    return [
-        {
+    for a in alquileres:
+        if a.reserva_id not in con_contrato:
+            continue
+        r = a.reserva
+        avisos[r.id] = {
             "tipo": "contrato_no_firmado",
-            "titulo": "Contrato sin firmar",
-            "descripcion": f"Alquiler #{a.id} — {_vehiculo_desc(a.reserva.vehiculo)} — {_cliente_nombre(a.reserva.cliente)} entregado hoy sin contrato firmado",
+            "titulo": "Contrato sin firmar — el auto salió hoy",
+            "descripcion": (
+                f"Reserva #{r.id} — {_vehiculo_desc(r.vehiculo)} — "
+                f"{_cliente_nombre(r.cliente)} se entregó hoy sin contrato firmado"
+            ),
             "urgencia": "alta",
-            "entidad_tipo": "alquiler",
-            "entidad_id": a.id,
-            "url_destino": "/reservas",
-            "fecha_objetivo": hoy,
+            "entidad_tipo": "reserva",
+            "entidad_id": r.id,
+            "url_destino": f"/reservas?reserva={r.id}",
+            "fecha_objetivo": r.fecha_inicio,
         }
-        for a in alquileres
-    ]
+    return list(avisos.values())
 
 
 def contrato_sin_firmar_auto_afuera(db: Session, hoy: date) -> list[dict]:
     """
     El auto ya salió, el contrato está emitido y **sigue sin firma**.
 
-    **Era el agujero de este catálogo.** Las tres reglas de contrato que había
-    dejaban de avisar justo cuando el riesgo es máximo:
+    **Era el agujero de este catálogo.** Las otras reglas de contrato dejan de
+    avisar justo cuando el riesgo es máximo:
 
-    - `contrato_no_firmado` mira `checkout_fecha == hoy`: avisa **el día de la
-      entrega y nunca más**. Un auto entregado el lunes sin firma deja de
-      avisarse el martes.
-    - `contrato_sin_firmar_entrega_proxima` filtra `fecha_inicio >= hoy`: sólo
-      mira lo que **todavía no salió**.
+    - `contrato_sin_firmar` mira las entregas próximas y la de **hoy**: un
+      auto entregado el lunes sin firma deja de avisarse ahí el martes.
     - `contrato_sin_emitir` sólo aplica si no hay ningún contrato.
 
     O sea que el caso peor —auto en la calle, sin papel firmado, y ya pasó el
@@ -190,39 +258,59 @@ def contrato_sin_firmar_auto_afuera(db: Session, hoy: date) -> list[dict]:
 
 # ── Cobranzas y finanzas ────────────────────────────────────────────────────
 
-def echeq_proximo_t2(db: Session, hoy: date) -> list[dict]:
-    objetivo = hoy + timedelta(days=2)
-    echeqs = db.query(Echeq).filter(Echeq.fecha_cobro == objetivo, Echeq.estado == "en_cartera", Echeq.activo == True).all()
-    return [
-        {
+DIAS_AVISO_ECHEQ = 2
+URL_ECHEQS = "/finanzas?tab=echeqs"
+
+
+def _monto(valor) -> str:
+    """`140000.00` → `$140.000`: el aviso lo lee una persona, no un sistema."""
+    entero = int(Decimal(str(valor or 0)).quantize(Decimal("1")))
+    return "$" + f"{entero:,}".replace(",", ".")
+
+
+def echeq_por_cobrar(db: Session, hoy: date) -> list[dict]:
+    """
+    Un echeq en cartera que se cobra en los próximos días: **un aviso por
+    cheque**, escalonado.
+
+    Antes eran dos reglas (`echeq_proximo` a los 2 días y `echeq_vence_hoy` el
+    día del cobro) que para el mismo cheque daban dos avisos distintos en días
+    casi seguidos, con el del medio resuelto solo. Ahora es un solo tipo con
+    dos escalones: "se cobra en N días" (`alta`) y "se cobra hoy" (`critica`).
+    El escalón nuevo reemplaza al anterior (ver `TIPOS_ESCALONADOS` en el
+    service), así que en la campana hay una sola fila por cheque. Pasado el
+    día, si sigue en cartera, lo toma `echeq_sin_acreditar`.
+    """
+    limite = hoy + timedelta(days=DIAS_AVISO_ECHEQ)
+    echeqs = (
+        db.query(Echeq)
+        .filter(
+            Echeq.fecha_cobro >= hoy,
+            Echeq.fecha_cobro <= limite,
+            Echeq.estado == "en_cartera",
+            Echeq.activo == True,  # noqa: E712
+        )
+        .all()
+    )
+    avisos = []
+    for e in echeqs:
+        dias = (e.fecha_cobro - hoy).days
+        es_hoy = dias == 0
+        avisos.append({
             "tipo": "echeq_proximo",
-            "titulo": "Echeq próximo a cobrar",
-            "descripcion": f"Echeq de {e.contraparte} — ${e.monto} — se cobra el {e.fecha_cobro}",
-            "urgencia": "alta",
+            "titulo": "Echeq: se cobra hoy" if es_hoy else "Echeq próximo a cobrar",
+            "descripcion": (
+                f"Echeq de {e.contraparte} — {_monto(e.monto)} — "
+                + ("se cobra hoy" if es_hoy else f"se cobra el {e.fecha_cobro.strftime('%d/%m')}")
+            ),
+            "urgencia": "critica" if es_hoy else "alta",
             "entidad_tipo": "echeq",
             "entidad_id": e.id,
-            "url_destino": "/caja",
+            "url_destino": URL_ECHEQS,
             "fecha_objetivo": e.fecha_cobro,
-        }
-        for e in echeqs
-    ]
-
-
-def echeq_vence_hoy(db: Session, hoy: date) -> list[dict]:
-    echeqs = db.query(Echeq).filter(Echeq.fecha_cobro == hoy, Echeq.estado == "en_cartera", Echeq.activo == True).all()
-    return [
-        {
-            "tipo": "echeq_vence_hoy",
-            "titulo": "Echeq vence hoy",
-            "descripcion": f"Echeq de {e.contraparte} — ${e.monto} — vence hoy",
-            "urgencia": "critica",
-            "entidad_tipo": "echeq",
-            "entidad_id": e.id,
-            "url_destino": "/caja",
-            "fecha_objetivo": e.fecha_cobro,
-        }
-        for e in echeqs
-    ]
+            "escalon": "hoy" if es_hoy else "proximo",
+        })
+    return avisos
 
 
 def echeq_sin_acreditar(db: Session, hoy: date) -> list[dict]:
@@ -231,11 +319,14 @@ def echeq_sin_acreditar(db: Session, hoy: date) -> list[dict]:
         {
             "tipo": "echeq_sin_acreditar",
             "titulo": "Echeq sin acreditar",
-            "descripcion": f"Echeq de {e.contraparte} — ${e.monto} — debía cobrarse el {e.fecha_cobro} y sigue en cartera",
+            "descripcion": (
+                f"Echeq de {e.contraparte} — {_monto(e.monto)} — debía cobrarse el "
+                f"{e.fecha_cobro.strftime('%d/%m')} y sigue en cartera"
+            ),
             "urgencia": "critica",
             "entidad_tipo": "echeq",
             "entidad_id": e.id,
-            "url_destino": "/caja",
+            "url_destino": URL_ECHEQS,
             "fecha_objetivo": e.fecha_cobro,
         }
         for e in echeqs
@@ -948,50 +1039,6 @@ def reserva_web_esperando_transferencia(db: Session, hoy: date) -> list[dict]:
     ]
 
 
-def contrato_sin_firmar_entrega_proxima(db: Session, hoy: date) -> list[dict]:
-    """
-    Plan de conexión (13/08) — cierra C-10.
-
-    El catálogo ya cubre las dos puntas: `contrato_no_firmado_entrega_hoy`
-    mira las entregas de **hoy**, `contrato_sin_emitir` mira el auto que **ya
-    salió** sin contrato. Faltaba el medio: un contrato **emitido** —desde
-    D-47, eso puede pasar apenas se asigna el vehículo, antes de la entrega—
-    que sigue sin firmar con la entrega a 3 días o menos, que es cuando
-    todavía hay margen para mandar el link de nuevo o coordinar la firma en
-    el mostrador antes de que el cliente aparezca.
-    """
-    limite = hoy + timedelta(days=3)
-    contratos = (
-        db.query(Contrato)
-        .join(Reserva, Reserva.id == Contrato.reserva_id)
-        .filter(
-            Contrato.anulado.is_(False),
-            Contrato.activo.is_(True),
-            Contrato.firmado.is_(False),
-            Reserva.estado.in_(["pendiente", "confirmada"]),
-            Reserva.fecha_inicio >= hoy,
-            Reserva.fecha_inicio <= limite,
-        )
-        .all()
-    )
-    return [
-        {
-            "tipo": "contrato_sin_firmar_entrega_proxima",
-            "titulo": f"Contrato sin firmar — entrega en {(c.reserva.fecha_inicio - hoy).days} día(s)",
-            "descripcion": (
-                f"{c.numero_formateado} — {_cliente_nombre(c.reserva.cliente)} — "
-                f"entrega {c.reserva.fecha_inicio.strftime('%d/%m')}"
-            ),
-            "urgencia": "alta",
-            "entidad_tipo": "contrato",
-            "entidad_id": c.id,
-            "url_destino": f"/reservas?reserva={c.reserva_id}",
-            "fecha_objetivo": c.reserva.fecha_inicio,
-        }
-        for c in contratos
-    ]
-
-
 # ── Falta completar ──────────────────────────────────────────────────────────
 #
 # Esta familia es distinta al resto del catálogo. Las demás reglas miran
@@ -1211,7 +1258,7 @@ def contrato_sin_emitir(db: Session, hoy: date) -> list[dict]:
     """
     El auto está afuera y **no existe ningún contrato**.
 
-    Es distinta de `contrato_no_firmado_entrega_hoy`, que mira las entregas del
+    Es distinta de `contrato_sin_firmar`, que mira las entregas del
     día. Acá el auto ya salió —puede haber sido la semana pasada— y no hay
     contrato ni emitido ni firmado. Es el peor escenario si aparece un daño o
     una multa: no hay nada que oponer.
@@ -1409,9 +1456,8 @@ def datos_por_completar(db: Session, hoy: date) -> list[dict]:
 REGLAS = [
     checkout_pendiente,
     checkin_vencido,
-    contrato_no_firmado_entrega_hoy,
-    echeq_proximo_t2,
-    echeq_vence_hoy,
+    contrato_sin_firmar,
+    echeq_por_cobrar,
     echeq_sin_acreditar,
     cc_vencimiento_proximo,
     cc_vencida,
@@ -1433,7 +1479,6 @@ REGLAS = [
     reserva_web_sin_atender,
     reserva_web_sin_asignar,
     reserva_web_esperando_transferencia,
-    contrato_sin_firmar_entrega_proxima,
     contrato_sin_firmar_auto_afuera,
     fecha_especial_sin_precio,
     contrato_sin_emitir,

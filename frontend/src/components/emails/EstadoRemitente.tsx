@@ -43,8 +43,7 @@ export function EstadoRemitente({ estado }: { estado: EstadoIntegracionEmail | u
           </p>
           <p className="text-sm text-muted-foreground">
             Para activarlos hay que verificar el dominio propio en Resend y cambiar{' '}
-            <code className="font-mono text-xs">FROM_EMAIL</code>. Los avisos internos al equipo sí
-            se intentan.
+            <code className="font-mono text-xs">FROM_EMAIL</code>.
           </p>
         </div>
       </div>
@@ -57,12 +56,12 @@ export function EstadoRemitente({ estado }: { estado: EstadoIntegracionEmail | u
       <p className="text-sm text-foreground">
         Los mails salen desde{' '}
         <span className="font-medium">{estado.remitente}</span>.
-        {estado.destinatarios_equipo.length > 0 && (
-          <span className="text-muted-foreground">
-            {' '}
-            Los avisos internos van a {estado.destinatarios_equipo.join(', ')}.
-          </span>
-        )}
+        {/* Al equipo no se le manda nada por mail: los avisos internos están
+            sólo en la campana. Decirlo evita que alguien los busque en la casilla. */}
+        <span className="text-muted-foreground">
+          {' '}
+          Sólo se les escribe a los clientes; los avisos internos quedan en la campana.
+        </span>
       </p>
     </div>
   );

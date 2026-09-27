@@ -7,8 +7,7 @@ en cualquiera de las dos direcciones:
 - Si deja pasar un mail a un cliente con el remitente de prueba, el sistema
   registra "enviado" y el cliente no recibe nada. Eso es peor que no mandarlo:
   nadie va a ir a buscar el problema.
-- Si frena de más, el equipo deja de recibir los avisos internos y las
-  reservas web se quedan sin atender.
+- Si frena de más, un reintento manual deja de salir.
 
 Corren sin base: `registrar_y_enviar` sólo usa `db.add` y `db.flush`, así que
 una sesión de mentira alcanza y el test no depende de Postgres ni de Resend.
@@ -90,9 +89,9 @@ class TestGuardaDeCliente:
         assert "onboarding@resend.dev" in registro.motivo
         assert "FROM_EMAIL" in registro.motivo
 
-    def test_el_aviso_interno_se_manda_igual(self, svc, monkeypatch):
-        # Al equipo se le intenta siempre: su casilla puede ser la de la cuenta,
-        # y si no lo es queda `fallido` con el error, que es información.
+    def test_un_tipo_que_no_es_de_cliente_se_intenta_igual(self, svc, monkeypatch):
+        # Hoy sólo pasa al reintentar a mano un aviso interno viejo: se intenta,
+        # y si no llega queda `fallido` con el error, que es información.
         _remitente(monkeypatch, "onboarding@resend.dev")
         llamadas = _espiar_envio(monkeypatch)
 
@@ -260,3 +259,47 @@ class TestCatalogoDeTipos:
     def test_todo_tipo_que_va_al_cliente_esta_en_el_catalogo(self):
         # Un tipo fuera de TIPOS queda sin nombre en el panel.
         assert mod.TIPOS_AL_CLIENTE <= set(mod.TIPOS)
+
+
+class TestAlEquipoNoSeLeMandaMail:
+    """
+    27/09/2026: "notificaciones no al mail, sólo en la plataforma". Al equipo
+    no le sale ningún mail — ni el resumen de las 08:00, ni los avisos de
+    reserva web, transferencia, sin cupo, pedido de llamado o contrato
+    firmado. Todo eso vive en la campana. Los mails al cliente siguen.
+    """
+
+    def test_los_tipos_vigentes_son_todos_al_cliente(self):
+        assert set(mod.TIPOS) == set(mod.TIPOS_AL_CLIENTE)
+
+    def test_los_avisos_viejos_siguen_teniendo_nombre_en_el_panel(self, svc, monkeypatch):
+        # Quedan filas viejas en `emails_enviados`: el panel las tiene que nombrar.
+        tipos = svc.estado()["tipos"]
+        assert "reserva_web_equipo" in tipos and "digest" in tipos
+        assert "destinatarios_equipo" not in svc.estado()
+
+    def test_ningun_modulo_arma_un_aviso_interno(self):
+        import pathlib
+        import re
+
+        app = pathlib.Path(mod.__file__).resolve().parents[1]
+        patron = re.compile(r"""tipo\s*=\s*["'](\w+_equipo|digest)["']""")
+        culpables = [
+            str(p.relative_to(app))
+            for p in app.rglob("*.py")
+            if patron.search(p.read_text(encoding="utf-8"))
+        ]
+        assert culpables == []
+
+    def test_la_reserva_pagada_solo_le_escribe_al_cliente(self, monkeypatch):
+        from app.services import email_reservas
+
+        llamados = []
+        monkeypatch.setattr(
+            email_reservas, "confirmar_al_cliente",
+            lambda db, reserva, pago_web: llamados.append(reserva.id) or True,
+        )
+        resultado = email_reservas.notificar_reserva_pagada(None, SimpleNamespace(id=5), None)
+        assert resultado == {"cliente": True}
+        assert llamados == [5]
+        assert not hasattr(email_reservas, "destinatarios_equipo")

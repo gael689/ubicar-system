@@ -36,7 +36,6 @@ class EstadoIntegracionResponse(BaseModel):
     remitente: str
     remitente_de_prueba: bool
     configurado: bool
-    destinatarios_equipo: list[str]
     tipos: dict[str, str]
 
 

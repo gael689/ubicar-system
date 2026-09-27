@@ -21,9 +21,12 @@ una forma que alguien vaya a mirar. Mandarlo igual crearía la peor de las
 situaciones: el sistema diciendo "enviado" y el cliente sin nada. Así que
 mientras el remitente sea de `@resend.dev`, los mails a clientes se registran
 como `omitido`, con el motivo escrito, y el panel lo muestra arriba de todo.
-Los mails internos (al equipo) sí se intentan: la casilla del equipo puede muy
-bien ser la de la cuenta, y si no lo es queda `fallido` con el error de Resend,
-que es información y no silencio.
+Un tipo que no es de cliente (hoy sólo un reintento manual de un aviso interno
+viejo) se intenta igual: si no llega queda `fallido` con el error de Resend.
+
+**Al equipo no se le manda ningún mail** desde el 27/09/2026: las
+notificaciones internas viven sólo en la campana. Los tipos de aviso interno
+que quedaron en la base se listan en `TIPOS_HISTORICOS`.
 
 El día que el dominio esté verificado, cambiar `FROM_EMAIL` alcanza: no hay
 ninguna otra bandera que tocar.
@@ -52,13 +55,22 @@ TIPOS: dict[str, str] = {
     "checkin": "Devolución",
     "oferta": "Oferta o descuento",
     "contrato_firmado": "Contrato firmado",
-    "reserva_web_equipo": "Aviso interno — reserva web",
-    "contrato_firmado_equipo": "Aviso interno — contrato firmado",
-    "digest": "Resumen diario de notificaciones",
+}
+
+# Los avisos internos que se mandaban al equipo hasta el 27/09/2026. Ya no sale
+# ninguno —las notificaciones internas van sólo a la campana—, pero quedan
+# filas viejas en `emails_enviados` y el panel tiene que seguir nombrándolas.
+TIPOS_HISTORICOS: dict[str, str] = {
+    "reserva_web_equipo": "Aviso interno — reserva web (ya no se manda)",
+    "reserva_web_transferencia_equipo": "Aviso interno — transferencia (ya no se manda)",
+    "reserva_web_sin_cupo_equipo": "Aviso interno — sin cupo (ya no se manda)",
+    "solicitud_contacto_equipo": "Aviso interno — pedido de llamado (ya no se manda)",
+    "contrato_firmado_equipo": "Aviso interno — contrato firmado (ya no se manda)",
+    "digest": "Resumen diario (ya no se manda)",
 }
 
 # Cuáles van al cliente. Son los únicos que se frenan con el remitente de
-# prueba: al equipo se le manda igual (ver el docstring del módulo).
+# prueba (ver el docstring del módulo).
 TIPOS_AL_CLIENTE = frozenset(
     {"reserva_confirmada", "checkout", "checkin", "oferta", "contrato_firmado"}
 )
@@ -93,18 +105,8 @@ class EmailService:
             "remitente": settings.from_email,
             "remitente_de_prueba": self.remitente_de_prueba,
             "configurado": self.configurado,
-            "destinatarios_equipo": self._destinatarios_equipo(),
-            "tipos": TIPOS,
+            "tipos": {**TIPOS, **TIPOS_HISTORICOS},
         }
-
-    def _destinatarios_equipo(self) -> list[str]:
-        from app.services.email_reservas import destinatarios_equipo
-
-        try:
-            return destinatarios_equipo(self.db)
-        except Exception:
-            logger.exception("[Email] no se pudieron leer los destinatarios del equipo")
-            return []
 
     def _empresa(self) -> dict:
         """Los datos de la empresa para el pie del mail. Si la configuración no
