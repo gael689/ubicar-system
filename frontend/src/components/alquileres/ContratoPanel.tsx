@@ -1,24 +1,31 @@
 import { useRef, useState } from 'react';
 import {
   FileText, Download, PenLine, Ban, AlertTriangle, Link2, Copy, Check,
-  MessageCircle, Upload, Paperclip, X,
+  MessageCircle, Upload, Paperclip, X, RefreshCw, Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
 import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { SelectorConductores } from '@/components/clientes/SelectorConductores';
+import {
   useContratoDeReserva, usePrepararContrato, useCrearContrato,
   useFirmarContrato, useAnularContrato, descargarPdfContrato,
+  useRegenerarContrato, useCambiarConductores,
   useGenerarLinkFirma, useRevocarLinkFirma, useSubirEscaneoContrato,
   verEscaneoContrato, contratoYaFirmado, type LinkFirma,
 } from '@/hooks/useContratos';
 import { usePagareDeReserva, usePrepararPagare, useCrearPagare } from '@/hooks/usePagares';
 import { LienzoFirma } from '@/components/shared/LienzoFirma';
-import { PagarePanel, FormPagare, datosInicialesPagare, type DatosPagare } from './PagarePanel';
+import {
+  PagarePanel, FormPagare, datosInicialesPagare, faltaParaEmitir, payloadPagare, type DatosPagare,
+} from './PagarePanel';
 import { api } from '@/lib/api';
-import { extractError, formatCurrency, formatDate, sinRespuesta } from '@/lib/utils';
-import type { Contrato, Pagare, PersonaPagare } from '@/types';
+import { extractError, formatCurrency, formatDate, irAlError, sinRespuesta } from '@/lib/utils';
+import type { Contrato, ContratoSnapshot, Pagare, PersonaPagare } from '@/types';
 
 interface Props {
   reservaId: number;
@@ -53,6 +60,7 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
 
   const [firmando, setFirmando] = useState(false);
   const [anulando, setAnulando] = useState(false);
+  const [regenerando, setRegenerando] = useState(false);
 
   if (isLoading) return <Card className="p-5 text-sm text-muted-foreground">Cargando contrato…</Card>;
 
@@ -86,6 +94,10 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
 
         {preparado && <ResumenAnverso snapshot={preparado.snapshot} />}
 
+        {/* Quién maneja, antes de emitir: es lo que el contrato imprime como
+            conductor(es), y cambiarlo después obliga a regenerarlo. */}
+        {preparado && <ConductoresDelContrato reservaId={reservaId} snapshot={preparado.snapshot} />}
+
         {/* ── Pagaré, abajo del contrato ─────────────────────────────
             Se genera en el mismo click y comparte el link. Si faltan las
             tasas en Configuración, se avisa acá y el contrato sale solo. */}
@@ -100,7 +112,6 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
                 className="h-4 w-4 accent-primary"
               />
               Generar también la franquicia
-              <span className="text-xs font-normal text-muted-foreground">— mismo link, misma firma</span>
             </label>
             {(conPagare || pagarePreparado.faltantes.length > 0) && (
               <FormPagare
@@ -119,13 +130,22 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
             if (!preparado) return;
             const incluirPagare = conPagare && !!pagarePreparado && pagarePreparado.faltantes.length === 0;
             const dp = datosPagare ?? datosInicialesPagare(pagarePreparado);
+            // Lo que falta de la franquicia se dice **antes** de emitir el
+            // contrato: si no, sale el contrato solo y la franquicia queda
+            // colgada con un error que ya no está a la vista.
+            const falta = incluirPagare ? faltaParaEmitir(pagarePreparado, dp) : null;
+            if (falta) {
+              toast.error(falta);
+              irAlError(Number(dp.monto) > 0 ? 'pagare_deudor' : 'pagare_monto');
+              return;
+            }
             crear.mutate(
               { reserva_id: reservaId, snapshot: preparado.snapshot },
               {
                 onSuccess: () => {
                   if (!incluirPagare) return;
                   crearPagare.mutate(
-                    { reserva_id: reservaId, monto: parseFloat(dp.monto), codeudores: dp.codeudores },
+                    payloadPagare(reservaId, dp),
                     {
                       // El contrato ya quedó: el pagaré se puede reintentar
                       // desde el bloque que aparece abajo del contrato.
@@ -217,6 +237,13 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
               {contrato.firmado ? 'Firmar la franquicia en el mostrador' : 'Firmar en el mostrador'}
             </Button>
           )}
+          {/* Regenerar = anular + emitir en un paso, con los datos de hoy.
+              Es el camino para cambiar el conductor de un contrato ya hecho. */}
+          {!contrato.anulado && (
+            <Button size="sm" variant="outline" onClick={() => setRegenerando(true)}>
+              <RefreshCw className="h-4 w-4" /> Regenerar
+            </Button>
+          )}
           {!contrato.anulado && (
             <Button size="sm" variant="ghost" onClick={() => setAnulando(true)}>
               <Ban className="h-4 w-4" /> Anular
@@ -239,6 +266,16 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
           firmaContrato={!contrato.firmado}
           pagare={pagarePendiente ? pagare! : null}
           onClose={() => setFirmando(false)}
+        />
+      )}
+
+      {regenerando && contrato.snapshot && (
+        <RegenerarDialog
+          contrato={contrato}
+          snapshot={contrato.snapshot}
+          reservaId={reservaId}
+          conPagare={!!pagare && !pagare.anulado}
+          onClose={() => setRegenerando(false)}
         />
       )}
 
@@ -448,15 +485,32 @@ function AdjuntarPapel({ contrato }: { contrato: Contrato }) {
 
 // ─── Vista previa del anverso ────────────────────────────────────────────────
 
+/** Los conductores del snapshot: la lista nueva o, en contratos viejos, el único. */
+function conductoresDe(snapshot: ContratoSnapshot) {
+  const lista = snapshot.conductores
+    ?? (snapshot.conductor_adicional?.nombre ? [snapshot.conductor_adicional] : []);
+  return lista.filter(c => c && c.nombre);
+}
+
 function ResumenAnverso({ snapshot }: { snapshot: NonNullable<import('@/types').Contrato['snapshot']> }) {
   const { cargos, coberturas, vehiculo, servicio } = snapshot;
+  const conductores = conductoresDe(snapshot);
+  const rep = snapshot.representante;
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3 text-xs">
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
         <Dato etiqueta="Vehículo" valor={`${vehiculo.descripcion ?? '—'} · ${vehiculo.patente ?? ''}`} />
         <Dato etiqueta="Km de salida" valor={`${servicio.check_out_km ?? '—'} km`} />
-        <Dato etiqueta="Retiro" valor={`${servicio.check_out_fecha ?? ''} ${servicio.check_out_hora ?? ''}`} />
-        <Dato etiqueta="Devolución" valor={`${servicio.check_in_fecha ?? ''} ${servicio.check_in_hora ?? ''}`} />
+        <Dato etiqueta="Retiro" valor={`${servicio.check_out_fecha ?? ''} ${servicio.check_out_hora ?? ''} · ${servicio.check_out_lugar ?? ''}`} />
+        <Dato etiqueta="Devolución" valor={`${servicio.check_in_fecha ?? ''} ${servicio.check_in_hora ?? ''} · ${servicio.check_in_lugar ?? ''}`} />
+        <Dato etiqueta="Arrendatario" valor={String(snapshot.cliente?.nombre ?? '—')} />
+        {rep?.nombre && <Dato etiqueta="Representante" valor={`${rep.nombre}${rep.dni ? ` · DNI ${rep.dni}` : ''}`} />}
+        <Dato
+          etiqueta={conductores.length > 1 ? 'Conductores' : 'Conductor'}
+          valor={conductores.length
+            ? conductores.map(c => `${c.nombre}${c.dni ? ` (DNI ${c.dni})` : ''}`).join(', ')
+            : 'el titular'}
+        />
       </div>
 
       <div className="border-t border-border pt-2 space-y-1">
@@ -498,6 +552,175 @@ function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
       <span className="text-muted-foreground">{etiqueta}: </span>
       <span className="font-medium text-foreground">{valor}</span>
     </div>
+  );
+}
+
+// ─── Conductores y regenerar ─────────────────────────────────────────────────
+
+/** IDs de los conductores que el snapshot imprime, en orden. */
+function idsConductores(snapshot: ContratoSnapshot): number[] {
+  return conductoresDe(snapshot)
+    .map(c => Number(c.id))
+    .filter(id => Number.isFinite(id) && id > 0);
+}
+
+/**
+ * Antes de emitir: quién maneja, con la opción de cambiarlo. Guarda en la
+ * reserva y el anverso se vuelve a preparar con el cambio.
+ */
+function ConductoresDelContrato({ reservaId, snapshot }: { reservaId: number; snapshot: ContratoSnapshot }) {
+  const [editando, setEditando] = useState(false);
+  const [ids, setIds] = useState<number[]>(() => idsConductores(snapshot));
+  const cambiar = useCambiarConductores();
+  const clienteId = Number(snapshot.cliente?.id ?? 0);
+  const esEmpresa = snapshot.cliente?.tipo === 'empresa';
+  if (!clienteId) return null;
+
+  if (!editando) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-xs">
+        <span className="flex items-center gap-2 text-muted-foreground">
+          <Users className="h-3.5 w-3.5" />
+          {conductoresDe(snapshot).length
+            ? `Maneja${conductoresDe(snapshot).length > 1 ? 'n' : ''}: ${conductoresDe(snapshot).map(c => c.nombre).join(', ')}`
+            : esEmpresa ? 'Sin conductor elegido' : 'Maneja el titular'}
+        </span>
+        <Button type="button" size="sm" variant="ghost" onClick={() => { setIds(idsConductores(snapshot)); setEditando(true); }}>
+          Cambiar
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-3">
+      <SelectorConductores
+        clienteId={clienteId}
+        seleccionados={ids}
+        onChange={setIds}
+        esEmpresa={esEmpresa}
+        fechaInicio={String(snapshot.servicio?.check_out_fecha ?? '') || undefined}
+        fechaFin={String(snapshot.servicio?.check_in_fecha ?? '') || undefined}
+        excluirReservaId={reservaId}
+        preseleccionarUnico={false}
+      />
+      <div className="flex gap-2">
+        <Button
+          type="button" size="sm" disabled={cambiar.isPending}
+          onClick={() => cambiar.mutate({ reservaId, conductorIds: ids }, { onSuccess: () => setEditando(false) })}
+        >
+          {cambiar.isPending ? 'Guardando…' : 'Guardar conductores'}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setEditando(false)}>Cancelar</Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Regenerar: el contrato vigente se anula y se emite otro con los datos de
+ * hoy, en un paso (plan 27/09, A3). Se puede cambiar el conductor en el mismo
+ * diálogo, que es para lo que casi siempre se usa.
+ */
+function RegenerarDialog({
+  contrato, snapshot, reservaId, conPagare, onClose,
+}: {
+  contrato: Contrato;
+  snapshot: ContratoSnapshot;
+  reservaId: number;
+  conPagare: boolean;
+  onClose: () => void;
+}) {
+  const [motivo, setMotivo] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [cambiarConductores, setCambiarConductores] = useState(false);
+  const inicial = idsConductores(snapshot);
+  const [ids, setIds] = useState<number[]>(inicial);
+  const regenerar = useRegenerarContrato();
+  const cambiar = useCambiarConductores();
+  const ocupado = regenerar.isPending || cambiar.isPending;
+  const clienteId = Number(snapshot.cliente?.id ?? 0);
+
+  const confirmar = async () => {
+    if (ocupado) return;
+    if (!motivo.trim()) {
+      setError('Contá por qué se rehace el contrato.');
+      irAlError('regenerar_motivo');
+      return;
+    }
+    setError(null);
+    try {
+      if (cambiarConductores && ids.join(',') !== inicial.join(',')) {
+        await cambiar.mutateAsync({ reservaId, conductorIds: ids });
+      }
+      await regenerar.mutateAsync({ id: contrato.id, motivo: motivo.trim() });
+      toast.success('Contrato regenerado');
+      onClose();
+    } catch (e) {
+      setError(extractError(e));
+      irAlError(null);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Regenerar contrato {contrato.numero_formateado}</DialogTitle>
+          <DialogDescription>
+            Se anula este contrato y se emite uno nuevo con los datos de hoy.
+            {contrato.firmado && ' El nuevo hay que volver a firmarlo.'}
+            {conPagare && ' La franquicia se anula con él: generala de nuevo después.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Motivo *</span>
+            <textarea
+              data-campo="regenerar_motivo"
+              value={motivo}
+              onChange={e => setMotivo(e.target.value)}
+              rows={2}
+              placeholder="Cambió el conductor, se corrigió el domicilio…"
+              className="input-base resize-none"
+            />
+          </label>
+          {clienteId > 0 && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={cambiarConductores}
+                onChange={e => setCambiarConductores(e.target.checked)}
+                className="accent-primary"
+              />
+              Cambiar los conductores
+            </label>
+          )}
+          {cambiarConductores && clienteId > 0 && (
+            <SelectorConductores
+              clienteId={clienteId}
+              seleccionados={ids}
+              onChange={setIds}
+              esEmpresa={snapshot.cliente?.tipo === 'empresa'}
+              fechaInicio={String(snapshot.servicio?.check_out_fecha ?? '') || undefined}
+              fechaFin={String(snapshot.servicio?.check_in_fecha ?? '') || undefined}
+              excluirReservaId={reservaId}
+              preseleccionarUnico={false}
+            />
+          )}
+          {error && (
+            <p data-error-banner className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+              {error}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" onClick={confirmar} disabled={ocupado}>
+            <RefreshCw className="h-4 w-4" /> {ocupado ? 'Regenerando…' : 'Regenerar'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

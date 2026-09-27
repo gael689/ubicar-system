@@ -86,8 +86,16 @@ export interface AceptacionContrato {
  */
 export interface PersonaPagare {
   nombre: string;
+  /** El número de documento, sea DNI o CUIT (la clave quedó de antes). */
   dni: string;
   domicilio?: string;
+  /** "CUIT" o "DNI". Las franquicias viejas no lo traen: se deduce de los dígitos. */
+  tipo_documento?: "CUIT" | "DNI";
+}
+
+/** "CUIT" o "DNI" según quién firma: una empresa firma con CUIT, no con DNI. */
+export function etiquetaDocumento(p: Pick<PersonaPagare, "dni" | "tipo_documento">): "CUIT" | "DNI" {
+  return p.tipo_documento ?? ((p.dni || "").replace(/\D/g, "").length === 11 ? "CUIT" : "DNI");
 }
 
 /** El pagaré que viaja en el mismo link que el contrato. */

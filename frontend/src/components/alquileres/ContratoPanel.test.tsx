@@ -10,6 +10,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const crearContrato = vi.fn();
 const crearPagare = vi.fn();
+const regenerar = vi.fn();
+const cambiarConductores = vi.fn();
 const mut = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false };
 let contratoActual: any = null;
 let pagareActual: any = null;
@@ -21,6 +23,8 @@ vi.mock('@/hooks/useContratos', () => ({
   useCrearContrato: () => ({ mutate: crearContrato, isPending: false }),
   useFirmarContrato: () => mut,
   useAnularContrato: () => mut,
+  useRegenerarContrato: () => ({ mutateAsync: regenerar, isPending: false }),
+  useCambiarConductores: () => ({ mutate: vi.fn(), mutateAsync: cambiarConductores, isPending: false }),
   useGenerarLinkFirma: () => mut,
   useRevocarLinkFirma: () => mut,
   useSubirEscaneoContrato: () => mut,
@@ -37,14 +41,20 @@ vi.mock('@/hooks/usePagares', () => ({
   descargarPdfPagare: vi.fn(),
   verEscaneoPagare: vi.fn(),
 }));
+// El selector tiene sus propias queries; acá alcanza con un botón que elige al conductor 9.
+vi.mock('@/components/clientes/SelectorConductores', () => ({
+  SelectorConductores: ({ onChange }: { onChange: (ids: number[]) => void }) => (
+    <button type="button" onClick={() => onChange([9])}>elegir conductor 9</button>
+  ),
+}));
 vi.mock('@/lib/api', () => ({ default: {}, api: { get: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { ContratoPanel } from './ContratoPanel';
 
 const SNAPSHOT: any = {
-  empresa: {}, reserva_id: 9, alquiler_id: null, cliente: { telefono: '2915550000' },
-  conductor_adicional: {},
+  empresa: {}, reserva_id: 9, alquiler_id: null, cliente: { id: 3, telefono: '2915550000' },
+  conductor_adicional: {}, conductores: [],
   vehiculo: { descripcion: 'FIAT CRONOS', patente: 'AB123CD' },
   servicio: {}, cargos: { lineas: [], valor_estimado: 140000 },
   coberturas: { franquicia: 500000, contratadas: [], rechazadas: [] },
@@ -71,12 +81,17 @@ const pagare = (over: any = {}) => ({
   ...over,
 });
 
+/** El botón del diálogo es el último con ese nombre (el primero es el del panel). */
+const ultimo = (xs: HTMLElement[]) => xs[xs.length - 1];
+
 beforeEach(() => {
   contratoActual = null;
   pagareActual = null;
   preparadoPagare = { ...PREPARADO };
   crearContrato.mockReset();
   crearPagare.mockReset();
+  regenerar.mockReset();
+  cambiarConductores.mockReset();
 });
 
 describe('Generar contrato y franquicia', () => {
@@ -86,16 +101,53 @@ describe('Generar contrato y franquicia', () => {
     render(<ContratoPanel reservaId={9} />);
 
     expect(screen.getByLabelText(/Generar también la franquicia/)).toBeChecked();
-    const monto = screen.getByDisplayValue('140000');
+    // El monto se ve con los puntos de los miles (InputMoneda, plan 27/09 A5).
+    const monto = screen.getByDisplayValue('140.000');
     await user.clear(monto);
     await user.type(monto, '500000');
-    await user.click(screen.getByRole('button', { name: /Sumar al conductor adicional/ }));
+    await user.click(screen.getByRole('button', { name: /Sumar al conductor/ }));
 
     await user.click(screen.getByRole('button', { name: 'Generar contrato y franquicia' }));
 
     expect(crearContrato).toHaveBeenCalledWith({ reserva_id: 9, snapshot: SNAPSHOT }, expect.anything());
     expect(crearPagare).toHaveBeenCalledWith(
-      { reserva_id: 9, monto: 500000, codeudores: [PREPARADO.codeudor_sugerido] },
+      {
+        reserva_id: 9, monto: 500000, codeudores: [PREPARADO.codeudor_sugerido],
+        deudor: { tipo: 'cliente', conductor_id: null },
+      },
+      expect.anything(),
+    );
+  });
+
+  it('sin el texto de ayuda de antes debajo del monto', () => {
+    render(<ContratoPanel reservaId={9} />);
+    expect(screen.queryByText(/Sugerido: el valor del alquiler/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/mismo link, misma firma/)).not.toBeInTheDocument();
+  });
+
+  it('una empresa tiene que elegir el deudor, y viaja quién (no sus datos)', async () => {
+    const user = userEvent.setup();
+    preparadoPagare = {
+      ...PREPARADO,
+      requiere_elegir_deudor: true,
+      deudores_posibles: [
+        { tipo: 'cliente', conductor_id: null, nombre: 'Transportes SA', dni: '30712345678', tipo_documento: 'CUIT', rol: 'La empresa' },
+        { tipo: 'representante', conductor_id: null, nombre: 'Laura Díaz', dni: '28111222', tipo_documento: 'DNI', rol: 'Representante' },
+        { tipo: 'conductor', conductor_id: 5, nombre: 'Pedro Chofer', dni: '33444555', tipo_documento: 'DNI', rol: 'Conductor de esta reserva' },
+      ],
+    };
+    crearContrato.mockImplementation((_p, opts) => opts?.onSuccess?.());
+    render(<ContratoPanel reservaId={9} />);
+
+    expect(screen.getByText('CUIT: 30712345678')).toBeInTheDocument();
+    // Sin elegir no se emite nada: ni el contrato solo.
+    await user.click(screen.getByRole('button', { name: 'Generar contrato y franquicia' }));
+    expect(crearContrato).not.toHaveBeenCalled();
+
+    await user.click(screen.getByLabelText(/Pedro Chofer/));
+    await user.click(screen.getByRole('button', { name: 'Generar contrato y franquicia' }));
+    expect(crearPagare).toHaveBeenCalledWith(
+      expect.objectContaining({ deudor: { tipo: 'conductor', conductor_id: 5 } }),
       expect.anything(),
     );
   });
@@ -143,6 +195,24 @@ describe('Con el contrato emitido', () => {
     render(<ContratoPanel reservaId={9} />);
     expect(screen.queryByRole('button', { name: /Firmar/ })).not.toBeInTheDocument();
     expect(screen.getAllByText('Firmado')).toHaveLength(2);
+  });
+
+  it('regenerar pide motivo, cambia los conductores y rehace el contrato', async () => {
+    const user = userEvent.setup();
+    contratoActual = contrato();
+    render(<ContratoPanel reservaId={9} />);
+    await user.click(screen.getByRole('button', { name: /Regenerar/ }));
+    // Sin motivo no hace nada.
+    await user.click(ultimo(screen.getAllByRole('button', { name: /^Regenerar$/ })));
+    expect(regenerar).not.toHaveBeenCalled();
+
+    await user.type(screen.getByPlaceholderText(/Cambió el conductor/), 'Cambió el chofer');
+    await user.click(screen.getByLabelText(/Cambiar los conductores/));
+    await user.click(screen.getByRole('button', { name: 'elegir conductor 9' }));
+    await user.click(ultimo(screen.getAllByRole('button', { name: /^Regenerar$/ })));
+
+    await waitFor(() => expect(regenerar).toHaveBeenCalledWith({ id: 4, motivo: 'Cambió el chofer' }));
+    expect(cambiarConductores).toHaveBeenCalledWith({ reservaId: 9, conductorIds: [9] });
   });
 
   it('la firma en el mostrador pide un recuadro por co-deudor', async () => {

@@ -5,21 +5,66 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { MotivoDialog } from '@/components/shared/MotivoDialog';
+import { InputMoneda } from '@/components/shared/InputMoneda';
 import {
   usePagareDeReserva, usePrepararPagare, useCrearPagare, useAnularPagare,
-  useSubirEscaneoPagare, descargarPdfPagare, verEscaneoPagare,
+  useSubirEscaneoPagare, descargarPdfPagare, verEscaneoPagare, type PagareNuevo,
 } from '@/hooks/usePagares';
-import { extractError, formatCurrency, formatDate } from '@/lib/utils';
-import type { PagarePreparado, PersonaPagare } from '@/types';
+import { extractError, formatDate, irAlError } from '@/lib/utils';
+import type { DeudorPosible, PagarePreparado, PersonaPagare, TipoDeudor } from '@/types';
 
-/** Lo que el operador decide al emitir: el monto y quiénes firman con el cliente. */
+/** Lo que el operador decide al emitir: el monto, quién es el deudor y quiénes firman con él. */
 export interface DatosPagare {
-  monto: string;
+  monto: number | '';
   codeudores: PersonaPagare[];
+  /**
+   * Quién firma como deudor: `cliente`, `representante` o `conductor:<id>`.
+   * Vacío = todavía no se eligió, que para una empresa no deja emitir.
+   */
+  deudor: string;
 }
 
 export function datosInicialesPagare(p: PagarePreparado | undefined): DatosPagare {
-  return { monto: p ? String(Math.round(p.monto_sugerido)) : '', codeudores: [] };
+  return {
+    monto: p ? Math.round(p.monto_sugerido) : '',
+    codeudores: [],
+    // Un particular firma él mismo. Una empresa tiene que elegir: la empresa,
+    // su representante o un conductor son obligados distintos.
+    deudor: p?.requiere_elegir_deudor ? '' : 'cliente',
+  };
+}
+
+const claveDeudor = (d: DeudorPosible) => (d.tipo === 'conductor' ? `conductor:${d.conductor_id}` : d.tipo);
+
+/** "CUIT" o "DNI". Los pagarés viejos no traen el tipo: se deduce de los dígitos. */
+export function etiquetaDocumento(p: Pick<PersonaPagare, 'dni' | 'tipo_documento'>): 'CUIT' | 'DNI' {
+  return p.tipo_documento ?? ((p.dni || '').replace(/\D/g, '').length === 11 ? 'CUIT' : 'DNI');
+}
+
+/** El deudor elegido entre los posibles, o `null` si falta elegirlo. */
+export function deudorElegido(preparado: PagarePreparado | undefined, datos: DatosPagare): DeudorPosible | null {
+  if (!preparado?.deudores_posibles?.length) return null;
+  return preparado.deudores_posibles.find(d => claveDeudor(d) === datos.deudor) ?? null;
+}
+
+/** Lo que viaja a `POST /pagares`. El deudor va como *quién*, no con sus datos. */
+export function payloadPagare(reservaId: number, datos: DatosPagare): PagareNuevo {
+  const [tipo, id] = (datos.deudor || 'cliente').split(':');
+  return {
+    reserva_id: reservaId,
+    monto: Number(datos.monto),
+    codeudores: datos.codeudores,
+    deudor: { tipo: tipo as TipoDeudor, conductor_id: id ? Number(id) : null },
+  };
+}
+
+/** ¿Se puede emitir con esto? Devuelve el motivo si no. */
+export function faltaParaEmitir(preparado: PagarePreparado | undefined, datos: DatosPagare): string | null {
+  if (!(Number(datos.monto) > 0)) return 'Falta el monto de la franquicia.';
+  if (preparado?.deudores_posibles?.length && !deudorElegido(preparado, datos)) {
+    return 'Elegí quién firma la franquicia como deudor.';
+  }
+  return null;
 }
 
 /**
@@ -40,8 +85,15 @@ export function FormPagare({
     });
   const agregar = (c: PersonaPagare) => onCambiar({ ...datos, codeudores: [...datos.codeudores, c] });
   const quitar = (i: number) => onCambiar({ ...datos, codeudores: datos.codeudores.filter((_, j) => j !== i) });
-  const sugeridoYaEsta = !!preparado.codeudor_sugerido
-    && datos.codeudores.some(c => c.dni && c.dni === preparado.codeudor_sugerido?.dni);
+
+  const posibles = preparado.deudores_posibles ?? [];
+  const elegido = deudorElegido(preparado, datos);
+  const docDeudor = (elegido?.dni ?? preparado.deudor.dni ?? '').replace(/\D/g, '');
+  // El sugerido como co-deudor no puede ser el mismo que firma como deudor.
+  const sugerido = preparado.codeudor_sugerido;
+  const sugeridoDisponible = !!sugerido
+    && sugerido.dni.replace(/\D/g, '') !== docDeudor
+    && !datos.codeudores.some(c => c.dni && c.dni === sugerido.dni);
 
   if (preparado.faltantes.length > 0) {
     return (
@@ -58,23 +110,17 @@ export function FormPagare({
   return (
     <div className="space-y-3 text-xs">
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-muted-foreground">Monto de la franquicia ($) *</label>
-          <input
-            type="number"
-            inputMode="decimal"
-            min={0}
+        {/* Sin texto de ayuda debajo (plan 27/09, A5): el monto arranca en la
+            franquicia base de la categoría y el número se ve con sus puntos. */}
+        <div className="space-y-1" data-campo="pagare_monto">
+          <label className="text-muted-foreground">Monto de la franquicia *</label>
+          <InputMoneda
             value={datos.monto}
-            onChange={e => onCambiar({ ...datos, monto: e.target.value })}
+            onChange={v => onCambiar({ ...datos, monto: v })}
             className="input-base"
           />
-          <p className="text-[11px] text-muted-foreground">
-            Sugerido: el valor del alquiler ({formatCurrency(preparado.monto_sugerido)}).
-            {preparado.franquicia != null && ` La franquicia de esta reserva es ${formatCurrency(preparado.franquicia)}.`}
-          </p>
         </div>
         <div className="space-y-0.5 text-muted-foreground">
-          <p><span className="text-foreground font-medium">Deudor:</span> {preparado.deudor.nombre} · DNI {preparado.deudor.dni || '—'}</p>
           <p><span className="text-foreground font-medium">A la orden de:</span> {preparado.beneficiario}</p>
           <p><span className="text-foreground font-medium">Pagadero en:</span> {preparado.lugar_pago}</p>
           <p>
@@ -84,6 +130,51 @@ export function FormPagare({
         </div>
       </div>
 
+      {/* Quién es el deudor. Para un particular es él; para una empresa se
+          elige explícitamente, porque la empresa, su representante y un
+          conductor son tres obligados distintos. */}
+      {posibles.length > 1 ? (
+        <fieldset className="space-y-1.5" data-campo="pagare_deudor">
+          <legend className="text-muted-foreground">
+            Firma como deudor{preparado.requiere_elegir_deudor && <span className="text-danger"> *</span>}
+          </legend>
+          {posibles.map(d => {
+            const clave = claveDeudor(d);
+            return (
+              <label key={clave} className="flex cursor-pointer items-start gap-2 rounded-md border border-border px-2.5 py-1.5 hover:bg-muted/40">
+                <input
+                  type="radio"
+                  name="pagare-deudor"
+                  value={clave}
+                  checked={datos.deudor === clave}
+                  onChange={() => onCambiar({
+                    ...datos,
+                    deudor: clave,
+                    // Quien pasa a ser deudor sale de los co-deudores.
+                    codeudores: datos.codeudores.filter(
+                      c => !d.dni || c.dni.replace(/\D/g, '') !== d.dni.replace(/\D/g, ''),
+                    ),
+                  })}
+                  className="mt-0.5 accent-primary"
+                />
+                <span>
+                  <span className="font-medium text-foreground">{d.nombre}</span>
+                  <span className="text-muted-foreground"> · {d.rol}</span>
+                  <span className="block text-muted-foreground">
+                    {d.dni ? `${d.tipo_documento}: ${d.dni}` : `Sin ${d.tipo_documento} cargado`}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </fieldset>
+      ) : (
+        <p className="text-muted-foreground">
+          <span className="text-foreground font-medium">Deudor:</span> {preparado.deudor.nombre} ·{' '}
+          {etiquetaDocumento(elegido ?? preparado.deudor)} {preparado.deudor.dni || '—'}
+        </p>
+      )}
+
       <div className="space-y-2">
         <p className="text-muted-foreground">
           Co-deudores <span className="text-[11px]">(opcional — firman a la derecha, con su propia firma)</span>
@@ -92,7 +183,7 @@ export function FormPagare({
           <div key={i} className="grid grid-cols-2 sm:grid-cols-[1fr_8rem_1fr_auto] gap-2 items-center">
             <input className="input-base col-span-2 sm:col-span-1" placeholder="Nombre y apellido" value={c.nombre}
               onChange={e => setCodeudor(i, 'nombre', e.target.value)} />
-            <input className="input-base" placeholder="DNI" value={c.dni}
+            <input className="input-base" placeholder="DNI o CUIT" value={c.dni}
               onChange={e => setCodeudor(i, 'dni', e.target.value)} />
             <input className="input-base" placeholder="Domicilio" value={c.domicilio ?? ''}
               onChange={e => setCodeudor(i, 'domicilio', e.target.value)} />
@@ -107,9 +198,9 @@ export function FormPagare({
               <Plus className="h-3.5 w-3.5" /> Agregar co-deudor
             </Button>
             {/* Se ofrece, no se asume: manejar el auto no convierte a nadie en garante. */}
-            {preparado.codeudor_sugerido && !sugeridoYaEsta && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => agregar(preparado.codeudor_sugerido!)}>
-                <UserPlus className="h-3.5 w-3.5" /> Sumar al conductor adicional ({preparado.codeudor_sugerido.nombre})
+            {sugerido && sugeridoDisponible && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => agregar(sugerido)}>
+                <UserPlus className="h-3.5 w-3.5" /> Sumar al conductor ({sugerido.nombre})
               </Button>
             )}
           </div>
@@ -139,23 +230,25 @@ export function PagarePanel({ reservaId }: { reservaId: number }) {
         <div className="flex items-center gap-2">
           <ScrollText className="h-4 w-4 text-primary" />
           <h4 className="text-sm font-semibold text-foreground">Franquicia</h4>
-          <span className="text-xs text-muted-foreground">— documento aparte, mismo link y misma firma</span>
         </div>
         {preparado && <FormPagare preparado={preparado} datos={actuales} onCambiar={setDatos} />}
         {preparado && preparado.faltantes.length === 0 && (
           <Button
             type="button"
             size="sm"
-            disabled={crear.isPending || !(parseFloat(actuales.monto) > 0)}
-            onClick={() =>
-              crear.mutate(
-                { reserva_id: reservaId, monto: parseFloat(actuales.monto), codeudores: actuales.codeudores },
-                {
-                  onSuccess: () => { toast.success('Franquicia generada'); setDatos(null); },
-                  onError: e => toast.error(extractError(e)),
-                },
-              )
-            }
+            disabled={crear.isPending}
+            onClick={() => {
+              const falta = faltaParaEmitir(preparado, actuales);
+              if (falta) {
+                toast.error(falta);
+                irAlError(Number(actuales.monto) > 0 ? 'pagare_deudor' : 'pagare_monto');
+                return;
+              }
+              crear.mutate(payloadPagare(reservaId, actuales), {
+                onSuccess: () => { toast.success('Franquicia generada'); setDatos(null); },
+                onError: e => toast.error(extractError(e)),
+              });
+            }}
           >
             <ScrollText className="h-4 w-4" /> {crear.isPending ? 'Generando…' : 'Generar franquicia'}
           </Button>
@@ -185,9 +278,9 @@ export function PagarePanel({ reservaId }: { reservaId: number }) {
       </div>
 
       <div className="text-xs text-muted-foreground space-y-0.5">
-        <p>Deudor: {s.deudor.nombre} · DNI {s.deudor.dni || '—'}</p>
+        <p>Deudor: {s.deudor.nombre} · {etiquetaDocumento(s.deudor)} {s.deudor.dni || '—'}</p>
         {s.codeudores.length > 0 && (
-          <p>Co-deudor{s.codeudores.length > 1 ? 'es' : ''}: {s.codeudores.map(c => `${c.nombre} (DNI ${c.dni})`).join(', ')}</p>
+          <p>Co-deudor{s.codeudores.length > 1 ? 'es' : ''}: {s.codeudores.map(c => `${c.nombre} (${etiquetaDocumento(c)} ${c.dni})`).join(', ')}</p>
         )}
         {pagare.firmado ? (
           <p>

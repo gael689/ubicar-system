@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { extractError } from '@/lib/utils';
-import type { Pagare, PagarePreparado, PersonaPagare } from '@/types';
+import type { Pagare, PagarePreparado, PersonaPagare, TipoDeudor } from '@/types';
 
 const KEY = 'pagares';
 
@@ -49,6 +49,8 @@ export interface PagareNuevo {
   reserva_id: number;
   monto: number;
   codeudores: PersonaPagare[];
+  /** **Quién**, no sus datos: el servidor saca nombre y documento de la base. */
+  deudor?: { tipo: TipoDeudor; conductor_id?: number | null };
 }
 
 export function useCrearPagare() {

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Save } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Save, UserPen } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useConfiguracion, useUpdateConfiguracion } from '@/hooks/useConfiguracion';
+import { useActualizarMiNombre, useMiUsuario } from '@/hooks/useMiUsuario';
 import { extractError, formatDate } from '@/lib/utils';
 import type { ConfiguracionItem } from '@/types';
 
@@ -48,6 +49,8 @@ export function ConfiguracionPage({ soloCanalWeb = false }: { soloCanalWeb?: boo
           : 'Parámetros de negocio editables sin tocar código. Los cambios aplican al instante para todo cálculo posterior. Lo del sitio público está aparte, en Canal web.'}
       />
 
+      {!soloCanalWeb && <MiNombreEnLosDocumentos />}
+
       {isLoading ? (
         <Card className="p-5 space-y-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
@@ -73,6 +76,52 @@ export function ConfiguracionPage({ soloCanalWeb = false }: { soloCanalWeb?: boo
         ¿Falta un parámetro? Esta pantalla lee de una tabla genérica clave/valor — agregar uno nuevo es una fila más, no requiere rediseñar la UI.
       </p>
     </div>
+  );
+}
+
+/**
+ * "Usted fue atendido por" en el pie del contrato sale de acá (plan 27/09,
+ * A4). El sistema intenta traerlo solo desde Clerk al iniciar sesión; si Clerk
+ * no lo tiene, queda "Operador" y el contrato sale con el pie en blanco. Esta
+ * es la salida manual.
+ */
+function MiNombreEnLosDocumentos() {
+  const { data: yo } = useMiUsuario();
+  const guardar = useActualizarMiNombre();
+  const [nombre, setNombre] = useState('');
+  useEffect(() => {
+    if (yo) setNombre(yo.nombre_presentable ? yo.nombre : '');
+  }, [yo]);
+  if (!yo) return null;
+  const dirty = nombre.trim().length >= 2 && nombre.trim() !== yo.nombre;
+
+  return (
+    <Card className={`p-5 space-y-3 ${yo.nombre_presentable ? '' : 'border-warning'}`}>
+      <div className="flex items-center gap-2">
+        <UserPen className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Tu nombre en los documentos</h3>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Es el que sale en el contrato como “Usted fue atendido por”.
+        {!yo.nombre_presentable && ' Todavía no está cargado: los contratos salen con esa línea en blanco.'}
+      </p>
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={e => { e.preventDefault(); if (dirty) guardar.mutate(nombre.trim()); }}
+      >
+        <Input
+          value={nombre}
+          onChange={e => setNombre(e.target.value)}
+          placeholder="Nombre y apellido"
+          className="w-64"
+        />
+        <Button type="submit" size="sm" disabled={!dirty || guardar.isPending}>
+          <Save className="h-3.5 w-3.5" />
+          {guardar.isPending ? 'Guardando…' : 'Guardar'}
+        </Button>
+        <span className="text-xs text-muted-foreground">{yo.email}</span>
+      </form>
+    </Card>
   );
 }
 

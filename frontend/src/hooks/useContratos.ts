@@ -134,6 +134,48 @@ export function useAnularContrato() {
   });
 }
 
+/**
+ * Anula y emite de nuevo en un paso, con los datos de hoy (plan 27/09, A3).
+ * Es para cambiar el conductor —o cualquier dato— de un contrato ya emitido
+ * sin dejar la reserva sin contrato entre dos clics.
+ */
+export function useRegenerarContrato() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, motivo }: { id: number; motivo: string }) => {
+      const res = await api.post<{ data: Contrato }>(`/contratos/${id}/regenerar`, { motivo });
+      return res.data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [KEY] });
+      // La franquicia se anula con el contrato viejo.
+      qc.invalidateQueries({ queryKey: ['pagares'] });
+      qc.invalidateQueries({ queryKey: ['alquileres'] });
+      qc.invalidateQueries({ queryKey: ['reservas'] });
+    },
+    onError: avisar('No pudimos regenerar el contrato.'),
+  });
+}
+
+/**
+ * Cambia los conductores de la reserva desde el panel del contrato. Lo que se
+ * precarga para el contrato y la franquicia depende de ellos, así que se
+ * invalida también eso.
+ */
+export function useCambiarConductores() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reservaId, conductorIds }: { reservaId: number; conductorIds: number[] }) =>
+      api.patch(`/reservas/${reservaId}`, { conductor_ids: conductorIds }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [KEY] });
+      qc.invalidateQueries({ queryKey: ['pagares'] });
+      qc.invalidateQueries({ queryKey: ['reservas'] });
+    },
+    onError: avisar('No pudimos cambiar los conductores.'),
+  });
+}
+
 // ─── Firma por link (D-C6) ───────────────────────────────────────────────────
 
 export interface LinkFirma {

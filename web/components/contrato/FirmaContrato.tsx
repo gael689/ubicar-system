@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Download, FileText, Loader2 } from "lucide
 import { api, ApiError, pesos } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { ContratoParaFirmar } from "@/lib/types";
+import { etiquetaDocumento, type ContratoParaFirmar } from "@/lib/types";
 import { LienzoFirma } from "./LienzoFirma";
 
 /**
@@ -329,13 +329,16 @@ export function FirmaContrato({ token }: { token: string }) {
             <div className="mt-4 grid gap-3 border-t border-border pt-3 text-xs text-muted-foreground sm:grid-cols-2">
               <div>
                 <p className="font-semibold text-foreground">Deudor</p>
-                <p>{pagare!.snapshot.deudor.nombre} · DNI {pagare!.snapshot.deudor.dni}</p>
+                <p>
+                  {pagare!.snapshot.deudor.nombre} · {etiquetaDocumento(pagare!.snapshot.deudor)}{" "}
+                  {pagare!.snapshot.deudor.dni}
+                </p>
               </div>
               {codeudores.length > 0 && (
                 <div>
                   <p className="font-semibold text-foreground">Co-deudor{codeudores.length > 1 ? "es" : ""}</p>
                   {codeudores.map((c) => (
-                    <p key={c.dni}>{c.nombre} · DNI {c.dni}</p>
+                    <p key={c.dni}>{c.nombre} · {etiquetaDocumento(c)} {c.dni}</p>
                   ))}
                 </div>
               )}
@@ -393,7 +396,7 @@ export function FirmaContrato({ token }: { token: string }) {
       {codeudores.map((c, i) => (
         <Bloque key={c.dni || i} titulo={`Firma del co-deudor: ${c.nombre}`}>
           <p className="mb-3 text-xs text-muted-foreground">
-            DNI {c.dni}. Firma {c.nombre} en su recuadro, en este mismo teléfono.
+            {etiquetaDocumento(c)} {c.dni}. Firma {c.nombre} en su recuadro, en este mismo teléfono.
           </p>
           <LienzoFirma
             onCambiar={(f) => setFirmasCod((prev) => prev.map((x, j) => (j === i ? f : x)))}
