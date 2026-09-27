@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, ArchiveRestore, ArchiveX, Pencil, Star, Users, Phone, Mail, MessageCircle,
 } from 'lucide-react';
@@ -42,6 +42,17 @@ export function ClienteDetail() {
   const { data: cc } = useCuentaCorrienteCliente(clienteId);
   const [editOpen, setEditOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  // La solapa vive en la URL (`?tab=cuenta-corriente`): el detalle de una
+  // reserva manda directo a la cuenta corriente del cliente, y el link tiene
+  // que abrir esa solapa, no la de datos.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'datos';
+  const cambiarTab = (valor: string) => {
+    const nuevos = new URLSearchParams(searchParams);
+    if (valor === 'datos') nuevos.delete('tab');
+    else nuevos.set('tab', valor);
+    setSearchParams(nuevos, { replace: true });
+  };
 
   const deactivate = useDeactivateCliente();
   const reactivate = useReactivateCliente();
@@ -215,13 +226,14 @@ export function ClienteDetail() {
       </Card>
 
       {/* Tabs */}
-      <Tabs defaultValue="datos" className="w-full">
+      <Tabs value={tab} onValueChange={cambiarTab} className="w-full">
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="datos">Datos</TabsTrigger>
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
-          {cliente.tipo !== 'empresa' && (
-            <TabsTrigger value="conductores">Conductores</TabsTrigger>
-          )}
+          {/* También para empresas (plan 27/09, A3): es justamente la empresa
+              la que manda a otra persona a manejar. Antes la solapa estaba
+              escondida para ellas y no había dónde ver ni cargar al chofer. */}
+          <TabsTrigger value="conductores">Conductores</TabsTrigger>
           {cliente.tipo === 'empresa' && (
             <TabsTrigger value="contactos">Contactos</TabsTrigger>
           )}
@@ -238,8 +250,27 @@ export function ClienteDetail() {
         <TabsContent value="datos">
           <Card className="p-5">
             <PageHeader title="Datos del cliente" description="Información completa registrada." />
+            {cliente.tipo === 'empresa' && (
+              <>
+                <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Representante</p>
+                {cliente.representante_nombre ? (
+                  <dl className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0 text-sm">
+                    <Field label="Nombre" value={cliente.representante_nombre} />
+                    <Field label="DNI" value={cliente.representante_dni ? <span className="font-mono">{formatDocumento(cliente.representante_dni)}</span> : '—'} />
+                    <Field label="Cargo" value={cliente.representante_cargo ?? '—'} />
+                    <Field label="Teléfono" value={cliente.representante_telefono ?? '—'} />
+                    <Field label="Email" value={cliente.representante_email ?? '—'} />
+                  </dl>
+                ) : (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Sin representante cargado. <button type="button" className="underline" onClick={() => setEditOpen(true)}>Cargarlo</button>
+                  </p>
+                )}
+                <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Datos de la empresa</p>
+              </>
+            )}
             <dl className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0 text-sm">
-              <Field label="Nombre completo" value={cliente.nombre_completo} />
+              <Field label={cliente.tipo === 'empresa' ? 'Nombre de la empresa' : 'Nombre completo'} value={cliente.nombre_completo} />
               <Field
                 label={cliente.tipo === 'empresa' ? 'CUIT' : 'DNI / CUIT'}
                 value={<span className="font-mono">{formatDocumento(cliente.dni_cuit)}</span>}
@@ -286,11 +317,9 @@ export function ClienteDetail() {
           <ClienteDocumentosTab clienteId={cliente.id} />
         </TabsContent>
 
-        {cliente.tipo !== 'empresa' && (
-          <TabsContent value="conductores">
-            <ConductoresTab clienteId={cliente.id} />
-          </TabsContent>
-        )}
+        <TabsContent value="conductores">
+          <ConductoresTab clienteId={cliente.id} />
+        </TabsContent>
 
         {cliente.tipo === 'empresa' && (
           <TabsContent value="contactos">

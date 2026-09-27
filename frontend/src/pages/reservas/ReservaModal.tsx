@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useReservas, descargarPdfReserva } from '@/hooks/useReservas';
 import { useVehiculos } from '@/hooks/useVehiculos';
 import { useClientes, useConductores } from '@/hooks/useClientes';
+import { AvisoConductoresOcupados, SelectorConductores } from '@/components/clientes/SelectorConductores';
 import { useAdicionales } from '@/hooks/useAdicionales';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
 import { useConfiguracion } from '@/hooks/useConfiguracion';
@@ -112,7 +113,15 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const [vehiculoId, setVehiculoId]           = useState(reserva?.vehiculo_id?.toString() ?? initialVehiculoId?.toString() ?? '');
   const [clienteId, setClienteId]             = useState(reserva?.cliente_id?.toString() ?? '');
-  const [conductorId, setConductorId]         = useState(reserva?.conductor_id?.toString() ?? '');
+  // Hasta tres conductores (plan 27/09, A3); el primero es el principal. Antes
+  // era un solo `conductorId` que arrancaba vacío y el selector sólo aparecía
+  // si el cliente ya tenía conductores cargados: una empresa nueva no tenía
+  // dónde elegir al chofer, y el contrato salía sin él.
+  const [conductorIds, setConductorIds] = useState<number[]>(
+    reserva?.conductor_ids?.length
+      ? reserva.conductor_ids
+      : (reserva?.conductor_id ? [reserva.conductor_id] : [])
+  );
   const { data: conductoresCliente } = useConductores(clienteId ? Number(clienteId) : 0);
   const [fechaInicio, setFechaInicio]         = useState(reserva?.fecha_inicio ?? initialFechaInicio ?? today());
   const [horaInicio, setHoraInicio]           = useState(reserva ? formatTime(reserva.hora_inicio) : '10:00');
@@ -226,7 +235,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const selectCliente = (c: { id: number; nombre_completo: string; tipo?: string; razon_social?: string | null; condicion_pago_default?: string | null }) => {
     setClienteId(c.id.toString());
-    setConductorId('');
+    setConductorIds([]);
     setClientSearch(c.nombre_completo);
     setClientDropdownOpen(false);
     if (!isEdit) {
@@ -717,7 +726,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const { data: semaforoPrevio } = usePreCheckoutPrevio(
     {
       cliente_id: clienteId ? Number(clienteId) : null,
-      conductor_id: conductorId ? Number(conductorId) : null,
+      conductor_id: conductorIds[0] ?? null,
       vehiculo_id: vehiculoId ? Number(vehiculoId) : null,
       garantia_tipo: garantiaTipo,
     },
@@ -905,8 +914,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   // La misma regla que aplica el backend (`_nacimiento_del_conductor`): manda
   // la del conductor designado si la tiene, y si no la del titular. Estimarlo
   // con otra fecha daría otro recargo y otra vez el falso "indique el motivo".
-  const conductorElegido = conductoresCliente?.find(c => String(c.id) === conductorId);
+  const conductorElegido = conductoresCliente?.find(c => c.id === conductorIds[0]);
   const clienteElegido = clientesData?.data?.find(c => String(c.id) === clienteId);
+  const esEmpresaElegida = clienteElegido?.tipo === 'empresa';
   const nacimientoDelConductor =
     conductorElegido?.fecha_nacimiento ?? clienteElegido?.fecha_nacimiento ?? null;
 
@@ -1202,7 +1212,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       if (isEdit) {
         const payload: ReservaUpdate = {
           vehiculo_id: parseInt(vehiculoId),
-          conductor_id: conductorId ? parseInt(conductorId) : null,
+          // La lista entera: vacía saca a todos (maneja el titular).
+          conductor_ids: conductorIds,
           fecha_inicio: fechaInicio,
           hora_inicio: horaInicio + ':00',
           fecha_fin: fechaFin,
@@ -1253,7 +1264,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           vehiculo_id: vehiculoId ? parseInt(vehiculoId) : null,
           categoria_id: vehiculoId ? null : (categoriaManualId ? parseInt(categoriaManualId) : null),
           cliente_id: idCliente,
-          conductor_id: conductorId ? parseInt(conductorId) : null,
+          conductor_ids: conductorIds,
           fecha_inicio: fechaInicio,
           hora_inicio: horaInicio + ':00',
           fecha_fin: fechaFin,
@@ -1352,7 +1363,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    */
   const borradorActual = useMemo(() => ({
     paso,
-    clienteId, clientSearch, conductorId,
+    clienteId, clientSearch, conductorIds,
     vehiculoId, categoriaManualId,
     fechaInicio, horaInicio, fechaFin, horaFinPropia,
     lugarEntrega, lugarDevolucion,
@@ -1364,7 +1375,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     echeqBanco, echeqNumeroCheque, echeqFechaCobro,
     notas, observaciones,
   }), [
-    paso, clienteId, clientSearch, conductorId, vehiculoId, categoriaManualId,
+    paso, clienteId, clientSearch, conductorIds, vehiculoId, categoriaManualId,
     fechaInicio, horaInicio, fechaFin, horaFinPropia, lugarEntrega, lugarDevolucion,
     precioTotal, precioPorDia, descuentoMotivo, adicionales,
     conFactura, garantiaTipo, garantiaMonto, formaPagoPrevista, estadoPago,
@@ -1387,7 +1398,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const retomarBorrador = () => {
     if (!borrador) return;
     const d = borrador.datos as typeof borradorActual;
-    setClienteId(d.clienteId); setClientSearch(d.clientSearch); setConductorId(d.conductorId);
+    setClienteId(d.clienteId); setClientSearch(d.clientSearch);
+    // Un borrador anterior a los conductores múltiples trae `conductorId`.
+    const viejo = (d as { conductorId?: string }).conductorId;
+    setConductorIds(Array.isArray(d.conductorIds) ? d.conductorIds : (viejo ? [Number(viejo)] : []));
     setVehiculoId(d.vehiculoId); setCategoriaManualId(d.categoriaManualId);
     setFechaInicio(d.fechaInicio); setHoraInicio(d.horaInicio); setFechaFin(d.fechaFin);
     setHoraFinPropia(d.horaFinPropia ?? null);
@@ -1836,21 +1850,23 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               )}
             </div>
 
-          {/* Conductor (si es distinto de quien paga) */}
-          {clienteId && conductoresCliente && conductoresCliente.length > 0 && (
+          {/* Conductores: de 1 a 3, o ninguno (maneja el titular). Se ve
+              siempre que haya un cliente elegido —también si todavía no tiene
+              conductores— porque "+ Nuevo conductor" los carga en el momento. */}
+          {clienteId && (
             <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">Conductor</label>
-              <select
-                value={conductorId}
-                onChange={e => setConductorId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="">El cliente es el conductor</option>
-                {conductoresCliente.filter(c => c.activo).map(c => (
-                  <option key={c.id} value={c.id}>{c.nombre_completo}{c.dni ? ` (DNI ${c.dni})` : ''}</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-500">Para empresas: quién retira el auto, si no es quien paga/firma.</p>
+              <label className="text-sm font-semibold text-slate-700">
+                {esEmpresaElegida ? 'Quién maneja' : 'Conductores'}
+              </label>
+              <SelectorConductores
+                clienteId={Number(clienteId)}
+                seleccionados={conductorIds}
+                onChange={setConductorIds}
+                esEmpresa={esEmpresaElegida}
+                fechaInicio={fechaInicio}
+                fechaFin={fechaFin}
+                excluirReservaId={reserva?.id ?? null}
+              />
             </div>
           )}
           </div>
@@ -1907,6 +1923,13 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               )}
             </div>
           </div>
+          {/* Con las fechas ya elegidas, el aviso de conductor ocupado se
+              repite acá: en el paso 1 se calculó con las fechas por defecto. */}
+          {enPasos && (
+            <AvisoConductoresOcupados
+              ids={conductorIds} fechaInicio={fechaInicio} fechaFin={fechaFin}
+            />
+          )}
           {lateHeredado && (
             <p className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600">
               Esta reserva tiene una devolución acordada cargada a mano

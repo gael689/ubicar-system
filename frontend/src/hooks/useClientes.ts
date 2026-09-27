@@ -2,28 +2,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { extractError } from '@/lib/utils';
-import type { ApiResponse, PaginatedResponse, Cliente, ClienteCreate, ClienteUpdate, ClienteContacto, ClienteContactoCreate } from '@/types';
+import type {
+  ApiResponse, PaginatedResponse, Cliente, ClienteCreate, ClienteUpdate, ClienteContacto,
+  ClienteContactoCreate, ConductorAdicional, ConductorAdicionalCreate,
+} from '@/types';
 
-export interface ConductorAdicional {
-  id: number;
-  cliente_id: number;
-  nombre_completo: string;
-  dni?: string;
-  licencia_numero?: string;
-  licencia_vencimiento: string;
-  // La edad de quien maneja. Ya no cambia el precio (se retiró el recargo por
-  // franja etaria, D-38); decide la edad mínima para alquilar (D-51), y manda
-  // la del conductor designado por sobre la del titular que paga.
-  fecha_nacimiento?: string | null;
-  activo: boolean;
-}
-
-export interface ConductorAdicionalCreate {
-  nombre_completo: string;
-  dni?: string;
-  licencia_numero?: string;
-  licencia_vencimiento: string;
-}
+// Un solo tipo de conductor en todo el front: antes había dos copias (acá y
+// en `types`) y la de acá seguía exigiendo el vencimiento que la API ya no pide.
+export type { ConductorAdicional, ConductorAdicionalCreate };
 
 export interface ClienteFilters {
   q?: string;
@@ -151,7 +137,11 @@ export function useAddConductor(clienteId: number) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEYS.conductores(clienteId) });
-      toast.success('Conductor adicional agregado');
+      // La ficha y los selectores de reserva leen `conductores_adicionales`
+      // del cliente: sin esto, el conductor recién cargado no aparecía hasta
+      // recargar la página.
+      qc.invalidateQueries({ queryKey: KEYS.detail(clienteId) });
+      toast.success('Conductor agregado');
     },
     onError: (err) => toast.error(extractError(err)),
   });
@@ -165,6 +155,7 @@ export function useDeleteConductor(clienteId: number) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEYS.conductores(clienteId) });
+      qc.invalidateQueries({ queryKey: KEYS.detail(clienteId) });
       toast.success('Conductor eliminado');
     },
     onError: (err) => toast.error(extractError(err)),

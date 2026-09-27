@@ -45,6 +45,13 @@ vi.mock('@/hooks/useConfiguracion', () => ({
 vi.mock('@/components/alquileres/ContratoPanel', () => ({
   ContratoPanel: ({ reservaId }: { reservaId: number }) => <div>panel del contrato {reservaId}</div>,
 }));
+// El selector de conductores tiene sus propias queries; acá alcanza con un
+// botón que elige al conductor 9, para ver que la elección viaja en la reserva.
+vi.mock('@/components/clientes/SelectorConductores', () => ({
+  SelectorConductores: ({ onChange }: { onChange: (ids: number[]) => void }) => (
+    <button type="button" onClick={() => onChange([9])}>elegir conductor 9</button>
+  ),
+}));
 vi.mock('@/lib/api', () => ({ default: { post: vi.fn(), get: vi.fn() }, api: { post: vi.fn(), get: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -111,6 +118,35 @@ describe('El lugar de retiro y devolución', () => {
 
     expect(await screen.findByText(/Escribí el lugar de retiro/)).toBeTruthy();
     expect(createReserva).not.toHaveBeenCalled();
+  });
+
+  it('la devolución en otro lugar viaja aparte (plan 27/09, A4)', async () => {
+    const user = userEvent.setup();
+    createReserva.mockResolvedValue({ reserva: { id: 43 }, warnings: [] });
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+
+    await cargarLoMinimo(user);
+    await user.click(screen.getByLabelText(/Se devuelve en otro lugar/));
+    await user.click(screen.getByRole('button', { name: 'Devolución en Alsina 350' }));
+    await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
+
+    await waitFor(() => expect(createReserva).toHaveBeenCalled());
+    const payload = createReserva.mock.calls[0][0];
+    expect(payload.lugar_entrega).toBe('Paraguay 241');
+    expect(payload.lugar_devolucion).toBe('Alsina 350');
+  });
+
+  it('los conductores elegidos viajan en la reserva', async () => {
+    const user = userEvent.setup();
+    createReserva.mockResolvedValue({ reserva: { id: 44 }, warnings: [] });
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+
+    await cargarLoMinimo(user);
+    await user.click(screen.getByRole('button', { name: 'elegir conductor 9' }));
+    await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
+
+    await waitFor(() => expect(createReserva).toHaveBeenCalled());
+    expect(createReserva.mock.calls[0][0].conductor_ids).toEqual([9]);
   });
 
   it('sin tocar nada sigue usando el primero de la lista', async () => {

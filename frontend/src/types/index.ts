@@ -611,20 +611,25 @@ export interface ConductorAdicional {
   id: number;
   cliente_id: number;
   nombre_completo: string;
-  dni?: string;
-  licencia_numero?: string;
-  licencia_vencimiento: string;
+  dni?: string | null;
+  licencia_numero?: string | null;
+  /** Opcional desde la migración 100: exigirlo hacía que el conductor no se guardara. */
+  licencia_vencimiento?: string | null;
   // La edad de quien maneja: si la reserva designa un conductor, el riesgo es
   // el suyo y no el del titular. Decide la edad mínima (D-51), no el precio.
   fecha_nacimiento?: string | null;
+  /** La cláusula 2.h del contrato lo pide para autorizar a un conductor. */
+  domicilio?: string | null;
   activo: boolean;
 }
 
 export interface ConductorAdicionalCreate {
   nombre_completo: string;
-  dni?: string;
-  licencia_numero?: string;
-  licencia_vencimiento: string;
+  dni?: string | null;
+  licencia_numero?: string | null;
+  licencia_vencimiento?: string | null;
+  fecha_nacimiento?: string | null;
+  domicilio?: string | null;
 }
 
 export type CondicionIva = 'responsable_inscripto' | 'monotributo' | 'consumidor_final' | 'exento';
@@ -659,6 +664,12 @@ export interface ClienteDatosFiscales {
   licencia_pais?: string | null;
   licencia_desde?: string | null;
   condicion_pago_default?: CondicionPago | null;
+  // Representante de la empresa (migración 100): quien firma por ella.
+  representante_nombre?: string | null;
+  representante_dni?: string | null;
+  representante_cargo?: string | null;
+  representante_telefono?: string | null;
+  representante_email?: string | null;
 }
 
 export interface Cliente extends ClienteDatosFiscales {
@@ -696,6 +707,8 @@ export interface ClienteCreate extends ClienteDatosFiscales {
   tipo: 'particular' | 'empresa';
   es_frecuente: boolean;
   notas?: string | null;
+  /** Se crean en la misma transacción que el cliente: entra todo o nada. */
+  conductores?: ConductorAdicionalCreate[];
 }
 
 export interface ClienteUpdate extends ClienteDatosFiscales {
@@ -796,7 +809,11 @@ export interface Reserva {
   categoria_id: number | null;
   categoria?: { id: number; nombre: string } | null;
   cliente_id: number;
+  /** El conductor principal (el primero de `conductor_ids`). */
   conductor_id: number | null;
+  /** Hasta tres conductores (migración 100), en orden. */
+  conductor_ids?: number[];
+  conductores?: ConductorAdicional[];
   fecha_inicio: string;   // ISO date "YYYY-MM-DD"
   hora_inicio: string;    // "HH:MM:SS"
   fecha_fin: string;
@@ -894,6 +911,8 @@ export interface ReservaCreate {
   cliente_id: number;
   adicionales?: AdicionalSolicitado[];
   conductor_id?: number | null;
+  /** Hasta tres; el primero es el principal. Manda sobre `conductor_id`. */
+  conductor_ids?: number[];
   fecha_inicio: string;
   hora_inicio: string;
   fecha_fin: string;
@@ -936,6 +955,8 @@ export interface ReservaUpdate {
   /** Omitir = no tocar los adicionales; lista vacía = sacarlos todos. */
   adicionales?: AdicionalSolicitado[];
   conductor_id?: number | null;
+  /** Omitir = no tocar; lista vacía = sacar a todos (maneja el titular). */
+  conductor_ids?: number[];
   fecha_inicio?: string;
   hora_inicio?: string;
   fecha_fin?: string;
@@ -1827,7 +1848,11 @@ export interface ContratoSnapshot {
   reserva_id: number;
   alquiler_id: number;
   cliente: Record<string, string | number | null>;
+  /** Clave vieja: el primer conductor. Los contratos anteriores sólo tienen esta. */
   conductor_adicional: Record<string, string | number | null>;
+  /** Hasta tres conductores (migración 100). */
+  conductores?: Record<string, string | number | null>[];
+  representante?: Record<string, string | null>;
   vehiculo: Record<string, string | number | null>;
   servicio: Record<string, string | number | null>;
   cargos: {
@@ -1861,8 +1886,21 @@ export interface ContratoPreparado {
 
 export interface PersonaPagare {
   nombre: string;
+  /** El número de documento, sea DNI o CUIT (la clave quedó de antes). */
   dni: string;
   domicilio?: string;
+  /** "CUIT" o "DNI". Los pagarés viejos no lo traen: se deduce de los dígitos. */
+  tipo_documento?: 'CUIT' | 'DNI';
+}
+
+export type TipoDeudor = 'cliente' | 'representante' | 'conductor';
+
+export interface DeudorPosible extends PersonaPagare {
+  tipo: TipoDeudor;
+  conductor_id: number | null;
+  tipo_documento: 'CUIT' | 'DNI';
+  /** "La empresa", "Representante (Apoderada)", "Conductor de esta reserva"… */
+  rol: string;
 }
 
 /**
@@ -1906,7 +1944,12 @@ export interface Pagare {
 export interface PagarePreparado {
   monto_sugerido: number;
   franquicia: number | null;
+  franquicia_base?: number | null;
   deudor: PersonaPagare;
+  /** Quiénes pueden firmar como deudor. El servidor resuelve los datos. */
+  deudores_posibles?: DeudorPosible[];
+  /** Empresa: la pantalla obliga a elegir el deudor explícitamente. */
+  requiere_elegir_deudor?: boolean;
   codeudor_sugerido: PersonaPagare | null;
   beneficiario: string;
   lugar_emision: string;

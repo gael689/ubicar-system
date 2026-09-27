@@ -5,6 +5,7 @@ import axios from 'axios';
 
 import { InputMoneda } from '@/components/shared/InputMoneda';
 import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
+import { SelectorConductores } from '@/components/clientes/SelectorConductores';
 import { useReservas } from '@/hooks/useReservas';
 import { useVehiculos } from '@/hooks/useVehiculos';
 import { useClientes } from '@/hooks/useClientes';
@@ -105,17 +106,23 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
   // esto había que crear la reserva con un lugar equivocado y corregirla
   // después — o sea, justo el paso que el contrato rápido viene a evitar.
   //
-  // Sigue siendo **un solo campo para retiro y devolución**, como estaba: en
-  // el mostrador el auto sale y vuelve al mismo lado, y partirlo en dos
-  // agregaría un paso al camino corto. Si difieren, se corrige editando la
-  // reserva, igual que la garantía o la condición de pago.
-  //
   // **Ya no hay botón "Otro"** (plan 27/09, txt 4): el campo de texto está
   // siempre a la vista y los botones lo completan. `null` es "no lo tocaron":
   // vale el primero de la lista, que es el caso de siempre.
   const [lugar, setLugar] = useState<string | null>(null);
   const lugarVisible = lugar ?? lugares[0] ?? '';
   const lugarElegido = lugarVisible.trim();
+  // **La devolución, aparte** (plan 27/09, A4). Antes era un solo campo que se
+  // mandaba dos veces, y un auto que se entregaba en el aeropuerto y volvía al
+  // local salía con el contrato diciendo aeropuerto en los dos lados. Por
+  // defecto sigue al retiro —el caso de siempre, sin un paso más— y se separa
+  // sólo si se tilda "Se devuelve en otro lugar".
+  const [devolucionAparte, setDevolucionAparte] = useState(false);
+  const [lugarDev, setLugarDev] = useState('');
+  const lugarDevElegido = devolucionAparte ? lugarDev.trim() : lugarElegido;
+  // Conductores (plan 27/09, A3). Sólo para un cliente que ya existe: uno
+  // nuevo todavía no tiene conductores, y se eligen en el panel del contrato.
+  const [conductorIds, setConductorIds] = useState<number[]>([]);
 
   const [precioTotal, setPrecioTotal] = useState<number | ''>('');
   const [cobertura, setCobertura] = useState<number | ''>('');
@@ -183,6 +190,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
       return;
     }
     if (!lugarElegido) { fallar('Escribí el lugar de retiro y devolución.', 'lugar'); return; }
+    if (!lugarDevElegido) { fallar('Escribí el lugar de devolución.', 'lugar_devolucion'); return; }
     if (!precioTotal || Number(precioTotal) <= 0) { fallar('Falta el precio.', 'precio'); return; }
     if (pideMotivo && !descuentoMotivo.trim()) {
       fallar('El precio es menor al de lista: indicá el motivo.', 'descuento_motivo');
@@ -218,7 +226,8 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
         fecha_fin: fechaFin,
         hora_fin: `${horaFin}:00`,
         lugar_entrega: lugarElegido,
-        lugar_devolucion: lugarElegido,
+        lugar_devolucion: lugarDevElegido,
+        ...(clienteId ? { conductor_ids: conductorIds } : {}),
         precio_total: Number(precioTotal),
         adicionales: cobertura === '' ? [] : [{ adicional_id: Number(cobertura), cantidad: 1 }],
         descuento_motivo: descuentoMotivo.trim() || null,
@@ -352,7 +361,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                   <input
                     data-campo="cliente"
                     value={busqueda}
-                    onChange={e => { setBusqueda(e.target.value); setClienteId(''); setListaAbierta(true); }}
+                    onChange={e => { setBusqueda(e.target.value); setClienteId(''); setConductorIds([]); setListaAbierta(true); }}
                     onFocus={() => setListaAbierta(true)}
                     placeholder="Buscar por nombre o DNI, o escribir uno nuevo"
                     className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -362,7 +371,10 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                       {clientesData!.data.map(c => (
                         <div
                           key={c.id}
-                          onClick={() => { setClienteId(String(c.id)); setBusqueda(c.nombre_completo); setListaAbierta(false); }}
+                          onClick={() => {
+                            setClienteId(String(c.id)); setBusqueda(c.nombre_completo);
+                            setListaAbierta(false); setConductorIds([]);
+                          }}
                           className="px-3 py-2 text-sm text-slate-700 hover:bg-primary/10 cursor-pointer"
                         >
                           {c.nombre_completo}
@@ -399,6 +411,23 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                   </div>
                 ) : null}
               </div>
+
+              {/* Quién maneja: de 1 a 3, o el titular. */}
+              {clienteElegido && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-slate-700">
+                    {clienteElegido.tipo === 'empresa' ? 'Quién maneja' : 'Conductores'}
+                  </label>
+                  <SelectorConductores
+                    clienteId={clienteElegido.id}
+                    seleccionados={conductorIds}
+                    onChange={setConductorIds}
+                    esEmpresa={clienteElegido.tipo === 'empresa'}
+                    fechaInicio={fechaInicio}
+                    fechaFin={fechaFin}
+                  />
+                </div>
+              )}
 
               {/* Auto */}
               <div className="space-y-1.5">
@@ -459,7 +488,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
               {/* Lugar */}
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-slate-400" /> Retiro y devolución *
+                  <MapPin className="w-4 h-4 text-slate-400" /> {devolucionAparte ? 'Lugar de retiro *' : 'Retiro y devolución *'}
                 </label>
                 <div className="flex gap-1.5 flex-wrap">
                   {lugares.map(l => (
@@ -478,6 +507,41 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                   data-campo="lugar"
                   placeholder="O escribí otra dirección"
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer pt-1">
+                  <input type="checkbox" checked={devolucionAparte}
+                    onChange={e => {
+                      setDevolucionAparte(e.target.checked);
+                      // Arranca con el de retiro: casi siempre se cambia un detalle.
+                      if (e.target.checked && !lugarDev) setLugarDev(lugarElegido);
+                    }}
+                    className="accent-primary" />
+                  Se devuelve en otro lugar
+                </label>
+                {devolucionAparte && (
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-slate-400" /> Lugar de devolución *
+                    </label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {lugares.map(l => (
+                        <button key={l} type="button"
+                          onClick={() => setLugarDev(l)}
+                          aria-label={`Devolución en ${l}`}
+                          className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                            lugarDev.trim() === l
+                              ? 'bg-primary/15 border-primary/35 text-primary'
+                              : 'bg-white border-slate-300 text-slate-600 hover:bg-primary/10'
+                          }`}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                    <input type="text" value={lugarDev} onChange={e => setLugarDev(e.target.value)}
+                      data-campo="lugar_devolucion"
+                      placeholder="Dirección de devolución"
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  </div>
+                )}
               </div>
 
               {/* Precio y cobertura */}
