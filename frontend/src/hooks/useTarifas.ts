@@ -68,21 +68,6 @@ export function useCreateTarifa(vehiculoId: number) {
   });
 }
 
-export function useUpdateTarifa(vehiculoId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, body }: { id: number; body: TarifaUpdate }) => {
-      const { data } = await api.patch<ApiResponse<Tarifa>>(`/tarifas/${id}`, body);
-      return data.data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: KEYS.all(vehiculoId) });
-      toast.success('Tarifa actualizada');
-    },
-    onError: (err) => toast.error(extractError(err)),
-  });
-}
-
 export function useDeactivateTarifa(vehiculoId: number) {
   const qc = useQueryClient();
   return useMutation({

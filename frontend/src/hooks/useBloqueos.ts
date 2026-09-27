@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type {
-  BloqueoVehiculo, BloqueoVehiculoCreate, BloqueoVehiculoUpdate, ReservaEnConflicto,
+  BloqueoVehiculo, BloqueoVehiculoCreate, ReservaEnConflicto,
 } from '@/types';
 
 const KEY = 'bloqueos';
@@ -73,15 +73,6 @@ export function useCrearBloqueo() {
       const res = await api.post<{ data: BloqueoVehiculo; message: string }>('/bloqueos', payload);
       return res.data;
     },
-    onSuccess: invalidar,
-  });
-}
-
-export function useActualizarBloqueo() {
-  const invalidar = useInvalidar();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: BloqueoVehiculoUpdate }) =>
-      api.patch<{ data: BloqueoVehiculo }>(`/bloqueos/${id}`, payload),
     onSuccess: invalidar,
   });
 }

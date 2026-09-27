@@ -34,19 +34,6 @@ export function useSolicitudesContacto(
   });
 }
 
-export function useResumenSolicitudesContacto() {
-  return useQuery({
-    queryKey: [KEY, 'resumen'],
-    queryFn: async () => {
-      const res = await api.get<{ data: { pendientes: number } }>(
-        '/solicitudes-contacto/resumen',
-      );
-      return res.data.data;
-    },
-    refetchInterval: 60_000,
-  });
-}
-
 /** Ya se lo llamó, o el asunto se terminó. Los dos guardan qué pasó. */
 export function useResolverSolicitudContacto() {
   const qc = useQueryClient();

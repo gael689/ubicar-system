@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '@/lib/api';
-import type { ApiResponse, Servicio, ServicioCreate, ServicioUpdate } from '@/types';
+import type { ApiResponse, Servicio, ServicioCreate } from '@/types';
 
 const KEY = (vehiculoId: number) => ['servicios', vehiculoId] as const;
 
@@ -30,21 +30,6 @@ export function useCrearServicio(vehiculoId: number) {
       toast.success('Servicio registrado');
     },
     onError: () => toast.error('Error al registrar el servicio'),
-  });
-}
-
-export function useActualizarServicio(vehiculoId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, payload }: { id: number; payload: ServicioUpdate }) => {
-      const { data } = await api.patch<ApiResponse<Servicio>>(`/servicios/${id}`, payload);
-      return data.data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: KEY(vehiculoId) });
-      toast.success('Servicio actualizado');
-    },
-    onError: () => toast.error('Error al actualizar el servicio'),
   });
 }
 
