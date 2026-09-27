@@ -97,6 +97,10 @@ export interface PagoPendiente {
   monto_abonado: number;
   saldo_pendiente: number;
   fecha_creacion: string;
+  /** El retiro (reserva) o la entrega (alquiler). */
+  fecha_referencia?: string | null;
+  reserva_id?: number | null;
+  cliente_id?: number | null;
   notas: string | null;
 }
 
@@ -360,7 +364,8 @@ export interface CajaData {
   /** Lo que se anotó en cuenta corriente ese día. No es plata. */
   total_a_cuenta?: number;
   total_egresos: number;
-  balance: number;
+  /** Ingresos (sin lo anotado a cuenta) menos gastos. No es lo que hay en el cajón. */
+  resultado_del_dia: number;
   por_medio_pago: Record<string, number>;
   cobros: Pago[];
   gastos: Gasto[];

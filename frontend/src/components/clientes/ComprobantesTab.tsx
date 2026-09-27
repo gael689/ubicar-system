@@ -10,7 +10,7 @@ import {
   type ComprobanteCreateInput, type TipoComprobante,
 } from '@/hooks/useComprobantes';
 import { resolveAssetUrl } from '@/lib/api';
-import { formatCurrency, formatDate, cn } from '@/lib/utils';
+import { formatCurrency, formatDate, cn, hoyLocal } from '@/lib/utils';
 
 const TIPO_LABEL: Record<TipoComprobante, string> = {
   factura_a: 'Factura A',
@@ -150,7 +150,7 @@ function ComprobanteFormInline({
   const [tipo, setTipo] = useState<TipoComprobante>('factura_b');
   const [puntoVenta, setPuntoVenta] = useState('');
   const [numero, setNumero] = useState('');
-  const [fechaEmision, setFechaEmision] = useState(new Date().toISOString().slice(0, 10));
+  const [fechaEmision, setFechaEmision] = useState(hoyLocal());
   const [total, setTotal] = useState('');
   const [file, setFile] = useState<File | null>(null);
 

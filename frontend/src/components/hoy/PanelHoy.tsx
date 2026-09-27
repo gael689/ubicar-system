@@ -6,13 +6,13 @@ import {
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useReservasPendientes } from '@/hooks/useReservasWeb';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
-import { cn } from '@/lib/utils';
+import { cn, hoyLocal } from '@/lib/utils';
 import type { DashboardDetalle, Reserva } from '@/types';
 
 type FlujoEvento = DashboardDetalle['flujo_del_dia'][number];
 
 function hoyISO(): string {
-  return new Date().toISOString().split('T')[0];
+  return hoyLocal();
 }
 
 function sumarDias(iso: string, dias: number): string {

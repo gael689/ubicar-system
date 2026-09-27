@@ -23,6 +23,7 @@ from app.models.alquiler import Alquiler
 from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.models.danio import Danio, FotoDanio
 from app.models.pago import Pago
+from app.services.caja_service import es_plata_que_entro
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 
 
@@ -306,18 +307,23 @@ class DanioService:
         self.db.add(pago)
         self.db.flush()  # asegurar pago.id antes de enlazarlo al movimiento
 
-        self.cc_service.registrar_movimiento(
-            cliente_id=danio.cliente_id,
-            tipo="credito",
-            naturaleza="pago",
-            concepto=f"Daño #{danio.id} cobrado — {danio.zona}, {patente} ({medio_pago})",
-            monto=monto,
-            fecha=fecha,
-            creado_por=usuario_id,
-            alquiler_id=danio.alquiler_id,
-            danio_id=danio.id,
-            pago_id=pago.id,
-        )
+        # "Cuenta corriente" no es plata que entró: el `Pago` queda como
+        # constancia de la decisión, pero el crédito no se asienta — si no,
+        # cancelaría el débito del daño que se quiso dejar a cuenta. Mismo
+        # criterio que los otros caminos que cobran (`caja_service.es_plata_que_entro`).
+        if es_plata_que_entro(medio_pago):
+            self.cc_service.registrar_movimiento(
+                cliente_id=danio.cliente_id,
+                tipo="credito",
+                naturaleza="pago",
+                concepto=f"Daño #{danio.id} cobrado — {danio.zona}, {patente} ({medio_pago})",
+                monto=monto,
+                fecha=fecha,
+                creado_por=usuario_id,
+                alquiler_id=danio.alquiler_id,
+                danio_id=danio.id,
+                pago_id=pago.id,
+            )
         self.db.flush()
         return danio
 

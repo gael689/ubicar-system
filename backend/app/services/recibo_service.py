@@ -25,6 +25,7 @@ from app.models.pago import Pago
 from app.models.cliente import Cliente
 from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.schemas.recibo import ReciboCreate
+from app.services.caja_service import es_plata_que_entro
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 from app.services.recibo_pdf import generar_pdf_recibo
 
@@ -145,6 +146,15 @@ class ReciboService:
         cliente = self.db.query(Cliente).filter(Cliente.id == payload.cliente_id).first()
         if not cliente:
             raise NotFoundError("Cliente", payload.cliente_id)
+        # Un recibo es la constancia de plata que entró. "Cuenta corriente" no
+        # lo es (ver `caja_service.es_plata_que_entro`): asentarle un crédito
+        # borraría la deuda que viene a anotar. El schema ya no lo ofrece; esto
+        # cubre a cualquier otro camino que llame al service.
+        if not es_plata_que_entro(payload.medio_pago):
+            raise BusinessRuleError(
+                "recibo_sin_plata",
+                "Un recibo es por plata que entró: elegí cómo pagó el cliente.",
+            )
 
         pago = Pago(
             cliente_id=payload.cliente_id,

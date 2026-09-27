@@ -74,4 +74,9 @@ class PagoPendienteResponse(BaseModel):
     monto_abonado: float
     saldo_pendiente: float
     fecha_creacion: str
+    # El retiro (reserva) o la entrega (alquiler): es la fecha que importa
+    # para decidir qué cobrar primero.
+    fecha_referencia: str | None = None
+    reserva_id: int | None = None
+    cliente_id: int | None = None
     notas: str | None = None

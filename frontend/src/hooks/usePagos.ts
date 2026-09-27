@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { Pago, PagoCreate, CajaData, MetodoPago, MovimientoCaja, MovimientoCajaCreate } from '@/types';
+import type {
+  Pago, PagoCreate, CajaData, MetodoPago, MovimientoCaja, MovimientoCajaCreate, PagoPendiente,
+} from '@/types';
 
 const KEY = 'pagos';
 
@@ -23,7 +25,10 @@ export interface FiltrosCobros {
  *  completo — no sobre la página — así que cerrar la caja no depende de sumar
  *  a mano lo que se ve en pantalla. */
 export interface ResumenCobros {
+  /** Plata que entró: sin lo anotado a cuenta corriente (igual que la caja). */
   total: number;
+  /** Lo anotado a cuenta corriente. No es plata: va aparte. */
+  total_a_cuenta?: number;
   cantidad: number;
   por_medio: Record<MetodoPago, number>;
 }
@@ -56,10 +61,26 @@ export function usePagosPendientes() {
   return useQuery({
     queryKey: ['pagos', 'pendientes'],
     queryFn: async () => {
-      const res = await api.get<{ data: any[] }>('/pagos/pendientes');
+      const res = await api.get<{ data: PagoPendiente[] }>('/pagos/pendientes');
       return res.data.data;
     },
     staleTime: 30_000,
+  });
+}
+
+/**
+ * Lo que se le puede cobrar a un cliente: sus alquileres abiertos y sus
+ * reservas sin retirar, con el saldo de cada uno. Es lo que ofrece el
+ * formulario de cobro de la caja en vez de pedir el número de alquiler.
+ */
+export function useCobrablesDeCliente(clienteId: number | null) {
+  return useQuery({
+    queryKey: ['pagos', 'a-cobrar', clienteId],
+    queryFn: async () => {
+      const res = await api.get<{ data: PagoPendiente[] }>(`/pagos/a-cobrar?cliente_id=${clienteId}`);
+      return res.data.data;
+    },
+    enabled: clienteId != null,
   });
 }
 

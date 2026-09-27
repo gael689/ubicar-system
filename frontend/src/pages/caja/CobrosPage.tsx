@@ -8,14 +8,10 @@ import { useClientes } from '@/hooks/useClientes';
 import { useEmitirReciboDePago } from '@/hooks/useRecibos';
 import { extractError, formatCurrency, formatDocumento } from '@/lib/utils';
 import { METODO_PAGO_LABEL , MEDIO_PAGO_COLOR } from '@/lib/constants';
+import { MEDIOS_PAGO as MEDIOS, MEDIOS_QUE_NO_SON_PLATA } from '@/lib/mediosPago';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import type { MetodoPago } from '@/types';
-
-const MEDIOS: MetodoPago[] = [
-  'efectivo', 'transferencia', 'tarjeta', 'cheque', 'echeq', 'cuenta_corriente', 'wapa',
-];
-
 
 const VACIO: FiltrosCobros = { page: 1, page_size: 50 };
 
@@ -181,9 +177,16 @@ export function CobrosPage() {
               Total {hayFiltros ? 'filtrado' : 'general'} · {resumen.cantidad} cobro(s)
             </p>
             <p className="text-xl font-bold text-primary">{formatCurrency(resumen.total)}</p>
+            {/* Mismo criterio que la caja del día y los reportes: lo anotado a
+                cuenta corriente no es plata que entró, así que va aparte. */}
+            {!!resumen.total_a_cuenta && (
+              <p className="text-xs text-muted-foreground">
+                + {formatCurrency(resumen.total_a_cuenta)} anotados en cuenta corriente
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-x-5 gap-y-1">
-            {MEDIOS.filter(m => resumen.por_medio[m] > 0).map(m => (
+            {MEDIOS.filter(m => !MEDIOS_QUE_NO_SON_PLATA.includes(m) && resumen.por_medio[m] > 0).map(m => (
               <div key={m}>
                 <p className="text-[11px] text-muted-foreground">{METODO_PAGO_LABEL[m] ?? m}</p>
                 <p className="text-sm font-semibold">{formatCurrency(resumen.por_medio[m])}</p>

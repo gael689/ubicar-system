@@ -20,6 +20,7 @@ from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.models.pago import Pago
 from app.repositories.multa_repo import MultaRepo
 from app.schemas.multa import MultaCreate, MultaUpdate, BusquedaMultaResponse
+from app.services.caja_service import es_plata_que_entro
 from app.services.cuenta_corriente_service import CuentaCorrienteService
 
 
@@ -224,18 +225,22 @@ class MultaService:
             self.db.add(pago)
             self.db.flush()  # asegurar pago.id antes de enlazarlo al movimiento
 
-            cc_service.registrar_movimiento(
-                cliente_id=multa.cliente_id,
-                tipo="credito",
-                naturaleza="pago",
-                concepto=f"Multa #{multa.id} cobrada — {multa.patente} ({medio_pago})",
-                monto=multa.monto,
-                fecha=fecha,
-                creado_por=usuario_id,
-                alquiler_id=multa.alquiler_id,
-                multa_id=multa.id,
-                pago_id=pago.id,
-            )
+            # "Cuenta corriente" no es plata que entró: el `Pago` queda como
+            # constancia, pero sin crédito — si no, cancelaría el débito de la
+            # multa que se quiso dejar a cuenta (`caja_service.es_plata_que_entro`).
+            if es_plata_que_entro(medio_pago):
+                cc_service.registrar_movimiento(
+                    cliente_id=multa.cliente_id,
+                    tipo="credito",
+                    naturaleza="pago",
+                    concepto=f"Multa #{multa.id} cobrada — {multa.patente} ({medio_pago})",
+                    monto=multa.monto,
+                    fecha=fecha,
+                    creado_por=usuario_id,
+                    alquiler_id=multa.alquiler_id,
+                    multa_id=multa.id,
+                    pago_id=pago.id,
+                )
         elif decision == "bonificada":
             if not motivo or not motivo.strip():
                 raise BusinessRuleError("motivo_requerido", "Bonificar una multa requiere un motivo")
