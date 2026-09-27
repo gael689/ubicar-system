@@ -50,6 +50,10 @@ vi.mock('@/components/shared/CalendarioAnual', () => ({ CalendarioAnual: () => n
 
 import { OcupacionPage } from './OcupacionPage';
 
+// La grilla son 120 columnas: con toda la suite corriendo en paralelo, montarla
+// y hacer un par de clicks pasa a veces los 5 s por defecto.
+vi.setConfig({ testTimeout: 20_000 });
+
 const COMPACTO = { id: 1, nombre: 'Compacto', orden: 1 };
 
 function enDias(n: number): string {

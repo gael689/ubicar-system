@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import type { OcupacionResponse, ResumenAnualResponse, ApiResponse } from '@/types';
 
@@ -41,6 +41,11 @@ export function useOcupacion(params: OcupacionParams | null) {
     },
     enabled: params !== null,
     refetchInterval: 60_000,
+    // Al cambiar de mes la clave cambia, y sin esto la consulta volvía a
+    // "cargando": el spinner reemplazaba la grilla, se perdía el scroll y el
+    // botón "Hoy" desde otro mes no llegaba a moverse. Mientras llega el rango
+    // nuevo se sigue mostrando el anterior (`isPlaceholderData`).
+    placeholderData: keepPreviousData,
   });
 }
 
