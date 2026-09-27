@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, field_validator
 
 
@@ -9,11 +11,23 @@ class CodeudorIn(BaseModel):
     domicilio: str | None = None
 
 
+class DeudorIn(BaseModel):
+    """
+    **Quién**, no sus datos: el servidor saca nombre y documento de la base.
+    Así nadie emite una franquicia a nombre de alguien tipeándolo a mano.
+    """
+    tipo: Literal["cliente", "representante", "conductor"] = "cliente"
+    conductor_id: int | None = None
+
+
 class PagareCreate(BaseModel):
     reserva_id: int
-    # Editable: arranca en el valor del alquiler (ver `PagareService.preparar`).
+    # Editable: arranca en la franquicia base de la categoría (ver
+    # `PagareService.preparar`).
     monto: float
     codeudores: list[CodeudorIn] = []
+    # Sin esto, el deudor es el titular, como siempre.
+    deudor: DeudorIn | None = None
 
 
 class FirmaCodeudorIn(BaseModel):

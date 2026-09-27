@@ -94,11 +94,18 @@ def cuerpo(
     hago = "hacemos" if plural else "hago"
     amplio = "ampliamos" if plural else "amplío"
     letras = monto_a_letras(Decimal(str(monto)))
+    # **El número al lado de las letras** (pedido de Ubicar, 27/09/2026): "la
+    # cantidad de Pesos un millón quinientos mil ($ 1.500.000,00)". Es la
+    # forma usual en los pagarés impresos y ayuda a leerlo de un vistazo; si
+    # las dos cifras difirieran, el art. 6 del Dec. Ley 5965/63 hace valer la
+    # escrita en letras. PENDIENTE: que lo valide el abogado de Finar antes de
+    # usarlo en producción, igual que el resto de este texto.
+    numero = monto_numerico(monto)
 
     return (
         f"A la vista {pagare} solidariamente y sin protesto (Art. 50 - Dec. Ley "
-        f"5965/63), a {beneficiario} o a su orden, la cantidad de {letras} por "
-        f"igual valor recibido en efectivo, en este acto a entera satisfacción. "
+        f"5965/63), a {beneficiario} o a su orden, la cantidad de {letras} "
+        f"($ {numero}) por igual valor recibido en efectivo, en este acto a entera satisfacción. "
         f"En {caracter} {hago} constar expresamente que, con sujeción a lo que "
         f"establece el artículo 36 del Dec. Ley N° 5965/63, {amplio} el plazo de "
         f"presentación para el pago de este pagaré hasta cinco años, a contar "

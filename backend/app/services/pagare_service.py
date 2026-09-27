@@ -42,6 +42,22 @@ CLAVE_LUGAR_PAGO = "pagare.lugar_pago"
 MAX_CODEUDORES = 3
 
 
+def _solo_digitos(v) -> str:
+    return "".join(ch for ch in str(v or "") if ch.isdigit())
+
+
+def tipo_documento(documento, es_empresa: bool = False) -> str:
+    """
+    "CUIT" o "DNI". Una empresa firma con CUIT; una persona con 11 dígitos
+    tiene un CUIT/CUIL cargado, y cualquier otra cosa es un DNI.
+
+    Antes el pagaré decía "DNI" para todos, y el de una empresa salía con el
+    CUIT impreso bajo la etiqueta "DNI": un dato mal rotulado en un título que
+    se puede ejecutar.
+    """
+    return "CUIT" if es_empresa or len(_solo_digitos(documento)) == 11 else "DNI"
+
+
 def dia_local(momento: datetime | None):
     """
     El día calendario en Argentina de un `datetime` guardado en UTC.
@@ -152,10 +168,12 @@ class PagareService:
         """
         Lo precargado para el formulario de emisión. No persiste nada.
 
-        **El monto sugerido es el valor del alquiler** —el "Valor estimado" del
-        contrato— porque es lo que pidió Ubicar. Queda editable: si el pagaré
-        se piensa como garantía de daños, el número que corresponde es el de la
-        franquicia, y esa es una decisión comercial, no del sistema.
+        **El monto sugerido es la franquicia base de la categoría** (plan
+        27/09, A5): la franquicia es la garantía de daños, y el número que la
+        respalda es lo que el cliente pone si rompe el auto — no el valor del
+        alquiler, que era lo que se sugería antes. Si la categoría no tiene
+        base cargada se cae a la franquicia resuelta y, en último caso, al
+        valor del alquiler. Queda editable.
         """
         from app.services.contrato_service import ContratoService
 
@@ -169,21 +187,36 @@ class PagareService:
         coberturas = snap.get("coberturas") or {}
         conf = self.datos_config()
 
-        conductor = (
-            self.db.get(ConductorAdicional, reserva.conductor_id) if reserva.conductor_id else None
+        sugerido = next(
+            (float(v) for v in (
+                coberturas.get("franquicia_base"),
+                coberturas.get("franquicia"),
+                cargos.get("valor_estimado"),
+            ) if v),
+            0.0,
         )
+
+        posibles = self.deudores_posibles(reserva)
+        deudor = posibles[0] if posibles else self._deudor(snap)
+        conductores = [p for p in posibles if p["tipo"] == "conductor"]
         return {
-            "monto_sugerido": float(cargos.get("valor_estimado") or 0),
+            "monto_sugerido": sugerido,
             "franquicia": coberturas.get("franquicia"),
-            "deudor": self._deudor(snap),
+            "franquicia_base": coberturas.get("franquicia_base"),
+            # Quién puede firmar como deudor. Para una empresa la pantalla
+            # obliga a elegir: la empresa, su representante o un conductor
+            # son tres obligados distintos, y no es algo que el sistema pueda
+            # decidir por el mostrador.
+            "deudores_posibles": posibles,
+            "deudor": deudor,
+            "requiere_elegir_deudor": (
+                reserva.cliente is not None and reserva.cliente.tipo == "empresa"
+            ),
             # Sugerencia y no default: quien maneja no es por eso garante. Se
             # ofrece con un botón; nadie queda como co-deudor sin que se decida.
             "codeudor_sugerido": (
-                {
-                    "nombre": conductor.nombre_completo,
-                    "dni": conductor.dni or "",
-                    "domicilio": getattr(conductor, "domicilio", None) or "",
-                } if conductor else None
+                {k: conductores[0][k] for k in ("nombre", "dni", "domicilio")}
+                if conductores else None
             ),
             "beneficiario": conf["beneficiario"],
             "lugar_emision": conf["lugar_emision"],
@@ -193,6 +226,105 @@ class PagareService:
             "faltantes": self.faltantes(conf),
             "tiene_contrato": contrato is not None,
         }
+
+    # ── Deudor ────────────────────────────────────────────────────────────
+
+    def deudores_posibles(self, reserva: Reserva) -> list[dict]:
+        """
+        Quiénes pueden firmar la franquicia como deudor, **leídos de la base**.
+
+        El cliente siempre; el representante si es una empresa y lo tiene
+        cargado; y cada conductor (primero los de la reserva, después los demás
+        del cliente). La pantalla manda sólo *cuál* eligió: el nombre y el
+        documento los pone el servidor, así nadie emite un pagaré a nombre de
+        alguien escribiéndolo a mano.
+        """
+        cliente = reserva.cliente
+        if cliente is None:
+            return []
+        es_empresa = cliente.tipo == "empresa"
+        domicilio_cliente = ", ".join(
+            str(x).strip() for x in [cliente.domicilio, cliente.localidad, cliente.provincia]
+            if x and str(x).strip()
+        )
+        posibles = [{
+            "tipo": "cliente",
+            "conductor_id": None,
+            "nombre": cliente.nombre_completo,
+            "dni": cliente.dni_cuit or "",
+            "tipo_documento": tipo_documento(cliente.dni_cuit, es_empresa),
+            "domicilio": domicilio_cliente,
+            "rol": "La empresa" if es_empresa else "Titular",
+        }]
+        if es_empresa and (cliente.representante_nombre or "").strip():
+            cargo = (cliente.representante_cargo or "").strip()
+            posibles.append({
+                "tipo": "representante",
+                "conductor_id": None,
+                "nombre": cliente.representante_nombre.strip(),
+                "dni": (cliente.representante_dni or "").strip(),
+                "tipo_documento": tipo_documento(cliente.representante_dni),
+                # El domicilio personal del representante no se carga: queda
+                # en blanco para completarlo a mano, no se inventa con el de
+                # la empresa.
+                "domicilio": "",
+                "rol": f"Representante ({cargo})" if cargo else "Representante",
+            })
+        de_la_reserva = {c.id for c in reserva.conductores}
+        vistos: set[int] = set()
+        conductores = list(reserva.conductores) + [
+            c for c in cliente.conductores_adicionales if c.activo
+        ]
+        for c in conductores:
+            if c.id in vistos:
+                continue
+            vistos.add(c.id)
+            posibles.append({
+                "tipo": "conductor",
+                "conductor_id": c.id,
+                "nombre": c.nombre_completo,
+                "dni": c.dni or "",
+                "tipo_documento": tipo_documento(c.dni),
+                "domicilio": c.domicilio or "",
+                "rol": "Conductor de esta reserva" if c.id in de_la_reserva else "Conductor",
+            })
+        return posibles
+
+    def _resolver_deudor(self, reserva: Reserva, contrato: Contrato, eleccion: dict | None) -> dict:
+        """El deudor elegido, con sus datos sacados de la base."""
+        if not eleccion or (eleccion.get("tipo") or "cliente") == "cliente":
+            # Sin elección: el titular, como siempre. Se toma del contrato
+            # congelado —es a quien el contrato nombra—, con el tipo de
+            # documento que le corresponde.
+            deudor = self._deudor(contrato.snapshot or {})
+            es_empresa = reserva.cliente is not None and reserva.cliente.tipo == "empresa"
+            return {
+                **deudor, "tipo": "cliente",
+                "tipo_documento": tipo_documento(deudor["dni"], es_empresa),
+            }
+
+        tipo = eleccion.get("tipo")
+        posibles = self.deudores_posibles(reserva)
+        if tipo == "representante":
+            elegido = next((p for p in posibles if p["tipo"] == "representante"), None)
+        elif tipo == "conductor":
+            cid = eleccion.get("conductor_id")
+            elegido = next(
+                (p for p in posibles if p["tipo"] == "conductor" and p["conductor_id"] == cid), None
+            )
+        else:
+            elegido = None
+        if elegido is None:
+            raise BusinessRuleError(
+                "deudor_invalido",
+                "La persona elegida como deudor no es de este cliente. Elegila de la lista.",
+            )
+        if not elegido["dni"]:
+            raise BusinessRuleError(
+                "deudor_sin_documento",
+                f"{elegido['nombre']} no tiene el documento cargado: completalo en la ficha del cliente.",
+            )
+        return {k: elegido[k] for k in ("nombre", "dni", "domicilio", "tipo_documento", "tipo")}
 
     @staticmethod
     def _deudor(snap: dict) -> dict:
@@ -220,7 +352,10 @@ class PagareService:
                     "codeudor_incompleto",
                     "Cada co-deudor necesita nombre y DNI: son los datos con los que firma.",
                 )
-            limpios.append({"nombre": nombre, "dni": dni, "domicilio": (c.get("domicilio") or "").strip()})
+            limpios.append({
+                "nombre": nombre, "dni": dni, "domicilio": (c.get("domicilio") or "").strip(),
+                "tipo_documento": tipo_documento(dni),
+            })
         if len(limpios) > MAX_CODEUDORES:
             raise BusinessRuleError(
                 "demasiados_codeudores", f"La franquicia admite hasta {MAX_CODEUDORES} co-deudores."
@@ -234,6 +369,7 @@ class PagareService:
         monto,
         codeudores: list[dict] | None,
         usuario_id: int | None,
+        deudor: dict | None = None,
     ) -> Pagare:
         from app.services.contrato_service import ContratoService
 
@@ -271,8 +407,15 @@ class PagareService:
                 "Para emitir la franquicia falta cargar " + "; ".join(faltan) + ".",
             )
 
+        deudor = self._resolver_deudor(reserva, contrato, deudor)
+        # Quien firma como deudor no puede firmar además como su propio
+        # co-deudor: se lo saca de la lista si la pantalla lo dejó.
+        doc_deudor = _solo_digitos(deudor["dni"])
+        codeudores = [
+            c for c in (codeudores or [])
+            if not (doc_deudor and _solo_digitos(c.get("dni")) == doc_deudor)
+        ]
         limpios = self._limpiar_codeudores(codeudores)
-        deudor = self._deudor(contrato.snapshot or {})
         firmantes = 1 + len(limpios)
 
         snapshot = {
@@ -323,7 +466,10 @@ class PagareService:
                 f"Franquicia {pagare.numero_formateado} por ${snapshot['monto_numerico']} "
                 f"(contrato {contrato.numero_formateado}, {firmantes} firmante(s))"
             ),
-            datos_despues={"monto": snapshot["monto"], "codeudores": len(limpios)},
+            datos_despues={
+                "monto": snapshot["monto"], "codeudores": len(limpios),
+                "deudor": deudor["nombre"], "deudor_tipo": deudor.get("tipo"),
+            },
         )
         return pagare
 

@@ -115,7 +115,7 @@ class TestTexto:
             lugar_pago="Paraguay 241, Bahía Blanca",
             interes_compensatorio="60% (sesenta por ciento)", interes_punitorio="30%", firmantes=1,
         )
-        assert "a FINAR GRUPO FINANCIERO S.R.L. o a su orden, la cantidad de Pesos ciento cuarenta mil por igual valor" in t
+        assert "a FINAR GRUPO FINANCIERO S.R.L. o a su orden, la cantidad de Pesos ciento cuarenta mil ($ 140.000,00) por igual valor" in t
         assert "es pagadero en Paraguay 241, Bahía Blanca." in t
         assert "interés compensatorio del 60% (sesenta por ciento) anual vencido" in t
         assert "interés punitorio del 30% anual vencido." in t
@@ -154,7 +154,10 @@ class TestEmision:
         assert s["lugar_pago"] == "Paraguay 241, Piso 9, Dpto. A, Bahía Blanca (8000), Provincia de Buenos Aires"
         assert s["deudor"]["nombre"] == cliente.nombre_completo
         assert s["deudor"]["dni"] == cliente.dni_cuit
-        assert s["codeudores"] == [{"nombre": "Ana Gómez", "dni": "30999888", "domicilio": "Alsina 350"}]
+        assert s["deudor"]["tipo_documento"] == "DNI"
+        assert s["codeudores"] == [{
+            "nombre": "Ana Gómez", "dni": "30999888", "domicilio": "Alsina 350", "tipo_documento": "DNI",
+        }]
         assert "pagaremos" in s["texto"]
         assert p.numero_formateado == f"P-{p.id:08d}"
 
@@ -182,11 +185,24 @@ class TestEmision:
         db.refresh(contrato)
         assert contrato.snapshot == antes
 
-    def test_preparar_sugiere_el_valor_del_alquiler(self, db, usuario, contrato):
+    def test_sin_franquicia_cargada_sugiere_el_valor_del_alquiler(self, db, usuario, contrato):
         datos = PagareService(db).preparar(contrato.reserva_id)
         assert datos["monto_sugerido"] == float(contrato.snapshot["cargos"]["valor_estimado"])
         assert datos["faltantes"] == []
         assert datos["tiene_contrato"] is True
+
+    def test_con_franquicia_base_sugiere_la_franquicia(self, db, usuario, hacer_reserva, empresa_configurada, vehiculo):
+        """Plan 27/09, A5: la franquicia respalda los daños, no el alquiler."""
+        from app.models.categoria import Categoria
+
+        cat = Categoria(nombre="SUV", codigo="SUV", franquicia_base=Decimal("1500000"))
+        db.add(cat)
+        db.flush()
+        vehiculo.categoria_id = cat.id
+        reserva = hacer_reserva(precio_total="140000", categoria_id=cat.id)
+        db.flush()
+        datos = PagareService(db).preparar(reserva.id)
+        assert datos["monto_sugerido"] == 1500000.0
 
 
 # ── Firma ────────────────────────────────────────────────────────────────────

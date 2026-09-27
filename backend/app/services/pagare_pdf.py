@@ -89,7 +89,12 @@ def _firma(
     c.drawString(x, y - 3.8 * mm, titulo)
     c.setFont("Helvetica", 7.5)
     renglon = y - 7.3 * mm
-    for etiqueta, valor in (("Aclaración", datos.get("nombre")), ("DNI", datos.get("dni")), ("Domicilio", datos.get("domicilio"))):
+    # "CUIT" o "DNI" según quién firma. Los pagarés emitidos antes de que se
+    # guardara el tipo no lo traen: se deduce de los dígitos (11 = CUIT).
+    etiqueta_doc = datos.get("tipo_documento") or (
+        "CUIT" if len("".join(ch for ch in str(datos.get("dni") or "") if ch.isdigit())) == 11 else "DNI"
+    )
+    for etiqueta, valor in (("Aclaración", datos.get("nombre")), (etiqueta_doc, datos.get("dni")), ("Domicilio", datos.get("domicilio"))):
         texto = f"{etiqueta}: {valor or ''}"
         for i, parte in enumerate(_wrap(texto, "Helvetica", 7.5, ancho) or [texto]):
             c.drawString(x, renglon, parte)

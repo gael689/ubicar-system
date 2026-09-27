@@ -67,6 +67,7 @@ def crear_pagare(
             monto=payload.monto,
             codeudores=[c.model_dump() for c in payload.codeudores],
             usuario_id=current_user.id,
+            deudor=payload.deudor.model_dump() if payload.deudor else None,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
