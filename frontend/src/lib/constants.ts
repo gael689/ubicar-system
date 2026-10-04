@@ -346,6 +346,7 @@ export const NAV_SECTIONS: NavSection[] = [
   { titulo: 'Ventas', items: [
     { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
     // El Simulador se abre desde el botón de la página de Precios.
+    { path: '/prospectos', label: 'Prospectos', icon: 'Building2' },
     { path: '/precios', label: 'Precios', icon: 'CalendarRange', matches: ['/precios/simulador'] },
     { path: '/adicionales', label: 'Adicionales', icon: 'Package' },
     { path: '/fechas-especiales', label: 'Fechas especiales', icon: 'CalendarDays' },

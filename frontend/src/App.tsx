@@ -19,6 +19,7 @@ import { FechasEspecialesPage } from '@/pages/fechas-especiales/FechasEspeciales
 import { NotificacionesPage } from '@/pages/notificaciones/NotificacionesPage';
 import { SimuladorPage } from './pages/precios/SimuladorPage';
 import { PreciosPage } from '@/pages/precios/PreciosPage';
+import { ProspectosPage } from '@/pages/prospectos/ProspectosPage';
 import { AdicionalesPage } from '@/pages/adicionales/AdicionalesPage';
 import { ReservasWebPage } from '@/pages/reservas/ReservasWebPage';
 import { AuditoriaPage } from '@/pages/auditoria/AuditoriaPage';
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/fechas-especiales" element={<AppLayout title="Fechas especiales"><FechasEspecialesPage /></AppLayout>} />
         {/* **Un solo precio, una sola pantalla** (04/10/2026). Las dos rutas
             viejas redirigen acá: hay links a ellas repartidos por el sistema. */}
+        <Route path="/prospectos" element={<AppLayout title="Prospectos"><ProspectosPage /></AppLayout>} />
         <Route path="/precios" element={<AppLayout title="Precios"><PreciosPage /></AppLayout>} />
         <Route path="/precios/mostrador" element={<Navigate to="/precios" replace />} />
         <Route path="/precios/web" element={<Navigate to="/precios" replace />} />
