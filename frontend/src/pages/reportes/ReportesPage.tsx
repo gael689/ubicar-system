@@ -9,6 +9,7 @@ import api from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { useReporteIngresos, useReporteFlota } from '@/hooks/useReportes';
 import { formatCurrency, formatDate, hoyLocal } from '@/lib/utils';
+import { TableroDeReportes } from './TableroDeReportes';
 
 const COLORES = ['#407EC9', '#8BB8E8', '#34d399', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -262,13 +263,14 @@ function ReporteFlota() {
 }
 
 export function ReportesPage() {
-  const [tab, setTab] = useState<'ingresos' | 'flota' | 'demanda'>('ingresos');
+  const [tab, setTab] = useState<'resumen' | 'ingresos' | 'flota' | 'demanda'>('resumen');
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-6 py-4 border-b border-border bg-card shrink-0">
         <h1 className="text-lg font-bold text-foreground">Reportes</h1>
         <div className="flex gap-1 ml-4">
+          <TabBtn active={tab === 'resumen'} onClick={() => setTab('resumen')}>Resumen</TabBtn>
           <TabBtn active={tab === 'ingresos'} onClick={() => setTab('ingresos')}>Ingresos</TabBtn>
           <TabBtn active={tab === 'flota'} onClick={() => setTab('flota')}>Flota</TabBtn>
           <TabBtn active={tab === 'demanda'} onClick={() => setTab('demanda')}>Demanda no atendida</TabBtn>
@@ -276,6 +278,7 @@ export function ReportesPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {tab === 'resumen' && <TableroDeReportes />}
         {tab === 'ingresos' && <ReporteIngresos />}
         {tab === 'flota' && <ReporteFlota />}
         {tab === 'demanda' && <ReporteDemanda />}
