@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import axios from 'axios';
 
 import { InputMoneda } from '@/components/shared/InputMoneda';
+import { CamposUber, UBER_VACIO, type DatosUber } from '@/components/reservas/CamposUber';
 import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
 import { SelectorConductores } from '@/components/clientes/SelectorConductores';
 import { useReservas } from '@/hooks/useReservas';
@@ -18,6 +19,7 @@ import {
   mensajeSinRespuesta, redondear2, sinRespuesta,
 } from '@/lib/utils';
 import { avisoDiaExtra, diasFacturables } from '@/lib/dias';
+import { totalUber } from '@/lib/uber';
 import type { ApiResponse, Cliente, Reserva, ReservaCreate } from '@/types';
 
 interface Props {
@@ -125,6 +127,9 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
   const [conductorIds, setConductorIds] = useState<number[]>([]);
 
   const [precioTotal, setPrecioTotal] = useState<number | ''>('');
+  // Alquiler común o contrato de Uber (valor semanal, km, fechas de pago).
+  const [uber, setUber] = useState<DatosUber>(UBER_VACIO);
+  const esUber = uber.tipo === 'uber';
   const [cobertura, setCobertura] = useState<number | ''>('');
   // El motivo de cobrar menos que el de lista. **Antes esta pantalla no lo
   // pedía ni lo mandaba**, y el backend lo exige: bajar el precio en el
@@ -169,7 +174,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
   );
   const sugerido = cotizacion ? Number(cotizacion.subtotal_vehiculo ?? cotizacion.total ?? 0) : null;
   // Misma comparación que el backend: un peso o más por debajo del de lista.
-  const esDescuento = sugerido !== null && sugerido > 0 && precioTotal !== ''
+  const esDescuento = !esUber && sugerido !== null && sugerido > 0 && precioTotal !== ''
     && sugerido - Number(precioTotal) >= TOLERANCIA_DESCUENTO;
   const pideMotivo = esDescuento || motivoPedidoPorServidor;
 
@@ -218,7 +223,12 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
     }
     if (!lugarElegido) { fallar('Escribí el lugar de retiro y devolución.', 'lugar'); return; }
     if (!lugarDevElegido) { fallar('Escribí el lugar de devolución.', 'lugar_devolucion'); return; }
-    if (!precioTotal || Number(precioTotal) <= 0) { fallar('Falta el precio.', 'precio'); return; }
+    if (esUber) {
+      if (!uber.valorSemana || Number(uber.valorSemana) <= 0) {
+        fallar('Falta el valor de la semana del contrato de Uber.', 'uber_valor_semana');
+        return;
+      }
+    } else if (!precioTotal || Number(precioTotal) <= 0) { fallar('Falta el precio.', 'precio'); return; }
     if (pideMotivo && !descuentoMotivo.trim()) {
       fallar('El precio es menor al de lista: indicá el motivo.', 'descuento_motivo');
       return;
@@ -255,7 +265,17 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
         lugar_entrega: lugarElegido,
         lugar_devolucion: lugarDevElegido,
         ...(clienteId ? { conductor_ids: conductorIds } : {}),
-        precio_total: Number(precioTotal),
+        // En un contrato de Uber el servidor calcula el total desde el valor
+        // de la semana; se manda igual el de la pantalla para que coincidan.
+        precio_total: esUber ? totalUber(Number(uber.valorSemana), duracionDias) : Number(precioTotal),
+        ...(esUber ? {
+          tipo: 'uber' as const,
+          uber_valor_semana: Number(uber.valorSemana),
+          uber_km_semana: uber.kmSemana === '' ? null : Number(uber.kmSemana),
+          uber_precio_km_extra: uber.precioKmExtra === '' ? null : Number(uber.precioKmExtra),
+          fechas_pago: uber.fechasPago.filter(Boolean),
+          condicion_pago_texto: uber.condicion.trim() || null,
+        } : {}),
         adicionales: cobertura === '' ? [] : [{ adicional_id: Number(cobertura), cantidad: 1 }],
         descuento_motivo: descuentoMotivo.trim() || null,
         // El late check-in manual ya no existe (A1): el horario se cobra solo.
@@ -464,11 +484,16 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                 <select data-campo="vehiculo" value={vehiculoId} onChange={e => setVehiculoId(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
                   <option value="">Elegí el auto que se entrega</option>
-                  {vehiculos.filter(v => v.destino !== 'uber').map(v => (
-                    <option key={v.id} value={v.id}>{v.patente} · {v.marca} {v.modelo}</option>
+                  {vehiculos.map(v => (
+                    <option key={v.id} value={v.id}>
+                      {v.patente} · {v.marca} {v.modelo}{v.destino === 'uber' ? ' (hoy en Uber)' : ''}
+                    </option>
                   ))}
                 </select>
               </div>
+
+              {/* Alquiler común o Uber: el contrato decide el destino del auto. */}
+              <CamposUber value={uber} onChange={setUber} fechaInicio={fechaInicio} dias={duracionDias} />
 
               {/* Fechas */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -573,7 +598,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
 
               {/* Precio y cobertura */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="space-y-1.5" data-campo="precio">
+                {!esUber && <div className="space-y-1.5" data-campo="precio">
                   <label className="text-sm font-semibold text-slate-700">Precio total *</label>
                   <InputMoneda value={precioTotal} onChange={setPrecioTotal} placeholder="140.000"
                     className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
@@ -596,7 +621,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                       placeholder="Motivo del precio menor (queda auditado) *"
                       className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-slate-800 text-sm placeholder:text-amber-700/70 focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
                   )}
-                </div>
+                </div>}
                 <div className="space-y-1.5">
                   <label className="text-sm font-semibold text-slate-700">Cobertura</label>
                   <select value={cobertura} onChange={e => setCobertura(e.target.value === '' ? '' : Number(e.target.value))}

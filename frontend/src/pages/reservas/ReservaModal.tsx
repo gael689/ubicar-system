@@ -16,6 +16,8 @@ import api from '@/lib/api';
 import { codigoDeError, extractError, fechaLocal, formatDate, formatDocumento, formatMiles, hoyLocal, irAlError, redondear2 } from '@/lib/utils';
 import { avisoDiaExtra, diasFacturables } from '@/lib/dias';
 import { InputMoneda } from '@/components/shared/InputMoneda';
+import { CamposUber, UBER_VACIO, type DatosUber } from '@/components/reservas/CamposUber';
+import { totalUber } from '@/lib/uber';
 import { ESTADO_PAGO_LABEL, resumenPago } from '@/lib/pagoReserva';
 import { toast } from 'sonner';
 import type { Adicional, CategoriaConCupo, Reserva, ReservaCreate, ReservaUpdate, Semaforo, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
@@ -315,6 +317,16 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const [precioTotal, setPrecioTotal]   = useState<number | ''>(initialPrecioTotal || '');
   const [precioPorDia, setPrecioPorDia] = useState<number | ''>(initialPrecioPorDia || '');
+  // Contrato de Uber: sólo al crear. Su total sale del valor de la semana.
+  const [uber, setUber] = useState<DatosUber>(UBER_VACIO);
+  const esUber = !reserva && uber.tipo === 'uber';
+  // En Uber el precio sale del valor de la semana: sigue a lo que se carga.
+  useEffect(() => {
+    if (!esUber || uber.valorSemana === '' || duracionDias <= 0) return;
+    const total = totalUber(Number(uber.valorSemana), duracionDias);
+    setPrecioTotal(total);
+    setPrecioPorDia(redondear2(total / duracionDias));
+  }, [esUber, uber.valorSemana, duracionDias]);
   const [conFactura, setConFactura] = useState(reserva?.con_factura ?? false);
 
   // Adicionales contratados: { adicional_id → cantidad }. No entran en
@@ -474,7 +486,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     //
     // El backend igual lo rechaza (`ReservaService._validar_que_se_alquila`);
     // esto es para que no haya que llegar al rechazo.
-    const seAlquilan = vehiculosActivos.filter(v => v.destino !== 'uber');
+    // Los autos que hoy están en Uber también se ofrecen: los autos rotan y el
+    // contrato decide el destino (04/10/2026).
+    const seAlquilan = vehiculosActivos;
     const grupos = categorias
       .map(c => ({
         nombre: c.nombre,
@@ -628,7 +642,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   const unidadesDeLaCategoria = useMemo(() => {
     if (categoriaId == null) return [];
     return vehiculosActivos
-      .filter(v => v.destino !== 'uber' && v.categoria_id === categoriaId)
+      .filter(v => v.categoria_id === categoriaId)
       .map(v => ({
         id: v.id,
         etiqueta: `${v.patente} · ${v.marca} ${v.modelo}`,
@@ -1020,7 +1034,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   // redondeados, que no es lo mismo: $39.999,50 contra $40.000 redondeaba
   // igual acá y el servidor lo rechazaba igual pidiendo un motivo que la
   // pantalla nunca había pedido.
-  const diferenciaCruda = precioListaEstimado !== null && precioTotal !== ''
+  const diferenciaCruda = !esUber && precioListaEstimado !== null && precioTotal !== ''
     ? Number(precioTotal) - precioListaEstimado
     : 0;
   const hayDiferenciaDePrecio = Math.abs(diferenciaCruda) >= TOLERANCIA_DESCUENTO;
@@ -1307,7 +1321,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           // semanas. Ver el selector más abajo.
           condicion_pago_ancla: condicionPagoAncla || null,
           condicion_pago_fecha_ancla: condicionPagoAncla === 'fecha_especifica' ? condicionPagoFechaAncla || null : null,
-          condicion_pago_texto: condicionPagoTexto.trim() || null,
+          condicion_pago_texto: (esUber ? uber.condicion.trim() : condicionPagoTexto.trim()) || null,
+          ...(esUber ? {
+            tipo: 'uber' as const,
+            uber_valor_semana: Number(uber.valorSemana),
+            uber_km_semana: uber.kmSemana === '' ? null : Number(uber.kmSemana),
+            uber_precio_km_extra: uber.precioKmExtra === '' ? null : Number(uber.precioKmExtra),
+            fechas_pago: uber.fechasPago.filter(Boolean),
+          } : {}),
           tipo_factura: conFactura ? (tipoFactura || null) : null,
           factura_a_nombre_de: conFactura ? (facturaANombreDe.trim() || null) : null,
           echeq_banco: requiereDatosEcheq ? (echeqBanco.trim() || null) : null,
@@ -2093,6 +2114,11 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </div>
             )}
 
+            {/* Alquiler común o Uber. Sólo al crear: el tipo no se cambia después. */}
+            {!reserva && (
+              <CamposUber value={uber} onChange={setUber} fechaInicio={fechaInicio} dias={duracionDias} />
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               {/* `InputMoneda` y no `type="number"`: es lo que permite el
                   punto de los miles (*"200.000, así"*) y lo que evita que el
@@ -2103,6 +2129,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <InputMoneda
                   value={precioPorDia}
                   onChange={handlePrecioPorDiaChange}
+                  disabled={esUber}
                   placeholder="35.000"
                   className={`w-full px-3 py-2 rounded-lg border text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                     localError?.includes('cotización') && precioTotal === '' ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white'
@@ -2114,6 +2141,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <InputMoneda
                   value={precioTotal}
                   onChange={handlePrecioTotalChange}
+                  disabled={esUber}
                   placeholder="140.000"
                   className={`w-full px-3 py-2 rounded-lg border text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                     localError?.includes('cotización') && precioTotal === '' ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white'

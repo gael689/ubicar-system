@@ -1248,13 +1248,8 @@ export function OcupacionPage() {
                           // comportamiento existente.
                           if (reservaArrastrada != null) {
                             e.preventDefault();
-                            // Soltarla sobre un auto de Uber abriría el panel de
-                            // asignación para algo que el backend va a rechazar.
-                            if (vehiculo.destino === 'uber') {
-                              toast.error(`${vehiculo.patente} está afectado a Uber: no se alquila.`);
-                              setReservaArrastrada(null);
-                              return;
-                            }
+                            // Un auto de Uber también se puede asignar: el
+                            // contrato decide el destino (04/10/2026).
                             soltarEnVehiculo(vehiculo.id);
                             return;
                           }
@@ -1264,7 +1259,7 @@ export function OcupacionPage() {
                         // Sólo las de la categoría pedida se sugieren; el resto
                         // acepta igual, porque asignar de otra categoría es un
                         // upgrade legítimo y el panel lo avisa.
-                        style={reservaArrastrada != null && vehiculo.destino !== 'uber'
+                        style={reservaArrastrada != null
                           ? { outline: '2px dashed rgba(245,158,11,.45)', outlineOffset: '-2px' }
                           : undefined}
                       >
@@ -1299,18 +1294,15 @@ export function OcupacionPage() {
                                 style={{ overflow: 'visible', height: ALTO_FILA }}
                                 onClick={() => openReserva(vehiculo.id, formatDate(day))}
                               >
-                                {/* En la fila de un auto de Uber no hay `+`:
-                                    no se alquila, así que no hay nada que
-                                    empezar desde ahí. */}
-                                {vehiculo.destino !== 'uber' && (
-                                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity z-0">
-                                    <MenuNuevaOperacion
-                                      variante="celda"
-                                      onNuevaReserva={() => abrirOperacion(vehiculo.id, formatDate(day), 'reserva')}
-                                      onNuevoContrato={() => abrirOperacion(vehiculo.id, formatDate(day), 'contrato')}
-                                    />
-                                  </div>
-                                )}
+                                {/* Un auto de Uber también se puede reservar: el
+                                    contrato decide el destino. */}
+                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity z-0">
+                                  <MenuNuevaOperacion
+                                    variante="celda"
+                                    onNuevaReserva={() => abrirOperacion(vehiculo.id, formatDate(day), 'reserva')}
+                                    onNuevoContrato={() => abrirOperacion(vehiculo.id, formatDate(day), 'contrato')}
+                                  />
+                                </div>
                                 {eventsToRender.map(ev => {
                                   const { leftPercent, widthPercent } = getEventSpan(ev, day, vehiculoEvents);
                                   const colorClass = ESTADO_COLORS_EVENTO[ev.estado] || 'bg-slate-500 border-slate-700 text-white';
@@ -1415,15 +1407,13 @@ export function OcupacionPage() {
                               className={`border-r border-slate-300 group/cell p-0 ${bgClass}`}
                               style={{ height: ALTO_FILA }}
                             >
-                              {vehiculo.destino !== 'uber' && (
-                                <div className="w-full h-full flex items-center justify-center opacity-0 group-hover/cell:opacity-100 focus-within:opacity-100 transition-opacity">
-                                  <MenuNuevaOperacion
-                                    variante="celda"
-                                    onNuevaReserva={() => abrirOperacion(vehiculo.id, formatDate(day), 'reserva')}
-                                    onNuevoContrato={() => abrirOperacion(vehiculo.id, formatDate(day), 'contrato')}
-                                  />
-                                </div>
-                              )}
+                              <div className="w-full h-full flex items-center justify-center opacity-0 group-hover/cell:opacity-100 focus-within:opacity-100 transition-opacity">
+                                <MenuNuevaOperacion
+                                  variante="celda"
+                                  onNuevaReserva={() => abrirOperacion(vehiculo.id, formatDate(day), 'reserva')}
+                                  onNuevoContrato={() => abrirOperacion(vehiculo.id, formatDate(day), 'contrato')}
+                                />
+                              </div>
                             </td>
                           );
                         })}

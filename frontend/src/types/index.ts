@@ -869,6 +869,13 @@ export interface Reserva {
   condicion_pago_fecha_ancla?: string | null;
   /** Aclaración libre de la condición de pago (migración 097). Sale en el PDF. */
   condicion_pago_texto?: string | null;
+  /** Contrato de Uber (migración 102). `alquiler` es lo de siempre. */
+  tipo?: 'alquiler' | 'uber';
+  uber_valor_semana?: number | string | null;
+  uber_km_semana?: number | null;
+  uber_precio_km_extra?: number | string | null;
+  /** Fechas ISO de pago, una por semana. */
+  fechas_pago?: string[] | null;
   tipo_factura?: 'A' | 'B' | 'C' | null;
   factura_a_nombre_de?: string | null;
   echeq_banco?: string | null;
@@ -948,6 +955,13 @@ export interface ReservaCreate {
   condicion_pago_fecha_ancla?: string | null;
   /** Aclaración libre de la condición de pago (migración 097). Sale en el PDF. */
   condicion_pago_texto?: string | null;
+  /** Contrato de Uber (migración 102). `alquiler` es lo de siempre. */
+  tipo?: 'alquiler' | 'uber';
+  uber_valor_semana?: number | string | null;
+  uber_km_semana?: number | null;
+  uber_precio_km_extra?: number | string | null;
+  /** Fechas ISO de pago, una por semana. */
+  fechas_pago?: string[] | null;
   tipo_factura?: 'A' | 'B' | 'C' | null;
   factura_a_nombre_de?: string | null;
   echeq_banco?: string | null;
