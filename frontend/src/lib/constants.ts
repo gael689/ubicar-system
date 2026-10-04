@@ -309,111 +309,55 @@ export const NAV_ITEMS = [
   { path: '/contratos', label: 'Contratos', icon: 'FileText' },
   { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
   { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
-  { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
   { path: '/reportes', label: 'Reportes', icon: 'BarChart2' },
 ] as const;
 
-// Fase 3, ítem 36 (plan maestro §5.1): menú reagrupado de 9 items planos a
-// 6 grupos. No mueve rutas ni páginas — sólo agrupa la navegación. Los
-// grupos de un solo item se comportan como link directo; los de más de
-// uno, como sección expandible.
-export interface NavGroup {
+// Menú lateral (04/10/2026). Cuatro secciones con nombre y **todos los ítems a
+// la vista**: antes había grupos plegables, cinco colores distintos y siete
+// ítems en gris, y no se entendía qué era importante. Ahora el orden es el
+// mismo que el del trabajo del día — operar, cobrar, vender, configurar — y el
+// color es uno solo: el azul de Ubicar marca dónde estás parado.
+export interface NavItem {
+  path: string;
   label: string;
   icon: string;
-  /**
-   * `matches`: otras rutas que también cuentan como "estar acá". La entrada
-   * única de Flota se marca activa en `/flota/categorias` y en `/multas`,
-   * que son pestañas de la misma sección.
-   */
-  items: { path: string; label: string; icon: string; matches?: string[] }[];
-  // Se destaca con un color de texto distinto en vez de esconderlo bajo un
-  // desplegable — reemplaza al viejo grupo "Más" (3 puntitos), que agrupaba
-  // secciones secundarias detrás de un click extra.
-  principal?: boolean;
+  /** Otras rutas que también cuentan como "estar acá" (pestañas de la misma sección). */
+  matches?: string[];
 }
 
-export const NAV_GROUPS: NavGroup[] = [
-  { label: 'Hoy', icon: 'LayoutDashboard', principal: true, items: [
-    { path: '/ocupacion', label: 'Ocupación', icon: 'LayoutDashboard' },
-  ] },
-  { label: 'Reservas', icon: 'ClipboardList', principal: true, items: [
-    // "Reservas web" salio del menu: es el mismo listado con el filtro de
-    // canal en "Web". Tener una entrada aparte era lo que hacia que una reserva
-    // web confirmada desapareciera de la vista al salir de esa bandeja. La ruta
-    // sigue existiendo porque hay links a ella.
+export interface NavSection {
+  titulo: string;
+  items: NavItem[];
+}
+
+export const NAV_SECTIONS: NavSection[] = [
+  { titulo: 'Operación', items: [
+    { path: '/ocupacion', label: 'Hoy', icon: 'LayoutDashboard' },
     { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
     { path: '/contratos', label: 'Contratos', icon: 'FileText' },
-  ] },
-  // **Una sola entrada** (pedido del 27/09). Vehículos, Categorías y precios
-  // y Multas son pestañas grandes arriba de la página (`FlotaTabs`); en el
-  // menú eran tres y, como `/flota/categorias` empieza con `/flota`, se
-  // marcaban dos a la vez. Las rutas siguen iguales: los avisos que mandan a
-  // `/flota/categorias` ("falta el precio real") llegan a su pestaña.
-  { label: 'Flota', icon: 'Car', principal: true, items: [
+    // Vehículos, Categorías y Multas son pestañas de la misma página.
     { path: '/flota', label: 'Flota', icon: 'Car', matches: ['/multas'] },
-  ] },
-  { label: 'Clientes', icon: 'Users', principal: true, items: [
     { path: '/clientes', label: 'Clientes', icon: 'Users' },
   ] },
-  { label: 'Finanzas', icon: 'Wallet', principal: true, items: [
+  { titulo: 'Plata', items: [
     { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
-  ] },
-  { label: 'Reportes', icon: 'BarChart2', items: [
     { path: '/reportes', label: 'Reportes', icon: 'BarChart2' },
   ] },
-  { label: 'Notificaciones', icon: 'Bell', items: [
-    { path: '/notificaciones', label: 'Notificaciones', icon: 'Bell' },
-  ] },
-  { label: 'Cotizador', icon: 'Calculator', items: [
+  { titulo: 'Ventas', items: [
     { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
-  ] },
-  { label: 'Precios', icon: 'CalendarRange', items: [
-    // Dos entradas, no una con interruptor: cargar un precio pensando en la
-    // web y cambiarle el precio al mostrador es el error que esto evita.
-    // Una sola entrada. Eran dos —una por canal— y eso hacía que las reglas de
-    // web y de mostrador no se pudieran ver juntas nunca: cargabas una promo en
-    // una pantalla, te olvidabas de la otra, y nada lo señalaba.
-    { path: '/precios', label: 'Calendario de precios', icon: 'CalendarRange' },
-    // El simulador estaba escondido abajo de todo dentro de la pantalla de
-    // precios, así que casi nadie sabía que existía — y es lo único que
-    // contesta "¿mi promo le está ganando a la tarifa del auto?" sin tener que
-    // crear una reserva de prueba.
-    { path: '/precios/simulador', label: 'Simulador', icon: 'Calculator' },
+    // El Simulador se abre desde el botón de la página de Precios.
+    { path: '/precios', label: 'Precios', icon: 'CalendarRange', matches: ['/precios/simulador'] },
     { path: '/adicionales', label: 'Adicionales', icon: 'Package' },
-  ] },
-  { label: 'Fechas especiales', icon: 'CalendarDays', items: [
     { path: '/fechas-especiales', label: 'Fechas especiales', icon: 'CalendarDays' },
-  ] },
-  { label: 'Canal web', icon: 'Globe', items: [
     { path: '/canal-web', label: 'Cómo vende el sitio', icon: 'Globe' },
-    { path: '/reservas-web', label: 'Bandeja de la web', icon: 'ClipboardList' },
+    { path: '/reservas-web', label: 'Bandeja de la web', icon: 'Inbox' },
   ] },
-  { label: 'Configuración', icon: 'Settings', items: [
+  { titulo: 'Sistema', items: [
+    { path: '/notificaciones', label: 'Notificaciones', icon: 'Bell' },
     { path: '/configuracion', label: 'Configuración', icon: 'Settings' },
     { path: '/auditoria', label: 'Auditoría', icon: 'ShieldCheck' },
   ] },
 ];
-
-// Un color de acento por sección núcleo (grupos `principal`) — antes todo el
-// menú usaba el mismo azul para todo, sin distinguir secciones. Los grupos
-// secundarios (Reportes/Notificaciones/Cotizador/Configuración) se quedan
-// neutros a propósito, no son "secciones" del negocio. Clases completas
-// (nunca interpolación de string) para que Tailwind no las purgue.
-export interface NavGroupColor {
-  /** Fondo + texto cuando el grupo/ítem está activo */
-  active: string;
-  /** Color de texto cuando es `principal` pero no está activo — el ícono
-   * hereda el mismo color vía `currentColor`, no necesita clase propia. */
-  text: string;
-}
-
-export const NAV_GROUP_COLOR: Record<string, NavGroupColor> = {
-  Hoy:       { active: 'bg-primary/10 text-primary',        text: 'text-foreground' },
-  Reservas:  { active: 'bg-indigo-500/10 text-indigo-600',  text: 'text-indigo-700' },
-  Flota:     { active: 'bg-teal-500/10 text-teal-600',      text: 'text-teal-700' },
-  Clientes:  { active: 'bg-rose-500/10 text-rose-600',      text: 'text-rose-700' },
-  Finanzas:  { active: 'bg-emerald-500/10 text-emerald-600', text: 'text-emerald-700' },
-};
 
 
 // ─── Naturaleza de un movimiento de cuenta corriente ──────────────────────────
