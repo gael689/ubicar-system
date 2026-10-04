@@ -595,3 +595,37 @@ def clausulas_modificadas(editadas: list[dict], originales: list[dict]) -> list[
     numeros = set(por_numero) | set(nuevas)
     return sorted(n for n in numeros if por_numero.get(n) != nuevas.get(n))
 
+
+# ─── Variante para contratos de Uber (04/10/2026) ────────────────────────────
+
+def clausulas_uber() -> list[dict]:
+    """
+    El clausulado de siempre con **la cláusula 3 a) reemplazada**.
+
+    La común prohíbe usar el vehículo para transportar personas; un auto de
+    Uber se alquila justamente para eso. En su lugar va el texto que pidió
+    Franco: el titular responde por todo lo que haga con el auto, y el seguro
+    de la empresa **no** cubre el traslado de pasajeros.
+
+    No toca `CLAUSULAS` ni `VERSION`: es una variante que se arma al preparar
+    el contrato, y que después se congela en el snapshot como cualquier
+    cláusula editada.
+    """
+    import copy
+
+    clausulas = copy.deepcopy(CLAUSULAS)
+    c3 = next(c for c in clausulas if c["numero"] == 3)
+    i = next(i for i, p in enumerate(c3["parrafos"]) if p["texto"].startswith("a) Utilizar"))
+    c3["parrafos"][i] = _p(
+        "a) Transporte de pasajeros. El titular del contrato es responsable en caso de "
+        "tener un accidente y encontrarse con pasajeros dentro del Vehículo. "
+        f"{LOCADOR} no se responsabiliza por ningún hecho de negligencia por parte del "
+        "titular del contrato. Mientras el Vehículo se encuentre en poder del titular, el "
+        "mismo es responsable por toda actividad que realice con él. "
+        f"{LOCADOR} tiene contratado un seguro de alquiler de vehículos que NO incluye "
+        "traslado de pasajeros. Si el conductor decide trasladar personas sin el "
+        f"consentimiento de {LOCADOR}, debe tomar las medidas necesarias para estar "
+        "cubierto en caso de algún accidente."
+    )
+    return clausulas
+

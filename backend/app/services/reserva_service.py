@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
+from app.domain import uber as uber_dominio
 from app.domain.enums import EstadoReserva, EstadoVehiculo
 from app.domain.solapamientos import detectar_solapamientos, rango_de_carga
 from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
@@ -593,6 +594,11 @@ class ReservaService:
         condicion_pago_ancla: str | None = None,
         condicion_pago_fecha_ancla: date | None = None,
         condicion_pago_texto: str | None = None,
+        tipo: str = "alquiler",
+        uber_valor_semana: Decimal | None = None,
+        uber_km_semana: int | None = None,
+        uber_precio_km_extra: Decimal | None = None,
+        fechas_pago: list[date] | None = None,
         tipo_factura: str | None = None,
         factura_a_nombre_de: str | None = None,
         echeq_banco: str | None = None,
@@ -632,7 +638,7 @@ class ReservaService:
             vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
             if not vehiculo or not vehiculo.activo:
                 raise NotFoundError("Vehículo", vehiculo_id)
-            self._validar_que_se_alquila(vehiculo)
+            self._derivar_destino(vehiculo, tipo)
             # El auto manda: su categoría real gana sobre la que hayan pedido.
             categoria_id = vehiculo.categoria_id or categoria_id
         else:
@@ -761,6 +767,23 @@ class ReservaService:
         if precio_total is None:
             precio_total = precio_lista
 
+        # **Contrato de Uber**: el precio no sale del motor de tarifas sino del
+        # valor de la semana que se pactó, así que no hay "precio de lista"
+        # contra el cual auditar un descuento. Las fechas de pago, si no vienen,
+        # se proponen una por semana.
+        if tipo == "uber":
+            if not uber_valor_semana or Decimal(str(uber_valor_semana)) <= 0:
+                raise BusinessRuleError(
+                    "uber_sin_valor_semana",
+                    "Falta el valor de la semana del contrato de Uber.",
+                )
+            precio_total = uber_dominio.total_del_alquiler(uber_valor_semana, duracion)
+            precio_lista = precio_total
+            if not fechas_pago:
+                fechas_pago = uber_dominio.fechas_de_pago(fecha_inicio, duracion)
+        else:
+            uber_valor_semana = uber_km_semana = uber_precio_km_extra = fechas_pago = None
+
         # Condición de pago: si no es "contado", el ancla es obligatoria — no
         # hay default implícito (antes se contaba siempre desde el checkout
         # sin que nadie lo hubiera decidido).
@@ -846,6 +869,11 @@ class ReservaService:
                 condicion_pago_ancla=condicion_pago_ancla,
                 condicion_pago_fecha_ancla=condicion_pago_fecha_ancla if condicion_pago_ancla == "fecha_especifica" else None,
                 condicion_pago_texto=(condicion_pago_texto or "").strip() or None,
+                tipo=tipo,
+                uber_valor_semana=uber_valor_semana,
+                uber_km_semana=uber_km_semana,
+                uber_precio_km_extra=uber_precio_km_extra,
+                fechas_pago=[f.isoformat() for f in sorted(fechas_pago)] if fechas_pago else None,
                 tipo_factura=tipo_factura if con_factura else None,
                 factura_a_nombre_de=factura_a_nombre_de if con_factura else None,
                 echeq_banco=echeq_banco,
@@ -1050,7 +1078,7 @@ class ReservaService:
         if vehiculo_id is not None and vehiculo_id != reserva.vehiculo_id:
             nuevo = self.db.get(Vehiculo, vehiculo_id)
             if nuevo is not None:
-                self._validar_que_se_alquila(nuevo)
+                self._derivar_destino(nuevo, reserva.tipo)
 
         if vehiculo_id is not None and reserva.alquiler is not None and reserva.vehiculo_id != vehiculo_id:
             raise ConflictError(
@@ -1621,7 +1649,7 @@ class ReservaService:
         nuevo_vehiculo = self.db.query(Vehiculo).filter(Vehiculo.id == nuevo_vehiculo_id).first()
         if not nuevo_vehiculo or not nuevo_vehiculo.activo:
             raise NotFoundError("Vehículo destino", nuevo_vehiculo_id)
-        self._validar_que_se_alquila(nuevo_vehiculo)
+        self._derivar_destino(nuevo_vehiculo, reserva.tipo)
 
         inicio_dt = datetime.combine(reserva.fecha_inicio, reserva.hora_inicio)
         fin_dt = datetime.combine(reserva.fecha_fin, reserva.hora_fin)
@@ -1791,34 +1819,24 @@ class ReservaService:
         return self.total_a_cobrar(reserva) - Decimal(str(reserva.anticipo_monto or 0))
 
     @staticmethod
-    def _validar_que_se_alquila(vehiculo: Vehiculo) -> None:
+    def _derivar_destino(vehiculo: Vehiculo, tipo: str) -> None:
         """
-        Un auto afectado a Uber no se alquila. Punto.
+        **El contrato decide el destino del auto, no al revés** (04/10/2026).
 
-        **La guarda existía en un solo sentido.** `VehiculoService.update` no
-        deja pasar un auto a Uber si tiene reservas vivas — pero nada impedía lo
-        contrario: reservar uno que ya estaba en Uber. Y el sistema lo dejaba
-        entrar por todos lados, porque `DisponibilidadService` los saca del cupo
-        pero `create()` nunca miraba `destino`: alcanzaba con elegirlo a mano en
-        el selector, apretar el `+` de su fila en el calendario, o mandar el
-        `POST` directo.
+        Un contrato de Uber sobre cualquier auto lo pasa a `uber`; uno normal
+        sobre un auto que estaba en Uber lo devuelve a `alquiler`. Los autos
+        rotan entre los dos usos y nadie tiene que acordarse de cambiar nada a
+        mano. **La categoría no se toca nunca**: Uber no es una categoría, es el
+        uso del momento.
 
-        El resultado era una reserva que el sistema no cuenta como ocupación —
-        no descuenta cupo, no aparece en disponibilidad— sobre un auto que no
-        está. Del mostrador, sobre por qué molesta que estén mezclados: *"le
-        quita lugar a los que sí alquilamos"*.
-
-        Va acá y no sólo en la pantalla porque una validación de formulario la
-        saltea cualquier otro cliente de la API — es exactamente lo que pasaba
-        con el cambio de vehículo antes de D-48.
+        Antes esto era una guarda que rechazaba reservar un auto afectado a
+        Uber (`vehiculo_no_se_alquila`), y obligaba a pasar por la ficha del
+        auto para cambiarle el destino. Con autos que rotan, esa puerta sólo
+        estorbaba.
         """
-        if vehiculo.destino != "alquiler":
-            raise BusinessRuleError(
-                "vehiculo_no_se_alquila",
-                f"{vehiculo.patente} está afectado a Uber y no se alquila. "
-                f"Si va a volver a la flota de alquiler, cambiale el destino "
-                f"desde su ficha.",
-            )
+        destino = "uber" if tipo == "uber" else "alquiler"
+        if vehiculo.destino != destino:
+            vehiculo.destino = destino
 
     def _asentar_sena(
         self,
@@ -2111,7 +2129,7 @@ class ReservaService:
         vehiculo = self.db.get(Vehiculo, vehiculo_id)
         if not vehiculo or not vehiculo.activo:
             raise NotFoundError("Vehículo", vehiculo_id)
-        self._validar_que_se_alquila(vehiculo)
+        self._derivar_destino(vehiculo, reserva.tipo)
 
         anterior = reserva.vehiculo_id
         estado_antes = reserva.estado

@@ -16,7 +16,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.exceptions import ConflictError
 from app.models.vehiculo import Vehiculo
 from app.schemas.vehiculo import VehiculoUpdate
 from app.services.disponibilidad_service import DisponibilidadService
@@ -76,21 +75,19 @@ class TestElDefaultEsAlquiler:
         assert v.id in {x.id for x in DisponibilidadService(db)._cargar_flota()}
 
 
-class TestNoSeLoLlevaUnaReservaPuesta:
-    def test_pasarlo_a_uber_con_una_reserva_viva_se_niega(
-        self, db, flota, hacer_reserva
-    ):
+class TestPasarloAUberYaNoSeNiega:
+    def test_con_una_reserva_viva_se_puede(self, db, flota, hacer_reserva):
         """
-        La reserva no desaparece cuando el auto sale del cupo: queda asignada a
-        un vehículo que ya no se alquila, y nadie se entera hasta el retiro.
+        Desde el 04/10/2026 el destino lo decide el contrato y el auto sigue
+        siendo cupo del mostrador: ya no hay reserva "huérfana" que proteger.
         """
         vehiculo = db.query(Vehiculo).filter(Vehiculo.patente == "AA111AA").one()
         reserva = hacer_reserva(precio_total="100000", estado="confirmada")
         reserva.vehiculo_id = vehiculo.id
         db.flush()
 
-        with pytest.raises(ConflictError):
-            VehiculoService(db).update(vehiculo.id, VehiculoUpdate(destino="uber"))
+        VehiculoService(db).update(vehiculo.id, VehiculoUpdate(destino="uber"))
+        assert vehiculo.destino == "uber"
 
     def test_sin_reservas_vivas_se_puede(self, db, flota):
         vehiculo = db.query(Vehiculo).filter(Vehiculo.patente == "BB222BB").one()

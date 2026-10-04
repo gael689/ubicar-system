@@ -425,7 +425,32 @@ def _anverso(c: canvas.Canvas, contrato, snap: dict) -> float:
     # `kilometraje_segun_contrato`): un contrato viejo, reimpreso, no trae la
     # clave nueva y por lo tanto **no imprime esta línea**, que es lo correcto
     # — se firmó con otro texto y el snapshot está congelado a propósito.
-    if cargos.get("kilometraje_segun_contrato"):
+    uber = snap.get("uber")
+    if uber:
+        # Contrato de Uber: las condiciones pactadas, a la vista y con sus
+        # números. Reemplaza a la línea genérica del kilometraje.
+        c.setFont("Helvetica-Bold", 7)
+        c.drawString(izq, y, "CONDICIONES DEL CONTRATO DE UBER")
+        y -= 3.8 * mm
+        c.setFont("Helvetica", 7)
+        resumen = [
+            f"Valor semana: {_money(uber.get('valor_semana'))} ARS",
+            f"Condición de pago: {uber.get('condicion_pago') or '—'}",
+        ]
+        if uber.get("km_semana"):
+            resumen.append(f"Kilometraje permitido: {uber['km_semana']} km por semana")
+        if uber.get("precio_km_extra"):
+            resumen.append(f"Precio del km extra: {_money(uber['precio_km_extra'])} ARS")
+        for linea in resumen:
+            c.drawString(izq, y, linea)
+            y -= 3.4 * mm
+        fechas = ", ".join(_fecha(f) for f in uber.get("fechas_pago") or [])
+        if fechas:
+            for linea in _wrap(f"Fechas de pago: {fechas}", "Helvetica", 7, util):
+                c.drawString(izq, y, linea)
+                y -= 3.4 * mm
+        y -= 2.2 * mm
+    elif cargos.get("kilometraje_segun_contrato"):
         c.drawString(izq, y, "El kilometraje se rige por lo pactado en este contrato.")
         y -= 3.6 * mm
 

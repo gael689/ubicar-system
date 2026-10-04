@@ -18,6 +18,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessRuleError, NotFoundError
 from app.domain import contrato_clausulado
+from app.domain import uber as uber_dominio
+from app.domain.cuenta_corriente import DIAS_POR_CONDICION
 from app.domain.tarifas import dias_facturables
 from app.models.adicional import Adicional
 from app.models.alquiler import Alquiler
@@ -214,8 +216,36 @@ class ContratoService:
             "aceptacion": contrato_clausulado.ACEPTACION,
             # Las cláusulas del reverso, **editables antes de generar**
             # (04/10/2026). Si el operador no toca nada, `crear` las descarta y
-            # el contrato sigue atado a su plantilla.
-            "clausulas": self.plantilla_vigente().clausulas,
+            # el contrato sigue atado a su plantilla. Un contrato de Uber trae
+            # la variante con la cláusula 3 a) reemplazada.
+            "clausulas": (
+                contrato_clausulado.clausulas_uber()
+                if reserva.tipo == "uber"
+                else self.plantilla_vigente().clausulas
+            ),
+            "uber": self._bloque_uber(reserva),
+        }
+
+    def _bloque_uber(self, r: Reserva) -> dict | None:
+        """
+        Las condiciones propias del contrato de Uber, que van en el anverso:
+        valor de la semana, condición de pago, fechas de pago, kilometraje y
+        precio del km extra. `None` en un alquiler común.
+        """
+        if r.tipo != "uber":
+            return None
+        dias = dias_facturables(r.fecha_inicio, r.hora_inicio, r.fecha_fin, r.hora_fin)
+        condicion = (r.condicion_pago_texto or "").strip()
+        if not condicion:
+            n = DIAS_POR_CONDICION.get(r.condicion_pago or "contado", 0)
+            condicion = "Contado" if n == 0 else f"A {n} días"
+        return {
+            "valor_semana": float(r.uber_valor_semana or 0),
+            "semanas": uber_dominio.cantidad_de_semanas(dias),
+            "condicion_pago": condicion,
+            "fechas_pago": list(r.fechas_pago or []),
+            "km_semana": r.uber_km_semana,
+            "precio_km_extra": float(r.uber_precio_km_extra) if r.uber_precio_km_extra else None,
         }
 
     def _bloque_cliente(self, c: Cliente | None) -> dict:
@@ -325,7 +355,15 @@ class ContratoService:
         # imprimía además una línea "Conductor joven (19 años)", que le dice
         # al cliente en la cara que le cobran más por su edad.
         precio = Decimal(str(r.precio_total or 0))
-        if precio > 0:
+        if precio > 0 and r.tipo == "uber" and r.uber_valor_semana:
+            semanas = Decimal(dias) / 7
+            lineas.append({
+                "concepto": "Alquiler semanal",
+                "cantidad": int(semanas) if semanas == int(semanas) else float(round(semanas, 2)),
+                "valor_unitario": float(r.uber_valor_semana),
+                "total": float(precio),
+            })
+        elif precio > 0:
             lineas.append({
                 "concepto": "Días de alquiler",
                 "cantidad": dias,

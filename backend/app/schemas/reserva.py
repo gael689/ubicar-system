@@ -138,6 +138,12 @@ class ReservaCreate(BaseModel):
     condicion_pago_fecha_ancla: date | None = None
     # Aclaración libre (migración 097): sale en el PDF de la reserva.
     condicion_pago_texto: str | None = None
+    # Contrato de Uber (migración 102). `alquiler` = lo de siempre.
+    tipo: Literal["alquiler", "uber"] = "alquiler"
+    uber_valor_semana: Decimal | None = None
+    uber_km_semana: int | None = None
+    uber_precio_km_extra: Decimal | None = None
+    fechas_pago: list[date] | None = None
     # Factura — sólo descriptivo, sin integración AFIP real todavía.
     tipo_factura: Literal["A", "B", "C"] | None = None
     factura_a_nombre_de: str | None = None
@@ -279,6 +285,11 @@ class ReservaResponse(BaseModel):
     condicion_pago_ancla: str | None = None
     condicion_pago_fecha_ancla: date | None = None
     condicion_pago_texto: str | None = None
+    tipo: str = "alquiler"
+    uber_valor_semana: Decimal | None = None
+    uber_km_semana: int | None = None
+    uber_precio_km_extra: Decimal | None = None
+    fechas_pago: list[str] | None = None
     tipo_factura: str | None = None
     factura_a_nombre_de: str | None = None
     echeq_banco: str | None = None

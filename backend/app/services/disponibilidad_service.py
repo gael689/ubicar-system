@@ -71,7 +71,7 @@ class DisponibilidadService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _cargar_flota(self) -> list[VehiculoDisponible]:
+    def _cargar_flota(self, incluir_uber: bool = False) -> list[VehiculoDisponible]:
         """
         La flota que se puede alquilar.
 
@@ -85,11 +85,13 @@ class DisponibilidadService:
         disponibilidad de la que existe**. Se vende una unidad que no está, y
         se descubre el día del retiro.
         """
-        vehiculos = (
-            self.db.query(Vehiculo)
-            .filter(Vehiculo.activo.is_(True), Vehiculo.destino == "alquiler")
-            .all()
-        )
+        # `incluir_uber`: el mostrador ve toda la flota libre, sea cual sea su
+        # destino de hoy (los autos rotan entre Uber y alquiler, y lo decide el
+        # contrato). La web **no** ofrece los que están en Uber.
+        q = self.db.query(Vehiculo).filter(Vehiculo.activo.is_(True))
+        if not incluir_uber:
+            q = q.filter(Vehiculo.destino == "alquiler")
+        vehiculos = q.all()
         return [VehiculoDisponible(id=v.id, categoria_id=v.categoria_id) for v in vehiculos]
 
     def _cargar_ocupaciones(
@@ -231,7 +233,7 @@ class DisponibilidadService:
             q = q.filter(Categoria.id.in_(categoria_ids))
         categorias = q.order_by(Categoria.orden, Categoria.nombre).all()
 
-        flota = self._cargar_flota()
+        flota = self._cargar_flota(incluir_uber=not solo_web)
         ocupaciones = self._cargar_ocupaciones(fecha_inicio, fecha_fin, excluir_hold_token)
 
         # **Un auto que vuelve no está listo en el mismo instante.** Los rangos
@@ -491,7 +493,7 @@ class DisponibilidadService:
 
         cupos = calcular_cupos(
             inicio_dt, fin_dt,
-            self._cargar_flota(),
+            self._cargar_flota(incluir_uber=True),
             con_preparacion(
                 self._cargar_ocupaciones(
                     fecha_inicio, fecha_fin, excluir_reserva_id=excluir_reserva_id

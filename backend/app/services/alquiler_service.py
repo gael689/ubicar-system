@@ -15,6 +15,7 @@ from app.domain.control_24hs import (
     GRACIA_MINUTOS, MULTIPLICADOR_HORA_EXCEDENTE, TOPE_HORAS_ANTES_DIA_EXTRA,
 )
 from app.domain.cuenta_corriente import calcular_vencimiento
+from app.domain import uber as uber_dominio
 from app.domain.enums import EstadoReserva, EstadoVehiculo, DecisionExcedente
 from app.domain.solapamientos import detectar_solapamientos
 from app.domain.tarifas import (
@@ -276,7 +277,35 @@ class AlquilerService:
                 + reserva.total_adicionales
             )
             debito_alquiler = None
-            if monto_facturado > 0:
+            if monto_facturado > 0 and reserva.tipo == "uber" and reserva.fechas_pago:
+                # **Contrato de Uber: un débito por semana**, cada uno con su
+                # fecha de pago. Así cada cuota entra sola en "A cobrar" y en los
+                # avisos de deuda cuando vence, en vez de ser un único débito
+                # grande que nadie mira hasta el final. La suma da siempre el
+                # total exacto (el resto de los centavos va a la última).
+                fechas = [date.fromisoformat(f) for f in reserva.fechas_pago]
+                cuotas = uber_dominio.repartir_en_cuotas(monto_facturado, len(fechas))
+                for n, (fecha_cuota, monto_cuota) in enumerate(zip(fechas, cuotas), start=1):
+                    mov = self.cc_service.registrar_movimiento(
+                        cliente_id=reserva.cliente_id,
+                        tipo="debito",
+                        naturaleza="alquiler",
+                        concepto=(
+                            f"Alquiler #{reserva.id} — semana {n} de {len(fechas)} "
+                            f"({reserva.vehiculo.patente if reserva.vehiculo else ''})"
+                        ),
+                        monto=monto_cuota,
+                        fecha=checkout_fecha,
+                        creado_por=usuario_id,
+                        condicion=reserva.condicion_pago,
+                        fecha_vencimiento=fecha_cuota,
+                        alquiler_id=alquiler.id,
+                        reserva_id=reserva.id,
+                    )
+                    # El anticipo se aplica contra la primera semana.
+                    if debito_alquiler is None:
+                        debito_alquiler = mov
+            elif monto_facturado > 0:
                 # Condición de pago: decisión de la reserva (D-?), no el
                 # default del cliente. Si el ancla es 'checkin', todavía no
                 # sabemos cuándo vuelve el auto — queda sin vencimiento hasta
@@ -588,6 +617,39 @@ class AlquilerService:
                     alquiler_id=alquiler_id,
                     reserva_id=reserva.id,
                 )
+
+            # **Contrato de Uber: kilometraje extra.** Los km recorridos contra
+            # el tope pactado (km por semana, prorrateado por los días del
+            # contrato). Se cobra como un débito aparte para que se vea en la
+            # cuenta corriente con la cuenta a la vista.
+            if reserva.tipo == "uber":
+                dias_contrato = dias_facturables(
+                    reserva.fecha_inicio, reserva.hora_inicio,
+                    reserva.fecha_fin, reserva.hora_fin,
+                )
+                recorridos = checkin_km - alquiler.checkout_km
+                cargo_km = uber_dominio.cargo_por_km_extra(
+                    recorridos, reserva.uber_km_semana,
+                    reserva.uber_precio_km_extra, dias_contrato,
+                )
+                if cargo_km > 0:
+                    excedidos = uber_dominio.km_excedidos(
+                        recorridos, reserva.uber_km_semana, dias_contrato
+                    )
+                    self.cc_service.registrar_movimiento(
+                        cliente_id=reserva.cliente_id,
+                        tipo="debito",
+                        naturaleza="cargo_cierre",
+                        concepto=(
+                            f"Kilometraje extra alquiler #{reserva.id} — "
+                            f"{excedidos} km × ${reserva.uber_precio_km_extra}"
+                        ),
+                        monto=cargo_km,
+                        fecha=checkin_fecha,
+                        creado_por=usuario_id,
+                        alquiler_id=alquiler_id,
+                        reserva_id=reserva.id,
+                    )
 
             # Cargos de cierre (ítem 24): combustible faltante y limpieza,
             # ambos montos editables por el operador — un solo débito conjunto.

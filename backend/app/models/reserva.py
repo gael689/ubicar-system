@@ -1,6 +1,6 @@
 from datetime import date, time, datetime
 from decimal import Decimal
-from sqlalchemy import String, DateTime, Enum, ForeignKey, Time, Date, Boolean, Numeric, Text, Index, Integer, SmallInteger, UniqueConstraint
+from sqlalchemy import JSON, String, DateTime, Enum, ForeignKey, Time, Date, Boolean, Numeric, Text, Index, Integer, SmallInteger, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -145,6 +145,16 @@ class Reserva(Base):
     # tiene que salir en el PDF de la reserva, no quedar en la memoria de quien
     # la cargó.
     condicion_pago_texto: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── Contrato de Uber (migración 102) ────────────────────────────────────
+    # `alquiler` es lo de siempre. `uber` lleva el valor de la semana, los km
+    # permitidos por semana, el precio del km extra y una fecha de pago por
+    # semana (lista de fechas ISO, editable). Ver `domain/uber.py`.
+    tipo: Mapped[str] = mapped_column(String(10), server_default="alquiler", nullable=False, default="alquiler")
+    uber_valor_semana: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    uber_km_semana: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uber_precio_km_extra: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    fechas_pago: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # Factura (sólo descriptivo por ahora — sin integración AFIP real, ver
     # Plan Maestro decisión #5).
