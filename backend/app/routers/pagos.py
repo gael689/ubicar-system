@@ -90,7 +90,7 @@ def _enriquecer(pago: Pago, db: Session) -> PagoDetalladoResponse:
 # Tiene que ser exactamente el enum de `models/pago.py`. `wapa` faltaba, así
 # que filtrar la caja por Wapa devolvía 400 aunque hubiera cobros por ese medio.
 MEDIOS_PAGO = ["efectivo", "transferencia", "tarjeta", "cheque", "echeq",
-               "cuenta_corriente", "mercado_pago", "wapa"]
+               "cuenta_corriente", "mercado_pago", "wapa", "otro"]
 
 
 def _filtrar_pagos(

@@ -135,6 +135,7 @@ export function CancelarReservaDialog({
               <option value="efectivo">Efectivo</option>
               <option value="mercado_pago">Mercado Pago</option>
               <option value="wapa">Wapa (Patagonia)</option>
+              <option value="otro">Otro</option>
             </select>
           </div>
         )}

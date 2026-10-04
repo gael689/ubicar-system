@@ -616,7 +616,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         lista.push({
           id: v.id,
           etiqueta: `${v.patente} · ${v.marca} ${v.modelo}`
-            + (v.es_downgrade ? ' · categoría menor' : ''),
+            + (v.es_downgrade ? ' · categoría menor' : '')
+            + (v.vuelve_a ? ` · vuelve ${v.vuelve_a}` : ''),
           ocupado: false,
           categoriaId: v.categoria_id,
         });
@@ -1780,6 +1781,18 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   , con el tiempo de preparación entre alquileres ya descontado.
                 </p>
               )}
+              {/* Libre, pero vuelve justo antes: la preparación es un aviso, no un bloqueo. */}
+              {(() => {
+                const ajustado = libres?.vehiculos.find(v => String(v.id) === vehiculoId && v.vuelve_a);
+                if (!ajustado || isEdit) return null;
+                const m = ajustado.minutos_para_prepararlo ?? 0;
+                return (
+                  <p data-aviso="vuelve-justo" className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Vuelve a las {ajustado.vuelve_a}: quedan {Math.floor(m / 60) > 0 ? `${Math.floor(m / 60)} h ` : ''}{m % 60} min para prepararlo.
+                  </p>
+                );
+              })()}
               {vehiculoOcupadoEnElRango && (
                 <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -2504,7 +2517,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <div className="space-y-2 pt-2 border-t border-slate-200">
                   <label className="text-sm font-medium text-slate-600">Forma de pago esperada (opcional)</label>
                   <div className="flex gap-2 flex-wrap">
-                    {['efectivo', 'transferencia', 'tarjeta', 'wapa', 'cheque', 'echeq', 'cuenta_corriente'].map(m => (
+                    {['efectivo', 'transferencia', 'tarjeta', 'wapa', 'cheque', 'echeq', 'otro', 'cuenta_corriente'].map(m => (
                       <button
                         key={m} type="button"
                         onClick={() => setFormaPagoPrevista(m === formaPagoPrevista ? '' : m)}

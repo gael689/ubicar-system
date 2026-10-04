@@ -91,6 +91,7 @@ export const FORMA_PAGO_LABEL: Record<string, string> = {
   tarjeta: 'Tarjeta',
   mercado_pago: 'Mercado Pago',
   wapa: 'Wapa',
+  otro: 'Otro',
   cheque: 'Cheque',
   echeq: 'E-cheq',
   cuenta_corriente: 'Cuenta corriente',

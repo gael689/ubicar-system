@@ -380,6 +380,25 @@ describe('Paso 3 — el auto', () => {
     expect(within(select).queryByText(/BB222BB/)).not.toBeInTheDocument();
   });
 
+  it('un auto que vuelve justo antes del retiro se ofrece, con el aviso de la preparación', async () => {
+    // El caso del 04/10: el contrato termina 07:50 y se reserva desde las 09:00.
+    estado.libres = {
+      categoria_id: 1, categoria_nombre: 'Compacto',
+      vehiculos: [{
+        ...AUTO_COMPACTO, categoria_nombre: 'Compacto', es_categoria_pedida: true,
+        es_downgrade: false, vuelve_a: '07:50', minutos_para_prepararlo: 70,
+      }],
+    };
+    const user = userEvent.setup();
+    abrir();
+    await avanzarHasta(user, 3);
+
+    const select = selectDeVehiculo();
+    expect(within(select).getByText(/AA111AA.*vuelve 07:50/)).toBeInTheDocument();
+    await user.selectOptions(select, '10');
+    expect(screen.getByText(/Vuelve a las 07:50: quedan 1 h 10 min para prepararlo/)).toBeInTheDocument();
+  });
+
   it('"Ver toda la flota" trae el resto, marcando los comprometidos', async () => {
     estado.libres = {
       categoria_id: 1, categoria_nombre: 'Compacto',

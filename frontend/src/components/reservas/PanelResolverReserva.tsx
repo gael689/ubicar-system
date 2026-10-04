@@ -325,10 +325,10 @@ function Paso({
 // entra. Faltaba Wapa, así que un cobro por Wapa no se podía cargar desde acá.
 // `cuenta_corriente` no va: esto registra un cobro, y "anotar en la cuenta" no
 // lo es (ver `caja_service.es_plata_que_entro`).
-const MEDIOS = ['transferencia', 'efectivo', 'tarjeta', 'mercado_pago', 'wapa', 'echeq', 'cheque'] as const;
+const MEDIOS = ['transferencia', 'efectivo', 'tarjeta', 'mercado_pago', 'wapa', 'echeq', 'cheque', 'otro'] as const;
 const MEDIO_LABEL: Record<string, string> = {
   transferencia: 'Transferencia', efectivo: 'Efectivo', tarjeta: 'Tarjeta',
-  mercado_pago: 'Mercado Pago', wapa: 'Wapa (Patagonia)', echeq: 'E-cheq', cheque: 'Cheque',
+  mercado_pago: 'Mercado Pago', wapa: 'Wapa (Patagonia)', echeq: 'E-cheq', cheque: 'Cheque', otro: 'Otro',
 };
 
 /**

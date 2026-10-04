@@ -82,7 +82,7 @@ class ImputarDanioRequest(BaseModel):
 # Los mismos valores que `Pago.medio_pago` (models/pago.py).
 MedioPagoDanio = Literal[
     "efectivo", "transferencia", "tarjeta", "cheque", "echeq",
-    "cuenta_corriente", "mercado_pago", "wapa",
+    "cuenta_corriente", "mercado_pago", "wapa", "otro",
 ]
 
 

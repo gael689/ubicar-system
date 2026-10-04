@@ -16,7 +16,7 @@ Lo que **no** se duplica es el cálculo: los dos endpoints llaman al mismo
 cuentas de cupo es tener dos verdades sobre cuántos autos hay, y la que
 descubrís tarde es la mala.
 """
-from datetime import date, time
+from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -116,6 +116,12 @@ def get_vehiculos_libres(
     vehiculos = (
         db.query(Vehiculo).filter(Vehiculo.id.in_(ids)).all() if ids else []
     )
+    # Los que vuelven justo antes del retiro: libres, pero con la preparación
+    # ajustada. Se avisa en vez de esconderlos.
+    vuelven = DisponibilidadService(db).vuelven_justo_antes(
+        fecha_inicio, hora_inicio, fecha_fin, excluir_reserva_id=excluir_reserva_id,
+    )
+    inicio_pedido = datetime.combine(fecha_inicio, hora_inicio)
     categorias = db.query(Categoria).all()
     nombres = {c.id: c.nombre for c in categorias}
     ordenes = {c.id: c.orden for c in categorias}
@@ -134,6 +140,10 @@ def get_vehiculos_libres(
             "categoria_nombre": nombres.get(v.categoria_id),
             "es_categoria_pedida": (
                 categoria_id is not None and v.categoria_id == categoria_id
+            ),
+            "vuelve_a": vuelven[v.id].strftime("%H:%M") if v.id in vuelven else None,
+            "minutos_para_prepararlo": (
+                int((inicio_pedido - vuelven[v.id]).total_seconds() // 60) if v.id in vuelven else None
             ),
             "es_downgrade": (
                 orden_pedido is not None

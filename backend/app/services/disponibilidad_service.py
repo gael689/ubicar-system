@@ -446,6 +446,38 @@ class DisponibilidadService:
         )
         return cupos[0].vehiculos_libres if cupos else []
 
+    def vuelven_justo_antes(
+        self,
+        fecha_inicio: date,
+        hora_inicio: time,
+        fecha_fin: date,
+        excluir_reserva_id: int | None = None,
+    ) -> dict[int, datetime]:
+        """
+        Autos que **vuelven pocas horas antes del retiro pedido**, es decir, que
+        el mostrador puede entregar pero con la preparación justa.
+
+        Con el margen de preparación en 2 h, un auto que vuelve a las 07:50 y se
+        quiere entregar a las 09:00 queda libre en el mostrador (la preparación
+        es un aviso, no un bloqueo), y esto es lo que permite **decirlo**:
+        *"vuelve 07:50, quedan 1 h 10"*. Devuelve `{vehiculo_id: cuándo vuelve}`.
+        """
+        inicio = datetime.combine(fecha_inicio, hora_inicio)
+        margen = timedelta(hours=self._margen_rotacion())
+        if margen <= timedelta(0):
+            return {}
+        ajustados: dict[int, datetime] = {}
+        for o in self._cargar_ocupaciones(
+            fecha_inicio, fecha_fin, excluir_reserva_id=excluir_reserva_id
+        ):
+            if o.origen != "reserva" or o.vehiculo_id is None:
+                continue
+            if o.fin <= inicio < o.fin + margen:
+                previo = ajustados.get(o.vehiculo_id)
+                if previo is None or o.fin > previo:
+                    ajustados[o.vehiculo_id] = o.fin
+        return ajustados
+
     def unidades_libres(
         self,
         fecha_inicio: date,

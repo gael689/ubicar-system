@@ -66,7 +66,7 @@ export type MedioPagoGasto =
  * el mostrador). Ninguno de los dos se pliega a `tarjeta`: se concilian contra
  * extractos distintos y tienen otras comisiones.
  */
-export type MetodoPago = MedioPagoGasto | 'cuenta_corriente' | 'mercado_pago' | 'wapa';
+export type MetodoPago = MedioPagoGasto | 'cuenta_corriente' | 'mercado_pago' | 'wapa' | 'otro';
 
 // ─── Pagos ───────────────────────────────────────────────────────────────────
 
@@ -2036,6 +2036,10 @@ export interface VehiculoLibre {
   categoria_nombre: string | null;
   es_categoria_pedida: boolean;
   es_downgrade: boolean;
+  /** Si vuelve pocas horas antes del retiro pedido: la hora ("07:50") y los
+   *  minutos que quedan para prepararlo. Libre, pero con la preparación justa. */
+  vuelve_a?: string | null;
+  minutos_para_prepararlo?: number | null;
 }
 
 export interface VehiculosLibres {

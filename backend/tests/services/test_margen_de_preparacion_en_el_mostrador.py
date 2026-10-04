@@ -88,3 +88,33 @@ def test_guardar_la_reserva_ya_lo_permitia(
         usuario_id=usuario.id,
     )
     assert reserva.vehiculo_id == auto_con_contrato_hasta_las_0750.id
+
+
+class TestElAvisoDeQueVuelveJustoAntes:
+    """El auto aparece libre, y el mostrador se entera de que vuelve a las 07:50."""
+
+    def test_dice_cuando_vuelve_el_auto_que_vuelve_justo_antes(
+        self, db, auto_con_contrato_hasta_las_0750
+    ):
+        ajustados = DisponibilidadService(db).vuelven_justo_antes(MANIANA, time(9, 0), LUNES)
+        assert ajustados[auto_con_contrato_hasta_las_0750.id].time() == time(7, 50)
+
+    def test_si_el_retiro_es_pasado_el_margen_no_hay_aviso(
+        self, db, auto_con_contrato_hasta_las_0750
+    ):
+        # 07:50 + 2 h = 09:50: a las 10:00 ya está preparado.
+        assert DisponibilidadService(db).vuelven_justo_antes(MANIANA, time(10, 0), LUNES) == {}
+
+    def test_un_auto_que_no_vuelve_ese_dia_no_tiene_aviso(
+        self, db, auto_con_contrato_hasta_las_0750
+    ):
+        assert DisponibilidadService(db).vuelven_justo_antes(date(2026, 10, 20), time(9, 0), date(2026, 10, 22)) == {}
+
+    def test_el_endpoint_lo_manda_en_el_auto(self, client, auto_con_contrato_hasta_las_0750):
+        r = client.get("/api/v1/disponibilidad/vehiculos", params={
+            "fecha_inicio": MANIANA.isoformat(), "hora_inicio": "09:00:00",
+            "fecha_fin": LUNES.isoformat(), "hora_fin": "09:00:00",
+        })
+        auto = next(v for v in r.json()["data"]["vehiculos"] if v["id"] == auto_con_contrato_hasta_las_0750.id)
+        assert auto["vuelve_a"] == "07:50"
+        assert auto["minutos_para_prepararlo"] == 70

@@ -18,6 +18,7 @@ export const MEDIOS_PAGO: MetodoPago[] = [
   'cheque',
   'echeq',
   'wapa',
+  'otro',
   'cuenta_corriente',
 ];
 

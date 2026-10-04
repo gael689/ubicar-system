@@ -17,7 +17,7 @@ from typing import Literal
 # La lista tiene que ser exactamente la del enum de `models/pago.py`.
 MedioPago = Literal[
     "efectivo", "transferencia", "tarjeta", "cheque", "echeq",
-    "cuenta_corriente", "mercado_pago", "wapa",
+    "cuenta_corriente", "mercado_pago", "wapa", "otro",
 ]
 
 

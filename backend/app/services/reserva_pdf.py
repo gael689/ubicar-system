@@ -58,6 +58,7 @@ _FORMA_PAGO_LABEL = {
     # Faltaban: una reserva web pagada salía con el código crudo "mercado_pago".
     "mercado_pago": "Mercado Pago",
     "wapa": "Wapa",
+    "otro": "Otro",
     "tarjeta_credito": "Tarjeta de crédito",
     "tarjeta_debito": "Tarjeta de débito",
 }

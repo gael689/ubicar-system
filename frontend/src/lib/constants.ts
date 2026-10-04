@@ -226,6 +226,7 @@ export const METODO_PAGO_LABEL: Record<string, string> = {
   cuenta_corriente: 'Cuenta Corriente',
   mercado_pago: 'Mercado Pago',
   wapa: 'Wapa',
+  otro: 'Otro',
 };
 
 // ─── Navegación ──────────────────────────────────────────────────────────────
@@ -427,6 +428,7 @@ export const MEDIO_PAGO_COLOR: Record<string, string> = {
   tarjeta: 'bg-info/15 text-info',
   mercado_pago: 'bg-info/15 text-info',
   wapa: 'bg-info/15 text-info',
+  otro: 'bg-slate-100 text-slate-700',
   cheque: 'bg-info/10 text-info',
   echeq: 'bg-info/10 text-info',
   cuenta_corriente: 'bg-inactivo/15 text-inactivo',

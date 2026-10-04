@@ -32,6 +32,9 @@ export interface VehiculoLibre {
    * hay con qué compararlo (reserva sin categoría, `orden` sin cargar).
    */
   es_downgrade: boolean;
+  /** Vuelve justo antes del retiro (ver `VehiculoLibre` en types). */
+  vuelve_a?: string | null;
+  minutos_para_prepararlo?: number | null;
 }
 
 export interface VehiculosDisponibles {

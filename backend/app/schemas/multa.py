@@ -15,7 +15,7 @@ EstadoMultaEditable = Literal["pendiente", "imputada", "apelando"]
 # enum del modelo porque los schemas no importan modelos.
 MedioPagoMulta = Literal[
     "efectivo", "transferencia", "tarjeta", "cheque", "echeq",
-    "cuenta_corriente", "mercado_pago", "wapa",
+    "cuenta_corriente", "mercado_pago", "wapa", "otro",
 ]
 
 

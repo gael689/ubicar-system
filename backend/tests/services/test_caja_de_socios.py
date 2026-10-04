@@ -311,3 +311,19 @@ class TestFacturaParcialAlCrear:
     def test_negativo_se_rechaza(self, db, cliente, usuario, vehiculo):
         with pytest.raises(BusinessRuleError):
             self._crear(db, cliente, usuario, vehiculo, monto_facturado=D("-1"))
+
+
+class TestMedioOtro:
+    def test_otro_es_plata_que_entro_y_aparece_en_el_mes(self, svc, socios, hacer_reserva, cobrar):
+        franco, _, _ = socios
+        r = hacer_reserva(precio_total="100000")
+        cobrar(r, 100000, franco, medio="otro")
+        assert svc.alquileres(None, None, None, None)[0][0]["cobrado"] is True
+        m = svc.mes(date(2026, 10, 1))
+        assert m["por_medio"]["otro"][str(franco.id)] == 100000.0
+
+    def test_se_puede_registrar_un_cobro_por_la_api(self, client, db, hacer_reserva):
+        r = hacer_reserva(precio_total="100000")
+        resp = client.post("/api/v1/pagos", json={
+            "cliente_id": r.cliente_id, "monto": 5000, "medio_pago": "otro", "fecha": "2026-10-03"})
+        assert resp.status_code == 201

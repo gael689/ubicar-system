@@ -51,6 +51,7 @@ const MEDIOS_COBRO = [
   { value: 'tarjeta', label: 'Tarjeta' },
   { value: 'mercado_pago', label: 'Mercado Pago' },
   { value: 'wapa', label: 'Wapa (Patagonia)' },
+  { value: 'otro', label: 'Otro' },
   { value: 'echeq', label: 'E-cheq' },
   { value: 'cheque', label: 'Cheque' },
 ];

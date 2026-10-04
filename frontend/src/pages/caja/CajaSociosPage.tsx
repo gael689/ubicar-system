@@ -24,7 +24,7 @@ const VISTAS: { id: Vista; label: string }[] = [
 ];
 const MEDIO: Record<string, string> = {
   efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta', cheque: 'Cheque',
-  echeq: 'eCheq', cuenta_corriente: 'Cuenta corriente', mercado_pago: 'Mercado Pago', wapa: 'Wapa',
+  echeq: 'eCheq', cuenta_corriente: 'Cuenta corriente', mercado_pago: 'Mercado Pago', wapa: 'Wapa', otro: 'Otro',
   sin_medio: 'Sin medio cargado',
 };
 
