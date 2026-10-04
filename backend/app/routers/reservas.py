@@ -275,6 +275,7 @@ def create_reserva(
             condicion_pago_fecha_ancla=payload.condicion_pago_fecha_ancla,
             condicion_pago_texto=payload.condicion_pago_texto,
             tipo=payload.tipo,
+            monto_facturado=payload.monto_facturado,
             uber_valor_semana=payload.uber_valor_semana,
             uber_km_semana=payload.uber_km_semana,
             uber_precio_km_extra=payload.uber_precio_km_extra,

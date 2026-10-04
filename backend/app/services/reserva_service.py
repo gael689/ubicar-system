@@ -595,6 +595,7 @@ class ReservaService:
         condicion_pago_fecha_ancla: date | None = None,
         condicion_pago_texto: str | None = None,
         tipo: str = "alquiler",
+        monto_facturado: Decimal | None = None,
         uber_valor_semana: Decimal | None = None,
         uber_km_semana: int | None = None,
         uber_precio_km_extra: Decimal | None = None,
@@ -784,6 +785,13 @@ class ReservaService:
         else:
             uber_valor_semana = uber_km_semana = uber_precio_km_extra = fechas_pago = None
 
+        # **Factura parcial**: si se declara cuánto va con factura, manda sobre
+        # el todo-o-nada. Más que cero factura; cero, no.
+        if monto_facturado is not None:
+            if Decimal(str(monto_facturado)) < 0:
+                raise BusinessRuleError("facturado_invalido", "Lo facturado no puede ser negativo.")
+            con_factura = Decimal(str(monto_facturado)) > 0
+
         # Condición de pago: si no es "contado", el ancla es obligatoria — no
         # hay default implícito (antes se contaba siempre desde el checkout
         # sin que nadie lo hubiera decidido).
@@ -870,6 +878,7 @@ class ReservaService:
                 condicion_pago_fecha_ancla=condicion_pago_fecha_ancla if condicion_pago_ancla == "fecha_especifica" else None,
                 condicion_pago_texto=(condicion_pago_texto or "").strip() or None,
                 tipo=tipo,
+                monto_facturado=monto_facturado,
                 uber_valor_semana=uber_valor_semana,
                 uber_km_semana=uber_km_semana,
                 uber_precio_km_extra=uber_precio_km_extra,

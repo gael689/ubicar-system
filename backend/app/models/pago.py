@@ -48,6 +48,14 @@ class Pago(Base):
     fecha: Mapped[date] = mapped_column(Date(), nullable=False)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ── Caja con socios (migración 104) ──────────────────────────────────────
+    # A nombre de quién quedó el cobro (distinto de `cobrado_por`, que es el
+    # usuario que lo cargó: Ramiro puede cargar un cobro que tiene Franco).
+    # Se completa solo desde el usuario; ver `models/caja_socios.py`.
+    socio_id: Mapped[int | None] = mapped_column(ForeignKey("socios.id"), nullable=True, index=True)
+    # En qué reparto mensual entró. NULL = todavía sin repartir.
+    reparto_id: Mapped[int | None] = mapped_column(ForeignKey("repartos.id"), nullable=True, index=True)
+
     # ── Baja lógica (migración 083) ──────────────────────────────────────────
     # **Nada de esto se borra.** Un DELETE saca plata de la caja de un día
     # pasado y no deja ninguna fila que cuente qué había. Con la baja lógica el

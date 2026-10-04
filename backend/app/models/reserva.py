@@ -156,6 +156,11 @@ class Reserva(Base):
     uber_precio_km_extra: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     fechas_pago: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
+    # ── Factura parcial (migración 104) ──────────────────────────────────────
+    # La parte del total que va con factura; el resto es "caja" (sin factura).
+    # NULL en una reserva anterior: ahí vale `con_factura` (todo o nada).
+    monto_facturado: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+
     # Factura (sólo descriptivo por ahora — sin integración AFIP real, ver
     # Plan Maestro decisión #5).
     tipo_factura: Mapped[str | None] = mapped_column(String(1), nullable=True)

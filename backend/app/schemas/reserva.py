@@ -140,6 +140,9 @@ class ReservaCreate(BaseModel):
     condicion_pago_texto: str | None = None
     # Contrato de Uber (migración 102). `alquiler` = lo de siempre.
     tipo: Literal["alquiler", "uber"] = "alquiler"
+    # La parte del total que va con factura (el resto es caja). Si viene, manda
+    # sobre `con_factura`: > 0 factura, 0 no factura.
+    monto_facturado: Decimal | None = None
     uber_valor_semana: Decimal | None = None
     uber_km_semana: int | None = None
     uber_precio_km_extra: Decimal | None = None
@@ -286,6 +289,7 @@ class ReservaResponse(BaseModel):
     condicion_pago_fecha_ancla: date | None = None
     condicion_pago_texto: str | None = None
     tipo: str = "alquiler"
+    monto_facturado: Decimal | None = None
     uber_valor_semana: Decimal | None = None
     uber_km_semana: int | None = None
     uber_precio_km_extra: Decimal | None = None
