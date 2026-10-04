@@ -1840,6 +1840,13 @@ export interface Contrato {
   tiene_escaneo?: boolean;
 }
 
+/** Una cláusula del reverso del contrato. */
+export interface ClausulaContrato {
+  numero: number;
+  titulo: string;
+  parrafos: { texto: string; subrayados?: number[][] }[];
+}
+
 export interface ContratoSnapshot {
   empresa: Record<string, string>;
   reserva_id: number;
@@ -1870,6 +1877,10 @@ export interface ContratoSnapshot {
     franquicia_base?: number | null;
   };
   aceptacion: string;
+  /** Cláusulas del reverso. En un contrato emitido sólo vienen si se
+   *  editaron para ese contrato (`clausulas_modificadas` dice cuáles). */
+  clausulas?: ClausulaContrato[];
+  clausulas_modificadas?: number[];
   atendido_por?: string;
 }
 

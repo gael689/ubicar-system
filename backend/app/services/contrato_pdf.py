@@ -607,7 +607,8 @@ def _reverso(c: canvas.Canvas, plantilla, snap: dict) -> None:
             return True
         return False
 
-    for clausula in plantilla.clausulas:
+    # Las cláusulas editadas para este contrato mandan sobre la plantilla.
+    for clausula in (snap.get("clausulas") or plantilla.clausulas):
         titulo = f"{clausula['numero']}. {resolver(clausula.get('titulo', ''))}"
         if not hay_lugar(interlinea * 2):
             break
@@ -646,11 +647,14 @@ def _reverso(c: canvas.Canvas, plantilla, snap: dict) -> None:
 
     c.setFont("Helvetica", 5)
     c.setFillColor(_GRIS)
-    c.drawRightString(
-        ancho - _MARGEN, _MARGEN + 3 * mm,
+    pie = (
         f"Condiciones Generales v{plantilla.version} — vigentes desde "
-        f"{plantilla.vigente_desde.strftime('%d/%m/%Y')}",
+        f"{plantilla.vigente_desde.strftime('%d/%m/%Y')}"
     )
+    modificadas = snap.get("clausulas_modificadas") or []
+    if modificadas:
+        pie += " — modificadas para este contrato: " + ", ".join(str(n) for n in modificadas)
+    c.drawRightString(ancho - _MARGEN, _MARGEN + 3 * mm, pie)
 
 
 # ─── Entrada ─────────────────────────────────────────────────────────────────

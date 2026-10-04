@@ -543,3 +543,55 @@ ACEPTACIONES: list[dict] = [
 ]
 
 CLAVES_ACEPTACION = [a["clave"] for a in ACEPTACIONES]
+
+
+# ─── Cláusulas editadas contrato por contrato (04/10/2026) ───────────────────
+
+def validar_clausulas(clausulas) -> list[dict]:
+    """
+    Revisa que un clausulado editado a mano tenga la forma que el PDF espera:
+    `[{numero, titulo, parrafos: [{texto, subrayados?}]}]`.
+
+    Falla con un mensaje corto antes de guardar. Un clausulado mal formado se
+    descubriría recién al imprimir, con el cliente esperando para firmar.
+    """
+    if not isinstance(clausulas, list) or not clausulas:
+        raise ValueError("Las cláusulas tienen que ser una lista y no pueden estar vacías.")
+    limpias: list[dict] = []
+    for i, c in enumerate(clausulas, start=1):
+        if not isinstance(c, dict) or not isinstance(c.get("parrafos"), list):
+            raise ValueError(f"La cláusula {i} no tiene párrafos.")
+        numero = c.get("numero")
+        if not isinstance(numero, int):
+            raise ValueError(f"La cláusula {i} no tiene número.")
+        parrafos = []
+        for p in c["parrafos"]:
+            if not isinstance(p, dict) or not isinstance(p.get("texto"), str):
+                raise ValueError(f"La cláusula {numero} tiene un párrafo sin texto.")
+            if not p["texto"].strip():
+                continue  # un párrafo en blanco no se imprime
+            parrafos.append({
+                "texto": p["texto"].strip(),
+                "subrayados": p.get("subrayados") or [],
+            })
+        limpias.append({
+            "numero": numero,
+            "titulo": str(c.get("titulo", "")).strip(),
+            "parrafos": parrafos,
+        })
+    return limpias
+
+
+def clausulas_modificadas(editadas: list[dict], originales: list[dict]) -> list[int]:
+    """
+    Números de las cláusulas que difieren del clausulado vigente, para
+    avisarlo en el contrato. Una cláusula agregada o quitada también cuenta.
+    """
+    def firma(c: dict):
+        return (c.get("titulo", ""), [p.get("texto", "") for p in c.get("parrafos", [])])
+
+    por_numero = {c["numero"]: firma(c) for c in originales}
+    nuevas = {c["numero"]: firma(c) for c in editadas}
+    numeros = set(por_numero) | set(nuevas)
+    return sorted(n for n in numeros if por_numero.get(n) != nuevas.get(n))
+

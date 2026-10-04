@@ -20,12 +20,13 @@ import {
 } from '@/hooks/useContratos';
 import { usePagareDeReserva, usePrepararPagare, useCrearPagare } from '@/hooks/usePagares';
 import { LienzoFirma } from '@/components/shared/LienzoFirma';
+import { ClausulasEditables } from './ClausulasEditables';
 import {
   PagarePanel, FormPagare, datosInicialesPagare, faltaParaEmitir, payloadPagare, type DatosPagare,
 } from './PagarePanel';
 import { api } from '@/lib/api';
 import { extractError, formatCurrency, formatDate, irAlError, sinRespuesta } from '@/lib/utils';
-import type { Contrato, ContratoSnapshot, Pagare, PersonaPagare } from '@/types';
+import type { ClausulaContrato, Contrato, ContratoSnapshot, Pagare, PersonaPagare } from '@/types';
 
 interface Props {
   reservaId: number;
@@ -57,6 +58,8 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
   const crearPagare = useCrearPagare();
   const [conPagare, setConPagare] = useState(true);
   const [datosPagare, setDatosPagare] = useState<DatosPagare | null>(null);
+  // Cláusulas editadas para este contrato; `null` = las de la plantilla.
+  const [clausulas, setClausulas] = useState<ClausulaContrato[] | null>(null);
 
   const [firmando, setFirmando] = useState(false);
   const [anulando, setAnulando] = useState(false);
@@ -97,6 +100,16 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
         {/* Quién maneja, antes de emitir: es lo que el contrato imprime como
             conductor(es), y cambiarlo después obliga a regenerarlo. */}
         {preparado && <ConductoresDelContrato reservaId={reservaId} snapshot={preparado.snapshot} />}
+
+        {/* Las cláusulas del reverso se pueden revisar o cambiar antes de
+            emitir. Lo editado se manda dentro del snapshot. */}
+        {preparado?.snapshot.clausulas && (
+          <ClausulasEditables
+            originales={preparado.snapshot.clausulas}
+            value={clausulas ?? preparado.snapshot.clausulas}
+            onChange={setClausulas}
+          />
+        )}
 
         {/* ── Pagaré, abajo del contrato ─────────────────────────────
             Se genera en el mismo click y comparte el link. Si faltan las
@@ -140,7 +153,10 @@ export function ContratoPanel({ reservaId, antesDeEntregar = false }: Props) {
               return;
             }
             crear.mutate(
-              { reserva_id: reservaId, snapshot: preparado.snapshot },
+              {
+                reserva_id: reservaId,
+                snapshot: clausulas ? { ...preparado.snapshot, clausulas } : preparado.snapshot,
+              },
               {
                 onSuccess: () => {
                   if (!incluirPagare) return;

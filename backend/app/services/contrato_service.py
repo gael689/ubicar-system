@@ -212,6 +212,10 @@ class ContratoService:
             "cargos": self._bloque_cargos(reserva),
             "coberturas": self._bloque_coberturas(reserva),
             "aceptacion": contrato_clausulado.ACEPTACION,
+            # Las cláusulas del reverso, **editables antes de generar**
+            # (04/10/2026). Si el operador no toca nada, `crear` las descarta y
+            # el contrato sigue atado a su plantilla.
+            "clausulas": self.plantilla_vigente().clausulas,
         }
 
     def _bloque_cliente(self, c: Cliente | None) -> dict:
@@ -512,6 +516,7 @@ class ContratoService:
         usuario = self.db.get(Usuario, usuario_id) if usuario_id else None
         datos["atendido_por"] = _nombre_para_el_papel(usuario)
         datos["emitido_at"] = datetime.utcnow().isoformat()
+        self._sellar_clausulas(datos, plantilla)
 
         contrato = Contrato(
             reserva_id=reserva_id,
@@ -527,6 +532,30 @@ class ContratoService:
         self.db.flush()
         self.db.refresh(contrato)
         return contrato
+
+    def _sellar_clausulas(self, datos: dict, plantilla: ContratoPlantilla) -> None:
+        """
+        Deja en el snapshot las cláusulas **sólo si el operador las cambió**.
+
+        Si son idénticas a las de la plantilla se quitan: así un contrato sin
+        cambios sigue siendo "el de la versión N" y se reimprime con ella. Si
+        hay cambios se guardan completas junto con los números modificados,
+        porque lo que se firmó es ese texto y no puede depender de que la
+        plantilla de mañana siga diciendo lo mismo.
+        """
+        propuestas = datos.pop("clausulas", None)
+        datos.pop("clausulas_modificadas", None)
+        if propuestas is None:
+            return
+        try:
+            limpias = contrato_clausulado.validar_clausulas(propuestas)
+        except ValueError as e:
+            raise BusinessRuleError("clausulas_invalidas", str(e)) from e
+        cambiadas = contrato_clausulado.clausulas_modificadas(limpias, plantilla.clausulas)
+        if not cambiadas:
+            return
+        datos["clausulas"] = limpias
+        datos["clausulas_modificadas"] = cambiadas
 
     def firmar(
         self, contrato_id: int, firma_bytes: bytes | None,
