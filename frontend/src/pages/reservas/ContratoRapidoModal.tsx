@@ -127,6 +127,8 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
   const [conductorIds, setConductorIds] = useState<number[]>([]);
 
   const [precioTotal, setPrecioTotal] = useState<number | ''>('');
+  // Opcional: cuánto del total va con factura (vacío = nada, como hasta ahora).
+  const [facturado, setFacturado] = useState<number | ''>('');
   // Alquiler común o contrato de Uber (valor semanal, km, fechas de pago).
   const [uber, setUber] = useState<DatosUber>(UBER_VACIO);
   const esUber = uber.tipo === 'uber';
@@ -278,6 +280,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
         } : {}),
         adicionales: cobertura === '' ? [] : [{ adicional_id: Number(cobertura), cantidad: 1 }],
         descuento_motivo: descuentoMotivo.trim() || null,
+        ...(facturado !== '' && Number(facturado) > 0 ? { monto_facturado: Number(facturado), con_factura: true } : {}),
         // El late check-in manual ya no existe (A1): el horario se cobra solo.
         late_checkout: false,
         cargo_late_checkout: 0,
@@ -622,6 +625,12 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
                       className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-slate-800 text-sm placeholder:text-amber-700/70 focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
                   )}
                 </div>}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-slate-700">Facturado <span className="font-normal text-slate-500">(opcional)</span></label>
+                  <InputMoneda value={facturado} onChange={setFacturado} placeholder="Sin factura"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  <p className="text-xs text-slate-500">Lo que va con factura; el resto queda en caja.</p>
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-semibold text-slate-700">Cobertura</label>
                   <select value={cobertura} onChange={e => setCobertura(e.target.value === '' ? '' : Number(e.target.value))}

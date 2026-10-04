@@ -1,15 +1,18 @@
 import type { ComponentType } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Wallet, CreditCard, BookOpen, Receipt } from 'lucide-react';
+import { Wallet, CreditCard, BookOpen, Receipt, Landmark } from 'lucide-react';
 import { CajaPage } from '@/pages/caja/CajaPage';
+import { CajaSociosPage } from '@/pages/caja/CajaSociosPage';
 import { CobrosPage } from '@/pages/caja/CobrosPage';
 import { EcheqsPage } from '@/pages/echeqs/EcheqsPage';
 import { CuentasCorrientesPage } from '@/pages/cuentas-corrientes/CuentasCorrientesPage';
 
-type Tab = 'caja' | 'cobros' | 'echeqs' | 'cc';
+type Tab = 'libro' | 'caja' | 'cobros' | 'echeqs' | 'cc';
 
 const TABS: { id: Tab; label: string; icon: ComponentType<{ className?: string }> }[] = [
-  { id: 'caja', label: 'Caja del día', icon: Wallet },
+  // La caja como la pidió Franco: alquileres, a cobrar, mes con socios y lo propio.
+  { id: 'libro', label: 'Caja', icon: Landmark },
+  { id: 'caja', label: 'Hoy', icon: Wallet },
   { id: 'cobros', label: 'Cobros', icon: Receipt },
   { id: 'echeqs', label: 'Echeqs', icon: CreditCard },
   { id: 'cc', label: 'Cuentas corrientes', icon: BookOpen },
@@ -30,7 +33,7 @@ function esTab(valor: string | null): valor is Tab {
 export function FinanzasPage({ defaultTab }: { defaultTab?: Tab }) {
   const [params, setParams] = useSearchParams();
   const pedida = params.get('tab');
-  const tab: Tab = esTab(pedida) ? pedida : (defaultTab ?? 'caja');
+  const tab: Tab = esTab(pedida) ? pedida : (defaultTab ?? 'libro');
 
   function elegir(id: Tab) {
     setParams(prev => {
@@ -60,6 +63,7 @@ export function FinanzasPage({ defaultTab }: { defaultTab?: Tab }) {
       </div>
 
       <div className="flex-1 overflow-hidden">
+        {tab === 'libro' && <CajaSociosPage />}
         {tab === 'caja' && <CajaPage />}
         {tab === 'cobros' && <CobrosPage />}
         {tab === 'echeqs' && <EcheqsPage />}

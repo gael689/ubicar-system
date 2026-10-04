@@ -328,6 +328,8 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     setPrecioPorDia(redondear2(total / duracionDias));
   }, [esUber, uber.valorSemana, duracionDias]);
   const [conFactura, setConFactura] = useState(reserva?.con_factura ?? false);
+  // Cuánto del total va con factura. Vacío = todo (lo de siempre); el resto es caja.
+  const [montoFacturado, setMontoFacturado] = useState<number | ''>('');
 
   // Adicionales contratados: { adicional_id → cantidad }. No entran en
   // `precio_total` (ese es el precio del auto) — se suman al facturar.
@@ -1314,6 +1316,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           anticipo_fecha: estadoPago !== 'pendiente' ? anticipoFecha : null,
           anticipo_medio_pago: estadoPago !== 'pendiente' ? anticipoMedioPago : null,
           con_factura: conFactura,
+          ...(conFactura && montoFacturado !== '' ? { monto_facturado: Number(montoFacturado) } : {}),
           descuento_motivo: hayDiferenciaDePrecio ? (descuentoMotivo.trim() || null) : null,
           condicion_pago: condicionPago,
           // El ancla se manda siempre, también en contado: "en el momento" no
@@ -2449,6 +2452,23 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   <input type="checkbox" checked={conFactura} onChange={e => setConFactura(e.target.checked)} className="accent-primary w-4 h-4" />
                   Con factura
                 </label>
+                )}
+                {!isEdit && conFactura && (
+                  <div className="space-y-1.5 pl-1" data-campo="monto_facturado">
+                    <label className="text-sm font-medium text-slate-600">¿Cuánto se factura?</label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="w-44">
+                        <InputMoneda value={montoFacturado} onChange={setMontoFacturado}
+                          placeholder="Todo el total"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                      </div>
+                      <button type="button" onClick={() => setMontoFacturado('')}
+                        className="text-xs text-primary underline">Todo</button>
+                      <span className="text-xs text-slate-500">
+                        {montoFacturado === '' ? 'Se factura el total.' : `El resto (${formatMiles(Math.max(0, totalACobrar - Number(montoFacturado)))}) va sin factura.`}
+                      </span>
+                    </div>
+                  </div>
                 )}
                 {!isEdit && conFactura && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-1">

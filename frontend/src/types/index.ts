@@ -871,6 +871,8 @@ export interface Reserva {
   condicion_pago_texto?: string | null;
   /** Contrato de Uber (migración 102). `alquiler` es lo de siempre. */
   tipo?: 'alquiler' | 'uber';
+  /** La parte del total que va con factura (migración 104). Vacío = según `con_factura`. */
+  monto_facturado?: number | string | null;
   uber_valor_semana?: number | string | null;
   uber_km_semana?: number | null;
   uber_precio_km_extra?: number | string | null;
@@ -957,6 +959,8 @@ export interface ReservaCreate {
   condicion_pago_texto?: string | null;
   /** Contrato de Uber (migración 102). `alquiler` es lo de siempre. */
   tipo?: 'alquiler' | 'uber';
+  /** La parte del total que va con factura (migración 104). Vacío = según `con_factura`. */
+  monto_facturado?: number | string | null;
   uber_valor_semana?: number | string | null;
   uber_km_semana?: number | null;
   uber_precio_km_extra?: number | string | null;
