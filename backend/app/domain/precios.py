@@ -170,6 +170,7 @@ class DiaCotizado:
 # mismos que la clave de `max()` de `resolver_regla_dia`: si esa tupla cambia,
 # esto tiene que cambiar con ella.
 MOTIVO_UNICA = "unica"
+MOTIVO_CANAL = "no_es_solo_web"
 MOTIVO_PRIORIDAD = "prioridad"
 MOTIVO_ESPECIFICIDAD = "especificidad"
 MOTIVO_RANGO = "rango_mas_corto"
@@ -241,8 +242,10 @@ def regla_aplica(
     if regla.max_dias is not None and duracion_dias > regla.max_dias:
         return False
 
-    if regla.canal != "ambos" and regla.canal != canal:
-        return False
+    # `canal` ya no filtra: hay un solo precio (04/10/2026). Los parámetros
+    # `canal` de abajo se conservan para no tocar a los llamadores; las reglas
+    # que quedaron marcadas "web" o "mostrador" valen para todos, con
+    # `peso_canal` como desempate.
 
     # Una regla de vehículo puntual sólo aplica a ese vehículo; una de
     # categoría, sólo a esa categoría. Una general (ambos NULL) aplica a todo.
@@ -252,6 +255,27 @@ def regla_aplica(
         return False
 
     return True
+
+
+def peso_canal(regla: ReglaPrecio) -> int:
+    """
+    Un solo precio: si una regla de canal "web" compite con otra de
+    "mostrador" o "ambos" para el mismo día, **gana la que no es de web**.
+
+    Es el criterio con el que se unificó: el precio que se cobra en el
+    mostrador es la referencia, y una regla que antes existía "sólo online"
+    queda como último recurso — sigue cubriendo los días que nada más cubre,
+    así que no deja huecos, pero ya no le pisa el precio a nadie.
+
+    Va **antes** que `prioridad` en la clave: una promo web con prioridad 20 no
+    puede pasar por encima del precio de mostrador, que es justamente lo que
+    se quiere dejar de tener.
+    """
+    return 0 if regla.canal == "web" else 1
+
+
+def _clave_de_regla(r: ReglaPrecio) -> tuple:
+    return (peso_canal(r), r.prioridad, r.especificidad, -r.amplitud_dias, r.id)
 
 
 def resolver_regla_dia(
@@ -285,10 +309,7 @@ def resolver_regla_dia(
     ]
     if not candidatas:
         return None
-    return max(
-        candidatas,
-        key=lambda r: (r.prioridad, r.especificidad, -r.amplitud_dias, r.id),
-    )
+    return max(candidatas, key=_clave_de_regla)
 
 
 def explicar_regla_dia(
@@ -320,14 +341,15 @@ def explicar_regla_dia(
     if not candidatas:
         return None, None, 0
 
-    clave = lambda r: (r.prioridad, r.especificidad, -r.amplitud_dias, r.id)
-    ordenadas = sorted(candidatas, key=clave, reverse=True)
+    ordenadas = sorted(candidatas, key=_clave_de_regla, reverse=True)
     ganadora = ordenadas[0]
     if len(ordenadas) == 1:
         return ganadora, MOTIVO_UNICA, 1
 
     segunda = ordenadas[1]
-    if ganadora.prioridad != segunda.prioridad:
+    if peso_canal(ganadora) != peso_canal(segunda):
+        motivo = MOTIVO_CANAL
+    elif ganadora.prioridad != segunda.prioridad:
         motivo = MOTIVO_PRIORIDAD
     elif ganadora.especificidad != segunda.especificidad:
         motivo = MOTIVO_ESPECIFICIDAD

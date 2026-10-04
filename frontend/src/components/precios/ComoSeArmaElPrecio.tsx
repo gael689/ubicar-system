@@ -60,8 +60,8 @@ export function ComoSeArmaElPrecio({ className }: { className?: string }) {
                 o en la ficha de un auto puntual.
               </p>
               <p className="mt-1.5 rounded bg-muted px-2 py-1 text-[11px] text-foreground">
-                Vale para <strong>los dos canales</strong>. La tarifa no
-                distingue web de mostrador.
+                Es <strong>un solo precio</strong>: vale igual en el mostrador
+                y en la web.
               </p>
             </div>
 
@@ -73,10 +73,10 @@ export function ComoSeArmaElPrecio({ className }: { className?: string }) {
               <p className="mt-1">
                 Un precio <strong>por día</strong> para un período concreto:
                 temporada alta, un feriado, una promo. Se carga en las pantallas
-                de Precios, <strong>una por canal</strong>.
+                de Precios.
               </p>
               <p className="mt-1.5 rounded bg-muted px-2 py-1 text-[11px] text-foreground">
-                Acá sí se puede tener un precio en la web y otro en el mostrador.
+                También vale para los dos: no hay un precio de web aparte.
               </p>
             </div>
           </div>
@@ -86,7 +86,7 @@ export function ComoSeArmaElPrecio({ className }: { className?: string }) {
             <ol className="mt-1.5 space-y-1">
               <li>
                 <strong className="text-foreground">1.</strong> ¿Hay una regla del
-                calendario que cubra ese día, en ese canal? → se cobra la de{' '}
+                calendario que cubra ese día? → se cobra la de{' '}
                 <strong className="text-foreground">mayor prioridad</strong>.
               </li>
               <li>

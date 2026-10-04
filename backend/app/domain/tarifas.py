@@ -206,29 +206,22 @@ def seleccionar_tipo_tarifa(dias: int) -> TipoTarifa:
         return TipoTarifa.MENSUAL
 
 
-def _mejor(candidatas: list[TarifaInfo], canal: str) -> TarifaInfo | None:
+def _mejor(candidatas: list[TarifaInfo], canal: str = "ambos") -> TarifaInfo | None:
     """
-    De un grupo de tarifas del mismo alcance, la que rige en este canal.
+    De un grupo de tarifas del mismo alcance, la que rige.
 
-    **La tarifa del canal pedido le gana a la de `ambos`, y si no hay, se usa
-    la de `ambos`.** Esa caída es lo que hace seguro tener canal acá: cargar un
-    precio sólo para web no deja al mostrador sin precio ni al revés. Sin ella,
-    olvidarse de cargar un canal sería un "no se puede cotizar" — que es
-    exactamente la falla que hay que evitar en el fallback del motor.
+    **Hay un solo precio** (04/10/2026): `canal` ya no decide. Entre tarifas
+    del mismo alcance gana la que **no es de web** (mostrador o ambos), y a
+    igualdad la de id más alto, o sea la cargada más recientemente. Una tarifa
+    que quedó marcada "web" se usa sólo si no hay otra del mismo alcance, así
+    que unificar no deja a nadie sin precio.
 
-    A igualdad de canal gana la de id más alto, o sea la cargada más
-    recientemente. Igual que en el resto del sistema, el desempate nunca es al
-    azar.
+    El parámetro `canal` se conserva para no tocar a los llamadores.
     """
     if not candidatas:
         return None
-    del_canal = [t for t in candidatas if t.canal == canal]
-    if del_canal:
-        return max(del_canal, key=lambda t: t.id)
-    ambos = [t for t in candidatas if t.canal == "ambos"]
-    if ambos:
-        return max(ambos, key=lambda t: t.id)
-    return None
+    no_web = [t for t in candidatas if t.canal != "web"]
+    return max(no_web or candidatas, key=lambda t: t.id)
 
 
 def _elegir_de_tipo(

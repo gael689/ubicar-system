@@ -282,11 +282,10 @@ def list_reglas(
         q = q.filter(TarifaCalendario.vehiculo_id == vehiculo_id)
     if solo_promociones:
         q = q.filter(TarifaCalendario.es_promocional.is_(True))
-    if canal in ("web", "mostrador"):
-        # `ambos` entra a propósito: una regla de canal 'ambos' **sí** rige en
-        # este canal. Excluirla haría que la pantalla de precios web mostrara
-        # una lista de reglas que no explica los precios de su propia grilla.
-        q = q.filter(TarifaCalendario.canal.in_([canal, "ambos"]))
+    # `canal` se acepta pero ya no filtra: hay un solo precio y toda regla
+    # rige para todos (las que quedaron marcadas "web" compiten con el resto,
+    # ver `domain.precios.peso_canal`). Filtrar escondería reglas que sí
+    # influyen en el precio.
 
     reglas = q.order_by(
         TarifaCalendario.prioridad.desc(), TarifaCalendario.id.desc()

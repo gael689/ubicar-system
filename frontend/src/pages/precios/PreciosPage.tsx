@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ChevronLeft, ChevronRight, CalendarRange, Calculator, Globe, Store,
+  ChevronLeft, ChevronRight, CalendarRange, Calculator,
   MousePointerClick, Maximize2, Minimize2, X,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -30,18 +30,6 @@ function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Qué se está mirando en la grilla, según el canal elegido. */
-const POR_CANAL = {
-  mostrador: {
-    etiqueta: 'Mostrador',
-    ayuda: 'Lo que se cobra cuando el cliente reserva por teléfono, por WhatsApp o en el local.',
-  },
-  web: {
-    etiqueta: 'Web',
-    ayuda: 'Lo que ve y paga un cliente que reserva solo desde ubicar-rent.com.ar.',
-  },
-} as const;
-
 /**
  * Calendario de precios (Fase 5, ítem 57 — plan §7.2).
  *
@@ -63,22 +51,12 @@ const POR_CANAL = {
  * el canal lo define en qué pantalla estás parado, y no hay forma de
  * confundirse.
  */
-export function PreciosPage({ canalInicial = 'mostrador' }: { canalInicial?: Canal }) {
-  /**
-   * Qué canal se está **previsualizando** en la grilla.
-   *
-   * Es una sola pantalla, no una por canal. La separación anterior existía por
-   * un motivo real —un interruptor que sólo cambiaba la vista mientras el alta
-   * seguía creando en "los dos canales", así que cargabas un precio pensando en
-   * la web y le tocabas el precio al mostrador— y eso se resuelve donde estaba
-   * el problema: **el canal es ahora una elección explícita en el formulario**,
-   * con las tres opciones a la vista, y la tabla de reglas muestra los dos
-   * canales juntos con su columna.
-   *
-   * Este estado sólo decide qué precios pinta el calendario y cuál viene
-   * preseleccionado al cargar.
-   */
-  const [canal, setCanal] = useState<Canal>(canalInicial);
+export function PreciosPage() {
+  // **Hay un solo precio** (04/10/2026). Antes había uno para el mostrador y
+  // otro para la web, y la pantalla tenía un selector que confundía: ahora
+  // todo se carga y se ve en un solo juego de precios. El motor ignora el
+  // canal; se sigue mandando "mostrador" porque la API lo pide.
+  const canal: Canal = 'mostrador';
   const hoy = new Date();
   const [anio, setAnio] = useState(hoy.getFullYear());
   const [mes, setMes] = useState(hoy.getMonth());
@@ -90,7 +68,6 @@ export function PreciosPage({ canalInicial = 'mostrador' }: { canalInicial?: Can
   const [arrastrando, setArrastrando] = useState<SeleccionPrecio | null>(null);
   const [fechaAbierta, setFechaAbierta] = useState<FechaEspecial | null>(null);
 
-  const cfg = POR_CANAL[canal];
   const desde = ymd(new Date(anio, mes, 1));
   const hasta = ymd(new Date(anio, mes + cantidadMeses, 0));
 
@@ -105,14 +82,6 @@ export function PreciosPage({ canalInicial = 'mostrador' }: { canalInicial?: Can
     setAnio(d.getFullYear());
     setMes(d.getMonth());
   }
-
-  // Al cambiar de canal se está mirando otro juego de precios: sostener una
-  // selección de la pantalla anterior invitaría a cargarla en el canal
-  // equivocado, que es justo el error que las dos pantallas evitan.
-  useEffect(() => {
-    setSeleccion(null);
-    setFechaAbierta(null);
-  }, [canal]);
 
   const fila = calendario?.filas.find(f => f.categoria_id === seleccion?.categoriaId);
   const diasActuales = useMemo(
@@ -136,7 +105,7 @@ export function PreciosPage({ canalInicial = 'mostrador' }: { canalInicial?: Can
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Precios"
-        description="Marcá un rango sobre el calendario y poné el precio ahí mismo. Abajo quedan todas las reglas, de los dos canales."
+        description="Marcá un rango sobre el calendario y poné el precio ahí mismo. Es un solo precio: vale para el mostrador y para la web. Abajo quedan todas las reglas."
         actions={
           <Link to="/precios/simulador">
             <Button variant="outline" size="sm">
@@ -146,33 +115,6 @@ export function PreciosPage({ canalInicial = 'mostrador' }: { canalInicial?: Can
           </Link>
         }
       />
-
-      {/* Qué canal se está mirando. **Sólo cambia lo que pinta el calendario**
-          y qué canal viene preseleccionado al cargar un precio: la tabla de
-          reglas de abajo muestra siempre los dos. Dice "Viendo" y no es un
-          filtro disfrazado, que es lo que hacía que antes se cargara en el
-          canal equivocado. */}
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs font-medium text-muted-foreground">Viendo precios de</span>
-        <div className="flex overflow-hidden rounded-lg border border-border">
-          {(['mostrador', 'web'] as const).map(c => (
-            <button
-              key={c}
-              onClick={() => setCanal(c)}
-              className={cn(
-                'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors',
-                canal === c
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-accent',
-              )}
-            >
-              {c === 'web' ? <Globe className="h-3.5 w-3.5" /> : <Store className="h-3.5 w-3.5" />}
-              {POR_CANAL[c].etiqueta}
-            </button>
-          ))}
-        </div>
-        <span className="text-xs text-muted-foreground">{cfg.ayuda}</span>
-      </div>
 
       <ComoSeArmaElPrecio />
 
@@ -440,9 +382,8 @@ function ProbadorDePrecio({ canal }: { canal: Canal }) {
         <h3 className="text-sm font-semibold text-foreground">Probar un precio</h3>
       </div>
       <p className="text-xs text-muted-foreground">
-        Cotiza contra el mismo motor que usan las reservas y la web, en el canal{' '}
-        <strong>{canal}</strong>. Sirve para verificar cómo quedaron las reglas antes
-        de que las use un cliente.
+        Cotiza contra el mismo motor que usan las reservas y la web. Sirve para
+        verificar cómo quedaron las reglas antes de que las use un cliente.
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

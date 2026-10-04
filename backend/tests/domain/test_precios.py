@@ -76,9 +76,10 @@ class TestReglaAplica:
         assert self._aplica(r, date(2026, 6, 15), duracion=5)
         assert not self._aplica(r, date(2026, 6, 15), duracion=6)
 
-    def test_canal_web_no_aplica_en_mostrador(self):
+    def test_canal_web_aplica_en_los_dos_canales(self):
+        """Un solo precio: el canal ya no filtra la regla."""
         r = regla(canal="web")
-        assert not self._aplica(r, date(2026, 6, 15), canal="mostrador")
+        assert self._aplica(r, date(2026, 6, 15), canal="mostrador")
         assert self._aplica(r, date(2026, 6, 15), canal="web")
 
     def test_canal_ambos_aplica_siempre(self):
@@ -301,14 +302,21 @@ class TestCotizar:
                     precio_fallback=Decimal("50000"))
         assert c.total_referencia == c.subtotal
 
-    def test_canal_web_ve_un_precio_y_mostrador_otro(self):
+    def test_hay_un_solo_precio_la_promo_solo_web_no_le_pisa_al_general(self):
         solo_web = regla(id=2, nombre="Promo online", prioridad=20,
                          precio_dia=Decimal("70000"), canal="web")
         args = (date(2026, 5, 21), date(2026, 5, 23), [regla(), solo_web])
         web = cotizar(*args, precio_fallback=Decimal("100000"), canal="web")
         mostrador = cotizar(*args, precio_fallback=Decimal("100000"), canal="mostrador")
-        assert web.total == Decimal("140000.00")
-        assert mostrador.total == Decimal("200000.00")
+        assert web.total == mostrador.total == Decimal("200000.00")
+
+    def test_una_regla_solo_web_cubre_los_dias_que_nada_mas_cubre(self):
+        solo_web = regla(id=2, nombre="Promo online", precio_dia=Decimal("70000"),
+                         canal="web")
+        for canal in ("web", "mostrador"):
+            c = cotizar(date(2026, 5, 21), date(2026, 5, 23), [solo_web],
+                        precio_fallback=Decimal("100000"), canal=canal)
+            assert c.total == Decimal("140000.00")
 
     def test_el_desglose_dice_de_donde_salio_cada_precio(self):
         r = regla(id=9, nombre="Temporada alta", prioridad=10, precio_dia=Decimal("120000"))

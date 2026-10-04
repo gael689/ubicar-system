@@ -34,26 +34,34 @@ class TestCaidaAlCompartido:
         cot = cotizar_por_bandas(3, tarifas, categoria_id=7, canal="web")
         assert cot.total == Decimal("150000.00")
 
-    def test_la_del_canal_le_gana_a_la_compartida(self):
+    def test_hay_un_solo_precio_la_de_web_no_le_pisa_a_la_compartida(self):
+        """
+        Un solo precio (04/10/2026): una tarifa marcada "web" no le gana a la
+        compartida, y los dos canales cotizan igual.
+        """
         tarifas = [
             diaria(1, "50000", "ambos", categoria_id=7),
             diaria(2, "60000", "web", categoria_id=7),
         ]
         web = cotizar_por_bandas(3, tarifas, categoria_id=7, canal="web")
         mostrador = cotizar_por_bandas(3, tarifas, categoria_id=7, canal="mostrador")
-        assert web.total == Decimal("180000.00")
-        # El mostrador no se entera de la tarifa web: sigue con la compartida.
-        assert mostrador.total == Decimal("150000.00")
+        assert web.total == mostrador.total == Decimal("150000.00")
 
-    def test_una_tarifa_de_otro_canal_no_sirve_de_fallback(self):
-        """
-        Sólo `ambos` es fallback. Una tarifa de `mostrador` **no** puede
-        cotizar la web: si eso pasara, cargar un precio interno lo publicaría
-        sin querer en el sitio.
-        """
-        tarifas = [diaria(1, "50000", "mostrador", categoria_id=7)]
-        with pytest.raises(BusinessRuleError):
-            cotizar_por_bandas(3, tarifas, categoria_id=7, canal="web")
+    def test_la_de_mostrador_le_gana_a_la_de_web(self):
+        tarifas = [
+            diaria(1, "60000", "web", categoria_id=7),
+            diaria(2, "50000", "mostrador", categoria_id=7),
+        ]
+        for canal in ("web", "mostrador"):
+            cot = cotizar_por_bandas(3, tarifas, categoria_id=7, canal=canal)
+            assert cot.total == Decimal("150000.00")
+
+    def test_una_tarifa_solo_web_sigue_cubriendo_si_no_hay_otra(self):
+        """Unificar no puede dejar a nadie sin precio."""
+        tarifas = [diaria(1, "50000", "web", categoria_id=7)]
+        for canal in ("web", "mostrador"):
+            cot = cotizar_por_bandas(3, tarifas, categoria_id=7, canal=canal)
+            assert cot.total == Decimal("150000.00")
 
 
 class TestPrecedenciaConCanal:
@@ -133,20 +141,17 @@ class TestCanalDeOrigen:
         assert canal_de_origen(None) == "mostrador"
         assert canal_de_origen("") == "mostrador"
 
-    def test_una_tarifa_de_web_no_se_cobra_en_el_mostrador(self):
+    def test_el_canal_de_origen_ya_no_cambia_el_precio(self):
         """
-        El bug que esto fija: los dos `_cargar_tarifas_info` de los services
-        construían `TarifaInfo` **sin el canal**, así que toda tarifa entraba
-        como `ambos` y una cargada sólo para web se cobraba también enfrente
-        del cliente.
+        Antes una tarifa cargada sólo para web no se cobraba en el mostrador.
+        Con un solo precio, cotiza igual en los dos.
         """
         from app.domain.tarifas import canal_de_origen
         tarifas = [diaria(1, "50000", "web", categoria_id=7)]
-        with pytest.raises(BusinessRuleError):
+        totales = {
             cotizar_por_bandas(
-                3, tarifas, categoria_id=7, canal=canal_de_origen("mostrador")
-            )
-        cot = cotizar_por_bandas(
-            3, tarifas, categoria_id=7, canal=canal_de_origen("web")
-        )
-        assert cot.total == Decimal("150000.00")
+                3, tarifas, categoria_id=7, canal=canal_de_origen(origen)
+            ).total
+            for origen in ("mostrador", "web")
+        }
+        assert totales == {Decimal("150000.00")}

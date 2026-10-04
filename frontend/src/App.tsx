@@ -77,23 +77,11 @@ export default function App() {
             CUIT de la empresa y los plazos del excedente. */}
         <Route path="/canal-web" element={<AppLayout title="Canal web"><ConfiguracionPage soloCanalWeb /></AppLayout>} />
         <Route path="/fechas-especiales" element={<AppLayout title="Fechas especiales"><FechasEspecialesPage /></AppLayout>} />
-        {/* **Una sola pantalla de precios.** Antes había una por canal, porque
-            un intento previo de unificarlas dejó un interruptor que sólo
-            cambiaba la vista mientras el alta seguía creando en "los dos
-            canales": se cargaba un precio pensando en la web y se le tocaba el
-            precio al mostrador.
-
-            Eso se arregla donde estaba el problema, no separando pantallas: el
-            canal es ahora un campo explícito del formulario, con las tres
-            opciones a la vista, y la tabla de reglas muestra los dos canales
-            juntos con su columna — que además es lo que permite darse cuenta de
-            que una promo se cargó en un canal y no en el otro.
-
-            Las dos rutas viejas siguen entrando, cada una preseleccionando su
-            canal: hay links a ellas repartidos por el sistema. */}
+        {/* **Un solo precio, una sola pantalla** (04/10/2026). Las dos rutas
+            viejas redirigen acá: hay links a ellas repartidos por el sistema. */}
         <Route path="/precios" element={<AppLayout title="Precios"><PreciosPage /></AppLayout>} />
-        <Route path="/precios/mostrador" element={<AppLayout title="Precios"><PreciosPage canalInicial="mostrador" /></AppLayout>} />
-        <Route path="/precios/web" element={<AppLayout title="Precios"><PreciosPage canalInicial="web" /></AppLayout>} />
+        <Route path="/precios/mostrador" element={<Navigate to="/precios" replace />} />
+        <Route path="/precios/web" element={<Navigate to="/precios" replace />} />
         <Route path="/precios/simulador" element={<AppLayout title="Simulador de precios"><SimuladorPage /></AppLayout>} />
         <Route path="/adicionales" element={<AppLayout title="Adicionales"><AdicionalesPage /></AppLayout>} />
         <Route path="/reservas-web" element={<AppLayout title="Reservas web"><ReservasWebPage /></AppLayout>} />

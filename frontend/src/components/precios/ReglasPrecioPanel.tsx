@@ -30,7 +30,7 @@ const CAPAS = [
   { valor: 20, label: 'Promoción', ayuda: 'Le gana a todo y se comunica como descuento en la web.' },
 ];
 
-function formVacio(canal: CanalTarifa) {
+function formVacio() {
   return {
     nombre: '',
     categoria_id: '' as string,
@@ -41,10 +41,10 @@ function formVacio(canal: CanalTarifa) {
     fecha_hasta: '',
     dias_semana: [] as number[],
     prioridad: 0,
-    // El canal lo fija la pantalla en la que se está, no un desplegable que
-    // hay que acordarse de tocar. Cargar en "Precios web" una regla que sin
-    // querer también cambia el mostrador es el error que esto evita.
-    canal,
+    // Un solo precio (04/10/2026): toda regla nueva rige para el mostrador y
+    // la web. Al editar una vieja que era "sólo web" o "sólo mostrador", al
+    // guardar pasa a regir para todos.
+    canal: 'ambos' as CanalTarifa,
     es_promocional: false,
     precio_referencia: '',
     etiqueta_promo: '',
@@ -69,19 +69,7 @@ interface Props {
   canal: 'web' | 'mostrador';
 }
 
-const CANAL_LABEL: Record<string, string> = {
-  ambos: 'Los dos',
-  web: 'Web',
-  mostrador: 'Mostrador',
-};
-
-const CANAL_COLOR: Record<string, string> = {
-  ambos: 'bg-slate-100 text-slate-700 border-slate-200',
-  web: 'bg-sky-100 text-sky-800 border-sky-200',
-  mostrador: 'bg-violet-100 text-violet-800 border-violet-200',
-};
-
-export function ReglasPrecioPanel({ canal }: Props) {
+export function ReglasPrecioPanel(_props: Props) {
   const [verInactivas, setVerInactivas] = useState(false);
   // Sin `canal`: **todas** las reglas, de los dos canales. Es la tabla única.
   const { data: reglas = [], isLoading } = useReglasPrecio({
@@ -97,11 +85,11 @@ export function ReglasPrecioPanel({ canal }: Props) {
 
   const [showForm, setShowForm] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
-  const [form, setForm] = useState(() => formVacio(canal));
+  const [form, setForm] = useState(() => formVacio());
 
 
   function abrirNueva() {
-    setForm(formVacio(canal));
+    setForm(formVacio());
     setEditandoId(null);
     setShowForm(true);
   }
@@ -117,7 +105,7 @@ export function ReglasPrecioPanel({ canal }: Props) {
       fecha_hasta: r.fecha_hasta ?? '',
       dias_semana: r.dias_semana ?? [],
       prioridad: r.prioridad,
-      canal: r.canal,
+      canal: 'ambos' as CanalTarifa,
       es_promocional: r.es_promocional,
       precio_referencia: r.precio_referencia ?? '',
       etiqueta_promo: r.etiqueta_promo ?? '',
@@ -168,7 +156,7 @@ export function ReglasPrecioPanel({ canal }: Props) {
       }
       setShowForm(false);
       setEditandoId(null);
-      setForm(formVacio(canal));
+      setForm(formVacio());
     } catch (err) {
       toast.error(extractError(err));
     }
@@ -219,13 +207,9 @@ export function ReglasPrecioPanel({ canal }: Props) {
         expresar: una regla de toda la flota, de un vehículo puntual, o con mínimo de días.
       </p>
       <p className="text-xs text-muted-foreground">
-        Están <strong>las de los dos canales</strong>, con una columna que dice a cuál aplica cada
-        una. Tenerlas juntas es lo que permite ver que una promo se cargó en un canal y no en el
-        otro — antes eso no se notaba desde ningún lado. Una regla marcada
-        <span className="mx-1 rounded border border-border px-1.5 py-0.5 text-[10px]">
-          los dos
-        </span>
-        cambia el precio de web y de mostrador a la vez.
+        Es <strong>un solo precio</strong>: cada regla vale para el mostrador y para la web.
+        Las que antes estaban cargadas «sólo web» siguen acá, marcadas, y ya no le pisan el
+        precio a otra regla que cubra el mismo día.
       </p>
 
       {showForm && (
@@ -396,26 +380,6 @@ export function ReglasPrecioPanel({ canal }: Props) {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {/* **Las tres opciones, explícitas.** Con una sola pantalla el
-                canal ya no lo define dónde estás parado, así que tiene que
-                elegirse acá y verse. Este es justo el campo que causó el
-                problema la vez anterior: el canal cambiaba la vista pero el
-                alta seguía creando en "los dos", así que cargar un precio
-                pensando en la web le tocaba el precio al mostrador. Ahora
-                arranca en el canal que estás previsualizando y se puede
-                cambiar a cualquiera de los tres. */}
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">¿Dónde aplica?</label>
-              <select
-                value={form.canal}
-                onChange={e => setForm(f => ({ ...f, canal: e.target.value as CanalTarifa }))}
-                className="input-base"
-              >
-                <option value="mostrador">Sólo mostrador</option>
-                <option value="web">Sólo web</option>
-                <option value="ambos">Los dos canales</option>
-              </select>
-            </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Mín. días</label>
               <input
@@ -511,7 +475,7 @@ export function ReglasPrecioPanel({ canal }: Props) {
         </div>
       ) : reglas.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center">
-          Todavía no hay reglas de precio para {canal}. Mientras tanto el sistema
+          Todavía no hay reglas de precio. Mientras tanto el sistema
           cotiza con las tarifas por duración de siempre — es el motivo de que
           la grilla de arriba muestre el mismo número todos los días.
         </p>
@@ -542,16 +506,14 @@ export function ReglasPrecioPanel({ canal }: Props) {
                       {r.etiqueta_promo}
                     </span>
                   )}
-                  {/* El canal, **siempre visible y para las tres opciones**.
-                      Con la tabla mostrando los dos canales juntos, marcar sólo
-                      las de "ambos" dejaría a las otras sin decir a cuál
-                      pertenecen. */}
-                  <span className={cn(
-                    'shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium',
-                    CANAL_COLOR[r.canal] ?? CANAL_COLOR.ambos,
-                  )}>
-                    {CANAL_LABEL[r.canal] ?? r.canal}
-                  </span>
+                  {r.canal !== 'ambos' && (
+                    <span
+                      title="Esta regla se cargó antes de que hubiera un solo precio"
+                      className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                    >
+                      {r.canal === 'web' ? 'Antes: sólo web' : 'Antes: sólo mostrador'}
+                    </span>
+                  )}
                   {!r.activo && (
                     <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">
                       DADA DE BAJA

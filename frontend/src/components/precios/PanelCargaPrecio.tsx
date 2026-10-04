@@ -122,7 +122,6 @@ export function PanelCargaPrecio({
   const [diasSemana, setDiasSemana] = useState<number[]>([]);
   const [minDias, setMinDias] = useState('');
   const [maxDias, setMaxDias] = useState('');
-  const [canalRegla, setCanalRegla] = useState<CanalTarifa>(canal);
   const [precioReferencia, setPrecioReferencia] = useState('');
   const [notas, setNotas] = useState('');
   const [editando, setEditando] = useState(false);
@@ -139,7 +138,6 @@ export function PanelCargaPrecio({
       setDiasSemana(reglaExacta.dias_semana ?? []);
       setMinDias(reglaExacta.min_dias ? String(reglaExacta.min_dias) : '');
       setMaxDias(reglaExacta.max_dias ? String(reglaExacta.max_dias) : '');
-      setCanalRegla(reglaExacta.canal);
       setPrecioReferencia(reglaExacta.precio_referencia ?? '');
       setNotas(reglaExacta.notas ?? '');
       setUsarFE(reglaExacta.fecha_especial_id != null);
@@ -149,7 +147,6 @@ export function PanelCargaPrecio({
       setDiasSemana([]);
       setMinDias('');
       setMaxDias('');
-      setCanalRegla(canal);
       setPrecioReferencia('');
       setNotas('');
     }
@@ -220,7 +217,8 @@ export function PanelCargaPrecio({
       fecha_hasta: usarFE && feCoincidente ? null : hasta,
       dias_semana: diasSemana.length > 0 ? diasSemana : null,
       prioridad,
-      canal: canalRegla,
+      // Un solo precio: toda regla nueva rige para el mostrador y la web.
+      canal: 'ambos' as CanalTarifa,
       es_promocional: esPromo,
       etiqueta_promo: esPromo ? etiqueta.trim() : null,
       precio_referencia: esPromo && precioReferencia ? precioReferencia : null,
@@ -514,17 +512,6 @@ export function PanelCargaPrecio({
                   placeholder={nombreAuto}
                   className="input-base"
                 />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">¿Dónde aplica?</label>
-                <select
-                  value={canalRegla === 'ambos' ? 'ambos' : canal}
-                  onChange={e => setCanalRegla(e.target.value as CanalTarifa)}
-                  className="input-base"
-                >
-                  <option value={canal}>Sólo {canal}</option>
-                  <option value="ambos">Los dos canales</option>
-                </select>
               </div>
             </div>
 
