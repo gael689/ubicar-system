@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2,
   X, AlertTriangle, Settings, Bell, CalendarDays, CalendarRange, Package, Globe, CalendarClock,
-  ShieldCheck, Store, Inbox, Building2, Landmark, FileSpreadsheet, ListChecks, Lock, Tags,
+  ShieldCheck, Store, Inbox, Building2, Landmark, FileSpreadsheet, ListChecks, Lock, Tags, Receipt, Circle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
@@ -11,11 +11,21 @@ import { NAV_ITEMS, NAV_SECTIONS, TAB_POR_DEFECTO, type NavItem } from '@/lib/co
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NotificacionesPanel } from '@/components/layout/NotificacionesPanel';
 
-const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+export const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2, AlertTriangle, Settings, Bell,
-  CalendarDays, CalendarRange, Package, Globe, CalendarClock, ShieldCheck, Store, Inbox, Building2, Landmark, FileSpreadsheet, ListChecks, Lock, Tags,
+  CalendarDays, CalendarRange, Package, Globe, CalendarClock, ShieldCheck, Store, Inbox, Building2, Landmark, FileSpreadsheet, ListChecks, Lock, Tags, Receipt,
 };
+
+/**
+ * El ícono de un ítem del menú. **Si falta en `ICONS`, no tira abajo el menú**:
+ * un `undefined` como componente es el error #130 de React y deja la pantalla
+ * entera en blanco (pasó con `Receipt`). Se cae a un círculo y el test de abajo
+ * avisa del faltante.
+ */
+function iconoDe(nombre: string): React.ComponentType<{ className?: string }> {
+  return ICONS[nombre] ?? Circle;
+}
 
 // ─── Mobile bottom nav ────────────────────────────────────────────────────────
 
@@ -27,7 +37,7 @@ export function MobileNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 flex h-16 items-stretch border-t border-border bg-card md:hidden">
       {MOBILE_NAV.map((item) => {
-        const Icon = ICONS[item.icon];
+        const Icon = iconoDe(item.icon);
         const active = pathname === item.path || pathname.startsWith(item.path + '/');
         return (
           <NavLink
@@ -141,7 +151,7 @@ export function Sidebar({ onMobileClose, mobileOpen }: SidebarProps) {
               )}
               <div className="space-y-0.5">
                 {seccion.items.map((item) => {
-                  const Icon = ICONS[item.icon];
+                  const Icon = iconoDe(item.icon);
                   const esActivo = activo === claveDe(item);
                   const link = (
                     <NavLink
