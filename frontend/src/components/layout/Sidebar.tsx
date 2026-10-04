@@ -3,18 +3,18 @@ import {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2,
   X, AlertTriangle, Settings, Bell, CalendarDays, CalendarRange, Package, Globe, CalendarClock,
-  ShieldCheck, Store, Inbox, Building2,
+  ShieldCheck, Store, Inbox, Building2, Landmark, FileSpreadsheet, ListChecks, Lock, Tags,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
-import { NAV_ITEMS, NAV_SECTIONS, type NavItem } from '@/lib/constants';
+import { NAV_ITEMS, NAV_SECTIONS, TAB_POR_DEFECTO, type NavItem } from '@/lib/constants';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NotificacionesPanel } from '@/components/layout/NotificacionesPanel';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2, AlertTriangle, Settings, Bell,
-  CalendarDays, CalendarRange, Package, Globe, CalendarClock, ShieldCheck, Store, Inbox, Building2,
+  CalendarDays, CalendarRange, Package, Globe, CalendarClock, ShieldCheck, Store, Inbox, Building2, Landmark, FileSpreadsheet, ListChecks, Lock, Tags,
 };
 
 // ─── Mobile bottom nav ────────────────────────────────────────────────────────
@@ -69,13 +69,22 @@ function largoCoincidencia(item: NavItem, pathname: string): number {
  * coinciden. Con `startsWith` a secas, en `/precios/simulador` se marcarían
  * "Precios" y el Simulador a la vez.
  */
-function itemActivo(pathname: string): string | null {
+const claveDe = (i: NavItem) => (i.tab ? `${i.path}?tab=${i.tab}` : i.path);
+const destinoDe = (i: NavItem) => claveDe(i);
+
+function itemActivo(pathname: string, search: string): string | null {
+  // En una página con sub-módulos (`/caja?tab=mes`) el activo es el de la pestaña
+  // abierta; sin `tab` en la URL, la de por defecto. `libro` era el nombre viejo
+  // de la planilla.
+  const pedida = new URLSearchParams(search).get('tab');
+  const tabActual = (pedida === 'libro' ? 'alquileres' : pedida) ?? TAB_POR_DEFECTO[pathname] ?? null;
   let mejor: string | null = null;
   let largo = 0;
   for (const seccion of NAV_SECTIONS) {
     for (const i of seccion.items) {
+      if (i.tab && i.tab !== tabActual) continue;
       const l = largoCoincidencia(i, pathname);
-      if (l > largo) { largo = l; mejor = i.path; }
+      if (l > largo) { largo = l; mejor = claveDe(i); }
     }
   }
   return mejor;
@@ -83,9 +92,9 @@ function itemActivo(pathname: string): string | null {
 
 export function Sidebar({ onMobileClose, mobileOpen }: SidebarProps) {
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const effectiveCollapsed = sidebarCollapsed;
-  const activo = itemActivo(pathname);
+  const activo = itemActivo(pathname, search);
 
   const sidebarContent = (
     <aside
@@ -133,11 +142,11 @@ export function Sidebar({ onMobileClose, mobileOpen }: SidebarProps) {
               <div className="space-y-0.5">
                 {seccion.items.map((item) => {
                   const Icon = ICONS[item.icon];
-                  const esActivo = activo === item.path;
+                  const esActivo = activo === claveDe(item);
                   const link = (
                     <NavLink
-                      key={item.path}
-                      to={item.path}
+                      key={claveDe(item)}
+                      to={destinoDe(item)}
                       onClick={onMobileClose}
                       aria-current={esActivo ? 'page' : undefined}
                       className={cn(
@@ -154,7 +163,7 @@ export function Sidebar({ onMobileClose, mobileOpen }: SidebarProps) {
                   );
                   if (!effectiveCollapsed) return link;
                   return (
-                    <Tooltip key={item.path}>
+                    <Tooltip key={claveDe(item)}>
                       <TooltipTrigger asChild>{link}</TooltipTrigger>
                       <TooltipContent side="right">{item.label}</TooltipContent>
                     </Tooltip>

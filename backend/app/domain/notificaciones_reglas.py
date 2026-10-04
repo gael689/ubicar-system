@@ -259,7 +259,7 @@ def contrato_sin_firmar_auto_afuera(db: Session, hoy: date) -> list[dict]:
 # ── Cobranzas y finanzas ────────────────────────────────────────────────────
 
 DIAS_AVISO_ECHEQ = 2
-URL_ECHEQS = "/finanzas?tab=echeqs"
+URL_ECHEQS = "/caja?tab=echeqs"
 
 
 def _monto(valor) -> str:

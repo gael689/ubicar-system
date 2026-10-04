@@ -15,13 +15,7 @@ import {
 } from '@/hooks/useCajaSocios';
 import { cn, extractError, formatCurrency, formatDate, hoyLocal } from '@/lib/utils';
 
-type Vista = 'alquileres' | 'a-cobrar' | 'mes' | 'propio';
-const VISTAS: { id: Vista; label: string }[] = [
-  { id: 'alquileres', label: 'Alquileres' },
-  { id: 'a-cobrar', label: 'A cobrar' },
-  { id: 'mes', label: 'Mes' },
-  { id: 'propio', label: 'Propio' },
-];
+export type VistaDeCaja = 'alquileres' | 'a-cobrar' | 'mes' | 'propio';
 const MEDIO: Record<string, string> = {
   efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta', cheque: 'Cheque',
   echeq: 'eCheq', cuenta_corriente: 'Cuenta corriente', mercado_pago: 'Mercado Pago', wapa: 'Wapa', otro: 'Otro',
@@ -47,25 +41,9 @@ const nombreDelMes = (iso: string) =>
  * falta cobrar, el cierre del mes con los socios, y la cuenta propia (privada).
  * Todo sale de los alquileres y sus cobros: no hay una segunda carga.
  */
-export function CajaSociosPage() {
-  const [vista, setVista] = useState<Vista>('alquileres');
+export function CajaSociosPage({ vista }: { vista: VistaDeCaja }) {
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
-      <div className="inline-flex w-fit overflow-hidden rounded-lg border border-ubicar-border bg-white">
-        {VISTAS.map(v => (
-          <button
-            key={v.id}
-            onClick={() => setVista(v.id)}
-            className={cn(
-              'px-4 py-2 text-sm font-medium transition-colors',
-              vista === v.id ? 'bg-ubicar-primary text-white' : 'text-ubicar-text hover:bg-surface',
-            )}
-          >
-            {v.id === 'propio' && <Lock className="mr-1 inline h-3 w-3" />}
-            {v.label}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-col gap-4 p-4">
       {vista === 'alquileres' && <Alquileres />}
       {vista === 'a-cobrar' && <ACobrarVista />}
       {vista === 'mes' && <MesVista />}

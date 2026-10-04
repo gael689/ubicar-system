@@ -196,7 +196,7 @@ export function VehiculoFormDialog({ open, onOpenChange, vehiculo }: Props) {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="alquiler">Alquiler</SelectItem>
-                        <SelectItem value="uber">Uber — no se alquila</SelectItem>
+                        <SelectItem value="uber">Hoy en Uber</SelectItem>
                       </SelectContent>
                     </Select>
                   )}

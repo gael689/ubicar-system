@@ -2,7 +2,6 @@
  * La caja de Franco: la compensación del mes se dice con nombres y montos.
  */
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 
 const mut = { mutate: vi.fn(), isPending: false };
@@ -48,26 +47,27 @@ vi.mock('@/hooks/useCajaSocios', () => ({
 import { CajaSociosPage } from './CajaSociosPage';
 
 describe('Caja', () => {
-  it('muestra la fila del alquiler como la planilla', () => {
-    render(<CajaSociosPage />);
+  it('Alquileres muestra la fila como la planilla', () => {
+    render(<CajaSociosPage vista="alquileres" />);
     expect(screen.getByText('AH482YF')).toBeTruthy();
     expect(screen.getByText('Santiago Quiroga')).toBeTruthy();
     expect(screen.getAllByText('Distribuible').length).toBeGreaterThan(1); // tarjeta y columna
   });
 
-  it('el mes dice quién le pasa a quién', async () => {
-    const user = userEvent.setup();
-    render(<CajaSociosPage />);
-    await user.click(screen.getByRole('button', { name: 'Mes' }));
+  it('A cobrar muestra el total pendiente', () => {
+    render(<CajaSociosPage vista="a-cobrar" />);
+    expect(screen.getByText('Total pendiente')).toBeTruthy();
+  });
+
+  it('Mes dice quién le pasa a quién', () => {
+    render(<CajaSociosPage vista="mes" />);
     expect(screen.getByText('Franco', { selector: 'strong' })).toBeTruthy();
     expect(screen.getByText('Martín', { selector: 'strong' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Registrar reparto/ })).toBeTruthy();
   });
 
-  it('lo propio avisa que es privado', async () => {
-    const user = userEvent.setup();
-    render(<CajaSociosPage />);
-    await user.click(screen.getByRole('button', { name: /Propio/ }));
+  it('Propio avisa que es privado', () => {
+    render(<CajaSociosPage vista="propio" />);
     expect(screen.getByText(/nadie más la ve/)).toBeTruthy();
   });
 });

@@ -23,6 +23,8 @@ import { totalUber } from '@/lib/uber';
 import type { ApiResponse, Cliente, Reserva, ReservaCreate } from '@/types';
 
 interface Props {
+  /** `uber` abre el contrato con valor semanal, km y fechas de pago; por defecto, un alquiler común. */
+  tipo?: 'alquiler' | 'uber';
   initialVehiculoId?: number;
   initialFecha?: string;
   onClose: () => void;
@@ -67,7 +69,7 @@ const TOLERANCIA_DESCUENTO = 1;
  * ficha de la reserva, con descargar PDF, copiar link de firma, firmar en
  * pantalla y subir el escaneo. No hay una segunda implementación de contratos.
  */
-export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, onCreada }: Props) {
+export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, initialFecha, onClose, onCreada }: Props) {
   const { createReserva, listReservas, loading } = useReservas();
   /** El cliente que esta pantalla dio de alta, para que un reintento no cree
    *  un duplicado. Ver `crear`. */
@@ -130,7 +132,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
   // Opcional: cuánto del total va con factura (vacío = nada, como hasta ahora).
   const [facturado, setFacturado] = useState<number | ''>('');
   // Alquiler común o contrato de Uber (valor semanal, km, fechas de pago).
-  const [uber, setUber] = useState<DatosUber>(UBER_VACIO);
+  const [uber, setUber] = useState<DatosUber>({ ...UBER_VACIO, tipo });
   const esUber = uber.tipo === 'uber';
   const [cobertura, setCobertura] = useState<number | ''>('');
   // El motivo de cobrar menos que el de lista. **Antes esta pantalla no lo
@@ -388,7 +390,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
         <div className="px-6 pt-4 pb-3 border-b border-slate-200 bg-slate-50 shrink-0 flex items-start justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <FileSignature className="h-5 w-5 text-primary" /> Contrato rápido
+              <FileSignature className="h-5 w-5 text-primary" /> {tipo === 'uber' ? 'Contrato Uber' : 'Contrato rápido'}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Lo mínimo para tener el papel listo. El resto se completa después,
@@ -496,7 +498,7 @@ export function ContratoRapidoModal({ initialVehiculoId, initialFecha, onClose, 
               </div>
 
               {/* Alquiler común o Uber: el contrato decide el destino del auto. */}
-              <CamposUber value={uber} onChange={setUber} fechaInicio={fechaInicio} dias={duracionDias} />
+              <CamposUber value={uber} onChange={setUber} fechaInicio={fechaInicio} dias={duracionDias} ocultarTipo />
 
               {/* Fechas */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

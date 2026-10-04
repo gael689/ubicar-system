@@ -375,6 +375,7 @@ export function OcupacionPage() {
   const [showReservaModal, setShowReservaModal] = useState(false);
   // El camino corto del `+`: crea la reserva y emite el contrato de una.
   const [showContratoRapido, setShowContratoRapido] = useState(false);
+  const [tipoContrato, setTipoContrato] = useState<'alquiler' | 'uber'>('alquiler');
   const [initialVehiculoId, setInitialVehiculoId] = useState<number | undefined>();
   const [initialFecha, setInitialFecha] = useState<string | undefined>();
 
@@ -557,11 +558,12 @@ export function OcupacionPage() {
    * completa y el contrato rápido. El contexto (qué auto, qué día) es el mismo
    * para los dos.
    */
-  const abrirOperacion = (vehiculoId: number, fecha: string, cual: 'reserva' | 'contrato') => {
+  const abrirOperacion = (vehiculoId: number, fecha: string, cual: 'reserva' | 'contrato' | 'contrato-uber') => {
     setInitialVehiculoId(vehiculoId || undefined);
     setInitialFecha(fecha);
-    if (cual === 'reserva') setShowReservaModal(true);
-    else setShowContratoRapido(true);
+    if (cual === 'reserva') { setShowReservaModal(true); return; }
+    setTipoContrato(cual === 'contrato-uber' ? 'uber' : 'alquiler');
+    setShowContratoRapido(true);
   };
   const openReserva = (vehiculoId: number, fecha: string) =>
     abrirOperacion(vehiculoId, fecha, 'reserva');
@@ -777,7 +779,7 @@ export function OcupacionPage() {
       grupos.push({ id: 'sin-categoria', nombre: 'Sin categoría', vehiculos: sinCategoria });
     }
     if (enUber.length) {
-      grupos.push({ id: 'uber', nombre: 'Uber — no se alquilan', vehiculos: enUber });
+      grupos.push({ id: 'uber', nombre: 'Hoy en Uber', vehiculos: enUber });
     }
     return grupos;
   }, [agrupar, vehiculosVisibles, categoriasData]);
@@ -1000,7 +1002,7 @@ export function OcupacionPage() {
           {/* Dos opciones, no una. Ver `MenuNuevaOperacion`. */}
           <MenuNuevaOperacion
             onNuevaReserva={() => { setInitialVehiculoId(undefined); setInitialFecha(undefined); setShowReservaModal(true); }}
-            onNuevoContrato={() => { setInitialVehiculoId(undefined); setInitialFecha(undefined); setShowContratoRapido(true); }}
+            onNuevoContrato={tipo => { setInitialVehiculoId(undefined); setInitialFecha(undefined); setTipoContrato(tipo); setShowContratoRapido(true); }}
           />
         </div>
       </div>
@@ -1300,7 +1302,7 @@ export function OcupacionPage() {
                                   <MenuNuevaOperacion
                                     variante="celda"
                                     onNuevaReserva={() => abrirOperacion(vehiculo.id, formatDate(day), 'reserva')}
-                                    onNuevoContrato={() => abrirOperacion(vehiculo.id, formatDate(day), 'contrato')}
+                                    onNuevoContrato={tipo => abrirOperacion(vehiculo.id, formatDate(day), tipo === 'uber' ? 'contrato-uber' : 'contrato')}
                                   />
                                 </div>
                                 {eventsToRender.map(ev => {
@@ -1411,7 +1413,7 @@ export function OcupacionPage() {
                                 <MenuNuevaOperacion
                                   variante="celda"
                                   onNuevaReserva={() => abrirOperacion(vehiculo.id, formatDate(day), 'reserva')}
-                                  onNuevoContrato={() => abrirOperacion(vehiculo.id, formatDate(day), 'contrato')}
+                                  onNuevoContrato={tipo => abrirOperacion(vehiculo.id, formatDate(day), tipo === 'uber' ? 'contrato-uber' : 'contrato')}
                                 />
                               </div>
                             </td>
@@ -1474,6 +1476,7 @@ export function OcupacionPage() {
 
       {showContratoRapido && (
         <ContratoRapidoModal
+          tipo={tipoContrato}
           initialVehiculoId={initialVehiculoId}
           initialFecha={initialFecha}
           onClose={() => { setShowContratoRapido(false); setInitialVehiculoId(undefined); setInitialFecha(undefined); }}

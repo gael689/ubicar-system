@@ -1,18 +1,23 @@
-import { CalendarPlus, FileSignature, Plus } from 'lucide-react';
+import { CalendarPlus, FileSignature, Plus, Zap } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
 interface Props {
   onNuevaReserva: () => void;
-  onNuevoContrato: () => void;
+  /** Contrato rápido: `alquiler` es el de siempre; `uber` trae el valor semanal, los km y las fechas de pago. */
+  onNuevoContrato: (tipo: 'alquiler' | 'uber') => void;
   /** `boton` para el botón grande del header; `celda` para el `+` de la grilla. */
   variante?: 'boton' | 'celda';
   className?: string;
 }
 
 /**
- * Las dos formas de arrancar una operación, en el mismo lugar.
+ * Las tres formas de arrancar una operación, en el mismo lugar: **Contrato
+ * Uber**, **Alquiler** (el contrato rápido de siempre) y **Nueva reserva**.
+ * Antes eran dos; el contrato de Uber es la tercera puerta (04/10/2026).
+ *
+ * Las dos formas originales:
  *
  * **Pedido textual del dueño:**
  *
@@ -61,6 +66,30 @@ export function MenuNuevaOperacion({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
         <DropdownMenuItem
+          onClick={() => onNuevoContrato('uber')}
+          className="flex items-start gap-2.5 py-2.5 cursor-pointer"
+        >
+          <Zap className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium text-foreground">Contrato Uber</span>
+            <span className="text-[11px] leading-snug text-muted-foreground">
+              Valor por semana, kilómetros permitidos y fechas de pago.
+            </span>
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => onNuevoContrato('alquiler')}
+          className="flex items-start gap-2.5 py-2.5 cursor-pointer"
+        >
+          <FileSignature className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium text-foreground">Alquiler</span>
+            <span className="text-[11px] leading-snug text-muted-foreground">
+              Contrato rápido: una sola pantalla, y sale para firmar o mandar.
+            </span>
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
           onClick={onNuevaReserva}
           className="flex items-start gap-2.5 py-2.5 cursor-pointer"
         >
@@ -69,18 +98,6 @@ export function MenuNuevaOperacion({
             <span className="text-sm font-medium text-foreground">Nueva reserva</span>
             <span className="text-[11px] leading-snug text-muted-foreground">
               El paso a paso completo: cliente, fechas, auto, precio y pago.
-            </span>
-          </span>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={onNuevoContrato}
-          className="flex items-start gap-2.5 py-2.5 cursor-pointer"
-        >
-          <FileSignature className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
-          <span className="flex flex-col gap-0.5">
-            <span className="text-sm font-medium text-foreground">Nuevo contrato (rápido)</span>
-            <span className="text-[11px] leading-snug text-muted-foreground">
-              Una sola pantalla, y sale el contrato para firmar o mandar.
             </span>
           </span>
         </DropdownMenuItem>

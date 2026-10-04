@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { PuertaDeEntrada } from '@/components/auth/PuertaDeEntrada';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -65,10 +65,11 @@ export default function App() {
         <Route path="/multas" element={<AppLayout title="Flota"><MultasPage /></AppLayout>} />
         <Route path="/contratos" element={<AppLayout title="Contratos"><ContratosPage /></AppLayout>} />
         <Route path="/cotizador" element={<AppLayout title="Cotizador" fullBleed><CotizadorPage /></AppLayout>} />
-        <Route path="/finanzas" element={<AppLayout title="Finanzas"><FinanzasPage /></AppLayout>} />
-        <Route path="/caja" element={<Navigate to="/finanzas?tab=caja" replace />} />
-        <Route path="/cuentas-corrientes" element={<Navigate to="/finanzas?tab=cc" replace />} />
-        <Route path="/echeqs" element={<Navigate to="/finanzas?tab=echeqs" replace />} />
+        {/* **Caja** (antes "Finanzas"): la planilla y lo diario, en una sola página. */}
+        <Route path="/caja" element={<AppLayout title="Caja" fullBleed><FinanzasPage /></AppLayout>} />
+        <Route path="/finanzas" element={<RedirigirConQuery a="/caja" />} />
+        <Route path="/cuentas-corrientes" element={<Navigate to="/caja?tab=cc" replace />} />
+        <Route path="/echeqs" element={<Navigate to="/caja?tab=echeqs" replace />} />
         <Route path="/reportes" element={<AppLayout title="Reportes"><ReportesPage /></AppLayout>} />
         <Route path="/notificaciones" element={<AppLayout title="Notificaciones"><NotificacionesPage /></AppLayout>} />
         <Route path="/configuracion" element={<AppLayout title="Configuración"><ConfiguracionPage /></AppLayout>} />
@@ -94,4 +95,10 @@ export default function App() {
     </ErrorBoundary>
     </PuertaDeEntrada>
   );
+}
+
+/** `/finanzas?tab=echeqs` → `/caja?tab=echeqs`: los links viejos conservan su pestaña. */
+function RedirigirConQuery({ a }: { a: string }) {
+  const { search } = useLocation();
+  return <Navigate to={`${a}${search}`} replace />;
 }

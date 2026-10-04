@@ -24,6 +24,8 @@ interface Props {
   onChange: (v: DatosUber) => void;
   fechaInicio: string;
   dias: number;
+  /** El tipo ya viene decidido (desde el menú Nueva operación): no se muestra el selector. */
+  ocultarTipo?: boolean;
 }
 
 const campo = 'w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50';
@@ -34,7 +36,7 @@ const campo = 'w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white te
  * del km extra. El total sale del valor de la semana; las fechas de pago se
  * proponen una por semana y se pueden cambiar.
  */
-export function CamposUber({ value, onChange, fechaInicio, dias }: Props) {
+export function CamposUber({ value, onChange, fechaInicio, dias, ocultarTipo }: Props) {
   const esUber = value.tipo === 'uber';
   const semanas = cantidadDeSemanas(dias);
   const total = value.valorSemana === '' ? null : totalUber(Number(value.valorSemana), dias);
@@ -55,8 +57,12 @@ export function CamposUber({ value, onChange, fechaInicio, dias }: Props) {
     set({ fechasPago: fechas });
   };
 
+  // Con el tipo decidido y siendo un alquiler común, no hay nada que mostrar.
+  if (ocultarTipo && !esUber) return null;
+
   return (
     <div className="space-y-4" data-campo="uber">
+      {!ocultarTipo && (
       <div className="space-y-1.5">
         <label className="text-sm font-semibold text-slate-700">Tipo de contrato</label>
         <div className="inline-flex overflow-hidden rounded-lg border border-slate-300">
@@ -81,6 +87,7 @@ export function CamposUber({ value, onChange, fechaInicio, dias }: Props) {
           </p>
         )}
       </div>
+      )}
 
       {esUber && (
         <div className="space-y-4 rounded-xl border border-border p-4">

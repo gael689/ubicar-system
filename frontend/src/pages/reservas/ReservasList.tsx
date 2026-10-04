@@ -123,6 +123,7 @@ export function ReservasList() {
   const [fechaFiltro, setFechaFiltro] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showContratoRapido, setShowContratoRapido] = useState(false);
+  const [tipoContrato, setTipoContrato] = useState<'alquiler' | 'uber'>('alquiler');
   // Fase 3 §5.2: filtros colapsables (arrancan cerrados para recuperar
   // espacio) y densidad de tabla persistida.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -276,7 +277,7 @@ export function ReservasList() {
                 `MenuNuevaOperacion`. */}
             <MenuNuevaOperacion
               onNuevaReserva={() => setShowCreateModal(true)}
-              onNuevoContrato={() => setShowContratoRapido(true)}
+              onNuevoContrato={tipo => { setTipoContrato(tipo); setShowContratoRapido(true); }}
               className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
             />
           </div>
@@ -723,6 +724,7 @@ export function ReservasList() {
       )}
       {showContratoRapido && (
         <ContratoRapidoModal
+          tipo={tipoContrato}
           onClose={() => setShowContratoRapido(false)}
           onCreada={() => { loadReservas(); }}
         />

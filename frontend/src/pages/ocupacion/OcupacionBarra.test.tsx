@@ -184,25 +184,26 @@ describe('Los autos de Uber', () => {
     expect(iUber).toBeGreaterThan(iCompacto);
   });
 
-  it('el grupo dice que no se alquilan', async () => {
+  it('el grupo dice que están hoy en Uber', async () => {
     // Un auto de Uber "libre" en la grilla no es un auto que se pueda vender.
     estado.ocupacion = ocupacion([], [
       { id: 11, patente: 'BB222BB', marca: 'Toyota', modelo: 'Etios', categoria_id: 1, orden: 1, destino: 'uber' },
     ]);
     await montarTimeline();
 
-    expect(screen.getByText(/Uber — no se alquilan/)).toBeInTheDocument();
+    expect(screen.getByText(/Hoy en Uber/)).toBeInTheDocument();
   });
 });
 
 describe('El botón de nueva operación', () => {
-  it('ofrece las dos puertas', async () => {
-    // *"Sería genial que cuando lo aprieto me dé 2 opciones: nuevo contrato y
-    // nueva reserva."*
+  it('ofrece las tres puertas', async () => {
+    // Eran dos (contrato y reserva); desde el 04/10/2026 son tres: Contrato
+    // Uber, Alquiler (el contrato rápido de siempre) y Nueva reserva.
     const user = await montarTimeline();
     await user.click(screen.getByRole('button', { name: /Nueva operación/i }));
 
     expect(await screen.findByText('Nueva reserva')).toBeInTheDocument();
-    expect(screen.getByText(/Nuevo contrato/)).toBeInTheDocument();
+    expect(screen.getByText('Alquiler')).toBeInTheDocument();
+    expect(screen.getByText('Contrato Uber')).toBeInTheDocument();
   });
 });

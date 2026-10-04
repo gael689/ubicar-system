@@ -306,7 +306,7 @@ export const NAV_ITEMS = [
   { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
   { path: '/flota', label: 'Flota', icon: 'Car' },
   { path: '/clientes', label: 'Clientes', icon: 'Users' },
-  { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
+  { path: '/caja', label: 'Caja', icon: 'Landmark' },
   { path: '/contratos', label: 'Contratos', icon: 'FileText' },
   { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
   { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
@@ -324,7 +324,15 @@ export interface NavItem {
   icon: string;
   /** Otras rutas que también cuentan como "estar acá" (pestañas de la misma sección). */
   matches?: string[];
+  /**
+   * Sub-módulo dentro de una página con pestañas (`/caja?tab=mes`). Varios
+   * ítems pueden compartir `path` y distinguirse por `tab`.
+   */
+  tab?: string;
 }
+
+/** La pestaña que se abre en una página con sub-módulos cuando la URL no dice cuál. */
+export const TAB_POR_DEFECTO: Record<string, string> = { '/caja': 'alquileres' };
 
 export interface NavSection {
   titulo: string;
@@ -336,12 +344,26 @@ export const NAV_SECTIONS: NavSection[] = [
     { path: '/ocupacion', label: 'Hoy', icon: 'LayoutDashboard' },
     { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
     { path: '/contratos', label: 'Contratos', icon: 'FileText' },
-    // Vehículos, Categorías y Multas son pestañas de la misma página.
-    { path: '/flota', label: 'Flota', icon: 'Car', matches: ['/multas'] },
     { path: '/clientes', label: 'Clientes', icon: 'Users' },
   ] },
-  { titulo: 'Plata', items: [
-    { path: '/finanzas', label: 'Finanzas', icon: 'Wallet' },
+  // **Flota** con sus sub-módulos como ítems propios: se llega directo, sin
+  // pasar primero por la lista de vehículos.
+  { titulo: 'Flota', items: [
+    { path: '/flota', label: 'Vehículos', icon: 'Car' },
+    { path: '/flota/categorias', label: 'Categorías y precios', icon: 'Tags' },
+    { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
+  ] },
+  // **Caja** (antes "Plata" y "Finanzas"). Los sub-módulos van como ítems
+  // propios para llegar directo: primero la planilla de Franco, después lo diario.
+  { titulo: 'Caja', items: [
+    { path: '/caja', tab: 'alquileres', label: 'Alquileres', icon: 'FileSpreadsheet' },
+    { path: '/caja', tab: 'a-cobrar', label: 'A cobrar', icon: 'ListChecks' },
+    { path: '/caja', tab: 'mes', label: 'Mes', icon: 'CalendarDays' },
+    { path: '/caja', tab: 'propio', label: 'Propio', icon: 'Lock' },
+    { path: '/caja', tab: 'caja', label: 'Hoy', icon: 'Wallet' },
+    { path: '/caja', tab: 'cobros', label: 'Cobros', icon: 'Receipt' },
+    { path: '/caja', tab: 'echeqs', label: 'Echeqs', icon: 'CreditCard' },
+    { path: '/caja', tab: 'cc', label: 'Cuentas corrientes', icon: 'BookOpen' },
     { path: '/reportes', label: 'Reportes', icon: 'BarChart2' },
   ] },
   { titulo: 'Ventas', items: [
