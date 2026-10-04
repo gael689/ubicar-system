@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     # así que hoy este valor sólo puede ser `onboarding@resend.dev` y todos los
     # mails a clientes se registran como `omitido`.
     from_email: str = "noreply@ubicar-rent.com.ar"
+    # Token con el que el buscador de leads (corre en la máquina de Gael, sin
+    # sesión) empuja prospectos a `/prospectos/importar`. Vacío = la
+    # importación está apagada.
+    prospectos_token: str = ""
     # **Sin uso desde el 27/09/2026**: era a quién le llegaba el resumen de las
     # 08:00 y los avisos internos por mail, que se sacaron (al equipo no se le
     # manda mail, todo queda en la campana). Se deja declarada para que un

@@ -33,6 +33,7 @@ from app.models.pago_web import PagoWeb
 from app.models.auditoria import Auditoria
 from app.models.busqueda_sin_resultado import BusquedaSinResultado
 from app.models.solicitud_contacto import SolicitudContacto
+from app.models.prospecto import Prospecto, CampanaProspecto, CampanaDestinatario
 
 __all__ = [
     "Categoria", "Comprobante", "Configuracion", "Notificacion", "NotificacionVista", "EmailEnviado", "Recibo",

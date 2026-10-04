@@ -20,7 +20,7 @@ from app.routers import (
     servicios, notificaciones, cuentas_corrientes, recibos, categorias,
     comprobantes, configuracion, busqueda, danios, fechas_especiales,
     precios, adicionales, bloqueos, reservas_web, auditoria,
-    emails, solicitudes_contacto, disponibilidad, pagares, usuarios,
+    emails, solicitudes_contacto, disponibilidad, pagares, usuarios, prospectos,
 )
 
 logger = logging.getLogger(__name__)
@@ -331,6 +331,7 @@ app.include_router(configuracion.router, prefix=API_PREFIX)
 app.include_router(busqueda.router, prefix=API_PREFIX)
 app.include_router(auditoria.router, prefix=API_PREFIX)
 app.include_router(usuarios.router, prefix=API_PREFIX)
+app.include_router(prospectos.router, prefix=API_PREFIX)
 
 
 # ─── Archivos estáticos ───────────────────────────────────────────────────────
