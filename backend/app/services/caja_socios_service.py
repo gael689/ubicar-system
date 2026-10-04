@@ -22,6 +22,7 @@ from app.domain.tarifas import dias_facturables
 from app.models.alquiler import Alquiler
 from app.models.caja_socios import MovimientoPropio, Reparto, Socio
 from app.models.cliente import Cliente
+from app.models.cuenta_corriente import MovimientoCuentaCorriente
 from app.models.gasto import Gasto
 from app.models.pago import Pago
 from app.models.reserva import Reserva
@@ -32,6 +33,16 @@ from app.services.caja_service import es_plata_que_entro
 # Reservas que cuentan como alquiler en la caja: las que se acordaron. No las
 # canceladas ni las solicitudes sin cupo ni las que esperan el pago web.
 ESTADOS_DEL_ALQUILER = ("confirmada", "activa", "vencida", "finalizada")
+
+# Los cobros de daños y multas se atan al alquiler (`alquiler_id`) pero **no son
+# parte de lo que cuesta el alquiler**: contarlos como pago del alquiler
+# escondería saldo pendiente. Se reconocen por la nota con la que se crean
+# (`danio_service`, `multa_service`).
+PREFIJOS_QUE_NO_SON_DEL_ALQUILER = ("Daño #", "Multa #")
+
+
+def _es_cobro_del_alquiler(p) -> bool:
+    return not (p.notas or "").startswith(PREFIJOS_QUE_NO_SON_DEL_ALQUILER)
 
 
 def _d(v) -> Decimal:
@@ -128,10 +139,29 @@ class CajaSociosService:
 
     # ── Piezas de una fila ──────────────────────────────────────────────────
     def _total(self, r: Reserva) -> Decimal:
-        """Todo lo que el cliente tiene que pagar: auto + adicionales + late."""
-        return (
-            _d(r.precio_total) + _d(r.cargo_late_checkout) + _d(r.total_adicionales)
+        """
+        Todo lo que el cliente tiene que pagar por este alquiler: el auto, los
+        adicionales, el late, **el excedente de la devolución** y los **cargos de
+        cierre** (combustible, limpieza, kilómetros de más en un Uber).
+
+        Los últimos salen de la cuenta corriente, donde quedan asentados como
+        débito al devolver el auto. Sin ellos, lo que el cliente paga por esos
+        conceptos figuraría como si fuera del alquiler y taparía saldo.
+        """
+        total = _d(r.precio_total) + _d(r.cargo_late_checkout) + _d(r.total_adicionales)
+        if r.alquiler:
+            total += _d(r.alquiler.cargo_excedente)
+        cierre = (
+            self.db.query(MovimientoCuentaCorriente)
+            .filter(
+                MovimientoCuentaCorriente.reserva_id == r.id,
+                MovimientoCuentaCorriente.tipo == "debito",
+                MovimientoCuentaCorriente.naturaleza == "cargo_cierre",
+                MovimientoCuentaCorriente.anulado.is_(False),
+            )
+            .all()
         )
+        return total + sum((_d(m.monto) for m in cierre), Decimal("0"))
 
     def _cobros(self, r: Reserva) -> list[Pago]:
         condiciones = [Pago.reserva_id == r.id]
@@ -141,7 +171,7 @@ class CajaSociosService:
             p for p in self.db.query(Pago)
             .filter(or_(*condiciones), Pago.anulado.is_(False))
             .order_by(Pago.fecha, Pago.id).all()
-            if es_plata_que_entro(p.medio_pago)
+            if es_plata_que_entro(p.medio_pago) and _es_cobro_del_alquiler(p)
         ]
 
     def _fila(self, r: Reserva, nombres_socios: dict[int, str]) -> dict:
@@ -268,6 +298,9 @@ class CajaSociosService:
         ]
 
     def _distribuible_del_cobro(self, p: Pago, cache: dict[int, tuple[Decimal, Decimal]]) -> Decimal:
+        if not _es_cobro_del_alquiler(p):
+            # Un daño o una multa no se factura con el alquiler: es caja.
+            return dominio.distribuible_de_cobro(p.monto, p.monto, Decimal("0"))
         reserva = self.db.get(Reserva, p.reserva_id) if p.reserva_id else None
         if reserva is None and p.alquiler_id:
             al = self.db.get(Alquiler, p.alquiler_id)

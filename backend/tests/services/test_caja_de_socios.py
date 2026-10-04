@@ -327,3 +327,49 @@ class TestMedioOtro:
         resp = client.post("/api/v1/pagos", json={
             "cliente_id": r.cliente_id, "monto": 5000, "medio_pago": "otro", "fecha": "2026-10-03"})
         assert resp.status_code == 201
+
+
+class TestLoQueCuentaComoAlquiler:
+    """Lo cobrado por daños y multas no tapa el saldo del alquiler; y el total incluye los cargos de cierre."""
+
+    def test_un_cobro_de_dano_no_es_pago_del_alquiler(self, db, svc, socios, hacer_reserva, hacer_alquiler, usuario):
+        franco, _, _ = socios
+        r = hacer_reserva(precio_total="100000")
+        al = hacer_alquiler(r)
+        db.add(Pago(cliente_id=r.cliente_id, alquiler_id=al.id, monto=D("40000"), medio_pago="efectivo",
+                    fecha=date(2026, 10, 3), cobrado_por=usuario.id, socio_id=franco.id,
+                    notas="Daño #7 en paragolpes — AB123CD"))
+        db.flush()
+        db.refresh(r)
+        f = svc.alquileres(None, None, None, None)[0][0]
+        assert (f["cobrado"], f["saldo"]) == (False, 100000.0)
+
+    def test_ese_cobro_si_entra_en_la_plata_del_mes_y_es_todo_caja(self, db, svc, socios, hacer_reserva, hacer_alquiler, usuario):
+        franco, _, _ = socios
+        r = hacer_reserva(precio_total="100000", monto_facturado=D("100000"), con_factura=True)
+        al = hacer_alquiler(r)
+        db.add(Pago(cliente_id=r.cliente_id, alquiler_id=al.id, monto=D("10000"), medio_pago="efectivo",
+                    fecha=date(2026, 10, 3), cobrado_por=usuario.id, socio_id=franco.id,
+                    notas="Multa #3 — AB123CD (2026-09-20)"))
+        db.flush()
+        m = svc.mes(date(2026, 10, 1))
+        assert m["total_cobrado"] == 10000.0
+        assert m["distribuible"] == 10000.0  # no se divide por 1,25: no se facturó
+
+    def test_el_excedente_de_la_devolucion_suma_al_total(self, db, svc, socios, hacer_reserva, hacer_alquiler):
+        r = hacer_reserva(precio_total="100000")
+        hacer_alquiler(r, cargo_excedente="15000")
+        db.refresh(r)
+        assert svc.alquileres(None, None, None, None)[0][0]["total"] == 115000.0
+
+    def test_un_cargo_de_cierre_suma_al_total(self, db, svc, socios, usuario, hacer_reserva, hacer_alquiler):
+        from app.services.cuenta_corriente_service import CuentaCorrienteService
+        r = hacer_reserva(precio_total="100000")
+        hacer_alquiler(r)
+        CuentaCorrienteService(db).registrar_movimiento(
+            cliente_id=r.cliente_id, tipo="debito", naturaleza="cargo_cierre",
+            concepto="Kilometraje extra", monto=D("20000"), fecha=date(2026, 10, 3),
+            creado_por=usuario.id, reserva_id=r.id,
+        )
+        db.refresh(r)
+        assert svc.alquileres(None, None, None, None)[0][0]["total"] == 120000.0

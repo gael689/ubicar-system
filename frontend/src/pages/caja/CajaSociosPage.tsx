@@ -265,6 +265,22 @@ function MesVista() {
           <p className="text-sm font-medium text-amber-900">
             Hay {formatCurrency(m.sin_socio)} cobrados sin socio. Asignalos para poder repartir el mes.
           </p>
+          {/* Lo que entra por Mercado Pago queda sin socio (lo registra el sistema):
+              se asigna todo junto a quien recibe esa plata. */}
+          <label className="flex flex-wrap items-center gap-2 text-sm text-amber-900">
+            Asignar todos a
+            <select defaultValue="" className="rounded border border-border bg-white text-sm"
+              onChange={e => {
+                const socioId = Number(e.target.value);
+                if (!socioId) return;
+                sinAsignar.forEach(c => asignar.mutate({ pagoId: c.id, socioId }, {
+                  onError: err => toast.error(extractError(err)),
+                }));
+              }}>
+              <option value="">Elegí un socio…</option>
+              {m.socios.map(s => <option key={s.id} value={s.id}>{s.nombre.split(' ')[0]}</option>)}
+            </select>
+          </label>
           <div className="flex flex-wrap gap-2">
             {sinAsignar.map(c => (
               <label key={c.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1 text-xs">
