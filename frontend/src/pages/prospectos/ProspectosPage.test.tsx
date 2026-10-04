@@ -14,6 +14,7 @@ const filas = Array.from({ length: 3 }, (_, i) => ({
   no_contactar: false, no_contactar_motivo: null, notas: null,
 }));
 const mut = { mutate: vi.fn(), isPending: false };
+const importar = { mutate: vi.fn(), isPending: false };
 
 vi.mock('@/hooks/useProspectos', () => ({
   // 120 en total, pero la página trae 3: para que aparezca "seleccionar todos".
@@ -26,6 +27,7 @@ vi.mock('@/hooks/useProspectos', () => ({
   useCambiarEstadoProspectos: () => mut,
   useNoEsClienteProspecto: () => mut,
   useCruzarProspectos: () => mut,
+  useImportarArchivoProspectos: () => importar,
   useCampanasProspecto: () => ({ data: [], isLoading: false }),
   useCampanaProspecto: () => ({ data: undefined }),
   useCrearCampanaProspecto: () => mut,
@@ -56,5 +58,23 @@ describe('Prospectos', () => {
   it('sin selección no aparece la barra de acciones', () => {
     render(<ProspectosPage />);
     expect(screen.queryByRole('button', { name: /Crear campaña/ })).toBeNull();
+  });
+
+  it('importar archivo manda la lista del .json', async () => {
+    const user = userEvent.setup();
+    render(<ProspectosPage />);
+    const archivo = new File([JSON.stringify({ prospectos: [{ nombre: 'Constructora Sur' }] })], 'p.json', { type: 'application/json' });
+    await user.upload(screen.getByTestId('archivo-prospectos'), archivo);
+    await vi.waitFor(() => expect(importar.mutate).toHaveBeenCalled());
+    expect(importar.mutate.mock.calls[0][0]).toEqual([{ nombre: 'Constructora Sur' }]);
+  });
+
+  it('un archivo que no es el del sincronizador no se manda', async () => {
+    importar.mutate.mockClear();
+    const user = userEvent.setup();
+    render(<ProspectosPage />);
+    await user.upload(screen.getByTestId('archivo-prospectos'), new File(['hola'], 'x.json', { type: 'application/json' }));
+    await new Promise(r => setTimeout(r, 50));
+    expect(importar.mutate).not.toHaveBeenCalled();
   });
 });

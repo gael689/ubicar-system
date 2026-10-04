@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Ban, Megaphone, RefreshCw, Search, UserCheck } from 'lucide-react';
+import { Ban, Megaphone, RefreshCw, Search, Upload, UserCheck } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import {
   useCambiarEstadoProspectos, useCampanaProspecto, useCampanasProspecto, useContarSeleccion,
-  useCrearCampanaProspecto, useCruzarProspectos, useGuardarMensajeCampana,
+  useCrearCampanaProspecto, useCruzarProspectos, useGuardarMensajeCampana, useImportarArchivoProspectos,
   useNoEsClienteProspecto, usePrepararCampana, useProspectos, useResumenProspectos,
   type FiltroProspectos, type Prospecto,
 } from '@/hooks/useProspectos';
@@ -116,7 +116,34 @@ function ListaDeProspectos() {
   const cambiarEstado = useCambiarEstadoProspectos();
   const noEsCliente = useNoEsClienteProspecto();
   const cruzar = useCruzarProspectos();
+  const importar = useImportarArchivoProspectos();
+  const archivo = useRef<HTMLInputElement>(null);
   const [armando, setArmando] = useState(false);
+
+  /** El archivo que arma `sincronizar_prospectos_leadgen --archivo`: `{ prospectos: [...] }` o la lista sola. */
+  async function subirArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const texto = await new Promise<string>((ok, mal) => {
+        const lector = new FileReader();
+        lector.onload = () => ok(String(lector.result ?? ''));
+        lector.onerror = () => mal(lector.error);
+        lector.readAsText(f);
+      });
+      const datos = JSON.parse(texto);
+      const lista: unknown[] = Array.isArray(datos) ? datos : datos.prospectos;
+      if (!Array.isArray(lista) || lista.length === 0) throw new Error('vacío');
+      importar.mutate(lista, {
+        onSuccess: t => toast.success(
+          `${t.nuevos} nuevos, ${t.actualizados} actualizados · ${t.ya_clientes} ya son clientes`),
+        onError: err => toast.error(extractError(err)),
+      });
+    } catch {
+      toast.error('No pude leer ese archivo: tiene que ser el .json que arma el sincronizador.');
+    }
+  }
 
   return (
     <>
@@ -150,6 +177,12 @@ function ListaDeProspectos() {
         <Button variant="outline" size="sm" disabled={cruzar.isPending}
           onClick={() => cruzar.mutate(undefined, { onSuccess: () => toast.success('Cruce actualizado con tus clientes') })}>
           <RefreshCw className={cn('h-4 w-4', cruzar.isPending && 'animate-spin')} /> Volver a cruzar
+        </Button>
+        <input ref={archivo} type="file" accept=".json,application/json" className="hidden"
+          data-testid="archivo-prospectos" onChange={subirArchivo} />
+        <Button variant="outline" size="sm" disabled={importar.isPending}
+          onClick={() => archivo.current?.click()}>
+          <Upload className="h-4 w-4" /> {importar.isPending ? 'Importando…' : 'Importar archivo'}
         </Button>
       </Card>
 

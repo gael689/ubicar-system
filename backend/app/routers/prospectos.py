@@ -140,6 +140,20 @@ def importar(
 
 # ─── La pantalla ─────────────────────────────────────────────────────────────
 
+@router.post("/importar-archivo")
+def importar_archivo(
+    payload: ImportarRequest,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Lo mismo que `/importar`, pero **con la sesión de quien está en la pantalla**
+    y sin token: sirve para subir el archivo que arma el sincronizador
+    (`--archivo`) sin tener que configurar nada en el servidor.
+    """
+    return ok(ProspectoService(db).importar([p.model_dump() for p in payload.prospectos]))
+
+
 @router.get("")
 def listar(
     q: str | None = None, segmento: str | None = None, ciudad: str | None = None,

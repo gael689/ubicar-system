@@ -232,3 +232,21 @@ class TestImportarPorLaApi:
         r = client.get("/api/v1/prospectos/resumen")
         assert r.status_code == 200
         assert r.json()["data"]["total"] == 0
+
+
+class TestImportarDesdeLaPantalla:
+    def test_importa_con_la_sesion_y_sin_token(self, client, db, monkeypatch):
+        monkeypatch.setattr(settings, "prospectos_token", "")  # sin token configurado
+        r = client.post("/api/v1/prospectos/importar-archivo", json={
+            "prospectos": [{"nombre": "Constructora Sur", "ciudad": "Bahía Blanca", "email": "a@sur.com.ar"}]})
+        assert r.status_code == 200
+        assert r.json()["data"]["nuevos"] == 1
+        assert db.query(Prospecto).count() == 1
+
+    def test_el_archivo_vuelve_a_cruzar_con_los_clientes(self, client, db):
+        db.add(Cliente(nombre_completo="Logística Sur", dni_cuit="30700000009", telefono="0",
+                       email="admin@logisticasur.com.ar", tipo="empresa"))
+        db.flush()
+        r = client.post("/api/v1/prospectos/importar-archivo", json={
+            "prospectos": [{"nombre": "Otra razón social", "email": "admin@logisticasur.com.ar"}]})
+        assert r.json()["data"]["ya_clientes"] == 1

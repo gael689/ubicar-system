@@ -116,6 +116,30 @@ export function useNoEsClienteProspecto() {
   });
 }
 
+/**
+ * Sube un archivo de prospectos (el que arma `--archivo` del sincronizador),
+ * **de a lotes** para no mandar miles en un solo pedido. Devuelve los totales.
+ */
+export function useImportarArchivoProspectos() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (lista: unknown[]) => {
+      const totales = { nuevos: 0, actualizados: 0, invalidos: 0, ya_clientes: 0 };
+      for (let i = 0; i < lista.length; i += 500) {
+        const res = await api.post<{ data: typeof totales }>('/prospectos/importar-archivo', {
+          prospectos: lista.slice(i, i + 500),
+        });
+        totales.nuevos += res.data.data.nuevos;
+        totales.actualizados += res.data.data.actualizados;
+        totales.invalidos += res.data.data.invalidos;
+        totales.ya_clientes = res.data.data.ya_clientes;
+      }
+      return totales;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  });
+}
+
 export function useCruzarProspectos() {
   const qc = useQueryClient();
   return useMutation({

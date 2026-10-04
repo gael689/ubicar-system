@@ -173,6 +173,8 @@ def main() -> None:
     ap.add_argument("--incluir-sin-contacto", action="store_true",
                     help="también los que no tienen mail ni teléfono")
     ap.add_argument("--enviar", action="store_true", help="empujar de verdad (sin esto, sólo cuenta)")
+    ap.add_argument("--archivo", help="en vez de empujar, guardar los prospectos en este .json "
+                                      "para subirlo desde la pantalla de Prospectos (sin token)")
     a = ap.parse_args()
 
     segmentos = [s.strip() for s in a.segmentos.split(",")] if a.segmentos else list(SEGMENTOS_POR_DEFECTO)
@@ -192,8 +194,14 @@ def main() -> None:
     print(f"  marcados 'no contactar': {sum(p['no_contactar'] for p in prospectos)}"
           f" · contactados antes: {sum(p['contacto_previo'] for p in prospectos)}")
 
+    if a.archivo:
+        with open(a.archivo, "w", encoding="utf-8") as f:
+            json.dump({"prospectos": prospectos}, f, ensure_ascii=False)
+        print(f"\nGuardado en {a.archivo}. Subilo desde Ubicar → Prospectos → Importar archivo.")
+        return
     if not a.enviar:
-        print("\nPrueba: no se envió nada. Agregá --enviar para empujarlos a Ubicar.")
+        print("\nPrueba: no se envió nada. Agregá --enviar para empujarlos a Ubicar, "
+              "o --archivo para guardarlos y subirlos desde la pantalla.")
         return
     if not a.token:
         sys.exit("Falta el token (PROSPECTOS_TOKEN o --token).")
