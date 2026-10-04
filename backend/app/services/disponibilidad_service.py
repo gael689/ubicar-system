@@ -189,9 +189,14 @@ class DisponibilidadService:
         excluir_hold_token: str | None = None,
         edad_conductor: int | None = None,
         canal: str = "web",
+        con_margen: bool = True,
     ) -> list[dict]:
         """
         Cupo y precio por categoría para el rango pedido.
+
+        `con_margen=False` es el criterio del mostrador: la preparación entre
+        un alquiler y el siguiente es un **aviso**, no un bloqueo. Quien está
+        frente al auto sabe si se lo puede dejar listo en una hora.
 
         Devuelve **todas** las categorías publicables, con o sin cupo: las que
         no tienen se muestran deshabilitadas en la web, no se ocultan — eso
@@ -241,7 +246,7 @@ class DisponibilidadService:
         # El mostrador no pasa por acá: `ReservaService` usa
         # `domain/solapamientos`, así que quien sabe lo que hace puede seguir
         # cargando una entrega pegada a una devolución.
-        margen_rotacion = self._margen_rotacion()
+        margen_rotacion = self._margen_rotacion() if con_margen else 0.0
         ocupadas = con_preparacion(ocupaciones, margen_rotacion)
 
         cupos = {
@@ -447,6 +452,7 @@ class DisponibilidadService:
         hora_fin: time,
         categoria_ids: list[int] | None = None,
         excluir_reserva_id: int | None = None,
+        con_margen: bool = True,
     ) -> dict[int, list[int]]:
         """
         Qué autos concretos están libres en el rango, **de todas las
@@ -490,7 +496,7 @@ class DisponibilidadService:
                 self._cargar_ocupaciones(
                     fecha_inicio, fecha_fin, excluir_reserva_id=excluir_reserva_id
                 ),
-                self._margen_rotacion(),
+                self._margen_rotacion() if con_margen else 0.0,
             ),
             categoria_ids=categoria_ids,
         )

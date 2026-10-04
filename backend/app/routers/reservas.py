@@ -600,6 +600,7 @@ def vehiculos_disponibles(
         # La reserva no compite contra sí misma: si ya tenía un auto, ese
         # tiene que seguir figurando como elegible.
         excluir_reserva_id=reserva.id,
+        con_margen=False,
     )
 
     ids = [vid for lista in libres_por_categoria.values() for vid in lista]

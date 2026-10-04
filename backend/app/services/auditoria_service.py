@@ -98,6 +98,9 @@ def _nombre_legible(usuario) -> str | None:
         v = (valor or "").strip()
         if not v or v.startswith("user_") or v.endswith("@sin-email.clerk"):
             return None
+        # "Operador" es el relleno del alta automática: no dice quién fue.
+        if v.lower() == "operador":
+            return None
         return v
 
     return _presentable(getattr(usuario, "nombre", None)) or _presentable(

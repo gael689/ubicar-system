@@ -365,6 +365,9 @@ export function OcupacionPage() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [scrollToDate, setScrollToDate] = useState<string | null>(null);
+  // Dónde queda el día pedido: en el medio de la parte visible (Hoy, zoom) o
+  // **primero**, pegado a la columna de patentes (clic en un día del año).
+  const alinearScroll = useRef<'centro' | 'inicio'>('centro');
   const isFirstLoad = useRef(true);
 
   const [draggingVehiculoId, setDraggingVehiculoId] = useState<number | null>(null);
@@ -448,10 +451,13 @@ export function OcupacionPage() {
     const idx = days.findIndex(d => formatDate(d) === scrollToDate);
     if (idx !== -1) {
       const visible = Math.max(0, cont.clientWidth - ANCHO_COL_NOMBRE);
-      const left = Math.max(0, idx * ANCHO_COL + ANCHO_COL / 2 - visible / 2);
+      const left = alinearScroll.current === 'inicio'
+        ? idx * ANCHO_COL
+        : Math.max(0, idx * ANCHO_COL + ANCHO_COL / 2 - visible / 2);
       if (typeof cont.scrollTo === 'function') cont.scrollTo({ left, behavior: 'smooth' });
       else cont.scrollLeft = left;
     }
+    alinearScroll.current = 'centro';
     setScrollToDate(null);
   }, [scrollToDate, days, viewMode, loading, ANCHO_COL]);
 
@@ -527,6 +533,8 @@ export function OcupacionPage() {
     );
   };
   const onSelectDiaAnual = (fechaISO: string) => {
+    // El día tocado queda **primero**: se ve desde ese día hacia adelante.
+    alinearScroll.current = 'inicio';
     setViewMode('timeline');
     jumpToDate(fechaISO);
   };

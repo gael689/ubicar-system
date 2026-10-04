@@ -62,6 +62,9 @@ def get_disponibilidad_interna(
         fecha_inicio, hora_inicio, fecha_fin, hora_fin,
         solo_web=False,
         canal=canal,
+        # El mostrador no bloquea por la preparación: el auto que vuelve a las
+        # 07:50 se puede reservar para las 09:00 (la web sí lo respeta).
+        con_margen=False,
     )
     return ok({
         "fecha_inicio": fecha_inicio,
@@ -106,6 +109,7 @@ def get_vehiculos_libres(
     libres_por_categoria = DisponibilidadService(db).unidades_libres(
         fecha_inicio, hora_inicio, fecha_fin, hora_fin,
         excluir_reserva_id=excluir_reserva_id,
+        con_margen=False,
     )
 
     ids = [vid for lista in libres_por_categoria.values() for vid in lista]

@@ -251,7 +251,14 @@ class Reserva(Base):
         En una reserva web esto vale "Sistema", que es cierto pero inútil: ahí
         la pantalla muestra "Sitio web", que es la información que importa.
         """
-        return self.usuario.nombre if self.usuario else None
+        if not self.usuario:
+            return None
+        nombre = (self.usuario.nombre or "").strip()
+        # "Operador" es el relleno del alta automática cuando Clerk no manda
+        # nombre: mostrarlo es peor que no mostrar nada.
+        if nombre.lower() == "operador":
+            return None
+        return nombre or None
 
     @property
     def total_adicionales(self) -> Decimal:

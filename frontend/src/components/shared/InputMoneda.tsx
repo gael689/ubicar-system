@@ -85,7 +85,10 @@ export function InputMoneda({
           setTexto(n === null ? '' : formatMiles(n));
           onChange(n === null ? '' : n);
         }}
-        className={cn(simbolo ? 'pl-7' : undefined, className)}
+        // El `pl-7` va **después** de `className`: casi todos los llamadores
+        // pasan `px-3`, y con `twMerge` el último gana → el primer dígito
+        // quedaba debajo del `$`.
+        className={cn(className, simbolo ? 'pl-8' : undefined)}
       />
     </div>
   );
