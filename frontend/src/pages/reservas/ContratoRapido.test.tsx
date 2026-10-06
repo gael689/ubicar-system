@@ -53,7 +53,10 @@ vi.mock('@/components/clientes/SelectorConductores', () => ({
   ),
 }));
 vi.mock('@/lib/api', () => ({ default: { post: vi.fn(), get: vi.fn() }, api: { post: vi.fn(), get: vi.fn() } }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
+// Lo que se pisa, antes de guardar: cada test decide qué responde.
+const avisosDeSolape = vi.fn();
+vi.mock('@/hooks/useAvisosDeSolape', () => ({ useAvisosDeSolape: () => ({ data: avisosDeSolape() }) }));
 
 import api from '@/lib/api';
 import { ContratoRapidoModal } from './ContratoRapidoModal';
@@ -65,6 +68,8 @@ beforeEach(() => {
   cleanup();
   createReserva.mockReset();
   listReservas.mockReset();
+  avisosDeSolape.mockReset();
+  avisosDeSolape.mockReturnValue(undefined);
 });
 
 /** Todo lo obligatorio menos el lugar, que es lo que cada test decide. */
@@ -321,5 +326,61 @@ describe('Cuando el auto ya está ocupado (409)', () => {
     await user.click(screen.getByRole('button', { name: /Crear y generar contrato/ }));
 
     expect(await screen.findByText(/panel del contrato 55/)).toBeTruthy();
+  });
+});
+
+
+describe('Un auto que se pisa avisa y deja seguir', () => {
+  // 06/10/2026: un auto volvía a las 9:00, querían el contrato rápido para las
+  // 10:00 y el sistema no los dejaba. Ahora avisa, y sólo el taller frena.
+  const ocupada = {
+    tipo: 'solape_con_ocupado', reserva_id: 12, estado: 'activa', cliente: 'Ana Gómez',
+    fecha_inicio: '2026-10-05', hora_inicio: '10:00', fecha_fin: '2026-10-06', hora_fin: '10:00',
+  };
+
+  it('muestra con qué se pisa y el botón dice "Crear igual", habilitado', async () => {
+    const user = userEvent.setup();
+    avisosDeSolape.mockReturnValue({
+      solapes: [ocupada], bloqueo: null, vuelve_a: null, minutos_para_prepararlo: null,
+    });
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+    await cargarLoMinimo(user);
+
+    expect(screen.getByText(/Se pisa con la reserva #12 de Ana Gómez/)).toBeTruthy();
+    const boton = screen.getByRole('button', { name: 'Crear igual' }) as HTMLButtonElement;
+    expect(boton.disabled).toBe(false);
+  });
+
+  it('crea igual, y después del alta lo vuelve a decir', async () => {
+    const user = userEvent.setup();
+    avisosDeSolape.mockReturnValue({
+      solapes: [ocupada], bloqueo: null, vuelve_a: null, minutos_para_prepararlo: null,
+    });
+    createReserva.mockResolvedValue({ reserva: { id: 50 }, warnings: [ocupada] });
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+    await cargarLoMinimo(user);
+    await user.click(screen.getByRole('button', { name: 'Crear igual' }));
+
+    expect(await screen.findByText('panel del contrato 50')).toBeTruthy();
+    const { toast } = await import('sonner');
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringMatching(/Se pisa con la reserva #12/));
+  });
+
+  it('sin nada que avisar, el botón es el de siempre', async () => {
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /Crear y generar contrato/ })).toBeTruthy();
+  });
+
+  it('un auto en el taller no se puede crear: es lo único que sigue frenando', async () => {
+    const user = userEvent.setup();
+    avisosDeSolape.mockReturnValue({
+      solapes: [], vuelve_a: null, minutos_para_prepararlo: null,
+      bloqueo: { motivo: 'Mantenimiento', fecha_desde: '2026-10-06', fecha_hasta: '2026-10-07' },
+    });
+    render(<ContratoRapidoModal onClose={vi.fn()} onCreada={vi.fn()} />);
+    await cargarLoMinimo(user);
+
+    expect(screen.getByText(/Este auto no está disponible \(Mantenimiento\)/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: /Crear y generar contrato/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

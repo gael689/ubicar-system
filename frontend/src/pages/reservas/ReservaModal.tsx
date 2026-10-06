@@ -7,6 +7,8 @@ import { useClientes, useConductores } from '@/hooks/useClientes';
 import { AvisoConductoresOcupados, SelectorConductores } from '@/components/clientes/SelectorConductores';
 import { useAdicionales } from '@/hooks/useAdicionales';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
+import { useAvisosDeSolape } from '@/hooks/useAvisosDeSolape';
+import { AvisoSolape, textoAvisoSolape } from '@/components/reservas/AvisoSolape';
 import { useConfiguracion } from '@/hooks/useConfiguracion';
 import { useCategorias } from '@/hooks/useCategorias';
 import { useDisponibilidadInterna, useVehiculosLibres } from '@/hooks/useDisponibilidad';
@@ -518,6 +520,25 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
    * dos verdades sobre cuántos autos hay.
    */
   const rangoElegido = devolucionPosterior;
+
+  // Con qué se pisaría esta reserva, antes de guardar: avisa y deja seguir.
+  const { data: avisosDeSolape } = useAvisosDeSolape(
+    vehiculoId && rangoElegido
+      ? {
+          vehiculo_id: Number(vehiculoId),
+          fecha_inicio: fechaInicio, hora_inicio: `${horaInicio}:00`,
+          fecha_fin: fechaFin, hora_fin: `${horaFin}:00`,
+          ...(reserva ? { excluir_reserva_id: reserva.id } : {}),
+        }
+      : null,
+  );
+
+  /** Se guardó igual, pero si quedó pisada se dice con qué (la lista de abajo
+   *  se cierra con el modal y el aviso tiene que sobrevivir). */
+  function avisarSolapes(avisos: SolapeWarning[]) {
+    const solape = avisos.find(w => w.tipo.startsWith('solape_con_'));
+    if (solape) toast.warning(textoAvisoSolape(solape));
+  }
   const { data: disponibilidad, isLoading: cargandoCupo } = useDisponibilidadInterna(
     !isEdit && rangoElegido
       ? {
@@ -1278,6 +1299,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         // se anuló un contrato firmado porque se le cambió el auto. Tirarlos
         // acá era la razón por la que eso podía pasar sin que nadie lo viera.
         const { reserva: actualizada, warnings } = await updateReserva(reserva!.id, payload);
+        avisarSolapes(warnings);
         onSuccess(actualizada, warnings);
       } else {
         const payload: ReservaCreate = {
@@ -1345,6 +1367,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
         // en el que el borrador tiene que sobrevivir.
         descartarBorrador();
         if (w.length > 0) setWarnings(w);
+        avisarSolapes(w);
         // El PDF de confirmación se descarga solo para mandárselo al cliente.
         // Si la descarga falla no se pierde nada: el backend ya lo archivó en
         // el perfil del cliente y se puede volver a bajar desde el listado.
@@ -1793,6 +1816,9 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                   </p>
                 );
               })()}
+              {/* Lo que se pisa, con quién y cuándo. El "vuelve a las…" ya se dice
+                  arriba, así que acá se saca para no repetirlo. */}
+              {!isEdit && avisosDeSolape && <AvisoSolape avisos={{ ...avisosDeSolape, vuelve_a: null }} />}
               {vehiculoOcupadoEnElRango && (
                 <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -2818,16 +2844,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
           {/* Warnings de solape — fuera de los pasos: si hay un conflicto hay
               que verlo esté donde esté, no sólo al llegar al final. */}
-          {warnings.length > 0 && (
+          {warnings.some(w => w.tipo.startsWith('solape_con_')) && (
             <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-2">
               <p className="text-sm font-bold text-amber-800 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" /> Esta reserva solapa con reservas pendientes:
+                <AlertTriangle className="w-4 h-4" /> Esta reserva se pisa con:
               </p>
               <ul className="list-disc pl-5">
-                {warnings.map((w, i) => (
-                  <li key={i} className="text-sm text-amber-700">
-                    Reserva #{w.reserva_id} — {w.cliente} ({w.fecha_inicio} → {w.fecha_fin})
-                  </li>
+                {warnings.filter(w => w.tipo.startsWith('solape_con_')).map((w, i) => (
+                  <li key={i} className="text-sm text-amber-700">{textoAvisoSolape(w)}</li>
                 ))}
               </ul>
             </div>

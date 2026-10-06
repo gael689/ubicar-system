@@ -786,11 +786,24 @@ export interface ClienteResumen {
 }
 
 export interface SolapeWarning {
+  /** `solape_con_ocupado` (otra reserva tiene el auto) o `solape_con_pendiente`. */
   tipo: string;
   reserva_id: number;
+  estado?: string;
   cliente?: string;
   fecha_inicio?: string;
+  hora_inicio?: string;
   fecha_fin?: string;
+  hora_fin?: string;
+}
+
+/** Lo que se pisaría al guardar una reserva (`GET /reservas/avisos-de-solape`). */
+export interface AvisosDeSolape {
+  solapes: SolapeWarning[];
+  /** Taller, siniestro o uso interno: lo único que sigue impidiendo guardar. */
+  bloqueo: { motivo: string; fecha_desde: string; fecha_hasta: string } | null;
+  vuelve_a: string | null;
+  minutos_para_prepararlo: number | null;
 }
 
 // ─── Matriz de bloqueos (Fase 3, ítem 39) ────────────────────────────────────

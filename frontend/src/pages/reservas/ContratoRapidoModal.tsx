@@ -13,6 +13,8 @@ import { useClientes } from '@/hooks/useClientes';
 import { useAdicionales } from '@/hooks/useAdicionales';
 import { useConfiguracion } from '@/hooks/useConfiguracion';
 import { useCalcularPrecio } from '@/hooks/usePrecios';
+import { useAvisosDeSolape } from '@/hooks/useAvisosDeSolape';
+import { AvisoSolape, textoAvisoSolape } from '@/components/reservas/AvisoSolape';
 import api from '@/lib/api';
 import {
   codigoDeError, extractError, fechaLocal, formatDate, formatDocumento, formatMiles, hoyLocal, irAlError,
@@ -176,6 +178,17 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
         }
       : null,
   );
+  // Qué se pisa, antes de guardar. Avisa y deja seguir: sólo un auto en el
+  // taller impide crear (`bloqueo`).
+  const { data: avisosDeSolape } = useAvisosDeSolape(
+    vehiculoId && devolucionPosterior
+      ? {
+          vehiculo_id: Number(vehiculoId),
+          fecha_inicio: fechaInicio, hora_inicio: `${horaInicio}:00`,
+          fecha_fin: fechaFin, hora_fin: `${horaFin}:00`,
+        }
+      : null,
+  );
   const sugerido = cotizacion ? Number(cotizacion.subtotal_vehiculo ?? cotizacion.total ?? 0) : null;
   // Misma comparación que el backend: un peso o más por debajo del de lista.
   const esDescuento = !esUber && sugerido !== null && sugerido > 0 && precioTotal !== ''
@@ -294,10 +307,12 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
         notas: 'Contrato rápido desde el mostrador.',
       };
 
-      const { reserva } = await createReserva(payload);
+      const { reserva, warnings } = await createReserva(payload);
       setReservaId(reserva.id);
       onCreada();
       toast.success('Reserva creada. Generá el contrato acá abajo.');
+      // Quedó pisada: se creó igual, pero se dice con qué.
+      if (warnings?.length) toast.warning(textoAvisoSolape(warnings[0]));
     } catch (err) {
       // **Que no llegue la respuesta no significa que no se haya creado.**
       // Es el caso reportado desde el celular del mostrador: la pantalla decía
@@ -656,6 +671,8 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
                 </div>
               </div>
 
+              <AvisoSolape avisos={avisosDeSolape} />
+
               {error && (
                 <div data-error-banner className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
@@ -681,10 +698,10 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
             {reservaId === null ? 'Cancelar' : 'Listo'}
           </button>
           {reservaId === null && (
-            <button type="button" onClick={crear} disabled={loading || creando}
+            <button type="button" onClick={crear} disabled={loading || creando || !!avisosDeSolape?.bloqueo}
               className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2 shadow-sm">
               {(loading || creando) && <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
-              Crear y generar contrato
+              {avisosDeSolape?.solapes.length ? 'Crear igual' : 'Crear y generar contrato'}
             </button>
           )}
         </div>
