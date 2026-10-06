@@ -10,13 +10,15 @@ import { trackLeadEvent } from "@/lib/meta-pixel";
  * cuál de ellas vende.
  */
 export function BotonWhatsApp({
-  mensaje, origen, claro = false,
+  mensaje, origen, claro = false, ancho = false,
 }: {
   mensaje: string;
   /** Qué página lo emitió, para la medición. */
   origen: string;
   /** Sobre fondo oscuro. */
   claro?: boolean;
+  /** Ocupa todo el ancho (dentro de una tarjeta). */
+  ancho?: boolean;
 }) {
   return (
     <a
@@ -25,7 +27,8 @@ export function BotonWhatsApp({
       rel="noopener noreferrer"
       onClick={() => trackLeadEvent(`landing:${origen}:whatsapp`)}
       className={
-        "inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-bold transition-colors " +
+        "inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold transition-colors " +
+        (ancho ? "w-full " : "") +
         (claro
           ? "bg-white text-[#1B3F6B] hover:bg-white/90"
           : "bg-[#1B3F6B] text-white hover:bg-[#15335a]")

@@ -3,41 +3,88 @@
  * ("alquiler de camionetas 4x4 bahía blanca", "alquiler de autos aeropuerto
  * bahía blanca"…). Hasta ahora todas competían por la portada.
  *
- * **Agregar una página es agregar una entrada acá y escribir su texto.** La ruta
+ * **Agregar una página es agregar una entrada acá.** La ruta
  * (`app/[landing]/page.tsx`), el sitemap, el `llms.txt` y los enlaces del
  * footer salen de esta lista, así no se desalinean.
  *
  * Reglas de contenido (plan `docs/PLAN_SEO.md`):
  *
- * - **Una página existe sólo si responde una búsqueda real y tiene texto
+ * - **Una página existe sólo si responde una búsqueda real y tiene contenido
  *   propio.** Nada de páginas en serie que cambian el nombre del pueblo: Google
  *   las castiga y hunde al sitio entero.
+ * - **Poco texto y mucho diseño.** Un gancho corto, una bajada de una línea y
+ *   bloques visuales (puntos con ícono, categorías con foto, pasos). El
+ *   detalle largo vive en las preguntas frecuentes.
  * - **Ninguna afirma lo que Ubicar no cumple.** Lo confirmado: se alquila con
  *   licencia extranjera, y en el aeropuerto el vehículo se pide y se entrega a
  *   la hora pactada. No se escribe nada sobre entregas fuera de Bahía Blanca,
  *   maquinaria con operario, atención 24 h, "cobertura total" ni "sin franquicia".
  * - **Ningún precio ni porcentaje a mano.** Lo que tiene número lo trae el
  *   componente que lee `/public/config`.
- * - **Las respuestas de política se toman de `lib/faq.ts` por `id`.** Una
- *   pregunta propia sólo va si es específica de la página.
- * - El primer párrafo responde solo —qué, dónde, cómo se reserva—: es el que
- *   citan los buscadores de IA.
+ * - **Las respuestas de política se toman de `lib/faq.ts` por `id`.**
+ * - La bajada responde sola —qué, dónde, cómo se reserva—: es lo que citan los
+ *   buscadores de IA.
  */
 import type { Pregunta } from "@/lib/faq";
+
+/** Nombres de los íconos que puede pedir una página (se resuelven en `landing/Iconos.tsx`). */
+export type NombreIcono =
+  | "seguro" | "precio" | "lugar" | "avion" | "reloj" | "calendario" | "contrato"
+  | "whatsapp" | "baja" | "camion" | "llave" | "documento" | "auto" | "edificio"
+  | "personas" | "terreno" | "carnet" | "check" | "buscar" | "tarjeta" | "apreton";
+
+export interface Punto {
+  icono: NombreIcono;
+  titulo: string;
+  detalle: string;
+}
+
+export interface Categoria {
+  titulo: string;
+  imagen: string;
+  alt: string;
+  /** Datos cortos: "5 pasajeros", "2 valijas"… */
+  datos: string[];
+  /** Un modelo de referencia ("o similar"). */
+  ejemplo: string;
+}
+
+export interface Paso {
+  icono: NombreIcono;
+  titulo: string;
+  detalle?: string;
+}
 
 export interface Landing {
   /** Sin barra. Es la URL: `/${slug}`. */
   slug: string;
   /** Nombre corto: migas de pan y enlaces entre páginas. */
   nombre: string;
+  icono: NombreIcono;
   /** `<title>` completo, hasta 60 caracteres. */
   titulo: string;
   /** Meta description, hasta 155 caracteres. */
   descripcion: string;
+  /** El gancho: una línea corta sobre el título. Distinto en cada página. */
+  gancho: string;
+  /** El título con la búsqueda por la que se entra. */
   h1: string;
-  /** El primero responde la búsqueda por sí solo. */
-  intro: string[];
-  secciones: { titulo: string; parrafos: string[] }[];
+  /** Una sola frase que responde la búsqueda. */
+  bajada: string;
+  /**
+   * A la derecha del título: el buscador de reserva, o una tarjeta de contacto
+   * cuando la página no se reserva online (Uber y empresas).
+   */
+  reserva: "buscador" | "whatsapp";
+  /** Texto de la tarjeta de contacto, si `reserva` es "whatsapp". */
+  tarjetaWhatsapp?: { titulo: string; detalle: string };
+  puntos: Punto[];
+  /** Categorías con foto (`public/img`), si la página las muestra. */
+  categorias?: Categoria[];
+  /** Pasos "cómo funciona", si la página los muestra. */
+  pasos?: Paso[];
+  /** Muestra la escalera de descuentos en vivo (sale de `/public/config`). */
+  conEscalera?: boolean;
   /** Ids de `lib/faq.ts`, en el orden en que se muestran. */
   preguntasIds: string[];
   /** Preguntas que sólo tienen sentido en esta página. Van primero. */
@@ -69,37 +116,64 @@ export const SLUGS_RESERVADOS = [
   "llms.txt",
 ];
 
+// Las categorías de auto. Los modelos son de referencia ("o similar"): se
+// reserva la categoría y el modelo exacto se confirma al retirar.
+const COMPACTO: Categoria = {
+  titulo: "Compacto",
+  imagen: "/img/compacto.png",
+  alt: "Auto compacto de 5 puertas para alquilar en Bahía Blanca",
+  datos: ["5 pasajeros", "2 valijas"],
+  ejemplo: "Fiat Argo, Chevrolet Onix o similar",
+};
+const SEDAN: Categoria = {
+  titulo: "Sedán",
+  imagen: "/img/sedan-intermedio.png",
+  alt: "Sedán intermedio para alquilar en Bahía Blanca",
+  datos: ["5 pasajeros", "3 valijas"],
+  ejemplo: "Fiat Cronos, Toyota Etios o similar",
+};
+const SEDAN_SUPERIOR: Categoria = {
+  titulo: "Sedán superior",
+  imagen: "/img/sedan-superior.png",
+  alt: "Sedán superior automático para alquilar en Bahía Blanca",
+  datos: ["5 pasajeros", "3 valijas", "Automático"],
+  ejemplo: "VW Virtus o similar",
+};
+const PICKUP: Categoria = {
+  titulo: "Pick-up 4x4",
+  imagen: "/img/pickup.png",
+  alt: "Pick-up doble cabina 4x4 para alquilar en Bahía Blanca",
+  datos: ["5 pasajeros", "4 valijas", "Tracción 4x4"],
+  ejemplo: "Toyota Hilux, VW Amarok, Foton Tunland o similar",
+};
+
+const PASOS_RESERVA: Paso[] = [
+  { icono: "buscar", titulo: "Elegí lugar y fechas", detalle: "En el buscador, con la edad de quien maneja." },
+  { icono: "precio", titulo: "Mirá el precio final", detalle: "Con impuestos y seguro de responsabilidad civil." },
+  { icono: "check", titulo: "Reservá y retirá", detalle: "Seña online; el saldo, al retirar." },
+];
+
 export const LANDINGS: Landing[] = [
   {
     slug: "alquiler-de-autos-bahia-blanca",
     nombre: "Alquiler de autos",
+    icono: "auto",
     titulo: "Alquiler de Autos por Día en Bahía Blanca | Ubicar Rent",
     descripcion:
       "Alquilá un auto en Bahía Blanca: compacto, sedán o sedán superior. Reservá online con el precio final y el seguro incluido, y retirá en Bahía Blanca.",
+    gancho: "Reservá online con el precio final",
     h1: "Alquiler de autos en Bahía Blanca",
-    intro: [
-      "En Ubicar Rent alquilás un auto en Bahía Blanca reservando online: elegís el lugar de retiro, las fechas y la edad de quien maneja, y ves el precio final con impuestos y seguro de responsabilidad civil incluidos.",
-      "Tenemos tres categorías de auto —compacto, sedán y sedán superior— y tres puntos de retiro en Bahía Blanca: Paraguay 241, Alsina 350 y el Aeropuerto Comandante Espora.",
+    bajada: "Compacto, sedán o sedán superior, con el seguro de responsabilidad civil incluido.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "seguro", titulo: "Seguro incluido", detalle: "Responsabilidad civil, ya en el precio." },
+      { icono: "precio", titulo: "Precio final", detalle: "Impuestos incluidos." },
+      { icono: "lugar", titulo: "Retiro en Bahía Blanca", detalle: "En el centro o en el aeropuerto." },
+      { icono: "carnet", titulo: "Licencia extranjera", detalle: "Si está vigente, te sirve." },
     ],
-    secciones: [
-      {
-        titulo: "Las categorías de auto",
-        parrafos: [
-          "Compacto: para moverte por la ciudad y hacer viajes cortos. Cinco pasajeros y dos valijas, como un Fiat Argo o un Chevrolet Onix.",
-          "Sedán: más baúl y más comodidad para rutas y viajes de trabajo. Cinco pasajeros y tres valijas, como un Fiat Cronos o un Toyota Etios.",
-          "Sedán superior: transmisión automática y mayor equipamiento. Cinco pasajeros y tres valijas, como un VW Virtus.",
-          "Reservás una categoría, no un modelo: te garantizamos un vehículo de la categoría que elegiste o de una superior, y el modelo exacto se confirma al retirar.",
-        ],
-      },
-      {
-        titulo: "Cómo reservar",
-        parrafos: [
-          "Elegís dónde y cuándo en el buscador, ves lo disponible con su precio, sumás los extras que quieras y pagás la seña online. El saldo se abona al retirar el vehículo.",
-          "Si lo necesitás con poco tiempo o preferís hablar con alguien, escribinos por WhatsApp y lo coordinamos.",
-        ],
-      },
-    ],
-    preguntasIds: ["requisitos", "licencia-extranjera", "edad", "que-incluye", "franquicia", "cancelar"],
+    categorias: [COMPACTO, SEDAN, SEDAN_SUPERIOR],
+    pasos: PASOS_RESERVA,
+    preguntasIds: ["requisitos", "licencia-extranjera", "edad", "que-incluye", "franquicia"],
     hermanas: [
       "alquiler-camionetas-4x4-bahia-blanca",
       "alquiler-de-autos-aeropuerto-bahia-blanca",
@@ -115,29 +189,22 @@ export const LANDINGS: Landing[] = [
   {
     slug: "alquiler-camionetas-4x4-bahia-blanca",
     nombre: "Camionetas 4x4",
+    icono: "camion",
     titulo: "Alquiler de Camionetas 4x4 en Bahía Blanca | Ubicar Rent",
     descripcion:
       "Alquilá una pick-up 4x4 doble cabina en Bahía Blanca para campo, obra o trabajo. Reservá online con el precio final y el seguro de responsabilidad civil.",
+    gancho: "Hecha para el campo y la obra",
     h1: "Alquiler de camionetas 4x4 en Bahía Blanca",
-    intro: [
-      "Alquilamos pick-ups doble cabina con tracción 4x4 en Bahía Blanca, para trabajo en campo, obra o caminos rurales. Reservás online, ves el precio final con el seguro de responsabilidad civil incluido y retirás en Bahía Blanca.",
-      "La categoría Pick-up lleva cinco pasajeros y cuatro valijas, con modelos como la Toyota Hilux, la VW Amarok o la Foton Tunland.",
+    bajada: "Pick-ups doble cabina con tracción 4x4, para trabajo y caminos de tierra.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "terreno", titulo: "Tracción 4x4", detalle: "Para tierra, campo y obra." },
+      { icono: "personas", titulo: "Cinco pasajeros", detalle: "Doble cabina y lugar para equipaje." },
+      { icono: "seguro", titulo: "Seguro incluido", detalle: "Responsabilidad civil, ya en el precio." },
+      { icono: "edificio", titulo: "Para empresas", detalle: "Varias camionetas o alquiler largo: escribinos." },
     ],
-    secciones: [
-      {
-        titulo: "Para qué se usa",
-        parrafos: [
-          "La pick-up 4x4 es la elección para quien trabaja en el campo, en una obra o en caminos de tierra, y para empresas que necesitan mover equipos y personal con un vehículo que aguante el uso exigente.",
-          "Reservás la categoría, no un modelo: te garantizamos una pick-up de la categoría o una superior, y el modelo exacto se confirma al retirar según la disponibilidad del día.",
-        ],
-      },
-      {
-        titulo: "Si es para tu empresa",
-        parrafos: [
-          "Si necesitás varias camionetas, o alquilar por un tiempo largo, escribinos y armamos la propuesta. También alquilamos maquinaria pesada para obra.",
-        ],
-      },
-    ],
+    categorias: [PICKUP],
+    pasos: PASOS_RESERVA,
     preguntasIds: ["requisitos", "licencia-extranjera", "kilometraje", "que-no-se-puede", "franquicia"],
     hermanas: [
       "alquiler-de-autos-bahia-blanca",
@@ -154,29 +221,25 @@ export const LANDINGS: Landing[] = [
   {
     slug: "alquiler-de-autos-aeropuerto-bahia-blanca",
     nombre: "Autos en el aeropuerto",
+    icono: "avion",
     titulo: "Alquiler de Autos en Aeropuerto Bahía Blanca | Ubicar Rent",
     descripcion:
       "Alquilá un auto y retiralo en el Aeropuerto Comandante Espora de Bahía Blanca. Lo pedís online y te lo entregamos en el aeropuerto a la hora pactada.",
+    gancho: "Pedilo online, retiralo en el aeropuerto",
     h1: "Alquiler de autos en el Aeropuerto de Bahía Blanca",
-    intro: [
-      "Si llegás en avión a Bahía Blanca, pedís el auto online y te lo entregamos en el Aeropuerto Comandante Espora a la hora pactada.",
-      "En el buscador elegís el aeropuerto como lugar de retiro y el horario en que lo necesitás. Ves el precio final con el seguro de responsabilidad civil incluido y reservás.",
+    bajada: "Te lo entregamos en el Aeropuerto Comandante Espora a la hora pactada.",
+    reserva: "buscador",
+    lugarInicial: "aeropuerto",
+    puntos: [
+      { icono: "avion", titulo: "Entrega en el aeropuerto", detalle: "A la hora que pactes." },
+      { icono: "reloj", titulo: "Elegís el horario", detalle: "Lo indicás al reservar." },
+      { icono: "lugar", titulo: "Devolvé donde te sirva", detalle: "En el aeropuerto o en otro de nuestros puntos." },
+      { icono: "carnet", titulo: "Licencia extranjera", detalle: "Si está vigente, te sirve." },
     ],
-    secciones: [
-      {
-        titulo: "Cómo funciona la entrega en el aeropuerto",
-        parrafos: [
-          "Reservás el auto eligiendo «Aeropuerto Comandante Espora» como lugar de retiro y poniendo el horario al que querés recibirlo. A esa hora te lo entregamos ahí.",
-          "Para devolverlo, podés elegir el aeropuerto u otro de nuestros puntos: Paraguay 241 o Alsina 350, en Bahía Blanca. Lo indicás al reservar, tildando «Devolver en otro lugar».",
-          "Si tu vuelo se demora o cambia de horario, avisanos por WhatsApp.",
-        ],
-      },
-      {
-        titulo: "Qué llevar",
-        parrafos: [
-          "Documento de identidad o pasaporte y licencia de conducir vigente. Si viajás desde el exterior, también podés alquilar con licencia extranjera.",
-        ],
-      },
+    pasos: [
+      { icono: "lugar", titulo: "Elegí el aeropuerto", detalle: "«Aeropuerto Comandante Espora» como lugar de retiro, y tu horario." },
+      { icono: "check", titulo: "Reservá online", detalle: "Precio final con seguro de responsabilidad civil." },
+      { icono: "avion", titulo: "Te lo entregamos ahí", detalle: "A la hora pactada. Si tu vuelo cambia, avisanos por WhatsApp." },
     ],
     preguntasIds: ["requisitos", "licencia-extranjera", "anticipacion", "combustible"],
     preguntasPropias: [
@@ -188,7 +251,6 @@ export const LANDINGS: Landing[] = [
         ],
       },
     ],
-    lugarInicial: "aeropuerto",
     hermanas: [
       "alquiler-de-autos-bahia-blanca",
       "alquiler-camionetas-4x4-bahia-blanca",
@@ -205,28 +267,28 @@ export const LANDINGS: Landing[] = [
   {
     slug: "alquiler-auto-para-uber-bahia-blanca",
     nombre: "Autos para Uber",
+    icono: "contrato",
     titulo: "Alquiler de Autos para Uber en Bahía Blanca | Ubicar Rent",
     descripcion:
       "Alquiler semanal de autos para trabajar con aplicaciones de viaje como Uber en Bahía Blanca. Contrato específico; las condiciones se acuerdan por WhatsApp.",
+    gancho: "Para trabajar con aplicaciones de viaje",
     h1: "Alquiler de autos para Uber en Bahía Blanca",
-    intro: [
-      "Alquilamos autos por semana para trabajar con aplicaciones de viaje como Uber en Bahía Blanca, con un contrato pensado para ese uso.",
-      "Las condiciones y el valor se cotizan por semana y se acuerdan con vos por WhatsApp.",
+    bajada: "Alquiler semanal con un contrato pensado para ese uso. Lo coordinamos por WhatsApp.",
+    reserva: "whatsapp",
+    tarjetaWhatsapp: {
+      titulo: "Arrancá por WhatsApp",
+      detalle: "Te contamos qué autos hay y cómo se arma el contrato.",
+    },
+    puntos: [
+      { icono: "calendario", titulo: "Alquiler semanal", detalle: "Se cotiza por semana." },
+      { icono: "contrato", titulo: "Contrato específico", detalle: "Valor semanal, km incluidos, km extra y fechas de pago." },
+      { icono: "whatsapp", titulo: "Se acuerda con vos", detalle: "Condiciones y requisitos, por WhatsApp." },
+      { icono: "seguro", titulo: "Aparte del alquiler común", detalle: "Ese uso no está permitido en el alquiler común." },
     ],
-    secciones: [
-      {
-        titulo: "Un contrato distinto al alquiler común",
-        parrafos: [
-          "El alquiler común no permite usar el auto para transportar personas a título oneroso. Por eso, para trabajar con una app de viajes no se reserva por el buscador: se arma un contrato específico.",
-          "En ese contrato queda escrito el valor por semana, los kilómetros incluidos, el precio del kilómetro extra y las fechas de pago.",
-        ],
-      },
-      {
-        titulo: "Cómo empezar",
-        parrafos: [
-          "Escribinos por WhatsApp y te contamos qué autos hay disponibles y cómo se arma el contrato.",
-        ],
-      },
+    pasos: [
+      { icono: "whatsapp", titulo: "Escribinos", detalle: "Contanos que es para trabajar con una app." },
+      { icono: "auto", titulo: "Elegimos el auto", detalle: "Te decimos qué hay disponible." },
+      { icono: "contrato", titulo: "Armamos el contrato", detalle: "Con las condiciones que acordamos." },
     ],
     preguntasIds: ["requisitos", "edad", "que-no-se-puede", "franquicia"],
     hermanas: [
@@ -244,23 +306,21 @@ export const LANDINGS: Landing[] = [
   {
     slug: "alquiler-de-autos-por-mes-bahia-blanca",
     nombre: "Alquiler por mes",
+    icono: "calendario",
     titulo: "Alquiler de Autos por Mes en Bahía Blanca | Ubicar Rent",
     descripcion:
       "Alquilá un auto por mes o por varios días en Bahía Blanca: cuanto más largo el alquiler, menos pagás por día. Reservá online con el precio final.",
+    gancho: "Más días, menos por día",
     h1: "Alquiler de autos por mes en Bahía Blanca",
-    intro: [
-      "Si necesitás un auto por un mes o más, en Ubicar Rent el precio por día baja a medida que el alquiler es más largo, y no hay que pedirlo ni usar ningún código.",
-      "Reservás online, ves el precio final con el seguro de responsabilidad civil incluido y retirás en Bahía Blanca.",
+    bajada: "El precio por día baja a medida que el alquiler es más largo, sin pedirlo ni usar códigos.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "baja", titulo: "Menos por día", detalle: "Cuanto más largo, mejor precio." },
+      { icono: "precio", titulo: "Precio final", detalle: "Impuestos y seguro incluidos." },
+      { icono: "apreton", titulo: "Alquiler a medida", detalle: "Si es largo, escribinos y lo armamos." },
+      { icono: "lugar", titulo: "Retiro en Bahía Blanca", detalle: "En el centro o en el aeropuerto." },
     ],
-    secciones: [
-      {
-        titulo: "Para quién conviene",
-        parrafos: [
-          "Para quien trabaja unas semanas en la ciudad, necesita un auto mientras arregla el suyo o prefiere no comprar uno para un período largo.",
-          "Si tu caso es un alquiler largo y querés armarlo a medida, escribinos por WhatsApp: casi siempre se puede coordinar.",
-        ],
-      },
-    ],
+    conEscalera: true,
     preguntasIds: ["mas-dias", "formas-de-pago", "cuanto-adelanto", "kilometraje"],
     hermanas: [
       "alquiler-de-autos-bahia-blanca",
@@ -277,30 +337,25 @@ export const LANDINGS: Landing[] = [
   {
     slug: "empresas",
     nombre: "Empresas",
+    icono: "edificio",
     titulo: "Vehículos para Empresas en Bahía Blanca | Ubicar Rent",
     descripcion:
       "Alquiler de vehículos para empresas en Bahía Blanca: sumá vehículos según lo que necesitás, con mantenimiento, seguros y patente incluidos.",
+    gancho: "Flota a la medida de tu empresa",
     h1: "Alquiler de vehículos para empresas en Bahía Blanca",
-    intro: [
-      "Ubicar Rent alquila vehículos a empresas en Bahía Blanca y la zona: sumás vehículos según lo que necesitás, con mantenimiento general, seguros y patente incluidos.",
-      "Lo coordinamos por WhatsApp, por teléfono o en persona, sin intermediarios ni demoras.",
+    bajada: "Sumás vehículos según lo que necesitás, con mantenimiento, seguros y patente incluidos.",
+    reserva: "whatsapp",
+    tarjetaWhatsapp: {
+      titulo: "Contanos qué necesitás",
+      detalle: "Cuántos vehículos, para qué y por cuánto tiempo. Armamos la propuesta.",
+    },
+    puntos: [
+      { icono: "camion", titulo: "Sumá vehículos", detalle: "Según lo que necesites." },
+      { icono: "llave", titulo: "Todo incluido", detalle: "Mantenimiento, seguros y patente." },
+      { icono: "documento", titulo: "Documentación al día", detalle: "Vehículos revisados, con cobertura según contrato." },
+      { icono: "whatsapp", titulo: "Sin intermediarios", detalle: "Por WhatsApp, teléfono o en persona." },
     ],
-    secciones: [
-      {
-        titulo: "Qué ofrecemos",
-        parrafos: [
-          "Autos y camionetas 4x4 para el equipo, con alquileres por el tiempo que haga falta, incluso a largo plazo.",
-          "Vehículos revisados, con la documentación al día y cobertura de seguro según contrato.",
-          "Si además necesitás maquinaria para una obra, también la alquilamos.",
-        ],
-      },
-      {
-        titulo: "Cómo empezar",
-        parrafos: [
-          "Contanos qué necesitás —cuántos vehículos, para qué y por cuánto tiempo— y armamos la propuesta.",
-        ],
-      },
-    ],
+    categorias: [PICKUP, SEDAN],
     preguntasIds: ["formas-de-pago", "otro-conductor", "franquicia"],
     hermanas: [
       "alquiler-camionetas-4x4-bahia-blanca",
@@ -333,6 +388,9 @@ for (const l of LANDINGS) {
     throw new Error(
       `La descripción de "${l.slug}" tiene ${l.descripcion.length} caracteres (máximo 155).`,
     );
+  }
+  if (l.reserva === "whatsapp" && !l.tarjetaWhatsapp) {
+    throw new Error(`"${l.slug}" se coordina por WhatsApp pero no tiene \`tarjetaWhatsapp\`.`);
   }
 }
 for (const l of LANDINGS) {
