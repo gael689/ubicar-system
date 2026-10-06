@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Mail, ShieldCheck, Clock, MapPin } from "lucide-react";
 import { WHATSAPP_GENERAL, EMAIL } from "@/lib/constants";
 import { IconoWhatsApp } from "@/components/IconoWhatsApp";
@@ -45,12 +46,10 @@ export function PieReserva() {
 
         <div className="flex flex-col gap-6 pt-6 md:flex-row md:items-center md:justify-between">
           <Link href="/" className="flex shrink-0 items-center">
-            {/* `img` y no `next/image`: es el mismo criterio que el Footer del
-                sitio, un PNG chico servido desde /public que no necesita el
-                pipeline de optimización. */}
-            <img
+            <Image
               src="/img/logo.png"
               alt="Ubicar Rent"
+              width={1358} height={649}
               style={{ height: 52, width: "auto", display: "block" }}
             />
           </Link>

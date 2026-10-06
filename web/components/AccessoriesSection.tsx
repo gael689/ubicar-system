@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Image from "next/image";
 const perro1 = "/img/perro1.jpeg";
 const perro2 = "/img/perro2.jpeg";
 
@@ -230,8 +231,8 @@ export default function AccessoriesSection() {
 
           <div className="ac-pet ac-item ac-d5">
             <div className="ac-pet-images">
-              <img src={perro1} alt="Mascota en vehículo Ubicar" className="ac-pet-img" />
-              <img src={perro2} alt="Mascota en vehículo Ubicar" className="ac-pet-img" />
+              <Image src={perro1} alt="Mascota en vehículo Ubicar" className="ac-pet-img" width={360} height={480} sizes="180px" />
+              <Image src={perro2} alt="Mascota en vehículo Ubicar" className="ac-pet-img" width={360} height={480} sizes="180px" />
             </div>
             <div className="ac-pet-label">
               <p className="ac-pet-title">🐾 Pet Friendly</p>

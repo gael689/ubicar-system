@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
+import { LANDINGS } from "@/lib/landings";
+import { MAQUINAS } from "@/lib/maquinas";
 const logo = "/img/logo.png";
 
 const NAV_ITEMS = [
-  { label: "Vehículos", href: "#vehiculos" },
-  { label: "Empresas", href: "#empresas" },
+  { label: "Vehículos", href: "/#vehiculos" },
+  { label: "Empresas", href: "/empresas", route: true },
   { label: "Maquinaria", href: "/maquinaria", route: true },
   { label: "Preguntas frecuentes", href: "/preguntas-frecuentes", route: true },
-  { label: "Ubicación", href: "#ubicacion" },
-  { label: "Contacto", href: "#contacto" },
+  { label: "Ubicación", href: "/#ubicacion" },
+  { label: "Contacto", href: "/#contacto" },
 ];
 
 const linkStyle: React.CSSProperties = {
@@ -81,9 +84,10 @@ const Footer = () => {
               onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
               style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
             >
-              <img
+              <Image
                 src={logo}
                 alt="Ubicar Rent"
+                width={1358} height={649}
                 style={{ height: 60, width: "auto", display: "block" }}
               />
             </Link>
@@ -114,6 +118,38 @@ const Footer = () => {
               )}
             </nav>
           </div>
+        </div>
+
+        {/* ── Qué se alquila: las páginas de servicio y de cada equipo. Son los
+            enlaces internos que les dan peso en el buscador y que llevan a quien
+            ya sabe qué busca directo a la página que lo responde. ── */}
+        <div style={{ background: "rgb(223, 232, 255)" }}>
+          <nav
+            aria-label="Qué alquilamos"
+            className="container"
+            style={{
+              borderTop: "1px solid rgba(64,126,201,0.25)",
+              padding: "0.9rem 0",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: "0.5rem 1.4rem",
+            }}
+          >
+            <span style={{ color: "rgba(0,0,0,0.45)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Alquilamos
+            </span>
+            {LANDINGS.filter((l) => l.slug !== "empresas").map((l) => (
+              <Link key={l.slug} href={`/${l.slug}`} style={{ ...linkStyle, fontSize: "0.8rem" }}>
+                {l.nombre}
+              </Link>
+            ))}
+            {MAQUINAS.map((m) => (
+              <Link key={m.slug} href={`/maquinaria/${m.slug}`} style={{ ...linkStyle, fontSize: "0.8rem" }}>
+                {m.nombreCorto}
+              </Link>
+            ))}
+          </nav>
         </div>
 
         {/* ── Fila inferior: copyright · crédito ── */}

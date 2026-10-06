@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,7 +20,7 @@ const useNavItems = () => {
     // estaban enlazadas **sólo desde el footer**. En la portada apunta al
     // bloque; desde cualquier otra página, a la página completa.
     { label: "Preguntas", href: isHome ? "#preguntas" : "/preguntas-frecuentes" },
-    { label: "Empresas", href: isHome ? "#empresas" : "/#empresas" },
+    { label: "Empresas", href: isHome ? "#empresas" : "/empresas" },
     { label: "Maquinaria", href: "/maquinaria" },
     { label: "Ubicación", href: isHome ? "#ubicacion" : "/#ubicacion" },
     { label: "Contacto", href: isHome ? "#contacto" : "/#contacto" },
@@ -104,9 +105,11 @@ const Header = () => {
             style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
           >
-            <img
+            <Image
               src={logo}
               alt="Ubicar Rent"
+              width={1358} height={649}
+              priority
               style={{
                 height: 78,
                 width: "auto",
@@ -210,7 +213,7 @@ const Header = () => {
                 className="flex items-center justify-between px-6 py-5"
                 style={{ borderBottom: "1px solid rgba(27,63,107,0.08)" }}
               >
-                <img src={logo} alt="Ubicar Rent" style={{ height: 34, width: "auto" }} />
+                <Image src={logo} alt="Ubicar Rent" width={1358} height={649} style={{ height: 34, width: "auto" }} />
                 <button
                   onClick={() => setMobileOpen(false)}
                   aria-label="Cerrar menú"

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 import { Analitica } from "@/components/Analitica";
 import { AvisoCookies } from "@/components/AvisoCookies";
+import { SITE } from "@/lib/sitio";
 import "./globals.css";
 
 // Se auto-hostea: elimina el request bloqueante a fonts.googleapis.com que
@@ -12,8 +13,6 @@ const dmSans = DM_Sans({
   display: "swap",
   variable: "--font-dm-sans",
 });
-
-const SITE = "https://ubicar-rent.com.ar";
 
 // Los IDs salen del entorno, con los actuales como valor por defecto para que
 // nada se rompa si la variable falta. Estaban escritos duro acá: no es un

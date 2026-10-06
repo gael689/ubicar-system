@@ -122,6 +122,17 @@ export const FAQ: GrupoFaq[] = [
         destacada: true,
       },
       {
+        id: "licencia-extranjera",
+        pregunta: "¿Puedo alquilar con licencia de conducir extranjera?",
+        respuesta: [
+          // Confirmado por Ubicar el 06/10/2026. La condición de la última
+          // frase es la misma de los términos (`lib/legales.ts`, requisitos de
+          // la licencia): vigente, habilitante, y válida donde se va a circular.
+          "Sí. Podés alquilar con una licencia de conducir extranjera, siempre que esté vigente, te habilite para manejar la categoría del vehículo y sea válida en las jurisdicciones por donde vayas a circular.",
+          "Al retirar presentás la licencia junto con tu pasaporte o DNI.",
+        ],
+      },
+      {
         id: "edad",
         pregunta: "¿Hay una edad mínima para alquilar?",
         respuesta: [

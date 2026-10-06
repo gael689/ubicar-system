@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { intencionDeReserva } from "@/lib/analitica";
 
 const compactoImg = "/img/compacto.png";
@@ -215,7 +216,7 @@ export default function VehiclesSection() {
           <div className="vh-grid">
             {VEHICLES.map((v, i) => (
               <div key={v.title} className={`vh-item vh-reveal vh-d${i + 1}`}>
-                <img src={v.image} alt={v.alt} loading="lazy" />
+                <Image src={v.image} alt={v.alt} width={1408} height={768} sizes="(max-width: 768px) 100vw, 25vw" />
                 <div className="vh-overlay">
                   <p className="vh-item-title">{v.title}</p>
                   <p className="vh-item-desc">{v.description}</p>

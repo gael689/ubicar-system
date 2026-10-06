@@ -97,4 +97,4 @@ User-agent: *
 Allow: /
 Disallow: /contrato/
 
-Sitemap: https://ubicar-rent.com.ar/sitemap.xml
+Sitemap: https://www.ubicar-rent.com.ar/sitemap.xml

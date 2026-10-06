@@ -1,22 +1,16 @@
 "use client";
 
-"use client";
-
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import FloatingWhatsApp from "@/components/FloatingWhatsApp";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { whatsappLink, WHATSAPP_GENERAL } from "@/lib/constants";
 import { trackLeadEvent } from "@/lib/meta-pixel";
 import Link from "next/link";
+import Image from "next/image";
 import { IconoWhatsApp } from "@/components/IconoWhatsApp";
+import { MAQUINAS } from "@/lib/maquinas";
 
-const miniRetroImg = "/img/mini-retro.jpg";
-const tanqueImg = "/img/tanque-agua.jpg";
-const palaImg = "/img/maquinas/palaCargadora.png";
-const retroImg = "/img/maquinas/retroExcavadora.png";
-const fordImg = "/img/maquinas/fordCargo.png";
-const miniCargadoraImg = "/img/maquinas/miniCargadora.png";
 
 // ─── Scroll to top on mount ────────────────────────────────────────────────────
 function useScrollTop() {
@@ -122,9 +116,11 @@ interface MachineProps {
   waMsg: string;
   image?: string;
   imageAlt?: string;
+  /** La página propia del equipo. */
+  href?: string;
 }
 
-function MachineSection({ bg, dark, imgLeft, category, title, description, specs, waMsg, image, imageAlt }: MachineProps) {
+function MachineSection({ bg, dark, imgLeft, category, title, description, specs, waMsg, image, imageAlt, href }: MachineProps) {
   const ref = useReveal<HTMLElement>();
 
   return (
@@ -138,10 +134,12 @@ function MachineSection({ bg, dark, imgLeft, category, title, description, specs
             <div className="mq-reveal mq-d1">
               {image ? (
                 <div style={{ borderRadius: 18, overflow: "hidden", aspectRatio: "4/3" }}>
-                  <img
+                  <Image
                     src={image}
-                    alt={imageAlt}
-                    loading="lazy"
+                    alt={imageAlt ?? ""}
+                    width={800}
+                    height={600}
+                    sizes="(max-width: 768px) 100vw, 50vw"
                     style={{
                       width: "100%", height: "100%", objectFit: "cover", display: "block",
                       filter: dark ? "brightness(0.88)" : "none"
@@ -181,7 +179,17 @@ function MachineSection({ bg, dark, imgLeft, category, title, description, specs
                 )}
               </div>
 
-              <WABtn msg={waMsg} dark={dark} />
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 18 }}>
+                <WABtn msg={waMsg} dark={dark} />
+                {href && (
+                  <Link href={href} style={{
+                    fontSize: "0.9rem", fontWeight: 700, textDecoration: "none",
+                    color: dark ? "#A8CAFE" : "#1B3F6B",
+                  }}>
+                    Ver ficha completa →
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -310,97 +318,25 @@ export default function MaquinariaContent() {
           </div>
         </section>
 
-        {/* ── 1. PALA — azul, imagen derecha ── */}
-        <MachineSection
-          bg="rgb(223, 232, 255)"
-          category="Carga y movimiento de suelo"
-          title="Pala Cargadora 924 HZ"
-          description="Motor Cat C6.6 Acert de alto rendimiento. Ideal para movimiento de tierra y carga de camiones en obras a gran escala. Sistema hidráulico con detección de carga automática."
-          specs={[
-            { label: "Motor", value: "Cat C6.6 Acert" },
-            { label: "Cuchara", value: "2,1 m³" },
-            { label: "Fuerza arranque", value: "9.900 kg" },
-            { label: "Combustible", value: "195 litros" },
-            { label: "Hidráulico", value: "160 litros" },
-            { label: "Transmisión", value: "Cambios suaves" },
-          ]}
-          waMsg="Hola! Necesito alquilar la Pala Cargadora 924 HZ. ¿Disponibilidad y precio?"
-          image={palaImg} imageAlt="Pala Cargadora 924 HZ"
-        />
-
-        <div className="mq-sep" />
-
-        {/* ── 2. RETRO — blanco, imagen izquierda ── */}
-        <MachineSection
-          bg="#FFFFFF" imgLeft
-          category="Excavación y carga"
-          title="Retroexcavadora Caterpillar 416D"
-          description="Potencia diésel Caterpillar con tracción 4x4. Alta versatilidad con compatibilidad para martillos hidráulicos y compactadores. Cabina ergonómica con excelente visibilidad."
-          specs={[
-            { label: "Motor", value: "Caterpillar diésel" },
-            { label: "Potencia", value: "74–80 HP" },
-            { label: "Tracción", value: "4x4 estándar" },
-            { label: "Prof. excav.", value: "4.390–5.510 mm" },
-            { label: "Transmisión", value: "Servomecánica" },
-            { label: "Aditamentos", value: "Martillos / compactadores" },
-          ]}
-          waMsg="Hola! Necesito alquilar la Retroexcavadora Caterpillar 416D. ¿Disponibilidad y precio?"
-          image={retroImg} imageAlt="Retroexcavadora Caterpillar 416D"
-        />
-
-        <div className="mq-sep" />
-
-        {/* ── 3. FORD CARGO — azul, imagen derecha ── */}
-        <MachineSection
-          bg="rgb(223, 232, 255)"
-          category="Transporte y volcado"
-          title="Ford Cargo 1722 Volcador"
-          description="Camión con vatea volcadora de alta capacidad. Motor Cummins 6BT 5.9L de 220 CV. Ideal para transporte y descarga de áridos, tierra y materiales de construcción."
-          specs={[
-            { label: "Motor", value: "Cummins 6BT 5.9L" },
-            { label: "Potencia", value: "220 CV" },
-            { label: "Tracción", value: "4x2" },
-            { label: "Carga útil", value: "~17 toneladas" },
-            { label: "Tolva", value: "7–8 m³" },
-            { label: "Transmisión", value: "Eaton Fuller 6v" },
-          ]}
-          waMsg="Hola! Necesito alquilar el Ford Cargo volcador. ¿Disponibilidad y precio?"
-          image={fordImg} imageAlt="Ford Cargo 1722 Volcador"
-        />
-
-        <div className="mq-sep" />
-
-        {/* ── 4. MINICARGADORA — blanco, imagen izquierda ── */}
-        <MachineSection
-          bg="#FFFFFF" imgLeft
-          category="Espacios reducidos"
-          title="Minicargadora New Holland L318"
-          description='Equipo compacto con sistema "Super Boom" que carga volquetas doble troque sin reposicionarse. Cabina panorámica ROPS/FOPS y ciclos hidráulicos ultrarrápidos.'
-          specs={[
-            { label: "Motor", value: "60 HP · 4 cilindros" },
-            { label: "Capacidad operativa", value: "818 kg" },
-            { label: "Altura descarga", value: "3.048 mm" },
-            { label: "Velocidad", value: "Hasta 17,4 kph" },
-            { label: "Peso operativo", value: "2.832 kg" },
-            { label: "Caudal hidráulico", value: "72 L/min" },
-          ]}
-          waMsg="Hola! Necesito alquilar la Minicargadora New Holland L318. ¿Disponibilidad y precio?"
-          image={miniCargadoraImg} imageAlt="Minicargadora New Holland L318"
-        />
-
-        {/* ── 5. TANQUE — azul, imagen derecha ── */}
-        <MachineSection
-          bg="rgb(223, 232, 255)"
-          category="Provisión de agua"
-          title="Tanque de agua"
-          description="Solución de provisión continua de agua para obras, compactación de suelo y riego. Capacidad adecuada para mantener la operación sin interrupciones."
-          specs={[
-            { label: "Uso ideal", value: "Obras · compactación" },
-            { label: "Aplicaciones", value: "Riego · suelo · construcción" },
-          ]}
-          waMsg="Hola! Necesito el tanque de agua para una obra. ¿Disponibilidad y precio?"
-          image={tanqueImg} imageAlt="Tanque de agua para obra"
-        />
+        {/* Los cinco equipos salen de `lib/maquinas.ts`, que también alimenta
+            la página de cada uno, el sitemap y el `llms.txt`. */}
+        {MAQUINAS.map((m, i) => (
+          <Fragment key={m.slug}>
+            {i > 0 && i < 4 && <div className="mq-sep" />}
+            <MachineSection
+              bg={i % 2 === 0 ? "rgb(223, 232, 255)" : "#FFFFFF"}
+              imgLeft={i % 2 === 1}
+              category={m.categoria}
+              title={m.nombre}
+              description={m.descripcion}
+              specs={m.specs}
+              waMsg={m.waMsg}
+              image={m.imagen}
+              imageAlt={m.imagenAlt}
+              href={`/maquinaria/${m.slug}`}
+            />
+          </Fragment>
+        ))}
 
         {/* ── BOTTOM CTA ── */}
         <section style={{ background: "#FFFFFF", padding: "5rem 0", textAlign: "center" }}>

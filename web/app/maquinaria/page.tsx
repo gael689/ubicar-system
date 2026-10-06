@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import MaquinariaContent from "@/components/MaquinariaContent";
-
-const SITE = "https://ubicar-rent.com.ar";
+import { SITE } from "@/lib/sitio";
 
 export const metadata: Metadata = {
   title: "Alquiler de Maquinaria Pesada en Bahía Blanca | Ubicar Rent",
