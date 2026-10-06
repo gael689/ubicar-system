@@ -187,7 +187,7 @@ def extender_alquiler(
         # modifica, y leerlo después ya daría el valor nuevo.
         adicionales_anterior = Decimal(str(r_antes.total_adicionales))
 
-        alquiler = svc.extender(
+        alquiler, avisos = svc.extender(
             alquiler_id=alquiler_id,
             nueva_fecha_fin=payload.nueva_fecha_fin,
             nueva_hora_fin=payload.nueva_hora_fin,
@@ -197,6 +197,7 @@ def extender_alquiler(
             precio_manual=payload.precio_total if payload.precio_extension is None else None,
             precio_extension=payload.precio_extension,
             pago_inmediato=payload.pago_inmediato,
+            permitir_solape=True,
         )
         db.commit()
     except ConflictError as e:
@@ -230,6 +231,7 @@ def extender_alquiler(
             adicionales_extension=(
                 Decimal(str(alquiler.reserva.total_adicionales)) - adicionales_anterior
             ),
+            warnings=avisos,
         ).model_dump(),
         "Alquiler extendido",
     )

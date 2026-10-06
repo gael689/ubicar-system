@@ -32,3 +32,5 @@ class VentanaReserva:
     estado: str  # estado de la reserva o alquiler
     cliente_nombre: str = ""
     tipo: str = "reserva"  # "reserva" | "alquiler"
+    # Para reconocer un reintento del mismo cliente con las mismas fechas.
+    cliente_id: int | None = None

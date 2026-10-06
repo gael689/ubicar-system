@@ -3,7 +3,7 @@ from __future__ import annotations
 Router de Reservas — Fase 3 completo.
 """
 import logging
-from datetime import date
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from fastapi import (
@@ -34,6 +34,7 @@ from app.schemas.reserva import (
     SemaforoResponse,
 )
 from app.services.email_service import EmailService
+from app.services.disponibilidad_service import DisponibilidadService
 from app.services.reserva_service import ReservaService
 from app.services.alquiler_service import AlquilerService
 
@@ -286,6 +287,8 @@ def create_reserva(
             echeq_numero_cheque=payload.echeq_numero_cheque,
             echeq_fecha_cobro=payload.echeq_fecha_cobro,
             usuario_id=current_user.id,
+            # Desde el sistema un auto que se pisa se avisa, no se bloquea.
+            permitir_solape=True,
         )
         db.commit()
     except ConflictError as e:
@@ -424,6 +427,39 @@ def conductores_ocupados(
     return ok(avisos)
 
 
+@router.get("/avisos-de-solape")
+def avisos_de_solape(
+    vehiculo_id: int = Query(...),
+    fecha_inicio: date = Query(...),
+    hora_inicio: time = Query(time(10, 0)),
+    fecha_fin: date = Query(...),
+    hora_fin: time = Query(time(10, 0)),
+    excluir_reserva_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Con qué se pisaría una reserva así, **antes de guardarla**: la pantalla lo
+    muestra y deja seguir. `solapes` es sólo aviso; `bloqueo` (taller, uso
+    interno) es lo único que sigue impidiendo guardar. Si el auto vuelve pocas
+    horas antes del retiro, `vuelve_a` y `minutos_para_prepararlo` lo dicen.
+
+    Va antes que `/{reserva_id}`, igual que `conductores-ocupados`.
+    """
+    svc = ReservaService(db)
+    inicio = datetime.combine(fecha_inicio, hora_inicio)
+    fin = datetime.combine(fecha_fin, hora_fin)
+    data = svc.avisos_de_solape(vehiculo_id, inicio, fin, excluir_reserva_id)
+    vuelve = DisponibilidadService(db).vuelven_justo_antes(
+        fecha_inicio, hora_inicio, fecha_fin, excluir_reserva_id=excluir_reserva_id,
+    ).get(vehiculo_id)
+    data["vuelve_a"] = vuelve.strftime("%H:%M") if vuelve else None
+    data["minutos_para_prepararlo"] = (
+        int((inicio - vuelve).total_seconds() // 60) if vuelve else None
+    )
+    return ok(data)
+
+
 @router.get("/{reserva_id}")
 def get_reserva(
     reserva_id: int,
@@ -500,6 +536,7 @@ def update_reserva(
                 [(a["adicional_id"], a["cantidad"]) for a in pedidos]
                 if pedidos is not None else None
             ),
+            permitir_solape=True,
             **datos,
         )
         db.commit()
@@ -528,7 +565,7 @@ def confirmar_reserva(
 ):
     svc = ReservaService(db)
     try:
-        reserva = svc.confirmar(reserva_id, current_user.id)
+        reserva, warnings = svc.confirmar(reserva_id, current_user.id, permitir_solape=True)
         db.commit()
     except ConflictError as e:
         raise HTTPException(status_code=409, detail=_parse_conflicto(e))
@@ -537,7 +574,10 @@ def confirmar_reserva(
     # Después de contestar: Resend es síncrono y sin timeout, y esperarlo
     # adentro del request es lo que hacía aparecer un falso "sin conexión".
     EmailService.avisar_luego(background, "reserva_confirmada", reserva)
-    return ok(ReservaResponse.model_validate(reserva), "Reserva confirmada")
+    return ok(
+        {**ReservaResponse.model_validate(reserva).model_dump(), "warnings": warnings},
+        "Reserva confirmada",
+    )
 
 
 @router.post("/{reserva_id}/cancelar")
@@ -726,6 +766,7 @@ def asignar_vehiculo(
             upgrade_motivo=payload.upgrade_motivo,
             precio_total=payload.precio_total,
             precio_motivo=payload.precio_motivo,
+            permitir_solape=True,
             vehiculo_esperado=(
                 payload.vehiculo_actual
                 if "vehiculo_actual" in payload.model_fields_set
@@ -773,6 +814,7 @@ def reasignar_reserva(
             current_user.id,
             precio_total=payload.precio_total,
             precio_motivo=payload.precio_motivo,
+            permitir_solape=True,
         )
         db.commit()
     except ConflictError as e:

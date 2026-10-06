@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
 from app.domain import uber as uber_dominio
 from app.domain.enums import EstadoReserva, EstadoVehiculo
-from app.domain.solapamientos import detectar_solapamientos, rango_de_carga
+from app.domain.solapamientos import (
+    ResultadoSolapamiento,
+    avisos_de_solape,
+    detectar_solapamientos,
+    rango_de_carga,
+)
 from app.domain.precios import AdicionalSolicitado, validar_seleccion_adicionales
 from app.domain.tarifas import (
     cotizar_por_bandas, dias_facturables, canal_de_origen, TarifaInfo,
@@ -598,6 +603,7 @@ class ReservaService:
         monto_facturado: Decimal | None = None,
         uber_valor_semana: Decimal | None = None,
         uber_km_semana: int | None = None,
+        permitir_solape: bool = False,
         uber_precio_km_extra: Decimal | None = None,
         fechas_pago: list[date] | None = None,
         tipo_factura: str | None = None,
@@ -669,25 +675,16 @@ class ReservaService:
         # es una pregunta distinta y la contesta `domain/disponibilidad.py`.
         # Forzarla por este camino habría hecho que reservar una categoría
         # bloqueara un auto arbitrario.
-        resultado = None
+        warnings: list[dict] = []
         if vehiculo_id is not None:
             ventanas = self._cargar_ventanas(vehiculo_id, fecha_inicio, fecha_fin)
             resultado = detectar_solapamientos(vehiculo_id, inicio_dt, fin_dt, ventanas)
 
-            if resultado.hay_conflicto_bloqueante:
-                raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
-
-        # 4. Construir warnings por solapamiento con pendientes
-        warnings = [] if resultado is None else [
-            {
-                "tipo": "solape_con_pendiente",
-                "reserva_id": v.id,
-                "cliente": v.cliente_nombre,
-                "fecha_inicio": str(v.inicio.date()),
-                "fecha_fin": str(v.fin.date()),
-            }
-            for v in resultado.conflictos_advertencia
-        ]
+            # 4. Los solapes: 409 (la web) o aviso (el sistema interno).
+            warnings = self._resolver_solapes(
+                resultado, permitir_solape,
+                cliente_id=cliente_id, inicio=inicio_dt, fin=fin_dt,
+            )
 
         # 5. La devolución acordada.
         #
@@ -1049,6 +1046,7 @@ class ReservaService:
         condicion_pago_ancla: str | None = None,
         condicion_pago_fecha_ancla: date | None = None,
         condicion_pago_texto: str | None = None,
+        permitir_solape: bool = False,
     ) -> tuple[Reserva, list[dict]]:
         """Actualiza una reserva en estado pendiente, confirmada, activa o vencida (D8).
 
@@ -1143,13 +1141,10 @@ class ReservaService:
         ventanas = self._cargar_ventanas(v_id, f_inicio, f_fin)
         resultado = detectar_solapamientos(v_id, inicio_dt, fin_dt, ventanas, excluir_id=id)
 
-        if resultado.hay_conflicto_bloqueante:
-            raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
-
-        warnings = [
-            {"tipo": "solape_con_pendiente", "reserva_id": v.id}
-            for v in resultado.conflictos_advertencia
-        ]
+        warnings = self._resolver_solapes(
+            resultado, permitir_solape,
+            cliente_id=reserva.cliente_id, inicio=inicio_dt, fin=fin_dt,
+        )
 
         with self.db.begin_nested():
             kwargs = {}
@@ -1348,7 +1343,9 @@ class ReservaService:
 
     # ── Confirmar reserva ─────────────────────────────────────────────────────
 
-    def confirmar(self, id: int, usuario_id: int) -> Reserva:
+    def confirmar(
+        self, id: int, usuario_id: int, permitir_solape: bool = False
+    ) -> tuple[Reserva, list[dict]]:
         """
         Confirma una reserva pendiente.
         Re-verifica solapamientos (puede haber cambiado desde el create).
@@ -1367,11 +1364,15 @@ class ReservaService:
         resultado = detectar_solapamientos(
             reserva.vehiculo_id, inicio_dt, fin_dt, ventanas, excluir_id=id
         )
-        if resultado.hay_conflicto_bloqueante:
+        if resultado.hay_conflicto_bloqueante and not permitir_solape:
             conflicto = resultado.conflictos_bloqueantes[0]
             raise ConflictError(
                 f"solapamiento|No se puede confirmar: hay una reserva {conflicto.estado} solapada|{conflicto.id}"
             )
+        avisos = self._resolver_solapes(
+            resultado, permitir_solape,
+            cliente_id=reserva.cliente_id, inicio=inicio_dt, fin=fin_dt,
+        )
 
         # Usar el precio manual si existe, sino calcularlo
         if reserva.precio_total is not None:
@@ -1415,7 +1416,7 @@ class ReservaService:
                 vehiculo.estado = nuevo_estado.value
 
         self.db.refresh(reserva)
-        return reserva
+        return reserva, avisos
 
     # ── Cancelar reserva ──────────────────────────────────────────────────────
 
@@ -1636,6 +1637,7 @@ class ReservaService:
         usuario_id: int,
         precio_total: Decimal | None = None,
         precio_motivo: str | None = None,
+        permitir_solape: bool = False,
     ) -> tuple[Reserva, list[dict]]:
         """
         Reasigna una reserva a otro vehículo (D4).
@@ -1667,16 +1669,15 @@ class ReservaService:
         )
         resultado = detectar_solapamientos(nuevo_vehiculo_id, inicio_dt, fin_dt, ventanas)
 
-        if resultado.hay_conflicto_bloqueante:
+        if resultado.hay_conflicto_bloqueante and not permitir_solape:
             conflicto = resultado.conflictos_bloqueantes[0]
             raise ConflictError(
                 f"solapamiento|Conflicto en vehículo destino|{conflicto.id}|{conflicto.estado}"
             )
-
-        warnings = [
-            {"tipo": "solape_con_pendiente", "reserva_id": v.id}
-            for v in resultado.conflictos_advertencia
-        ]
+        warnings = self._resolver_solapes(
+            resultado, permitir_solape,
+            cliente_id=reserva.cliente_id, inicio=inicio_dt, fin=fin_dt,
+        )
 
         anterior = reserva.vehiculo_id
         precio_anterior = reserva.precio_total
@@ -2059,6 +2060,7 @@ class ReservaService:
         vehiculo_esperado=SIN_CHEQUEO,
         precio_total: Decimal | None = None,
         precio_motivo: str | None = None,
+        permitir_solape: bool = False,
     ) -> tuple[Reserva, list[dict]]:
         """
         Le pone un auto concreto a una reserva que no lo tiene (o le cambia el
@@ -2159,11 +2161,13 @@ class ReservaService:
             )
 
         self._lock_vehiculo(vehiculo_id)
-        self.validar_disponibilidad_vehiculo(
+        avisos_solape = self.validar_disponibilidad_vehiculo(
             vehiculo_id,
             reserva.fecha_inicio, reserva.hora_inicio,
             reserva.fecha_fin, reserva.hora_fin,
             excluir_reserva_id=reserva.id,
+            permitir_solape=permitir_solape,
+            cliente_id=reserva.cliente_id,
         )
 
         # D-54: ¿la categoría del auto entregado difiere de la pedida? Se
@@ -2252,7 +2256,7 @@ class ReservaService:
         #
         # Sólo cuando el auto **cambia**. En la primera asignación no hay
         # contrato que tocar: sin auto no se podía emitir (D-47).
-        warnings: list[dict] = []
+        warnings: list[dict] = list(avisos_solape)
         if anterior is not None and anterior != vehiculo_id:
             warnings.extend(self._avisar_contrato_por_reasignacion(reserva, usuario_id))
 
@@ -2282,6 +2286,48 @@ class ReservaService:
             select(Vehiculo.id).where(Vehiculo.id == vehiculo_id).with_for_update()
         ).first()
 
+    def avisos_de_solape(
+        self,
+        vehiculo_id: int,
+        inicio: datetime,
+        fin: datetime,
+        excluir_reserva_id: int | None = None,
+    ) -> dict:
+        """
+        Qué se pisa si se guarda una reserva así, **para avisarlo antes de
+        guardar**. Es una lectura: no toma el lock del auto (se consulta cada
+        vez que cambian las fechas en pantalla) y no decide nada — guardar
+        revalida igual.
+
+        Devuelve `{"solapes": [...], "bloqueo": {...} | None}`. El bloqueo
+        (taller, siniestro, uso interno) va aparte porque es lo único que sigue
+        impidiendo guardar; los `solapes` son sólo aviso.
+        """
+        ventanas = self._cargar_ventanas(
+            vehiculo_id, inicio.date(), fin.date(), bloquear=False
+        )
+        resultado = detectar_solapamientos(
+            vehiculo_id, inicio, fin, ventanas, excluir_id=excluir_reserva_id
+        )
+        bloqueos = [v for v in resultado.conflictos_bloqueantes if v.tipo == "bloqueo"]
+        reservas = [v for v in resultado.conflictos_bloqueantes if v.tipo != "bloqueo"]
+        solapes = avisos_de_solape(
+            ResultadoSolapamiento(
+                hay_conflicto_bloqueante=bool(reservas),
+                conflictos_bloqueantes=reservas,
+                conflictos_advertencia=resultado.conflictos_advertencia,
+            )
+        )
+        bloqueo = None
+        if bloqueos:
+            b = bloqueos[0]
+            bloqueo = {
+                "motivo": b.cliente_nombre,
+                "fecha_desde": str(b.inicio.date()),
+                "fecha_hasta": str((b.fin - timedelta(days=1)).date()),
+            }
+        return {"solapes": solapes, "bloqueo": bloqueo}
+
     def validar_disponibilidad_vehiculo(
         self,
         vehiculo_id: int,
@@ -2290,9 +2336,12 @@ class ReservaService:
         fecha_fin: date,
         hora_fin: time,
         excluir_reserva_id: int | None = None,
-    ) -> None:
+        permitir_solape: bool = False,
+        cliente_id: int | None = None,
+    ) -> list[dict]:
         """
-        ¿Este auto está libre en este rango? Levanta `ConflictError` si no.
+        ¿Este auto está libre en este rango? Levanta `ConflictError` si no —o,
+        con `permitir_solape`, devuelve los avisos (ver `_resolver_solapes`).
 
         Lo usa la bandeja de reservas web al asignar un vehículo a una reserva
         por categoría. **Revalida en el momento de aceptar** y no confía en lo
@@ -2309,14 +2358,17 @@ class ReservaService:
             if excluir_reserva_id is None or v.id != excluir_reserva_id
         ]
         resultado = detectar_solapamientos(vehiculo_id, inicio_dt, fin_dt, ventanas)
-        if resultado.hay_conflicto_bloqueante:
-            raise self._error_conflicto(resultado.conflictos_bloqueantes[0])
+        return self._resolver_solapes(
+            resultado, permitir_solape,
+            cliente_id=cliente_id, inicio=inicio_dt, fin=fin_dt,
+        )
 
     def _cargar_ventanas(
         self,
         vehiculo_id: int,
         desde: date | None = None,
         hasta: date | None = None,
+        bloquear: bool = True,
     ) -> list[VentanaReserva]:
         """
         Carga las ventanas que ocupan el vehículo: sus reservas **y sus
@@ -2355,7 +2407,8 @@ class ReservaService:
         segundo camino termina divergiendo. Es sobre la fila del vehículo, no
         sobre la tabla, así que dos reservas de autos distintos no se estorban.
         """
-        self._lock_vehiculo(vehiculo_id)
+        if bloquear:
+            self._lock_vehiculo(vehiculo_id)
         # El ensanchado de un día por lado lo decide `rango_de_carga`, que es
         # donde está escrito por qué: ver ahí el invariante que lo hace seguro.
         if desde is not None and hasta is not None:
@@ -2384,6 +2437,7 @@ class ReservaService:
                         fin=datetime.combine(r.fecha_fin, r.hora_fin),
                         estado=r.estado,
                         cliente_nombre=r.cliente.nombre_completo if r.cliente else "",
+                        cliente_id=r.cliente_id,
                     )
                 )
         return ventanas
@@ -2409,6 +2463,47 @@ class ReservaService:
             f"solapamiento|El vehículo tiene una reserva {conflicto.estado} en ese rango|"
             f"{conflicto.id}|{conflicto.estado}|{conflicto.inicio.date()}|{conflicto.fin.date()}"
         )
+
+    def _resolver_solapes(
+        self,
+        resultado,
+        permitir_solape: bool,
+        *,
+        cliente_id: int | None = None,
+        inicio: datetime | None = None,
+        fin: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Qué hacer con los solapamientos de un auto, y los avisos que quedan.
+
+        **Sin `permitir_solape` (la web pública)** un conflicto bloqueante es un
+        409, como siempre.
+
+        **Con él (todo lo que entra por el sistema interno)** una reserva
+        encimada se crea igual y se **avisa**: en el mostrador hay una persona
+        que sabe si el auto vuelve a tiempo (pedido de Gael, 06/10/2026). Dos
+        cosas siguen siendo 409:
+
+        - **Un bloqueo del auto** (taller, siniestro, uso interno): ese auto no
+          está.
+        - **El mismo cliente, con las mismas fechas y horas**: es un reintento
+          de una reserva que ya se creó (el contrato rápido que no recibió la
+          respuesta), y crearla otra vez la duplicaría.
+        """
+        bloqueantes = resultado.conflictos_bloqueantes
+        if bloqueantes and not permitir_solape:
+            raise self._error_conflicto(bloqueantes[0])
+        for v in bloqueantes:
+            if v.tipo == "bloqueo":
+                raise self._error_conflicto(v)
+            if (
+                cliente_id is not None
+                and v.cliente_id == cliente_id
+                and v.inicio == inicio
+                and v.fin == fin
+            ):
+                raise self._error_conflicto(v)
+        return avisos_de_solape(resultado)
 
     def _cargar_ventanas_bloqueos(self, vehiculo_id: int) -> list[VentanaReserva]:
         """

@@ -123,3 +123,30 @@ def detectar_solapamientos(
         conflictos_bloqueantes=bloqueantes,
         conflictos_advertencia=advertencias,
     )
+
+
+def avisos_de_solape(resultado: ResultadoSolapamiento) -> list[dict]:
+    """
+    Los solapamientos como avisos para la pantalla (los que ocupan el auto
+    primero, después las pendientes).
+
+    `solape_con_ocupado` es una reserva que de verdad tiene el auto
+    (confirmada, activa o vencida); `solape_con_pendiente`, una que todavía no
+    lo tiene asegurado.
+    """
+    avisos: list[dict] = []
+    for v in [*resultado.conflictos_bloqueantes, *resultado.conflictos_advertencia]:
+        avisos.append({
+            "tipo": (
+                "solape_con_ocupado" if v.estado in ESTADOS_BLOQUEANTES
+                else "solape_con_pendiente"
+            ),
+            "reserva_id": v.id,
+            "estado": v.estado,
+            "cliente": v.cliente_nombre,
+            "fecha_inicio": str(v.inicio.date()),
+            "hora_inicio": v.inicio.strftime("%H:%M"),
+            "fecha_fin": str(v.fin.date()),
+            "hora_fin": v.fin.strftime("%H:%M"),
+        })
+    return avisos

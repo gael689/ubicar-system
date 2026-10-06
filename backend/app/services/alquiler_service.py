@@ -17,7 +17,7 @@ from app.domain.control_24hs import (
 from app.domain.cuenta_corriente import calcular_vencimiento
 from app.domain import uber as uber_dominio
 from app.domain.enums import EstadoReserva, EstadoVehiculo, DecisionExcedente
-from app.domain.solapamientos import detectar_solapamientos
+from app.domain.solapamientos import avisos_de_solape, detectar_solapamientos
 from app.domain.tarifas import (
     seleccionar_tarifa, cotizar_por_bandas, dias_facturables, canal_de_origen,
     TarifaInfo,
@@ -736,9 +736,14 @@ class AlquilerService:
         precio_manual: Decimal | None = None,
         pago_inmediato: PagoInmediato | None = None,
         precio_extension: Decimal | None = None,
-    ) -> Alquiler:
+        permitir_solape: bool = False,
+    ) -> tuple[Alquiler, list[dict]]:
         """
         Extiende un alquiler activo a una nueva fecha de fin.
+
+        Si la extensión pisa otra reserva del auto: sin `permitir_solape` (la
+        web) es un 409; con él (el sistema interno) se extiende igual y el
+        conflicto vuelve como aviso — segundo elemento del retorno.
 
         **La extensión es un alquiler nuevo con su propio precio** (pedido del
         mostrador, 27/09): se manda `precio_extension` —lo que valen los días
@@ -808,12 +813,13 @@ class AlquilerService:
             nueva_fin_dt,
             ventanas,
         )
-        if resultado_solape.hay_conflicto_bloqueante:
+        if resultado_solape.hay_conflicto_bloqueante and not permitir_solape:
             conflicto = resultado_solape.conflictos_bloqueantes[0]
             raise ConflictError(
                 f"solapamiento_extension|El vehículo tiene una reserva después de la fecha actual|"
                 f"{conflicto.id}|{conflicto.cliente_nombre}|{conflicto.inicio.date()}|{conflicto.fin.date()}"
             )
+        avisos = avisos_de_solape(resultado_solape)
 
         # Recalcular tarifa con la nueva duración
         nueva_duracion = dias_facturables(
@@ -1010,7 +1016,7 @@ class AlquilerService:
         )
 
         self.db.refresh(alquiler)
-        return alquiler
+        return alquiler, avisos
 
     # ── Helpers privados ──────────────────────────────────────────────────────
 

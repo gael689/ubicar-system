@@ -190,3 +190,5 @@ class ExtenderResponse(BaseModel):
     # en los días agregados. Se debita aparte de `precio_extension`: el total
     # de la extensión para el cliente es la suma de los dos.
     adicionales_extension: Decimal = Decimal("0")
+    # Reservas con las que la extensión se pisa: se extiende igual y se avisa.
+    warnings: list[dict] = []
