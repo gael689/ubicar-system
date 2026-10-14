@@ -8,13 +8,13 @@ campañas de Ubicar a esas empresas.
 Se borran las columnas y los destinatarios que habían quedado omitidos sólo
 por ese motivo vuelven a `pendiente`.
 
-Revision ID: 107_prospectos_sin_contacto_previo
+Revision ID: 107_prospectos_sin_contacto
 Revises: 106_vehiculo_en_web
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "107_prospectos_sin_contacto_previo"
+revision = "107_prospectos_sin_contacto"
 down_revision = "106_vehiculo_en_web"
 branch_labels = None
 depends_on = None
