@@ -197,7 +197,7 @@ def main() -> None:
     if a.archivo:
         with open(a.archivo, "w", encoding="utf-8") as f:
             json.dump({"prospectos": prospectos}, f, ensure_ascii=False)
-        print(f"\nGuardado en {a.archivo}. Subilo desde Ubicar → Prospectos → Importar archivo.")
+        print(f"\nGuardado en {a.archivo}. Subilo desde Ubicar > Prospectos > Importar archivo.")
         return
     if not a.enviar:
         print("\nPrueba: no se envió nada. Agregá --enviar para empujarlos a Ubicar, "

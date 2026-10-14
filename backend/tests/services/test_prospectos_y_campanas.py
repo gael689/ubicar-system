@@ -250,3 +250,18 @@ class TestImportarDesdeLaPantalla:
         r = client.post("/api/v1/prospectos/importar-archivo", json={
             "prospectos": [{"nombre": "Otra razón social", "email": "admin@logisticasur.com.ar"}]})
         assert r.json()["data"]["ya_clientes"] == 1
+
+
+def test_importar_recorta_lo_que_no_entra_en_la_columna(db):
+    """
+    Un website de Booking de 300 caracteres tiraba abajo el lote entero en
+    Postgres (14/10). SQLite no controla el largo, por eso se mira el valor.
+    """
+    from app.models.prospecto import Prospecto
+    from app.services.prospecto_service import ProspectoService
+
+    largo = "https://www.booking.com/hotel/ar/x.html?" + "a" * 300
+    r = ProspectoService(db).importar([{"nombre": "Hotel X", "ref_externa": "lg-largo", "website": largo}])
+    assert r["nuevos"] == 1
+    p = db.query(Prospecto).filter(Prospecto.ref_externa == "lg-largo").one()
+    assert len(p.website) == 255

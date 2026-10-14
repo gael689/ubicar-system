@@ -38,6 +38,22 @@ def _limpio(v):
     return v or None
 
 
+def _a_la_medida(campo: str, valor):
+    """
+    Recorta el texto al largo de la columna.
+
+    Un solo website de Booking con 300 caracteres de parámetros alcanzaba para
+    que Postgres rechazara el lote entero de 500 (14/10): el error salía como
+    500 sin cabeceras de CORS y el navegador lo mostraba como "bloqueado por
+    CORS", que no dice nada de lo que pasó. SQLite —la base local y la de los
+    tests— no controla el largo, así que acá nunca se vio.
+    """
+    if not isinstance(valor, str):
+        return valor
+    largo = getattr(Prospecto.__table__.columns[campo].type, "length", None)
+    return valor[:largo] if largo else valor
+
+
 class ProspectoService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -70,6 +86,7 @@ class ProspectoService:
                 if campo not in item:
                     continue
                 valor = _limpio(item[campo]) if isinstance(item[campo], str) else item[campo]
+                valor = _a_la_medida(campo, valor)
                 if campo == "no_contactar":
                     if valor:
                         p.no_contactar = True
