@@ -32,5 +32,14 @@
 	# despues de un deploy y nadie ve el cambio.
 	@assets path /assets/*
 	header @assets Cache-Control "public, max-age=31536000, immutable"
-	header /index.html Cache-Control "no-cache"
+
+	# **Todo lo demás, `no-cache`** (14/10). Antes iba sólo para `/index.html`,
+	# pero nadie pide esa ruta: se entra por `/` o `/flota`, que el `try_files`
+	# resuelve a index.html **sin** pasar por ese matcher. Esas respuestas salían
+	# sin Cache-Control, el navegador las guardaba a su criterio y después de un
+	# deploy seguía mostrando la versión vieja hasta un Ctrl+Shift+R.
+	# `no-cache` no es "no guardar": guarda, pero pregunta antes de usarlo, y
+	# con el ETag la respuesta es un 304 de unos bytes.
+	@noAssets not path /assets/*
+	header @noAssets Cache-Control "no-cache"
 }
