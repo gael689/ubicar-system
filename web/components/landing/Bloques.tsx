@@ -9,7 +9,7 @@ import { EscaleraFaq } from "@/components/faq/EscaleraFaq";
 import { PlazoFaq } from "@/components/faq/PlazoFaq";
 import { DescuentoPagoTotalFaq } from "@/components/faq/DescuentoPagoTotalFaq";
 import type { Pregunta } from "@/lib/faq";
-import type { Categoria, NombreIcono, Paso, Punto } from "@/lib/landings";
+import type { Categoria, NombreIcono, Paso, Punto, Viaje } from "@/lib/landings";
 
 /**
  * Los bloques con los que se arman las subpáginas. Todos son de servidor y se
@@ -139,6 +139,121 @@ export function Pasos({ pasos, titulo = "Cómo funciona" }: { pasos: Paso[]; tit
             </li>
           ))}
         </ol>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * "Cómo llegar desde Bahía Blanca": el viaje de una página de destino, dibujado
+ * como un tramo de ruta —origen, kilómetros, destino— y tres datos. **Siempre
+ * dice que el retiro y la devolución son en Bahía Blanca**: la página es "alquilá
+ * acá y andá allá", nunca "te lo llevamos".
+ */
+export function ComoLlegar({ viaje }: { viaje: Viaje }) {
+  const datos: { icono: NombreIcono; etiqueta: string; valor: string }[] = [
+    { icono: "lugar", etiqueta: "Distancia", valor: `${viaje.km} km` },
+    { icono: "ruta", etiqueta: "Por dónde", valor: viaje.ruta },
+    { icono: "reloj", etiqueta: "Manejando", valor: `${viaje.tiempo} aprox.` },
+  ];
+  return (
+    <section className="bg-muted/30 py-16 md:py-20">
+      <div className="container px-4">
+        <Titulo sub={`Retirás el vehículo en Bahía Blanca y manejás vos hasta ${viaje.destino}.`}>
+          Cómo llegar desde Bahía Blanca
+        </Titulo>
+
+        <div className="mx-auto max-w-4xl rounded-2xl border border-border/60 bg-white p-6 shadow-sm md:p-8">
+          {/* El tramo: origen y destino unidos por la ruta. */}
+          <div className="flex items-start gap-3">
+            <div className="flex w-24 shrink-0 flex-col items-center text-center sm:w-36">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#1B3F6B] text-white shadow-md">
+                <Icono nombre="auto" className="h-5 w-5" />
+              </span>
+              <p className="mt-2 text-sm font-bold leading-tight text-[#1B3F6B]">Bahía Blanca</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Retiro y devolución</p>
+            </div>
+
+            <div className="relative mt-5 flex-1">
+              <div className="h-0 border-t-2 border-dashed border-[#407EC9]/50" />
+              <p className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-[#407EC9] px-3 py-1 text-xs font-bold text-white shadow-sm sm:text-sm">
+                {viaje.km} km
+              </p>
+            </div>
+
+            <div className="flex w-24 shrink-0 flex-col items-center text-center sm:w-36">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#407EC9]/15 text-[#407EC9] ring-2 ring-[#407EC9]/40">
+                <Icono nombre="lugar" className="h-5 w-5" />
+              </span>
+              <p className="mt-2 text-sm font-bold leading-tight text-[#1B3F6B]">{viaje.destino}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Tu destino</p>
+            </div>
+          </div>
+
+          <ul className="mt-8 grid gap-3 sm:grid-cols-3">
+            {datos.map((d) => (
+              <li key={d.etiqueta} className="flex items-center gap-3 rounded-xl bg-muted/40 p-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#407EC9]/12 text-[#407EC9]">
+                  <Icono nombre={d.icono} className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{d.etiqueta}</p>
+                  <p className="font-bold text-[#1B3F6B]">{d.valor}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {viaje.nota && (
+            <p className="mt-5 text-sm leading-relaxed text-muted-foreground">{viaje.nota}</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export interface TarjetaDestino {
+  href: string;
+  icono: NombreIcono;
+  viaje: Viaje;
+}
+
+/** Una tarjeta por destino, con los kilómetros grandes: la página que los agrupa. */
+export function Destinos({ destinos }: { destinos: TarjetaDestino[] }) {
+  return (
+    <section className="bg-muted/30 py-16 md:py-20">
+      <div className="container px-4">
+        <Titulo sub="Retirás en Bahía Blanca y manejás vos. Distancias por ruta desde el centro.">
+          A dónde vas
+        </Titulo>
+        <ul className="mx-auto flex max-w-5xl flex-wrap justify-center gap-4">
+          {destinos.map((d) => (
+            <li key={d.href} className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.7rem)]">
+              <Link
+                href={d.href}
+                className="group flex h-full flex-col rounded-2xl border border-border/60 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#407EC9]/50 hover:shadow-lg"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#407EC9]/12 text-[#407EC9]">
+                    <Icono nombre={d.icono} className="h-5 w-5" />
+                  </span>
+                  <p className="text-right">
+                    <span className="text-3xl font-bold tracking-tight text-[#1B3F6B]">{d.viaje.km}</span>
+                    <span className="ml-1 text-sm font-semibold text-muted-foreground">km</span>
+                  </p>
+                </div>
+                <p className="mt-4 text-lg font-semibold text-[#1B3F6B]">{d.viaje.destino}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {d.viaje.ruta} · {d.viaje.tiempo} aprox.
+                </p>
+                <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-[#407EC9]">
+                  Ver cómo ir <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );

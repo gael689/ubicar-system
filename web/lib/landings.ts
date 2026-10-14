@@ -31,7 +31,8 @@ import type { Pregunta } from "@/lib/faq";
 export type NombreIcono =
   | "seguro" | "precio" | "lugar" | "avion" | "reloj" | "calendario" | "contrato"
   | "whatsapp" | "baja" | "camion" | "llave" | "documento" | "auto" | "edificio"
-  | "personas" | "terreno" | "carnet" | "check" | "buscar" | "tarjeta" | "apreton";
+  | "personas" | "terreno" | "carnet" | "check" | "buscar" | "tarjeta" | "apreton"
+  | "playa" | "sol" | "ancla" | "fabrica" | "ruta" | "mapa";
 
 export interface Punto {
   icono: NombreIcono;
@@ -53,6 +54,31 @@ export interface Paso {
   icono: NombreIcono;
   titulo: string;
   detalle?: string;
+}
+
+/**
+ * El viaje desde Bahía Blanca hasta una localidad de la zona: lo que hace que
+ * cada página de destino tenga contenido propio y no sea la misma con otro
+ * nombre de pueblo.
+ *
+ * **Sólo datos verificados**, con la fuente anotada junto a la entrada. Los
+ * kilómetros son por ruta desde el centro de Bahía Blanca, redondeados; el
+ * tiempo es aproximado. Un dato que no se pudo confirmar no se escribe.
+ *
+ * El retiro y la devolución siguen siendo en Bahía Blanca: el bloque lo dice
+ * siempre, para que nadie entienda que se entrega en el destino.
+ */
+export interface Viaje {
+  /** La localidad, como se escribe en el título. */
+  destino: string;
+  /** Kilómetros por ruta desde el centro de Bahía Blanca, redondeados. */
+  km: number;
+  /** Por dónde se va: "RN 3 y RP 78". */
+  ruta: string;
+  /** Tiempo de manejo aproximado: "1 h 30 min". */
+  tiempo: string;
+  /** Una o dos frases sobre el camino. */
+  nota?: string;
 }
 
 export interface Landing {
@@ -97,6 +123,15 @@ export interface Landing {
   servicio: { nombre: string; descripcion: string };
   /** Mensaje con el que abre el WhatsApp de la página. */
   whatsapp: string;
+  /** Páginas de destino: el bloque "cómo llegar desde Bahía Blanca". */
+  viaje?: Viaje;
+  /** Slug de la página que la agrupa (migas de pan y JSON-LD). */
+  padre?: string;
+  /** Página que agrupa destinos: los slugs que muestra como tarjetas. Tienen que tener `viaje`. */
+  destinos?: string[];
+  /** Título y bajada propios del bloque de categorías ("Qué auto conviene para…"). */
+  tituloCategorias?: string;
+  subCategorias?: string;
 }
 
 /**
@@ -178,6 +213,7 @@ export const LANDINGS: Landing[] = [
       "alquiler-camionetas-4x4-bahia-blanca",
       "alquiler-de-autos-aeropuerto-bahia-blanca",
       "alquiler-de-autos-por-mes-bahia-blanca",
+      "alquiler-de-autos-bahia-blanca-y-zona",
     ],
     servicio: {
       nombre: "Alquiler de autos sin chofer en Bahía Blanca",
@@ -369,6 +405,321 @@ export const LANDINGS: Landing[] = [
     whatsapp:
       "Hola! Somos una empresa y queremos alquilar vehículos en Bahía Blanca. ¿Podemos coordinar una propuesta?",
   },
+
+  // ─── Bahía Blanca y la zona ───────────────────────────────────────────────
+  // Una página por destino, cada una con su viaje, su vehículo y su motivo.
+  // **Todas se plantean como "alquilá en Bahía Blanca y andá a X"**: el retiro y
+  // la devolución son en Bahía Blanca (centro o aeropuerto), nunca en el destino.
+  //
+  // Fuentes de los datos del viaje (verificados el 14/10/2026):
+  // - Kilómetros y tiempos: ruteo de OpenStreetMap (OSRM) desde la plaza
+  //   Rivadavia, contrastado con la prensa (Monte Hermoso 104–105 km; Sierra de
+  //   la Ventana ~110 km; Pehuen Co 81–83 km; Punta Alta 28 km; Ingeniero
+  //   White ~10 km).
+  // - Rutas: RN 3 y desvío por la RP 78 en el km 605 (Ámbito); RN 3 y RP 113 a
+  //   la altura de Bajo Hondo, pavimentada (C5N, Río Negro); RN 229 a Punta Alta
+  //   (Vía País); Saldungaray sobre la RP 72, a 8 km de Sierra de la Ventana.
+  // - Base Naval Puerto Belgrano: la más grande de la Armada, junto a Punta Alta
+  //   (Wikipedia). Reserva paleontológica Pehuen Co–Monte Hermoso: Ley 13.394.
+  {
+    slug: "alquiler-de-autos-bahia-blanca-y-zona",
+    nombre: "Bahía Blanca y zona",
+    icono: "mapa",
+    titulo: "Alquiler de Autos en Bahía Blanca y la Zona | Ubicar Rent",
+    descripcion:
+      "Alquilá un auto o una pick-up en Bahía Blanca y viajá a Monte Hermoso, Pehuen Co, Sierra de la Ventana, Punta Alta o Ingeniero White. Reservá online.",
+    gancho: "Retirás acá, viajás a donde quieras",
+    h1: "Alquiler de autos en Bahía Blanca y la zona",
+    bajada:
+      "Retirás en Bahía Blanca o en el aeropuerto y viajás a la playa, las sierras o el puerto. Se reserva online, con el precio final.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "lugar", titulo: "Retiro en Bahía Blanca", detalle: "En el centro o en el aeropuerto. Ahí también lo devolvés." },
+      { icono: "ruta", titulo: "Sin límite de provincia", detalle: "Dentro del país circulás sin restricciones." },
+      { icono: "contrato", titulo: "Kilometraje en el contrato", detalle: "Si el viaje es largo, avisanos antes." },
+      { icono: "camion", titulo: "Auto o pick-up 4x4", detalle: "Según el camino y la carga." },
+    ],
+    destinos: [
+      "alquiler-de-camionetas-ingeniero-white",
+      "alquiler-de-autos-punta-alta",
+      "alquiler-de-autos-pehuen-co",
+      "alquiler-de-autos-monte-hermoso",
+      "alquiler-de-autos-sierra-de-la-ventana",
+    ],
+    categorias: [COMPACTO, SEDAN, PICKUP],
+    tituloCategorias: "Qué conviene según el viaje",
+    subCategorias: "Para la ruta asfaltada alcanza un auto; para tierra, obra o carga, la pick-up.",
+    preguntasIds: ["kilometraje", "salir-del-pais", "requisitos", "que-incluye"],
+    preguntasPropias: [
+      {
+        id: "entrega-en-otra-localidad",
+        pregunta: "¿Me llevan el auto a Monte Hermoso o a otra localidad?",
+        respuesta: [
+          "No. El retiro y la devolución son en Bahía Blanca: en nuestros puntos del centro o en el Aeropuerto Comandante Espora. Desde ahí manejás vos hasta tu destino.",
+        ],
+      },
+    ],
+    hermanas: [
+      "alquiler-de-autos-bahia-blanca",
+      "alquiler-camionetas-4x4-bahia-blanca",
+      "alquiler-de-autos-aeropuerto-bahia-blanca",
+    ],
+    servicio: {
+      nombre: "Alquiler de autos en Bahía Blanca para viajar por la zona",
+      descripcion:
+        "Alquiler de autos y pick-ups con retiro en Bahía Blanca para viajar a Monte Hermoso, Pehuen Co, Sierra de la Ventana, Punta Alta e Ingeniero White.",
+    },
+    whatsapp: "Hola! Quiero alquilar un auto en Bahía Blanca para viajar por la zona. ¿Me pasan disponibilidad y precio?",
+  },
+  {
+    slug: "alquiler-de-autos-monte-hermoso",
+    nombre: "Monte Hermoso",
+    icono: "playa",
+    padre: "alquiler-de-autos-bahia-blanca-y-zona",
+    titulo: "Alquiler de Autos para ir a Monte Hermoso | Ubicar Rent",
+    descripcion:
+      "Alquilá un auto en Bahía Blanca y andá a Monte Hermoso: 105 km por RN 3 y RP 78. Retirás en el centro o en el aeropuerto. Reservá online.",
+    gancho: "La playa, a una hora y media",
+    h1: "Alquiler de autos para ir a Monte Hermoso",
+    bajada:
+      "Retirás el auto en Bahía Blanca y en una hora y media estás en la playa. Se reserva online, con el precio final.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "sol", titulo: "Temporada de playa", detalle: "Ida y vuelta en tus horarios, con todo el equipaje." },
+      { icono: "personas", titulo: "Toda la familia", detalle: "Cinco pasajeros y lugar para las valijas." },
+      { icono: "calendario", titulo: "Por día o por semana", detalle: "Más días, menos por día." },
+      { icono: "lugar", titulo: "Retiro en Bahía Blanca", detalle: "En el centro o en el aeropuerto." },
+    ],
+    viaje: {
+      destino: "Monte Hermoso",
+      km: 105,
+      ruta: "RN 3 y RP 78",
+      tiempo: "1 h 30 min",
+      nota: "Todo asfalto: el desvío por la RP 78 está en el km 605 de la RN 3. En temporada alta la RP 78 se carga; salir temprano ayuda.",
+    },
+    categorias: [COMPACTO, SEDAN],
+    tituloCategorias: "Qué auto conviene para Monte Hermoso",
+    subCategorias: "Es todo asfalto: un compacto alcanza. Si van cinco con valijas, el sedán tiene más baúl.",
+    preguntasIds: ["anticipacion", "kilometraje", "combustible", "requisitos"],
+    preguntasPropias: [
+      {
+        id: "retiro-monte-hermoso",
+        pregunta: "¿Dónde retiro el auto para ir a Monte Hermoso?",
+        respuesta: [
+          "En Bahía Blanca: en nuestros puntos del centro o en el Aeropuerto Comandante Espora. No entregamos en Monte Hermoso; desde Bahía Blanca son unos 105 km por la RN 3 y la RP 78.",
+        ],
+      },
+    ],
+    hermanas: [
+      "alquiler-de-autos-bahia-blanca-y-zona",
+      "alquiler-de-autos-pehuen-co",
+      "alquiler-de-autos-aeropuerto-bahia-blanca",
+    ],
+    servicio: {
+      nombre: "Alquiler de autos en Bahía Blanca para viajar a Monte Hermoso",
+      descripcion:
+        "Alquiler de autos con retiro en Bahía Blanca para viajar a Monte Hermoso, a unos 105 km por la RN 3 y la RP 78.",
+    },
+    whatsapp: "Hola! Quiero alquilar un auto en Bahía Blanca para ir a Monte Hermoso. ¿Me pasan disponibilidad y precio?",
+  },
+  {
+    slug: "alquiler-de-autos-sierra-de-la-ventana",
+    nombre: "Sierra de la Ventana",
+    icono: "terreno",
+    padre: "alquiler-de-autos-bahia-blanca-y-zona",
+    titulo: "Alquiler de Autos para Sierra de la Ventana | Ubicar Rent",
+    descripcion:
+      "Alquilá un auto o una pick-up en Bahía Blanca y andá a Sierra de la Ventana, a unos 110 km. Recorré la comarca serrana a tu ritmo. Reservá online.",
+    gancho: "Las sierras, sin depender del micro",
+    h1: "Alquiler de autos para ir a Sierra de la Ventana",
+    bajada:
+      "Retirás en Bahía Blanca y en una hora y media llegás a las sierras. Se reserva online, con el precio final.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "terreno", titulo: "Cerros y senderos", detalle: "El Parque Provincial Ernesto Tornquist y el Cerro Tres Picos." },
+      { icono: "mapa", titulo: "Toda la comarca", detalle: "Saldungaray, Villa Ventana y Tornquist, a tu ritmo." },
+      { icono: "camion", titulo: "Pick-up si hay tierra", detalle: "Para caminos rurales y estancias." },
+      { icono: "lugar", titulo: "Retiro en Bahía Blanca", detalle: "En el centro o en el aeropuerto." },
+    ],
+    viaje: {
+      destino: "Sierra de la Ventana",
+      km: 110,
+      ruta: "RP 51 y RP 72",
+      tiempo: "1 h 30 min",
+      nota: "El camino más corto pasa por Saldungaray, a 8 km del pueblo. La otra opción es la RN 33 hasta Tornquist y la RP 76, que bordea el parque provincial.",
+    },
+    categorias: [SEDAN, PICKUP],
+    tituloCategorias: "Qué conviene para las sierras",
+    subCategorias: "Para la ruta alcanza un sedán. Si vas a meterte en caminos de tierra, la pick-up 4x4.",
+    preguntasIds: ["kilometraje", "otro-conductor", "que-incluye", "requisitos"],
+    preguntasPropias: [
+      {
+        id: "sierras-4x4",
+        pregunta: "¿Necesito una 4x4 para ir a Sierra de la Ventana?",
+        respuesta: [
+          "Para llegar al pueblo, no: alcanza un auto. La pick-up 4x4 conviene si pensás andar por caminos de tierra o ir a un campo. Retirás cualquiera de los dos en Bahía Blanca.",
+        ],
+      },
+    ],
+    hermanas: [
+      "alquiler-de-autos-bahia-blanca-y-zona",
+      "alquiler-camionetas-4x4-bahia-blanca",
+      "alquiler-de-autos-monte-hermoso",
+    ],
+    servicio: {
+      nombre: "Alquiler de autos en Bahía Blanca para viajar a Sierra de la Ventana",
+      descripcion:
+        "Alquiler de autos y pick-ups 4x4 con retiro en Bahía Blanca para viajar a Sierra de la Ventana y la comarca serrana, a unos 110 km.",
+    },
+    whatsapp: "Hola! Quiero alquilar un auto en Bahía Blanca para ir a Sierra de la Ventana. ¿Me pasan disponibilidad y precio?",
+  },
+  {
+    slug: "alquiler-de-autos-punta-alta",
+    nombre: "Punta Alta",
+    icono: "ancla",
+    padre: "alquiler-de-autos-bahia-blanca-y-zona",
+    titulo: "Alquiler de Autos para ir a Punta Alta | Ubicar Rent",
+    descripcion:
+      "Alquilá un auto en Bahía Blanca para moverte a Punta Alta y la Base Naval Puerto Belgrano, a 28 km. Por día, por semana o por mes. Reservá online.",
+    gancho: "A media hora de Bahía Blanca",
+    h1: "Alquiler de autos para ir a Punta Alta",
+    bajada:
+      "Retirás en Bahía Blanca y en media hora estás en Punta Alta. Por día o por mes, con reserva online y precio final.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "ancla", titulo: "Base Naval Puerto Belgrano", detalle: "La base más grande de la Armada, junto a Punta Alta." },
+      { icono: "reloj", titulo: "Ida y vuelta en el día", detalle: "Media hora de ruta para cada lado." },
+      { icono: "baja", titulo: "Si te quedás un tiempo", detalle: "Por semana o por mes, el día sale menos." },
+      { icono: "lugar", titulo: "Retiro en Bahía Blanca", detalle: "En el centro o en el aeropuerto." },
+    ],
+    viaje: {
+      destino: "Punta Alta",
+      km: 28,
+      ruta: "RN 3 y RN 229",
+      tiempo: "30 min",
+      nota: "Por la autovía Bahía Blanca–Punta Alta y la RN 229, que entra a la ciudad por la avenida Colón.",
+    },
+    categorias: [COMPACTO, SEDAN],
+    tituloCategorias: "Qué auto conviene para Punta Alta",
+    subCategorias: "Para ir y venir todos los días, un compacto gasta poco. Con familia, el sedán.",
+    conEscalera: true,
+    preguntasIds: ["mas-dias", "formas-de-pago", "edad", "requisitos"],
+    hermanas: [
+      "alquiler-de-autos-bahia-blanca-y-zona",
+      "alquiler-de-autos-por-mes-bahia-blanca",
+      "alquiler-de-autos-pehuen-co",
+    ],
+    servicio: {
+      nombre: "Alquiler de autos en Bahía Blanca para viajar a Punta Alta",
+      descripcion:
+        "Alquiler de autos por día, semana o mes con retiro en Bahía Blanca, para moverse a Punta Alta y la Base Naval Puerto Belgrano, a 28 km.",
+    },
+    whatsapp: "Hola! Quiero alquilar un auto en Bahía Blanca para moverme a Punta Alta. ¿Me pasan disponibilidad y precio?",
+  },
+  {
+    slug: "alquiler-de-autos-pehuen-co",
+    nombre: "Pehuen Co",
+    icono: "playa",
+    padre: "alquiler-de-autos-bahia-blanca-y-zona",
+    titulo: "Alquiler de Autos para ir a Pehuen Co | Ubicar Rent",
+    descripcion:
+      "Alquilá un auto en Bahía Blanca y andá a Pehuen Co, a unos 80 km por RN 3 y RP 113, todo asfalto. Retirás en el centro o en el aeropuerto.",
+    gancho: "La playa más cercana, en auto",
+    h1: "Alquiler de autos para ir a Pehuen Co",
+    bajada:
+      "Retirás en Bahía Blanca y en poco más de una hora estás en Pehuen Co. Se reserva online, con el precio final.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "playa", titulo: "Playa y médanos", detalle: "Una villa chica, con bosque frente al mar." },
+      { icono: "buscar", titulo: "Huellas fósiles", detalle: "La reserva paleontológica, sobre la costa." },
+      { icono: "ruta", titulo: "Acceso asfaltado", detalle: "RP 113 desde la RN 3, hasta la entrada." },
+      { icono: "lugar", titulo: "Retiro en Bahía Blanca", detalle: "En el centro o en el aeropuerto." },
+    ],
+    viaje: {
+      destino: "Pehuen Co",
+      km: 80,
+      ruta: "RN 3 y RP 113",
+      tiempo: "1 h 20 min",
+      nota: "Se deja la RN 3 a la altura de Bajo Hondo y la RP 113, pavimentada, lleva hasta la entrada de la villa.",
+    },
+    categorias: [COMPACTO, SEDAN],
+    tituloCategorias: "Qué auto conviene para Pehuen Co",
+    subCategorias: "El acceso es asfaltado: con un compacto llegás bien. Para más gente y bolsos, el sedán.",
+    preguntasIds: ["combustible", "kilometraje", "que-auto", "cancelar"],
+    preguntasPropias: [
+      {
+        id: "pehuen-co-o-monte-hermoso",
+        pregunta: "¿Pehuen Co o Monte Hermoso: cuál queda más cerca?",
+        respuesta: [
+          "Pehuen Co: unos 80 km desde Bahía Blanca, contra unos 105 km hasta Monte Hermoso. Las dos se toman desde la RN 3 y tienen acceso asfaltado. En los dos casos el auto se retira y se devuelve en Bahía Blanca.",
+        ],
+      },
+    ],
+    hermanas: [
+      "alquiler-de-autos-bahia-blanca-y-zona",
+      "alquiler-de-autos-monte-hermoso",
+      "alquiler-de-autos-punta-alta",
+    ],
+    servicio: {
+      nombre: "Alquiler de autos en Bahía Blanca para viajar a Pehuen Co",
+      descripcion:
+        "Alquiler de autos con retiro en Bahía Blanca para viajar a Pehuen Co, a unos 80 km por la RN 3 y la RP 113.",
+    },
+    whatsapp: "Hola! Quiero alquilar un auto en Bahía Blanca para ir a Pehuen Co. ¿Me pasan disponibilidad y precio?",
+  },
+  {
+    slug: "alquiler-de-camionetas-ingeniero-white",
+    nombre: "Ingeniero White",
+    icono: "fabrica",
+    padre: "alquiler-de-autos-bahia-blanca-y-zona",
+    titulo: "Alquiler de Camionetas para Ingeniero White | Ubicar Rent",
+    descripcion:
+      "Pick-ups 4x4 doble cabina para trabajar en el puerto y el polo petroquímico de Ingeniero White. Retirás en Bahía Blanca, a 10 km. Reservá online.",
+    gancho: "Para el puerto y el polo",
+    h1: "Alquiler de camionetas para Ingeniero White",
+    bajada:
+      "Pick-ups doble cabina para trabajar en el puerto y el polo petroquímico. Retirás en Bahía Blanca; se reservan online o por WhatsApp.",
+    reserva: "buscador",
+    puntos: [
+      { icono: "fabrica", titulo: "Polo petroquímico", detalle: "Para contratistas, cuadrillas y personal de planta." },
+      { icono: "ancla", titulo: "Puerto", detalle: "Para el trabajo en el puerto y sus terminales." },
+      { icono: "personas", titulo: "Doble cabina", detalle: "Cinco personas y la caja para herramientas." },
+      { icono: "edificio", titulo: "Varias camionetas", detalle: "Para empresas: escribinos y armamos la propuesta." },
+    ],
+    viaje: {
+      destino: "Ingeniero White",
+      km: 10,
+      ruta: "Calles de la ciudad",
+      tiempo: "15 a 20 min",
+      nota: "Ingeniero White es parte del partido de Bahía Blanca: se llega por calles de la ciudad, sin salir a la ruta.",
+    },
+    categorias: [PICKUP],
+    tituloCategorias: "La camioneta para el puerto",
+    subCategorias: "Pick-up doble cabina 4x4: la cuadrilla adelante, las herramientas en la caja.",
+    preguntasIds: ["que-no-se-puede", "otro-conductor", "formas-de-pago", "franquicia"],
+    preguntasPropias: [
+      {
+        id: "varias-camionetas-white",
+        pregunta: "¿Puedo alquilar varias camionetas para una obra en el polo?",
+        respuesta: [
+          "Sí. Escribinos con cuántas necesitás y por cuánto tiempo, y armamos la propuesta para tu empresa. Se retiran en Bahía Blanca.",
+        ],
+      },
+    ],
+    hermanas: [
+      "empresas",
+      "alquiler-camionetas-4x4-bahia-blanca",
+      "alquiler-de-autos-por-mes-bahia-blanca",
+      "alquiler-de-autos-bahia-blanca-y-zona",
+    ],
+    servicio: {
+      nombre: "Alquiler de camionetas en Bahía Blanca para trabajar en Ingeniero White",
+      descripcion:
+        "Alquiler de pick-ups 4x4 doble cabina con retiro en Bahía Blanca, para trabajar en el puerto y el polo petroquímico de Ingeniero White.",
+    },
+    whatsapp:
+      "Hola! Necesito una camioneta en Bahía Blanca para trabajar en Ingeniero White. ¿Me pasan disponibilidad y precio?",
+  },
 ];
 
 // ─── Validaciones de build ──────────────────────────────────────────────────
@@ -397,6 +748,19 @@ for (const l of LANDINGS) {
   for (const h of l.hermanas) {
     if (!vistos.has(h)) throw new Error(`"${l.slug}" enlaza a "${h}", que no existe.`);
   }
+  if (l.padre && !vistos.has(l.padre)) {
+    throw new Error(`"${l.slug}" cuelga de "${l.padre}", que no existe.`);
+  }
+  for (const d of l.destinos ?? []) {
+    const destino = LANDINGS.find((x) => x.slug === d);
+    if (!destino) throw new Error(`"${l.slug}" lista el destino "${d}", que no existe.`);
+    if (!destino.viaje) throw new Error(`"${d}" figura como destino pero no tiene \`viaje\`.`);
+  }
+}
+
+/** Las páginas de "Bahía Blanca y la zona": la que agrupa y sus destinos. */
+export function esDeZona(l: Landing): boolean {
+  return !!l.viaje || !!l.destinos;
 }
 
 export function landingPorSlug(slug: string): Landing | undefined {

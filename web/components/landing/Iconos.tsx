@@ -1,4 +1,5 @@
 import {
+  Anchor, Factory, Map as Mapa, Route, Sun, Waves,
   Building2, CalendarDays, Car, Check, Clock, CreditCard, FileCheck, FileText, Handshake,
   IdCard, MapPin, MessageCircle, Mountain, Plane, Search, ShieldCheck, TrendingDown, Truck,
   Users, Wallet, Wrench, type LucideIcon,
@@ -31,6 +32,12 @@ const ICONOS: Record<NombreIcono, LucideIcon> = {
   buscar: Search,
   tarjeta: CreditCard,
   apreton: Handshake,
+  playa: Waves,
+  sol: Sun,
+  ancla: Anchor,
+  fabrica: Factory,
+  ruta: Route,
+  mapa: Mapa,
 };
 
 export function Icono({ nombre, className }: { nombre: NombreIcono; className?: string }) {

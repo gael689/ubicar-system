@@ -4,14 +4,14 @@ import { Mail, MapPin } from "lucide-react";
 import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 import { CONTACTO } from "@/lib/contacto";
 import { WHATSAPP_GENERAL } from "@/lib/constants";
-import { LANDINGS } from "@/lib/landings";
+import { LANDINGS, esDeZona } from "@/lib/landings";
 import { MAQUINAS } from "@/lib/maquinas";
 
 const logo = "/img/logo.png";
 
 /**
- * El pie del sitio, en columnas: la marca con su contacto, y tres listas —lo
- * que se alquila, la maquinaria y el resto del sitio—. Antes los enlaces a las
+ * El pie del sitio, en columnas: la marca con su contacto, y cuatro listas —lo
+ * que se alquila, los destinos de la zona, la maquinaria y el resto del sitio—. Antes los enlaces a las
  * páginas de servicio iban todos en una fila, apretados; en columnas se leen de
  * un vistazo y se ordenan solos en el teléfono.
  *
@@ -49,7 +49,7 @@ const Footer = () => {
   return (
     <footer style={{ background: "rgb(223, 232, 255)" }}>
       <div className="container px-4 py-12 md:py-14">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-10 lg:grid-cols-[1.5fr_1fr_1fr_1fr] lg:gap-x-10">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr] lg:gap-x-8">
           {/* Marca y contacto */}
           <div className="col-span-2 lg:col-span-1">
             <Link href="/" className="inline-block">
@@ -86,10 +86,19 @@ const Footer = () => {
 
           <Columna
             titulo="Alquilar"
-            items={LANDINGS.filter((l) => l.slug !== "empresas").map((l) => ({
+            items={LANDINGS.filter((l) => l.slug !== "empresas" && !esDeZona(l)).map((l) => ({
               nombre: l.nombre,
               href: `/${l.slug}`,
             }))}
+          />
+
+          {/* Cada destino y, al final, la página que los agrupa: igual que
+              "Ver todos los equipos" en la maquinaria. */}
+          <Columna
+            titulo="Bahía Blanca y zona"
+            items={LANDINGS.filter(esDeZona)
+              .sort((a, b) => Number(!!b.viaje) - Number(!!a.viaje))
+              .map((l) => ({ nombre: l.destinos ? "Ver todos los destinos" : l.nombre, href: `/${l.slug}` }))}
           />
 
           <Columna

@@ -1,4 +1,4 @@
-import { LANDINGS } from "@/lib/landings";
+import { LANDINGS, esDeZona } from "@/lib/landings";
 import { MAQUINAS } from "@/lib/maquinas";
 import { CONTACTO } from "@/lib/contacto";
 import { SITE } from "@/lib/sitio";
@@ -17,9 +17,18 @@ import { SITE } from "@/lib/sitio";
 export const dynamic = "force-static";
 
 export function GET() {
-  const servicios = LANDINGS.map(
-    (l) => `- [${l.nombre}](${SITE}/${l.slug}): ${l.servicio.descripcion}`,
-  ).join("\n");
+  const servicios = LANDINGS.filter((l) => !esDeZona(l))
+    .map((l) => `- [${l.nombre}](${SITE}/${l.slug}): ${l.servicio.descripcion}`)
+    .join("\n");
+
+  // Los destinos llevan distancia y ruta: es lo que pregunta quien viaja.
+  const zona = LANDINGS.filter(esDeZona)
+    .map((l) =>
+      l.viaje
+        ? `- [${l.viaje.destino}](${SITE}/${l.slug}): ${l.viaje.km} km desde Bahía Blanca (${l.viaje.ruta}), ${l.viaje.tiempo} de manejo aprox. ${l.servicio.descripcion}`
+        : `- [${l.nombre}](${SITE}/${l.slug}): ${l.servicio.descripcion}`,
+    )
+    .join("\n");
 
   const maquinaria = MAQUINAS.map(
     (m) => `- [${m.nombre}](${SITE}/maquinaria/${m.slug}): ${m.categoria}.`,
@@ -47,6 +56,12 @@ URL de reserva: ${SITE}/reservar
 ## Servicios
 
 ${servicios}
+
+## Viajes por la zona
+
+El vehículo se retira y se devuelve en Bahía Blanca (centro o Aeropuerto Comandante Espora); no se entrega en otras localidades. Desde ahí se viaja manejando.
+
+${zona}
 
 ## Maquinaria
 

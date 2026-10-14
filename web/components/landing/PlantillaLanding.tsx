@@ -4,7 +4,10 @@ import FloatingWhatsApp from "@/components/FloatingWhatsApp";
 import BuscadorReserva from "@/components/BuscadorReserva";
 import HeroSub from "@/components/landing/HeroSub";
 import { BotonWhatsApp } from "@/components/landing/BotonWhatsApp";
-import { Categorias, Cierre, Enlaces, Escalera, Pasos, Preguntas, Puntos, type Enlace } from "@/components/landing/Bloques";
+import {
+  Categorias, Cierre, ComoLlegar, Destinos, Enlaces, Escalera, Pasos, Preguntas, Puntos,
+  type Enlace, type TarjetaDestino,
+} from "@/components/landing/Bloques";
 import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 import { TODAS_LAS_PREGUNTAS, type Pregunta } from "@/lib/faq";
 import { landingPorSlug, type Landing } from "@/lib/landings";
@@ -26,6 +29,11 @@ import { SITE } from "@/lib/sitio";
  *
  * El JSON-LD es un `BreadcrumbList` y un `Service` que apunta al negocio por su
  * `@id`, sin repetir el `AutoRental` del layout.
+ *
+ * Las páginas de destino (`viaje`) suman el bloque "cómo llegar" y cuelgan de la
+ * página de la zona (`padre`) en las migas. Su `areaServed` nombra la localidad
+ * a la que se viaja, pero el negocio —y su dirección— sigue siendo el de Bahía
+ * Blanca: ahí se retira y se devuelve.
  */
 export default function PlantillaLanding({ landing }: { landing: Landing }) {
   const preguntas: Pregunta[] = [
@@ -46,16 +54,35 @@ export default function PlantillaLanding({ landing }: { landing: Landing }) {
     { href: "/maquinaria", nombre: "Maquinaria pesada", imagen: "/img/maquinas/retroExcavadora.png" },
   ];
 
+  const destinos: TarjetaDestino[] = (landing.destinos ?? [])
+    .map((s) => landingPorSlug(s))
+    .filter((l): l is Landing & { viaje: NonNullable<Landing["viaje"]> } => !!l?.viaje)
+    .map((l) => ({ href: `/${l.slug}`, icono: l.icono, viaje: l.viaje }));
+
+  const padre = landing.padre ? landingPorSlug(landing.padre) : undefined;
+
   const url = `${SITE}/${landing.slug}`;
+  const migasLd = [
+    { nombre: "Inicio", url: `${SITE}/` },
+    ...(padre ? [{ nombre: padre.nombre, url: `${SITE}/${padre.slug}` }] : []),
+    { nombre: landing.nombre, url },
+  ];
+  const areaServed = [
+    { "@type": "City", name: "Bahía Blanca" },
+    ...(landing.viaje ? [{ "@type": "City", name: landing.viaje.destino }] : []),
+    ...destinos.map((d) => ({ "@type": "City", name: d.viaje.destino })),
+  ];
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "BreadcrumbList",
-        itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Inicio", item: `${SITE}/` },
-          { "@type": "ListItem", position: 2, name: landing.nombre, item: url },
-        ],
+        itemListElement: migasLd.map((m, i) => ({
+          "@type": "ListItem",
+          position: i + 1,
+          name: m.nombre,
+          item: m.url,
+        })),
       },
       {
         "@type": "Service",
@@ -64,7 +91,7 @@ export default function PlantillaLanding({ landing }: { landing: Landing }) {
         description: landing.servicio.descripcion,
         url,
         provider: { "@id": `${SITE}/#business` },
-        areaServed: { "@type": "City", name: "Bahía Blanca" },
+        areaServed: areaServed.length === 1 ? areaServed[0] : areaServed,
       },
     ],
   };
@@ -81,7 +108,10 @@ export default function PlantillaLanding({ landing }: { landing: Landing }) {
 
       <main>
         <HeroSub
-          migas={[{ nombre: landing.nombre }]}
+          migas={[
+            ...(padre ? [{ nombre: padre.nombre, href: `/${padre.slug}` }] : []),
+            { nombre: landing.nombre },
+          ]}
           gancho={landing.gancho}
           h1={landing.h1}
           bajada={landing.bajada}
@@ -111,14 +141,16 @@ export default function PlantillaLanding({ landing }: { landing: Landing }) {
         />
 
         <Puntos puntos={landing.puntos} />
+        {landing.viaje && <ComoLlegar viaje={landing.viaje} />}
+        {destinos.length > 0 && <Destinos destinos={destinos} />}
         {landing.categorias && (
           <Categorias
             categorias={landing.categorias}
             conBoton={reservaOnline}
             // "Reservás una categoría" es del flujo online: una página que se
             // coordina por WhatsApp no lo promete.
-            titulo={reservaOnline ? undefined : "Qué podemos ofrecerte"}
-            sub={reservaOnline ? undefined : "Algunos de los vehículos que alquilamos a empresas."}
+            titulo={landing.tituloCategorias ?? (reservaOnline ? undefined : "Qué podemos ofrecerte")}
+            sub={landing.subCategorias ?? (reservaOnline ? undefined : "Algunos de los vehículos que alquilamos a empresas.")}
           />
         )}
         {landing.pasos && <Pasos pasos={landing.pasos} />}
