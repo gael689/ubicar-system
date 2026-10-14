@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CalendarDays, Plus, X, Save, RotateCcw } from 'lucide-react';
+import { CalendarDays, Plus, X, Save, RotateCcw, DollarSign, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import {
 } from '@/hooks/useFechasEspeciales';
 import { COLOR_FECHA_ESPECIAL, TIPO_FECHA_ESPECIAL_LABEL } from '@/lib/constants';
 import { cn, formatDate, extractError } from '@/lib/utils';
+import { PreciosDeLaFecha } from './PreciosDeLaFecha';
 import type { TipoFechaEspecial, ColorFechaEspecial } from '@/types';
 
 const FORM_VACIO = {
@@ -30,11 +31,13 @@ export function FechasEspecialesPanel() {
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(FORM_VACIO);
+  /** La fecha con el panel de precios abierto (14/10). */
+  const [preciosDe, setPreciosDe] = useState<number | null>(null);
 
   async function handleCrear(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await crear.mutateAsync({
+      const res = await crear.mutateAsync({
         nombre: form.nombre,
         fecha_desde: form.fecha_desde,
         // Un día suelto: si no cargan el fin, es el mismo día.
@@ -43,9 +46,11 @@ export function FechasEspecialesPanel() {
         color: form.color,
         notas: form.notas || null,
       });
-      toast.success('Fecha especial creada');
+      toast.success('Fecha especial creada: poné el precio de cada categoría');
       setForm(FORM_VACIO);
       setShowForm(false);
+      // Recién creada, lo siguiente que se quiere es ponerle precio.
+      setPreciosDe(res.data.data.id);
     } catch (err) {
       toast.error(extractError(err));
     }
@@ -176,7 +181,8 @@ export function FechasEspecialesPanel() {
           {fechas.map(f => {
             const unDia = f.fecha_desde === f.fecha_hasta;
             return (
-              <div key={f.id} className={cn('flex items-center gap-3 py-2.5', !f.activo && 'opacity-50')}>
+              <div key={f.id} className={cn('py-2.5', !f.activo && 'opacity-50')}>
+              <div className="flex items-center gap-3">
                 <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', COLOR_FECHA_ESPECIAL[f.color].punto)} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{f.nombre}</p>
@@ -186,6 +192,17 @@ export function FechasEspecialesPanel() {
                     {f.notas ? ` · ${f.notas}` : ''}
                   </p>
                 </div>
+                {f.activo && (
+                  <Button
+                    variant={preciosDe === f.id ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setPreciosDe(p => (p === f.id ? null : f.id))}
+                    title="Ver y cargar el precio de esta fecha"
+                  >
+                    {preciosDe === f.id ? <ChevronUp className="h-3.5 w-3.5" /> : <DollarSign className="h-3.5 w-3.5" />}
+                    Precios
+                  </Button>
+                )}
                 {f.activo ? (
                   <Button variant="ghost" size="sm" onClick={() => darDeBaja.mutate(f.id)} title="Dar de baja">
                     <X className="h-3.5 w-3.5" />
@@ -195,6 +212,10 @@ export function FechasEspecialesPanel() {
                     <RotateCcw className="h-3.5 w-3.5" /> Reactivar
                   </Button>
                 )}
+              </div>
+              {preciosDe === f.id && f.activo && (
+                <div className="mt-2 pl-5"><PreciosDeLaFecha fecha={f} /></div>
+              )}
               </div>
             );
           })}
