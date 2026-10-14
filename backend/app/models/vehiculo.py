@@ -45,6 +45,12 @@ class Vehiculo(Base):
     destino: Mapped[str] = mapped_column(
         String(20), nullable=False, default="alquiler", server_default="alquiler"
     )
+    # Si el auto suma cupo **en la web** (migración 106). Los autos que Ubicar
+    # toma de terceros por unas semanas se destildan: el mostrador los sigue
+    # alquilando, pero el sitio no vende una unidad que pronto no va a estar.
+    en_web: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     km_actual: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     km_proximo_service: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     km_entre_services: Mapped[int] = mapped_column(Integer, nullable=False, default=10000)

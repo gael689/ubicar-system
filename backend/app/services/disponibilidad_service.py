@@ -71,7 +71,9 @@ class DisponibilidadService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _cargar_flota(self, incluir_uber: bool = False) -> list[VehiculoDisponible]:
+    def _cargar_flota(
+        self, incluir_uber: bool = False, solo_web: bool = False,
+    ) -> list[VehiculoDisponible]:
         """
         La flota que se puede alquilar.
 
@@ -91,6 +93,13 @@ class DisponibilidadService:
         q = self.db.query(Vehiculo).filter(Vehiculo.activo.is_(True))
         if not incluir_uber:
             q = q.filter(Vehiculo.destino == "alquiler")
+        # `solo_web`: los autos destildados en "En web" (migración 106) no son
+        # cupo del sitio. Son los que se toman de terceros por unas semanas: el
+        # mostrador los alquila, la web no los promete. Las reservas que tengan
+        # encima no cuentan contra nadie (`calcular_cupo` sólo cuenta las de
+        # autos de la flota que recibe), así que sacarlos no deja cupo de más.
+        if solo_web:
+            q = q.filter(Vehiculo.en_web.is_(True))
         vehiculos = q.all()
         return [VehiculoDisponible(id=v.id, categoria_id=v.categoria_id) for v in vehiculos]
 
@@ -233,7 +242,7 @@ class DisponibilidadService:
             q = q.filter(Categoria.id.in_(categoria_ids))
         categorias = q.order_by(Categoria.orden, Categoria.nombre).all()
 
-        flota = self._cargar_flota(incluir_uber=not solo_web)
+        flota = self._cargar_flota(incluir_uber=not solo_web, solo_web=solo_web)
         ocupaciones = self._cargar_ocupaciones(fecha_inicio, fecha_fin, excluir_hold_token)
 
         # **Un auto que vuelve no está listo en el mismo instante.** Los rangos

@@ -23,6 +23,8 @@ class VehiculoBase(BaseModel):
     km_entre_services: int
     categoria_id: int | None = None
     destino: DestinoVehiculo = "alquiler"
+    # Si suma cupo en la web (migración 106). Ver el modelo.
+    en_web: bool = True
 
 
 class VehiculoCreate(VehiculoBase):
@@ -47,6 +49,7 @@ class VehiculoUpdate(BaseModel):
     km_proximo_service: int | None = None
     categoria_id: int | None = None
     destino: DestinoVehiculo | None = None
+    en_web: bool | None = None
     vtv_vencimiento: date | None = None
     poliza_vencimiento: date | None = None
     compania_seguro: str | None = None

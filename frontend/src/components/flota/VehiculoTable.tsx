@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Car, MoreHorizontal, Pencil, ArchiveRestore, ArchiveX, History, Wrench, AlertTriangle } from 'lucide-react';
+import { Car, MoreHorizontal, Pencil, ArchiveRestore, ArchiveX, History, Wrench, AlertTriangle, Check } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +21,7 @@ import {
 import { TIPO_VEHICULO_LABEL } from '@/lib/constants';
 import { resolveAssetUrl } from '@/lib/api';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
+import { useUpdateVehiculo } from '@/hooks/useVehiculos';
 import type { Vehiculo } from '@/types';
 
 interface Props {
@@ -43,6 +44,7 @@ export function VehiculoTable({ vehiculos, onEdit, onDeactivate, onReactivate }:
           <TableHead className="w-[210px]">Estado</TableHead>
           <TableHead className="w-[190px]">Papeles</TableHead>
           <TableHead className="w-[150px] text-right">Kilometraje</TableHead>
+          <TableHead className="w-[84px] text-center" title="Si el auto suma disponibilidad en la web">En web</TableHead>
           <TableHead className="w-[60px]"></TableHead>
         </TableRow>
       </TableHeader>
@@ -141,6 +143,9 @@ export function VehiculoTable({ vehiculos, onEdit, onDeactivate, onReactivate }:
                   </div>
                 )}
               </TableCell>
+              <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                {!inactivo && <TildeEnWeb vehiculo={v} />}
+              </TableCell>
               <TableCell onClick={(e) => e.stopPropagation()}>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -181,6 +186,39 @@ export function VehiculoTable({ vehiculos, onEdit, onDeactivate, onReactivate }:
         })}
       </TableBody>
     </Table>
+  );
+}
+
+/**
+ * Si el auto suma cupo en la web, con un click.
+ *
+ * Ubicar toma autos de terceros por unas semanas para realquilarlos (14/10).
+ * Destildado, el mostrador lo sigue alquilando y el calendario lo muestra, pero
+ * el sitio no ofrece una unidad que en dos semanas ya no va a estar.
+ */
+function TildeEnWeb({ vehiculo }: { vehiculo: Vehiculo }) {
+  const actualizar = useUpdateVehiculo();
+  const enWeb = vehiculo.en_web !== false;
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={enWeb}
+      aria-label={`${vehiculo.patente} en la web`}
+      disabled={actualizar.isPending}
+      onClick={() => actualizar.mutate({ id: vehiculo.id, body: { en_web: !enWeb } })}
+      title={enWeb
+        ? 'Suma disponibilidad en la web. Click para sacarlo (auto temporal).'
+        : 'No se ofrece en la web: sólo lo alquila el mostrador. Click para sumarlo.'}
+      className={cn(
+        'inline-flex h-7 w-7 items-center justify-center rounded-md border-2 transition-colors disabled:opacity-50',
+        enWeb
+          ? 'border-primary bg-primary text-white hover:bg-primary/90'
+          : 'border-slate-300 bg-white text-transparent hover:border-primary/60',
+      )}
+    >
+      <Check className="h-4 w-4" strokeWidth={3} />
+    </button>
   );
 }
 

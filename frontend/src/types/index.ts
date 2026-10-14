@@ -470,6 +470,8 @@ export interface Vehiculo {
   categoria_id: number | null;
   categoria?: CategoriaResumen | null;
   destino: DestinoVehiculo;
+  /** Si suma cupo en la web. Los autos temporales de terceros van destildados. */
+  en_web: boolean;
   activo: boolean;
   /** Por qué y cuándo se dio de baja. `null` mientras está activo. */
   motivo_baja?: string | null;
@@ -504,6 +506,7 @@ export interface VehiculoUpdate {
   modelo?: string;
   color?: string;
   destino?: DestinoVehiculo;
+  en_web?: boolean;
   estado?: EstadoVehiculo;
   km_actual?: number;
   km_entre_services?: number;
