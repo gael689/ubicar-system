@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { esLugarOtro } from "@/lib/lugares";
 import Image from "next/image";
 import { Users, Briefcase, Snowflake, Cog, Car, Clock, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,10 @@ export function Paso1Vehiculo({
   /** Lo que la persona tipeó en "Otro lugar", si eligió esa opción. Viaja
    *  desde el Hero por su propio parámetro de URL — **nunca pegado adentro
    *  de `lugarRetiro`**, que es lo que D-56 tuvo que sacar. */
-  const lugarLibre = (rango.lugarRetiroOtro || rango.lugarDevolucionOtro || "").trim();
+  // Con "Otro lugar" y el texto vacío también deriva (14/10): antes quedaba
+  // en "" y el paso 1 mostraba los autos de un retiro que nadie confirmó.
+  const lugarLibre = (rango.lugarRetiroOtro || rango.lugarDevolucionOtro || "").trim()
+    || (esLugarOtro(rango.lugarRetiro) || esLugarOtro(rango.lugarDevolucion) ? "Otro lugar, a coordinar" : "");
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -204,7 +208,7 @@ export function Paso1Vehiculo({
         <CartelDerivacion
           resaltado
           motivo="otro_lugar"
-          detalle={lugares.join(" · ")}
+          detalle={lugares.length ? lugares.join(" · ") : undefined}
           resumen={`Anotamos: «${lugarLibre}»`}
           mensajeWhatsapp={mensajeOtroLugar()}
           fechaInicio={rango.fechaInicio}

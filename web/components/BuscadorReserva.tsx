@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 import { api, textoPlazo } from "@/lib/api";
 import type { ConfigPublica } from "@/lib/types";
 import { LUGAR_OTRO } from "@/lib/lugares";
+import { CartelDerivacion, SEGUIR_WEB_LABEL } from "@/components/reservar/CartelDerivacion";
+import { construirMensajeDerivacion } from "@/lib/mensajeDerivacion";
 import { IconoWhatsApp } from "@/components/IconoWhatsApp";
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
@@ -54,6 +56,8 @@ export default function BuscadorReserva({ lugarInicial }: { lugarInicial?: strin
   const [fechaDevolucion, setFechaDevolucion] = useState<Date>();
   const [horaDevolucion, setHoraDevolucion] = useState("10:00");
   const [otroRetiro, setOtroRetiro] = useState("");
+  /** "Otro lugar" elegido y "Ver vehículos" apretado: se muestra el cartel del agente. */
+  const [derivarOtroLugar, setDerivarOtroLugar] = useState(false);
   const [otraDevolucion, setOtraDevolucion] = useState("");
   const [edad, setEdad] = useState("");
   const [faltaEdad, setFaltaEdad] = useState(false);
@@ -164,6 +168,19 @@ export default function BuscadorReserva({ lugarInicial }: { lugarInicial?: strin
       return;
     }
 
+    // **"Otro lugar (a coordinar)" no avanza** (14/10, lo acordado con
+    // Ubicar). Un retiro o una devolución fuera de los puntos de siempre lo
+    // confirma un agente — puede tener costo y no siempre se puede—, así que
+    // mostrar autos y precios sería prometer lo que la web no puede cerrar.
+    // El cartel ocupa el lugar del formulario, con WhatsApp ya armado.
+    // (D-61 lo había pasado al paso 1; ahí, con el texto vacío, se veían los
+    // autos igual.)
+    if (lugarEntrega === OTRO || (devolverOtroLugar && lugarDevolucion === OTRO)) {
+      intencionDeReserva("hero:otro_lugar");
+      setDerivarOtroLugar(true);
+      return;
+    }
+
     // D-61: acá **ya no se frena nada**. Antes había dos `return` —uno por
     // "Otro lugar" (D-56) y otro por la ventana de fechas (D-60)— que abrían
     // un cartel y dejaban a la persona parada en la portada. La regla ahora es
@@ -197,6 +214,43 @@ export default function BuscadorReserva({ lugarInicial }: { lugarInicial?: strin
     params.set("edad", edad);
     router.push(`/reservar?${params.toString()}`);
   };
+
+  if (derivarOtroLugar) {
+    const lugarPedido = (lugarEntrega === OTRO ? otroRetiro : otraDevolucion).trim()
+      || "Otro lugar, a coordinar";
+    return (
+      <CartelDerivacion
+        resaltado
+        autoFoco
+        motivo="otro_lugar"
+        // Sin la lista de puntos (config sin cargar), el texto por defecto:
+        // "Entregamos siempre en ." no puede salir nunca.
+        detalle={lugares.length ? lugares.join(" · ") : undefined}
+        resumen={`Anotamos: «${lugarPedido}»`}
+        mensajeWhatsapp={construirMensajeDerivacion({
+          fechaInicio: fechaEntrega ? format(fechaEntrega, "yyyy-MM-dd") : null,
+          horaInicio: horaEntrega,
+          fechaFin: fechaDevolucion ? format(fechaDevolucion, "yyyy-MM-dd") : null,
+          horaFin: horaDevolucion,
+          lugarRetiro: lugarEntrega === OTRO ? lugarPedido : lugarEntrega,
+          lugarDevolucion: devolverOtroLugar
+            ? (lugarDevolucion === OTRO ? (otraDevolucion.trim() || "A coordinar") : lugarDevolucion)
+            : null,
+          edad,
+          motivoTexto: "Quiero retirar o devolver en un lugar que no está entre los de la web.",
+          preguntaFinal: "¿Lo podemos coordinar?",
+        })}
+        seguirWebLabel={SEGUIR_WEB_LABEL.otro_lugar}
+        onSeguirWeb={() => {
+          // Vuelve al formulario con el lugar sin elegir, para tomar uno de
+          // los puntos de siempre.
+          if (lugarEntrega === OTRO) setLugarEntrega("");
+          if (lugarDevolucion === OTRO) setLugarDevolucion("");
+          setDerivarOtroLugar(false);
+        }}
+      />
+    );
+  }
 
   return (
             <div className="rounded-2xl bg-white p-5 shadow-2xl ring-1 ring-black/5 md:p-6">

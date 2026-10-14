@@ -47,9 +47,15 @@ const Hero = () => {
       />
 
       <div className="container relative z-10 px-4">
-        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,470px)] lg:gap-14">
-          {/* ── Columna izquierda: el mensaje ── */}
-          <div className="order-2 lg:order-1">
+        {/* **En el teléfono: pre-título, título, subtítulo, formulario y
+            después los pasos** (14/10). Antes el formulario iba primero y el
+            título quedaba abajo: se llegaba a un formulario sin saber de qué
+            era la página. En la computadora sigue igual: el texto a la
+            izquierda (mensaje arriba, pasos abajo) y el buscador a la derecha
+            ocupando las dos filas. */}
+        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,470px)] lg:grid-rows-[auto_auto] lg:gap-x-14 lg:gap-y-0">
+          {/* ── El mensaje ── */}
+          <div className="lg:col-start-1 lg:row-start-1 lg:self-end">
             {/* Una línea sobria en lugar de una píldora: dice lo mismo y no
                 compite con el titular. */}
             <p
@@ -80,10 +86,14 @@ const Hero = () => {
               nadie ni esperar respuesta.
             </p>
 
-            {/* Los cuatro pasos, como una línea de texto sobria: hace visible
-                que hay un sistema detrás sin convertirse en un gráfico. */}
+          </div>
+
+          {/* Los cuatro pasos, como una línea de texto sobria: hace visible
+              que hay un sistema detrás sin convertirse en un gráfico. En el
+              teléfono van debajo del formulario. */}
+          <div className="lg:col-start-1 lg:row-start-2 lg:self-start">
             <div
-              className="mt-8 border-t border-white/15 pt-6 opacity-0 animate-fade-up"
+              className="border-t border-white/15 pt-6 opacity-0 animate-fade-up lg:mt-8"
               style={{ animationDelay: "0.28s" }}
             >
               <ol className="flex flex-wrap gap-x-7 gap-y-2.5">
@@ -105,9 +115,9 @@ const Hero = () => {
 
           </div>
 
-          {/* ── Columna derecha: el buscador ── */}
+          {/* ── El buscador: en la computadora, la columna derecha entera ── */}
           <div
-            className="order-1 opacity-0 animate-fade-up lg:order-2"
+            className="row-start-2 opacity-0 animate-fade-up lg:col-start-2 lg:row-span-2 lg:row-start-1"
             style={{ animationDelay: "0.12s" }}
           >
             <BuscadorReserva />
