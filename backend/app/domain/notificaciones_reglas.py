@@ -1431,10 +1431,11 @@ def categoria_web_sin_precio(db: Session, hoy: date) -> list[dict]:
         urgente = desde <= primer_dia_web + timedelta(days=14)
         avisos.append({
             "tipo": "categoria_web_sin_precio",
-            "titulo": f"{c['categoria_nombre']}: la web no la puede vender",
+            "titulo": f"{c['categoria_nombre']}: falta el precio por día",
             "descripcion": (
-                f"No tiene precio desde el {desde.strftime('%d/%m')}. La web la muestra "
-                "como sin disponibilidad aunque haya autos. Se carga en Precios."
+                (f"Tiene precio hasta el {(desde - timedelta(days=1)).strftime('%d/%m')}; "
+                 if desde > hoy else "")
+                + "después la web la muestra como sin disponibilidad. Se carga en Precios."
             ),
             "urgencia": "critica" if urgente else "alta",
             "entidad_tipo": "categoria",

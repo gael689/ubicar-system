@@ -43,20 +43,21 @@ export function CategoriasPrecios() {
         <h3 className="text-lg font-bold text-foreground">Categorías</h3>
       </div>
       <p className="text-sm text-muted-foreground">
-        El <strong>precio por día</strong> es el que se cobra siempre. El calendario de abajo lo cambia
-        para fechas puntuales (temporadas, feriados, promociones). <strong>En web</strong> decide si la
-        categoría aparece en el sitio.
+        El <strong>precio por día</strong> es el precio base: queda definido para siempre. Desde el{' '}
+        <strong>calendario</strong> de abajo lo pueden ajustar a medida según la fecha (temporadas,
+        feriados, promociones). <strong>En web</strong> decide si la categoría aparece en el sitio.
       </p>
 
+      {/* Discreto a propósito (14/10): el cartel rojo a todo ancho era
+          demasiado para algo que se resuelve cargando un número. */}
       {conProblema.length > 0 && (
-        <div className="flex items-start gap-2 rounded-lg bg-danger px-3 py-2.5 text-sm font-medium text-white">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
           <span>
-            {conProblema.length === 1 ? 'Una categoría publicada no tiene' : `${conProblema.length} categorías publicadas no tienen`}{' '}
-            precio para todas las fechas que vende la web ({conProblema.map(c => c.categoria_nombre).join(', ')}).
-            La web las muestra como <em>sin disponibilidad</em> aunque haya autos. Cargales el precio por día.
+            {conProblema.length === 1 ? 'Esta categoría no tiene' : 'Estas categorías no tienen'} definido
+            el precio por día: <strong>{conProblema.map(c => c.categoria_nombre).join(', ')}</strong>.
           </span>
-        </div>
+        </p>
       )}
 
       {isLoading ? (
@@ -275,10 +276,26 @@ function Estado({ categoria, cobertura }: { categoria: Categoria; cobertura?: Co
       </span>
     );
   }
+  // Lo que se lee es **hasta cuándo tiene precio** (el día anterior al primer
+  // hueco), no "desde cuándo no": con el calendario cargado hasta el 19,
+  // "sin precio desde el 20" se leía como una fecha equivocada.
+  const primerHueco = cobertura.primer_dia_sin_precio!;
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (primerHueco <= hoy) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700">
+        <AlertTriangle className="h-4 w-4 shrink-0" /> Falta el precio por día
+      </span>
+    );
+  }
+  const ultimo = new Date(`${primerHueco}T12:00:00`);
+  ultimo.setDate(ultimo.getDate() - 1);
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-semibold text-danger">
-      <AlertTriangle className="h-4 w-4 shrink-0" />
-      Sin precio desde el {formatDate(cobertura.primer_dia_sin_precio!)}
+    <span className="inline-flex flex-col text-xs text-amber-700">
+      <span className="inline-flex items-center gap-1 font-semibold">
+        <AlertTriangle className="h-4 w-4 shrink-0" /> Tiene precio hasta el {formatDate(ultimo.toISOString().slice(0, 10))}
+      </span>
+      <span className="pl-5 text-[11px] text-muted-foreground">Después falta el precio por día</span>
     </span>
   );
 }

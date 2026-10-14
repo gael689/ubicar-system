@@ -24,7 +24,7 @@ vi.mock('@/hooks/useCategorias', () => ({
 vi.mock('@/hooks/usePrecios', () => ({
   useCoberturaPrecios: () => ({ data: [
     { categoria_id: 1, categoria_nombre: 'Compacto', visible_web: true, con_flota: true,
-      dias_sin_precio: 120, primer_dia_sin_precio: '2026-10-14', ultimo_dia_sin_precio: '2027-02-11' },
+      dias_sin_precio: 120, primer_dia_sin_precio: '2099-10-20', ultimo_dia_sin_precio: '2100-02-11' },
     { categoria_id: 2, categoria_nombre: 'SUV', visible_web: false, con_flota: true,
       dias_sin_precio: 0, primer_dia_sin_precio: null, ultimo_dia_sin_precio: null },
   ] }),
@@ -35,11 +35,15 @@ function renderizar() {
 }
 
 describe('Categorías en Precios', () => {
-  it('avisa en rojo la categoría publicada que la web no puede vender', () => {
+  it('avisa qué categoría publicada no tiene definido el precio por día', () => {
     renderizar();
-    expect(screen.getByText(/no tiene precio para todas las fechas que vende la web/)).toBeInTheDocument();
-    expect(screen.getByText(/Sin precio desde el/)).toBeInTheDocument();
+    expect(screen.getByText(/no tiene definido el precio por día/)).toBeInTheDocument();
     expect(screen.getAllByText('Sin cargar').length).toBeGreaterThan(0);
+  });
+
+  it('dice hasta cuándo tiene precio: el día anterior al primer hueco', () => {
+    renderizar();
+    expect(screen.getByText(/Tiene precio hasta el 19\/10\/2099/)).toBeInTheDocument();
   });
 
   it('la que no se ofrece en la web lo dice, y se publica con un click', async () => {
