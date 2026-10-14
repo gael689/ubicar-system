@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Plus, X, RotateCcw, Trash2, Pencil, ShieldCheck, Package, ArrowDownWideNarrow } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { FranquiciasBase } from '@/components/adicionales/FranquiciasBase';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -312,6 +313,9 @@ export function AdicionalesPage() {
             onReactivar={id => reactivar.mutate(id)}
             escalera
           />
+          {/* La base que cada cobertura baja (14/10). Antes estaba en Flota →
+              Categorías, lejos de las coberturas que la modifican. */}
+          <FranquiciasBase />
           <Grupo
             titulo="Extras"
             ayuda="Se pueden elegir todos los que quiera."

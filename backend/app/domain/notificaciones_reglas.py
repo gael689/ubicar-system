@@ -1213,12 +1213,12 @@ def categoria_sin_franquicia(db: Session, hoy: date) -> list[dict]:
             "titulo": f"{c.nombre}: falta la franquicia base",
             "descripcion": (
                 "Sin franquicia base cargada, el contrato de esta categoría no "
-                "puede imprimirla. Se carga en Precios."
+                "puede imprimirla. Se carga en Adicionales."
             ),
             "urgencia": "alta",
             "entidad_tipo": "categoria",
             "entidad_id": c.id,
-            "url_destino": "/precios",
+            "url_destino": "/adicionales",
             "fecha_objetivo": hoy,
         }
         for c in categorias

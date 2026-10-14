@@ -26,7 +26,6 @@ import type { Categoria } from '@/types';
  * - **Precio por día**: el precio base. Es la tarifa diaria de la categoría, lo
  *   que se cobra cualquier día que el calendario de abajo no cambie.
  * - **En web**: si se ofrece en el sitio. Un click.
- * - **Franquicia**: lo que imprime el contrato.
  * - **Estado**: si la web la puede vender, y si no, desde cuándo. Sale del
  *   mismo cálculo que el aviso de la campana.
  */
@@ -64,14 +63,13 @@ export function CategoriasPrecios() {
         <Skeleton className="h-40 w-full" />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[600px] text-sm">
             <thead className="bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="w-24 px-3 py-2">Foto</th>
                 <th className="px-3 py-2">Categoría</th>
                 <th className="px-3 py-2">Precio por día</th>
                 <th className="w-20 px-3 py-2 text-center">En web</th>
-                <th className="px-3 py-2">Franquicia</th>
                 <th className="px-3 py-2">Estado</th>
               </tr>
             </thead>
@@ -97,7 +95,6 @@ function FilaCategoria({ categoria, cobertura }: { categoria: Categoria; cobertu
       </td>
       <td className="px-3 py-2"><PrecioBase categoria={categoria} /></td>
       <td className="px-3 py-2 text-center"><TildeWeb categoria={categoria} /></td>
-      <td className="px-3 py-2"><Franquicia categoria={categoria} /></td>
       <td className="px-3 py-2"><Estado categoria={categoria} cobertura={cobertura} /></td>
     </tr>
   );
@@ -208,57 +205,6 @@ function TildeWeb({ categoria }: { categoria: Categoria }) {
   );
 }
 
-/**
- * La franquicia base: lo máximo que paga el cliente ante un siniestro sin
- * cobertura extra. La imprime el contrato; `null` no es cero (el contrato
- * omite la línea).
- */
-function Franquicia({ categoria }: { categoria: Categoria }) {
-  const actualizar = useUpdateCategoria();
-  const [editando, setEditando] = useState(false);
-  const [valor, setValor] = useState<number | ''>('');
-
-  if (editando) {
-    return (
-      <form
-        onSubmit={e => {
-          e.preventDefault();
-          if (valor === '' || Number(valor) < 0) return;
-          actualizar.mutate(
-            { id: categoria.id, body: { franquicia_base: Number(valor) } },
-            { onSuccess: () => setEditando(false) },
-          );
-        }}
-        className="flex items-center gap-1.5"
-      >
-        <InputMoneda
-          value={valor}
-          onChange={setValor}
-          placeholder="1.500.000"
-          autoFocus
-          className="w-32 rounded-md border border-input bg-background px-2 py-1 text-sm"
-        />
-        <Button size="sm" type="submit" disabled={actualizar.isPending || valor === ''}>Guardar</Button>
-        <Button size="sm" variant="ghost" type="button" onClick={() => setEditando(false)}>Cancelar</Button>
-      </form>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={() => { setValor(categoria.franquicia_base ?? ''); setEditando(true); }}
-      className="group inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-muted"
-      title="Cambiar la franquicia"
-    >
-      {categoria.franquicia_base != null ? (
-        <span className="tabular-nums text-foreground">{formatCurrency(categoria.franquicia_base)}</span>
-      ) : (
-        <span className="font-medium text-amber-700">Sin cargar</span>
-      )}
-      <Pencil className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
-    </button>
-  );
-}
 
 /** ¿La web la puede vender? Sale del mismo cálculo que el aviso de la campana. */
 function Estado({ categoria, cobertura }: { categoria: Categoria; cobertura?: CoberturaCategoria }) {
