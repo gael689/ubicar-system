@@ -10,6 +10,7 @@ motor de precios.
 **La web no calcula nada por su cuenta**: precio y disponibilidad salen de
 acá, que son los mismos endpoints que consume el sistema interno.
 """
+import logging
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
@@ -29,6 +30,8 @@ from app.models.hold import Hold
 from app.models.categoria import Categoria
 from app.models.reserva import Reserva
 from app.models.vehiculo import Vehiculo
+
+logger = logging.getLogger(__name__)
 from app.services.precio_service import PrecioService
 
 # Estados de reserva que ocupan una unidad. Mismos que domain/solapamientos
@@ -367,9 +370,16 @@ class DisponibilidadService:
                         for d in cotizacion.dias
                     ],
                 }
-            except Exception:
+            except Exception as exc:
                 # Sin precio configurado la categoría no se puede vender, pero
                 # tampoco puede romper la consulta entera de las demás.
+                # **Se registra** (14/10): antes se tragaba sin una línea en el
+                # log, y la web estuvo sin poder vender ninguna categoría sin
+                # que nada lo dijera.
+                logger.warning(
+                    "Sin precio para la categoría %s (%s a %s, canal %s): %s",
+                    cat.nombre, fecha_inicio, fecha_fin, canal, exc,
+                )
                 precio = None
 
             resultado.append({

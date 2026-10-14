@@ -425,6 +425,47 @@ class PrecioService:
             })
         return filas
 
+    # ─── Cobertura: qué categorías se pueden vender y hasta cuándo ─────────────
+
+    def cobertura(self, desde: date, hasta: date) -> list[dict]:
+        """
+        Por categoría activa: si se puede cotizar cada día del rango, y si no,
+        desde cuándo no (14/10).
+
+        **Es lo que faltaba para que una categoría sin precio no pase en
+        silencio.** Sin precio, la web la muestra como "sin disponibilidad" —la
+        misma pantalla que si no hubiera autos— y nadie se entera. El 14/10 la
+        web no podía vender ninguna categoría y nada lo avisaba.
+
+        Sale del mismo `calendario()` que pinta la grilla de Precios: si
+        tuviera un cálculo propio, la tabla podría decir "se vende" con la
+        grilla en rojo. Con duración 1, que es lo que exige la web (la tarifa
+        **diaria**): una categoría con sólo semanal o mensual no cotiza
+        cualquier alquiler y acá aparece como hueco, que es la verdad.
+        """
+        from app.models.vehiculo import Vehiculo
+
+        con_flota = {
+            cid for (cid,) in self.db.query(Vehiculo.categoria_id)
+            .filter(Vehiculo.activo.is_(True), Vehiculo.categoria_id.isnot(None))
+            .distinct()
+        }
+        categorias = {c.id: c for c in self.db.query(Categoria).filter(Categoria.activo.is_(True))}
+        resultado = []
+        for fila in self.calendario(desde, hasta):
+            cat = categorias.get(fila["categoria_id"])
+            huecos = [d["fecha"] for d in fila["dias"] if d["precio"] is None]
+            resultado.append({
+                "categoria_id": fila["categoria_id"],
+                "categoria_nombre": fila["categoria_nombre"],
+                "visible_web": bool(getattr(cat, "visible_web", True)),
+                "con_flota": fila["categoria_id"] in con_flota,
+                "dias_sin_precio": len(huecos),
+                "primer_dia_sin_precio": huecos[0] if huecos else None,
+                "ultimo_dia_sin_precio": huecos[-1] if huecos else None,
+            })
+        return resultado
+
     # ─── Simulación de una regla antes de guardarla ───────────────────────────
 
     def simular_regla(

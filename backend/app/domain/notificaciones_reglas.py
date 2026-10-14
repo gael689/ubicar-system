@@ -1163,12 +1163,12 @@ def categoria_sin_precio(db: Session, hoy: date) -> list[dict]:
                 "titulo": f"{c.nombre}: falta el precio real",
                 "descripcion": (
                     "Está cotizando con el precio genérico que trae el sistema, no "
-                    "con el de ustedes. Se carga en Flota → Categorías."
+                    "con el de ustedes. Se carga en Precios."
                 ),
                 "urgencia": "alta",
                 "entidad_tipo": "categoria",
                 "entidad_id": c.id,
-                "url_destino": "/flota/categorias",
+                "url_destino": "/precios",
                 "fecha_objetivo": hoy,
             })
         elif not hay_general and c.id not in con_tarifa:
@@ -1182,7 +1182,7 @@ def categoria_sin_precio(db: Session, hoy: date) -> list[dict]:
                 "urgencia": "alta",
                 "entidad_tipo": "categoria",
                 "entidad_id": c.id,
-                "url_destino": "/flota/categorias",
+                "url_destino": "/precios",
                 "fecha_objetivo": hoy,
             })
     return avisos
@@ -1213,12 +1213,12 @@ def categoria_sin_franquicia(db: Session, hoy: date) -> list[dict]:
             "titulo": f"{c.nombre}: falta la franquicia base",
             "descripcion": (
                 "Sin franquicia base cargada, el contrato de esta categoría no "
-                "puede imprimirla. Se carga en Flota → Categorías."
+                "puede imprimirla. Se carga en Precios."
             ),
             "urgencia": "alta",
             "entidad_tipo": "categoria",
             "entidad_id": c.id,
-            "url_destino": "/flota/categorias",
+            "url_destino": "/precios",
             "fecha_objetivo": hoy,
         }
         for c in categorias
@@ -1403,6 +1403,48 @@ def cliente_sin_completar(db: Session, hoy: date) -> list[dict]:
     return avisos
 
 
+def categoria_web_sin_precio(db: Session, hoy: date) -> list[dict]:
+    """
+    Una categoría **publicada en la web y con autos** que no tiene precio para
+    algún día que la web vende (14/10).
+
+    Va **suelta y no adentro de "datos por completar"**: es plata que no entra
+    hoy. La web la muestra como "sin disponibilidad", igual que si no hubiera
+    autos, y nadie se entera — el 14/10 pasó con todas las categorías a la
+    vez. Usa el mismo cálculo que la tabla de Precios (`PrecioService.cobertura`),
+    así el aviso y la pantalla no pueden decir cosas distintas.
+
+    Crítica si el hueco cae en las próximas dos semanas de lo que vende la web;
+    alta si es más adelante.
+    """
+    from app.routers.public import _ventana_web
+    from app.services.precio_service import PrecioService
+
+    anticipacion_horas, horizonte, _ = _ventana_web(db)
+    cobertura = PrecioService(db).cobertura(hoy, hoy + timedelta(days=horizonte))
+    primer_dia_web = hoy + timedelta(hours=anticipacion_horas)
+    avisos = []
+    for c in cobertura:
+        if not (c["visible_web"] and c["con_flota"] and c["dias_sin_precio"]):
+            continue
+        desde = c["primer_dia_sin_precio"]
+        urgente = desde <= primer_dia_web + timedelta(days=14)
+        avisos.append({
+            "tipo": "categoria_web_sin_precio",
+            "titulo": f"{c['categoria_nombre']}: la web no la puede vender",
+            "descripcion": (
+                f"No tiene precio desde el {desde.strftime('%d/%m')}. La web la muestra "
+                "como sin disponibilidad aunque haya autos. Se carga en Precios."
+            ),
+            "urgencia": "critica" if urgente else "alta",
+            "entidad_tipo": "categoria",
+            "entidad_id": c["categoria_id"],
+            "url_destino": "/precios",
+            "fecha_objetivo": hoy,
+        })
+    return avisos
+
+
 # ── Datos por completar: un solo aviso ──────────────────────────────────────
 
 _FAMILIAS_DATOS = {
@@ -1483,6 +1525,7 @@ REGLAS = [
     contrato_sin_firmar_auto_afuera,
     fecha_especial_sin_precio,
     contrato_sin_emitir,
+    categoria_web_sin_precio,
     datos_por_completar,
 ]
 

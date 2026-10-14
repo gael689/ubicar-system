@@ -183,6 +183,26 @@ def get_calendario(
     ))
 
 
+@router.get("/cobertura")
+def get_cobertura(
+    dias: int | None = Query(None, ge=1, le=400),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """
+    Qué categorías tienen precio para todo lo que vende la web, y si no, desde
+    cuándo les falta. Por defecto mira desde hoy hasta el horizonte de la web
+    (`web.horizonte_maximo_dias`).
+    """
+    from datetime import timedelta
+
+    from app.routers.public import _ventana_web
+
+    hoy = date.today()
+    horizonte = dias or _ventana_web(db)[1]
+    return ok(PrecioService(db).cobertura(hoy, hoy + timedelta(days=horizonte)))
+
+
 @router.post("/simular")
 def simular_regla(
     payload: SimularReglaRequest,
