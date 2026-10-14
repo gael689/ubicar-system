@@ -9,8 +9,8 @@ vi.mock('@/hooks/useCategorias', () => ({
   useCategorias: () => ({ data: [{ id: 1, orden: 3 }] }),
   useCreateCategoria: () => crear,
 }));
-const post = vi.fn(async () => ({}));
-vi.mock('@/lib/api', () => ({ default: { post: (...a: unknown[]) => post(...a) } }));
+const post = vi.fn(async (_url: string, _body: unknown) => ({}));
+vi.mock('@/lib/api', () => ({ default: { post: (url: string, body: unknown) => post(url, body) } }));
 
 import { NuevaCategoriaDialog } from './NuevaCategoriaDialog';
 
