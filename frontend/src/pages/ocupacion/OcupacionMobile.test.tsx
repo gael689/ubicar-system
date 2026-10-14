@@ -32,7 +32,7 @@ function renderizar(extra: Partial<React.ComponentProps<typeof OcupacionMobile>>
     eventos, vehiculos, sinAsignar: 0, loading: false,
     fecha: new Date(2026, 9, 14),
     onFecha: vi.fn(), onReserva: vi.fn(), onCheckoutPrompt: vi.fn(),
-    onNuevaReserva: vi.fn(), onNuevoContrato: vi.fn(), onVerSinAsignar: vi.fn(), onAvanzada: vi.fn(),
+    onNuevaReserva: vi.fn(), onNuevoContrato: vi.fn(), onVerSinAsignar: vi.fn(), onGrilla: vi.fn(),
     ...extra,
   };
   render(<OcupacionMobile {...props} />);
@@ -55,12 +55,12 @@ describe('Ocupación en el teléfono, vista simple', () => {
     expect(props.onReserva).toHaveBeenCalledWith(1);
   });
 
-  it('no muestra la leyenda ni los filtros; la vista avanzada está a un botón', async () => {
+  it('no muestra la leyenda ni los filtros; la grilla está a un toque', async () => {
     const props = renderizar();
     expect(screen.queryByText('Mostrador')).not.toBeInTheDocument();
     expect(screen.queryByText('Compacto')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Vista avanzada' }));
-    expect(props.onAvanzada).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Autos en fila' }));
+    expect(props.onGrilla).toHaveBeenCalled();
   });
 
   it('avisa las reservas sin auto y abre la lista', async () => {

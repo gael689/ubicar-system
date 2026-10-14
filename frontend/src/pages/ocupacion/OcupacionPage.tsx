@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle, Ban, Wrench, CalendarRange, Globe, CreditCard } from 'lucide-react';
+import { Clock, CheckCircle2, Car, Flag, XCircle, Plus, ChevronLeft, ChevronRight, GripVertical, Calendar, LayoutList, AlertTriangle, AlertCircle, Ban, Wrench, CalendarRange, Globe, CreditCard, SlidersHorizontal } from 'lucide-react';
 import { ESTADO_RESERVA_LABEL } from '@/lib/constants';
 import { useCategorias } from '@/hooks/useCategorias';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
@@ -19,7 +19,7 @@ import { ContratoRapidoModal } from '../reservas/ContratoRapidoModal';
 import { MenuNuevaOperacion } from '@/components/reservas/MenuNuevaOperacion';
 import { CheckoutModal } from '../reservas/CheckoutModal';
 import { ReservaInfoModal } from '../reservas/ReservaInfoModal';
-import { OcupacionMobile } from './OcupacionMobile';
+import { OcupacionMobile, SelectorVistaMobile } from './OcupacionMobile';
 
 const ESTADO_COLORS_EVENTO: Record<string, string> = {
   // Plan de conexión (13/08), cierra C-6: `pendiente` sí tiene auto asignado
@@ -276,7 +276,9 @@ function leerZoom(): Zoom {
     const v = window.localStorage.getItem(CLAVE_ZOOM);
     if (v && v in ZOOMS) return v as Zoom;
   } catch { /* modo privado o storage bloqueado: queda el de siempre */ }
-  return 'normal';
+  // En el teléfono arranca en Mini: es la única que deja ver varios autos y
+  // varios días a la vez en 390 px (14/10).
+  return typeof window !== 'undefined' && window.innerWidth < 768 ? 'mini' : 'normal';
 }
 
 function guardarZoom(z: Zoom) {
@@ -375,6 +377,13 @@ export function OcupacionPage() {
   const setAvanzada = (v: boolean) => { setAvanzadaState(v); guardarAvanzada(v); };
   /** Teléfono sin la vista avanzada: sólo el calendario y la ficha. */
   const vistaSimple = esMobile && !avanzada;
+  /** La columna de patentes: en el teléfono, más angosta para que entren días. */
+  const anchoNombre = esMobile ? 112 : ANCHO_COL_NOMBRE;
+  /** En la grilla del teléfono, el panel de filtros abierto. */
+  const [filtrosMobile, setFiltrosMobile] = useState(false);
+  /** Leyenda, filtros, zoom, ir a fecha y las otras vistas: en el escritorio
+   *  siempre; en el teléfono, sólo con "Filtros" abierto. */
+  const verExtras = !esMobile || filtrosMobile;
 
   /**
    * Elegir un día en el teléfono **también mueve el rango que se consulta**.
@@ -411,6 +420,8 @@ export function OcupacionPage() {
   const [agrupar, setAgrupar] = useState(true);
   const [gruposCerrados, setGruposCerrados] = useState<Set<number | string>>(new Set());
   const { data: categoriasData } = useCategorias();
+  /** Cuántos filtros están puestos: el botón del teléfono lo dice aunque esté cerrado. */
+  const filtrosActivos = (filtroCategoria ? 1 : 0) + (filtroCanal !== 'todas' ? 1 : 0);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [scrollToDate, setScrollToDate] = useState<string | null>(null);
@@ -501,7 +512,7 @@ export function OcupacionPage() {
     if (!cont) return;
     const idx = days.findIndex(d => formatDate(d) === scrollToDate);
     if (idx !== -1) {
-      const visible = Math.max(0, cont.clientWidth - ANCHO_COL_NOMBRE);
+      const visible = Math.max(0, cont.clientWidth - anchoNombre);
       const left = alinearScroll.current === 'inicio'
         ? idx * ANCHO_COL
         : Math.max(0, idx * ANCHO_COL + ANCHO_COL / 2 - visible / 2);
@@ -534,7 +545,7 @@ export function OcupacionPage() {
   const cambiarZoom = (z: Zoom) => {
     const cont = scrollContainerRef.current;
     if (cont && viewMode === 'timeline') {
-      const visible = Math.max(0, cont.clientWidth - ANCHO_COL_NOMBRE);
+      const visible = Math.max(0, cont.clientWidth - anchoNombre);
       const idx = Math.min(days.length - 1, Math.max(0, Math.floor((cont.scrollLeft + visible / 2) / ANCHO_COL)));
       setScrollToDate(formatDate(days[idx]));
     }
@@ -892,13 +903,7 @@ export function OcupacionPage() {
       )}
 
       {esMobile && (
-        <button
-          onClick={() => setAvanzada(false)}
-          className="px-3 py-1.5 text-sm font-semibold text-slate-700 bg-white rounded-lg border border-slate-300 shadow-sm"
-          title="Volver a la vista simple"
-        >
-          Vista simple
-        </button>
+        <SelectorVistaMobile vista="grilla" onCambiar={() => setAvanzada(false)} />
       )}
 
       {/* "Hoy" resaltado: es el botón que más se usa de la pantalla. Lleva
@@ -911,7 +916,26 @@ export function OcupacionPage() {
         Hoy
       </button>
 
+      {/* En el teléfono, "Filtros" guarda todo lo demás (14/10): la barra
+          entera ocupaba media pantalla antes de llegar a la grilla. */}
+      {esMobile && (
+        <button
+          onClick={() => setFiltrosMobile(v => !v)}
+          aria-expanded={filtrosMobile}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border shadow-sm',
+            filtrosMobile || filtrosActivos > 0
+              ? 'border-primary/50 bg-primary/10 text-primary'
+              : 'border-slate-300 bg-white text-slate-700',
+          )}
+        >
+          <SlidersHorizontal className="w-4 h-4" />
+          Filtros{filtrosActivos > 0 ? ` · ${filtrosActivos}` : ''}
+        </button>
+      )}
+
       {/* Date jump (available in both modes) */}
+      {verExtras && (
       <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-300 shadow-sm px-2">
         <Calendar className="w-4 h-4 text-slate-500" />
         <input
@@ -921,10 +945,12 @@ export function OcupacionPage() {
           title="Ir a fecha"
         />
       </div>
+      )}
 
       {/* View mode toggle */}
       {/* La anual va primera: es el calendario principal (14/08), así que
           encabeza el selector además de ser el modo por defecto. */}
+      {verExtras && (
       <div className="flex rounded-lg border border-slate-300 bg-white shadow-sm overflow-hidden">
         <button
           onClick={() => setViewMode('anual')}
@@ -948,6 +974,7 @@ export function OcupacionPage() {
           <Calendar className="w-4 h-4" />
         </button>
       </div>
+      )}
     </div>
   );
 
@@ -966,7 +993,13 @@ export function OcupacionPage() {
           onNuevaReserva={fecha => { setInitialVehiculoId(undefined); setInitialFecha(fecha); setShowReservaModal(true); }}
           onNuevoContrato={(tipo, fecha) => { setInitialVehiculoId(undefined); setInitialFecha(fecha); setTipoContrato(tipo); setShowContratoRapido(true); }}
           onVerSinAsignar={() => setListaSinAsignarAbierta(true)}
-          onAvanzada={() => setAvanzada(true)}
+          onGrilla={() => {
+            // A la grilla, con el día que se estaba mirando primero.
+            setAvanzada(true);
+            setViewMode('timeline');
+            alinearScroll.current = 'inicio';
+            jumpToDate(formatDate(agendaDate));
+          }}
         />
       ) : (<>
       {/* Una sola barra: controles, leyenda, filtros y "Nueva operación".
@@ -978,6 +1011,7 @@ export function OcupacionPage() {
         {/* Leyenda de estados — una sola para las tres vistas. La anual pinta
             con estos mismos colores desde que dejó de pintar por densidad, así
             que ya no hay dos leyendas compitiendo en la misma pantalla. */}
+        {verExtras && (
         <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-xs">
           {/* Sólo los estados de reserva. Los 5 motivos de bloqueo no van uno
               por uno: se resumen en un único ítem "Bloqueado" al final, con el
@@ -1001,12 +1035,13 @@ export function OcupacionPage() {
             <span className="text-slate-800 font-medium">Bloqueado</span>
           </div>
         </div>
+        )}
 
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           {/* Filtros y zoom: sólo tienen efecto en el timeline, así que sólo
               aparecen ahí. **Sólo filtran lo que se ve** — no tocan la
               consulta ni el cupo. */}
-          {viewMode === 'timeline' && (
+          {viewMode === 'timeline' && verExtras && (
             <>
               <select
                 value={filtroCategoria}
@@ -1114,14 +1149,14 @@ export function OcupacionPage() {
               onMouseLeave={onGridMouseLeave}
             >
               <colgroup>
-                <col style={{ width: ANCHO_COL_NOMBRE, minWidth: ANCHO_COL_NOMBRE }} />
+                <col style={{ width: anchoNombre, minWidth: anchoNombre }} />
                 {days.map((_, i) => <col key={i} style={{ width: ANCHO_COL, minWidth: ANCHO_COL }} />)}
               </colgroup>
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-300 sticky top-0 z-40 shadow-sm">
                   <th
                     className="px-3 py-2 text-left text-xs uppercase tracking-wide font-bold text-slate-700 sticky left-0 top-0 bg-slate-100 z-50 border-r border-slate-300 shadow-[1px_0_0_0_#cbd5e1]"
-                    style={{ minWidth: ANCHO_COL_NOMBRE, width: ANCHO_COL_NOMBRE }}
+                    style={{ minWidth: anchoNombre, width: anchoNombre }}
                   >
                     Vehículo
                   </th>

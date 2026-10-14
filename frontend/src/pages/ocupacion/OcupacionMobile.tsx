@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ChevronLeft, ChevronRight, Globe, SlidersHorizontal, ArrowUpRight, ArrowDownLeft, Ban } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Globe, ArrowUpRight, ArrowDownLeft, Ban, CalendarDays, Rows3 } from 'lucide-react';
 import { MenuNuevaOperacion } from '@/components/reservas/MenuNuevaOperacion';
 import { ESTADO_RESERVA_LABEL } from '@/lib/constants';
 import { abreviarLugar } from '@/lib/lugares';
@@ -73,12 +73,13 @@ interface Props {
   onNuevaReserva: (fecha: string) => void;
   onNuevoContrato: (tipo: 'alquiler' | 'uber', fecha: string) => void;
   onVerSinAsignar: () => void;
-  onAvanzada: () => void;
+  /** Pasar a la grilla de autos en fila (la vista de escritorio). */
+  onGrilla: () => void;
 }
 
 export function OcupacionMobile({
   eventos, vehiculos, sinAsignar, loading, fecha, onFecha, onReserva, onCheckoutPrompt,
-  onNuevaReserva, onNuevoContrato, onVerSinAsignar, onAvanzada,
+  onNuevaReserva, onNuevoContrato, onVerSinAsignar, onGrilla,
 }: Props) {
   const anio = fecha.getFullYear();
   const mes = fecha.getMonth();
@@ -159,7 +160,7 @@ export function OcupacionMobile({
 
   return (
     <div className="-mx-2 -mt-2 flex min-h-0 flex-1 flex-col sm:-mx-3 sm:-mt-3">
-      {/* ── Encabezado: el mes, Hoy, + y la vista avanzada. Nada más. ── */}
+      {/* ── Encabezado: el mes, Hoy, el cambio de vista y +. Nada más. ── */}
       <div className="flex items-center gap-1 px-3 pb-1 pt-2">
         <h2 className="flex-1 text-[22px] font-bold leading-tight tracking-tight text-slate-900">
           {MESES[mes]} <span className="font-semibold text-slate-400">{anio}</span>
@@ -172,15 +173,7 @@ export function OcupacionMobile({
         >
           Hoy
         </button>
-        <button
-          type="button"
-          onClick={onAvanzada}
-          aria-label="Vista avanzada"
-          title="Vista avanzada: filtros, leyenda, timeline y vista anual"
-          className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 active:bg-slate-100"
-        >
-          <SlidersHorizontal className="h-5 w-5" />
-        </button>
+        <SelectorVistaMobile vista="calendario" onCambiar={v => { if (v === 'grilla') onGrilla(); }} />
         <MenuNuevaOperacion
           onNuevaReserva={() => onNuevaReserva(elegido)}
           onNuevoContrato={tipo => onNuevoContrato(tipo, elegido)}
@@ -328,6 +321,44 @@ export function OcupacionMobile({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Calendario o autos en fila, con un toque (14/10).
+ *
+ * *"Que se pueda cambiar de vista rápidamente, a la siguiente"*: antes la
+ * grilla estaba detrás de "Vista avanzada", junto con todos los filtros. Es el
+ * mismo selector en las dos vistas, en el mismo lugar, como el de la app de
+ * calendario del teléfono.
+ */
+export function SelectorVistaMobile({ vista, onCambiar }: {
+  vista: 'calendario' | 'grilla';
+  onCambiar: (v: 'calendario' | 'grilla') => void;
+}) {
+  const opciones = [
+    { v: 'calendario' as const, icono: <CalendarDays className="h-[18px] w-[18px]" />, label: 'Calendario' },
+    { v: 'grilla' as const, icono: <Rows3 className="h-[18px] w-[18px]" />, label: 'Autos en fila' },
+  ];
+  return (
+    <div role="group" aria-label="Vista" className="flex shrink-0 rounded-full bg-slate-100 p-0.5">
+      {opciones.map(o => (
+        <button
+          key={o.v}
+          type="button"
+          aria-label={o.label}
+          aria-pressed={vista === o.v}
+          title={o.label}
+          onClick={() => vista !== o.v && onCambiar(o.v)}
+          className={cn(
+            'flex h-8 w-9 items-center justify-center rounded-full transition-colors',
+            vista === o.v ? 'bg-white text-primary shadow-sm' : 'text-slate-500',
+          )}
+        >
+          {o.icono}
+        </button>
+      ))}
     </div>
   );
 }
