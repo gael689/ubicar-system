@@ -183,8 +183,14 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   const checkoutVencido = reserva.estado === 'confirmada' && fechaInicio < hoy;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-2xl bg-background border border-border shadow-2xl max-h-[90vh] overflow-y-auto">
+    // En el teléfono, **hoja desde abajo** (14/10): es la ficha que se abre al
+    // tocar una reserva en el calendario, y una ventana centrada con márgenes
+    // le robaba alto a todo lo que hay que leer. **No se cierra tocando
+    // afuera**: los diálogos que abre (cancelar, check-out) viven en portales y
+    // sus clicks suben por el árbol de React hasta acá — la ficha se cerraba
+    // en medio de una cancelación.
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl bg-background border border-border shadow-2xl max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="px-6 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-background z-10">
           <div>

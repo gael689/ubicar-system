@@ -19,6 +19,7 @@ import { ContratoRapidoModal } from '../reservas/ContratoRapidoModal';
 import { MenuNuevaOperacion } from '@/components/reservas/MenuNuevaOperacion';
 import { CheckoutModal } from '../reservas/CheckoutModal';
 import { ReservaInfoModal } from '../reservas/ReservaInfoModal';
+import { OcupacionMobile } from './OcupacionMobile';
 
 const ESTADO_COLORS_EVENTO: Record<string, string> = {
   // Plan de conexión (13/08), cierra C-6: `pendiente` sí tiene auto asignado
@@ -257,8 +258,13 @@ const ALTO_CARRIL = 56;
  * Zoom de la grilla. *"Que no quede todo tan chiquito"* y a la vez poder ver
  * más días de un vistazo: cada uno elige, y el navegador lo recuerda.
  */
-type Zoom = 'compacto' | 'normal' | 'amplio';
+// `mini` (14/10): *"la vista en la que los vehículos están en fila, ver alguna
+// manera de que se pueda ver más"*. Filas de 34 px con la barra en un solo
+// renglón: entra el doble de flota en la pantalla. El detalle sigue a un toque
+// (la ficha) o al pasar el mouse (el tooltip).
+type Zoom = 'mini' | 'compacto' | 'normal' | 'amplio';
 const ZOOMS: Record<Zoom, { label: string; col: number; fila: number; texto: string; textoChico: string }> = {
+  mini: { label: 'Mini', col: 96, fila: 34, texto: 'text-[11px]', textoChico: 'text-[10px]' },
   compacto: { label: 'Compacto', col: 128, fila: 50, texto: 'text-[11px]', textoChico: 'text-[10px]' },
   normal: { label: 'Normal', col: 168, fila: 64, texto: 'text-xs', textoChico: 'text-[11px]' },
   amplio: { label: 'Amplio', col: 220, fila: 80, texto: 'text-[13px]', textoChico: 'text-xs' },
@@ -275,6 +281,30 @@ function leerZoom(): Zoom {
 
 function guardarZoom(z: Zoom) {
   try { window.localStorage.setItem(CLAVE_ZOOM, z); } catch { /* idem */ }
+}
+
+/**
+ * En el teléfono, si se eligió la vista avanzada (14/10). Por defecto, no: la
+ * vista simple es la del calendario y la ficha; lo demás se pide.
+ */
+const CLAVE_AVANZADA = 'ocupacion.avanzada';
+function leerAvanzada(): boolean {
+  try { return window.localStorage.getItem(CLAVE_AVANZADA) === '1'; } catch { return false; }
+}
+function guardarAvanzada(v: boolean) {
+  try { window.localStorage.setItem(CLAVE_AVANZADA, v ? '1' : '0'); } catch { /* idem */ }
+}
+
+/** Pantalla de teléfono: menos de 768 px, el mismo corte que `md:` de Tailwind. */
+function useEsMobile(): boolean {
+  const medir = () => typeof window !== 'undefined' && window.innerWidth < 768;
+  const [es, setEs] = useState(medir);
+  useEffect(() => {
+    const alCambiar = () => setEs(medir());
+    window.addEventListener('resize', alCambiar);
+    return () => window.removeEventListener('resize', alCambiar);
+  }, []);
+  return es;
 }
 
 /**
@@ -340,6 +370,25 @@ export function OcupacionPage() {
   });
   const [agendaDate, setAgendaDate] = useState<Date>(new Date());
 
+  const esMobile = useEsMobile();
+  const [avanzada, setAvanzadaState] = useState(leerAvanzada);
+  const setAvanzada = (v: boolean) => { setAvanzadaState(v); guardarAvanzada(v); };
+  /** Teléfono sin la vista avanzada: sólo el calendario y la ficha. */
+  const vistaSimple = esMobile && !avanzada;
+
+  /**
+   * Elegir un día en el teléfono **también mueve el rango que se consulta**.
+   * La agenda vieja cambiaba sólo su propio mes: pasados los 120 días del rango
+   * cargado, los días aparecían vacíos aunque tuvieran reservas.
+   */
+  const elegirDiaMobile = (d: Date) => {
+    setAgendaDate(d);
+    if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) {
+      setCurrentYear(d.getFullYear());
+      setCurrentMonth(d.getMonth());
+    }
+  };
+
   const [vehiculos, setVehiculos] = useState<VehiculoOcupacion[]>([]);
   const [eventos, setEventos] = useState<EventoOcupacion[]>([]);
   /**
@@ -388,6 +437,7 @@ export function OcupacionPage() {
 
   const [zoom, setZoomState] = useState<Zoom>(leerZoom);
   const { col: ANCHO_COL, fila: ALTO_FILA, texto: TEXTO_BARRA, textoChico: TEXTO_BARRA_CHICO } = ZOOMS[zoom];
+  const esMini = zoom === 'mini';
 
   /**
    * El "Hoy" recién apretado: la columna de hoy parpadea con un marco un
@@ -841,6 +891,16 @@ export function OcupacionPage() {
         </div>
       )}
 
+      {esMobile && (
+        <button
+          onClick={() => setAvanzada(false)}
+          className="px-3 py-1.5 text-sm font-semibold text-slate-700 bg-white rounded-lg border border-slate-300 shadow-sm"
+          title="Volver a la vista simple"
+        >
+          Vista simple
+        </button>
+      )}
+
       {/* "Hoy" resaltado: es el botón que más se usa de la pantalla. Lleva
           directo al día —también desde la vista anual— y lo centra. */}
       <button
@@ -893,6 +953,22 @@ export function OcupacionPage() {
 
   return (
     <div className="space-y-2 h-full flex flex-col p-2 sm:p-3">
+      {vistaSimple ? (
+        <OcupacionMobile
+          eventos={eventos}
+          vehiculos={vehiculos}
+          sinAsignar={sinAsignar.length}
+          loading={loading}
+          fecha={agendaDate}
+          onFecha={elegirDiaMobile}
+          onReserva={id => setReservaInfoId(id)}
+          onCheckoutPrompt={(id, fecha, hora) => setCheckoutPrompt({ id, fecha, hora })}
+          onNuevaReserva={fecha => { setInitialVehiculoId(undefined); setInitialFecha(fecha); setShowReservaModal(true); }}
+          onNuevoContrato={(tipo, fecha) => { setInitialVehiculoId(undefined); setInitialFecha(fecha); setTipoContrato(tipo); setShowContratoRapido(true); }}
+          onVerSinAsignar={() => setListaSinAsignarAbierta(true)}
+          onAvanzada={() => setAvanzada(true)}
+        />
+      ) : (<>
       {/* Una sola barra: controles, leyenda, filtros y "Nueva operación".
           El título "Calendario de Ocupación" se fue: el encabezado del panel ya
           dice "Ocupación", y esa franja era alto que la grilla necesita. */}
@@ -1266,14 +1342,16 @@ export function OcupacionPage() {
                           : undefined}
                       >
                         <td
-                          className="ocup-nombre px-2 py-1 sticky left-0 z-20 border-r border-slate-300 shadow-[1px_0_0_0_#cbd5e1] align-middle cursor-grab active:cursor-grabbing"
+                          className="ocup-nombre px-2 py-0 sticky left-0 z-20 border-r border-slate-300 shadow-[1px_0_0_0_#cbd5e1] align-middle cursor-grab active:cursor-grabbing"
                           style={{ height: ALTO_FILA }}
                         >
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5" title={`${vehiculo.patente} · ${vehiculo.marca} ${vehiculo.modelo}`}>
                             <GripVertical className="w-4 h-4 text-slate-500 flex-shrink-0" />
                             <div className="flex flex-col min-w-0">
                               <span className="ocup-patente font-bold text-slate-900 text-sm uppercase tracking-wide truncate">{vehiculo.patente}</span>
-                              <span className="ocup-modelo text-slate-700 font-semibold text-[11px] truncate">{vehiculo.marca} {vehiculo.modelo}</span>
+                              {!esMini && (
+                                <span className="ocup-modelo text-slate-700 font-semibold text-[11px] truncate">{vehiculo.marca} {vehiculo.modelo}</span>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -1332,7 +1410,7 @@ export function OcupacionPage() {
                                       // Arriba y abajo con `inset-y-1`, sin alto
                                       // fijo: la barra acompaña el alto de la
                                       // fila que ponga el zoom.
-                                      className={`absolute inset-y-1 rounded-md border-2 shadow transition-all z-10 overflow-hidden hover:brightness-110 ${
+                                      className={`absolute ${esMini ? 'inset-y-0.5 border' : 'inset-y-1 border-2'} rounded-md shadow transition-all z-10 overflow-hidden hover:brightness-110 ${
                                         esBloqueo ? 'cursor-default' : 'cursor-pointer'
                                       } ${colorClass}`}
                                       style={{ left: `calc(${leftPercent}% + 1px)`, width: `calc(${widthPercent}% - 2px)`, minWidth: 0 }}
@@ -1369,6 +1447,14 @@ export function OcupacionPage() {
                                           Sin opacidades en el texto (27/09):
                                           sobre el color de la barra, un 75% de
                                           blanco era justo lo que "no se ve". */}
+                                      {esMini ? (
+                                        // Un solo renglón: quién y a qué hora sale.
+                                        <div className={`px-1.5 flex items-center w-full h-full gap-1 ${TEXTO_BARRA} font-semibold leading-none`}>
+                                          {ESTADO_ICONS[ev.estado]}
+                                          <span className="truncate flex-1">{ev.notas && esBloqueo ? ev.notas : ev.cliente_nombre}</span>
+                                          <span className="shrink-0 font-bold tabular-nums">{ev.hora_inicio.slice(0, 5)}</span>
+                                        </div>
+                                      ) : (
                                       <div className="px-1.5 py-0.5 flex flex-col justify-center w-full h-full gap-0.5">
                                         <div className={`flex items-center justify-between ${TEXTO_BARRA} font-bold leading-tight w-full gap-1`}>
                                           <span className="truncate">
@@ -1396,6 +1482,7 @@ export function OcupacionPage() {
                                           </div>
                                         )}
                                       </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -1449,12 +1536,14 @@ export function OcupacionPage() {
           vehiculos={vehiculos}
           loading={loading}
           agendaDate={agendaDate}
-          onDateChange={setAgendaDate}
+          onDateChange={elegirDiaMobile}
           onNuevaReserva={(vid, fecha) => openReserva(vid, fecha)}
           onCheckoutPrompt={(id, fecha, hora) => setCheckoutPrompt({ id, fecha, hora })}
           onReservaClick={(id) => setReservaInfoId(id)}
         />
       )}
+
+      </>)}
 
       {/* "Pendiente de asignación" (2.2) vivía acá. Lo reemplaza
           `AvisoReservasPendientes`, que está en el layout y por lo tanto en

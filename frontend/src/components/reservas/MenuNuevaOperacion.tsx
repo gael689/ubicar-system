@@ -7,8 +7,9 @@ interface Props {
   onNuevaReserva: () => void;
   /** Contrato rápido: `alquiler` es el de siempre; `uber` trae el valor semanal, los km y las fechas de pago. */
   onNuevoContrato: (tipo: 'alquiler' | 'uber') => void;
-  /** `boton` para el botón grande del header; `celda` para el `+` de la grilla. */
-  variante?: 'boton' | 'celda';
+  /** `boton` para el botón grande del header; `celda` para el `+` de la grilla;
+   *  `icono` para el `+` redondo de la vista simple del teléfono. */
+  variante?: 'boton' | 'celda' | 'icono';
   className?: string;
 }
 
@@ -39,7 +40,11 @@ export function MenuNuevaOperacion({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {variante === 'boton' ? (
+        {variante === 'icono' ? (
+          <button type="button" aria-label="Nueva operación" className={className}>
+            <Plus className="w-5 h-5" strokeWidth={2.5} />
+          </button>
+        ) : variante === 'boton' ? (
           <button
             type="button"
             className={className ?? 'px-4 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors flex items-center gap-2'}
