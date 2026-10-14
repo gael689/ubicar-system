@@ -287,7 +287,7 @@ export default function ContactSection() {
                   </span>
                   <div className="ct-btn-body">
                     <p className="ct-btn-label">Franco</p>
-                    <p className="ct-btn-number">+54 9 2923 47-4791</p>
+                    <p className="ct-btn-number">+54 9 2932 47-4791</p>
                     <p className="ct-btn-hint">Llamadas y Whatsapp</p>
                   </div>
                   <span className="ct-btn-action ct-btn-action-call">Llamar</span>
