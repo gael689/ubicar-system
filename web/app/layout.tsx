@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 import { Analitica } from "@/components/Analitica";
 import { AvisoCookies } from "@/components/AvisoCookies";
-import { SITE } from "@/lib/sitio";
+import { OG_IMAGEN, SITE } from "@/lib/sitio";
 import "./globals.css";
 
 // Se auto-hostea: elimina el request bloqueante a fonts.googleapis.com que
@@ -21,6 +21,9 @@ const dmSans = DM_Sans({
 // el embudo sin ensuciar los números reales.
 const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID ?? "26876823408666329";
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID ?? "G-25783YNP7G";
+// Google Ads: **sin valor por defecto**. Nunca hubo una cuenta cargada; hasta
+// que exista el `AW-…` no se manda nada.
+const ADS_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID ?? "";
 
 const TITULO = "Alquiler de Autos en Bahía Blanca | Ubicar Rent";
 const DESCRIPCION =
@@ -47,7 +50,7 @@ export const metadata: Metadata = {
     url: SITE,
     title: TITULO,
     description: DESCRIPCION_SOCIAL,
-    images: ["/og-image.jpeg"],
+    images: [OG_IMAGEN],
     locale: "es_AR",
     siteName: "Ubicar Rent",
   },
@@ -55,7 +58,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: TITULO,
     description: DESCRIPCION_SOCIAL,
-    images: ["/og-image.jpeg"],
+    images: [OG_IMAGEN],
   },
   icons: {
     icon: [
@@ -97,8 +100,8 @@ const JSON_LD = {
       description:
         "Empresa de alquiler de autos, camionetas 4x4 y maquinaria pesada en Bahía Blanca y el sur de la Provincia de Buenos Aires. Reserva online con precio final, para particulares y empresas.",
       url: `${SITE}/`,
-      logo: `${SITE}/og-image.jpeg`,
-      image: `${SITE}/og-image.jpeg`,
+      logo: `${SITE}/img/logo.png`,
+      image: `${SITE}${OG_IMAGEN.url}`,
       telephone: ["+5492914180554", "+5491125164791"],
       email: "ubicar.rent@gmail.com",
       priceRange: "$$",
@@ -238,7 +241,7 @@ export default function RootLayout({
             carga si el visitante aceptó las cookies. El `<noscript>` del pixel
             se quitó junto con ellos: disparaba una petición a Meta sin ninguna
             posibilidad de pedir consentimiento. */}
-        <Analitica metaPixelId={META_PIXEL_ID} gaId={GA_ID} />
+        <Analitica metaPixelId={META_PIXEL_ID} gaId={GA_ID} adsId={ADS_ID} />
         <AvisoCookies />
       </body>
     </html>

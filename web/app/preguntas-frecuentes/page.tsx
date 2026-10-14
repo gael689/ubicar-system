@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGEN } from "@/lib/sitio";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -14,6 +15,19 @@ export const metadata: Metadata = {
   description:
     "Requisitos para alquilar un auto en Bahía Blanca, edad del conductor, seña y cancelación, kilometraje, franquicia, formas de pago y cómo se firma el contrato.",
   alternates: { canonical: "/preguntas-frecuentes" },
+  // Sin esto heredaba el Open Graph de la portada: compartida por WhatsApp se
+  // veía con el título y la URL de la home (14/10).
+  openGraph: {
+    type: "website",
+    url: "/preguntas-frecuentes",
+    title: "Preguntas frecuentes | Ubicar Rent",
+    description:
+    "Requisitos para alquilar un auto en Bahía Blanca, edad del conductor, seña y cancelación, kilometraje, franquicia, formas de pago y cómo se firma el contrato.",
+    images: [OG_IMAGEN],
+    locale: "es_AR",
+    siteName: "Ubicar Rent",
+  },
+  twitter: { card: "summary_large_image", title: "Preguntas frecuentes | Ubicar Rent", images: [OG_IMAGEN] },
 };
 
 /**

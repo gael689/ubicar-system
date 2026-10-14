@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGEN } from "@/lib/sitio";
 import { notFound } from "next/navigation";
 import PlantillaMaquina from "@/components/landing/PlantillaMaquina";
 import { MAQUINAS, maquinaPorSlug } from "@/lib/maquinas";
@@ -25,10 +26,11 @@ export async function generateMetadata(
       url: `/maquinaria/${m.slug}`,
       title: m.titulo,
       description: m.metaDescripcion,
-      images: ["/og-image.jpeg"],
+      images: [OG_IMAGEN],
       locale: "es_AR",
       siteName: "Ubicar Rent",
     },
+    twitter: { card: "summary_large_image", title: m.titulo, description: m.metaDescripcion, images: [OG_IMAGEN] },
   };
 }
 

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import MaquinariaContent from "@/components/MaquinariaContent";
-import { SITE } from "@/lib/sitio";
+import { SITE, OG_IMAGEN } from "@/lib/sitio";
 
 export const metadata: Metadata = {
   title: "Alquiler de Maquinaria Pesada en Bahía Blanca | Ubicar Rent",
@@ -15,6 +15,21 @@ export const metadata: Metadata = {
     "equipo de obra bahia blanca",
   ],
   alternates: { canonical: "/maquinaria" },
+  // Sin esto heredaba el Open Graph de la portada: compartida por WhatsApp se
+  // veía con el título y la URL de la home (14/10).
+  openGraph: {
+    type: "website",
+    url: "/maquinaria",
+    title: "Alquiler de Maquinaria Pesada en Bahía Blanca | Ubicar Rent",
+    description:
+    "Alquiler de maquinaria pesada en Bahía Blanca: retroexcavadoras Caterpillar, palas cargadoras, " +
+    "camiones volcadores Ford Cargo, minicargadoras New Holland y tanques de agua. " +
+    "Consultá disponibilidad por WhatsApp.",
+    images: [OG_IMAGEN],
+    locale: "es_AR",
+    siteName: "Ubicar Rent",
+  },
+  twitter: { card: "summary_large_image", title: "Alquiler de Maquinaria Pesada en Bahía Blanca | Ubicar Rent", images: [OG_IMAGEN] },
 };
 
 /**

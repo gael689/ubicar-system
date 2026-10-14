@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { OG_IMAGEN } from "@/lib/sitio";
 import type { Metadata } from "next";
 import { FlujoReserva } from "@/components/reservar/FlujoReserva";
 
@@ -9,6 +10,18 @@ export const metadata: Metadata = {
   // El flujo es transaccional: no aporta nada en buscadores y no conviene que
   // se indexen URLs con fechas viejas.
   robots: { index: false, follow: true },
+  // Es el link que más se manda por WhatsApp: tiene que verse como la reserva,
+  // no como la portada (14/10).
+  openGraph: {
+    type: "website",
+    url: "/reservar",
+    title: "Reservá tu vehículo | Ubicar Rent",
+    description: "Elegí fechas, vehículo y adicionales, y reservá tu alquiler en Bahía Blanca en cuatro pasos.",
+    images: [OG_IMAGEN],
+    locale: "es_AR",
+    siteName: "Ubicar Rent",
+  },
+  twitter: { card: "summary_large_image", title: "Reservá tu vehículo | Ubicar Rent", images: [OG_IMAGEN] },
 };
 
 export default function ReservarPage() {

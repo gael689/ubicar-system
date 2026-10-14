@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGEN } from "@/lib/sitio";
 import { notFound } from "next/navigation";
 import PlantillaLanding from "@/components/landing/PlantillaLanding";
 import { LANDINGS, landingPorSlug } from "@/lib/landings";
@@ -32,11 +33,11 @@ export async function generateMetadata(
       url: `/${l.slug}`,
       title: l.titulo,
       description: l.descripcion,
-      images: ["/og-image.jpeg"],
+      images: [OG_IMAGEN],
       locale: "es_AR",
       siteName: "Ubicar Rent",
     },
-    twitter: { card: "summary_large_image", title: l.titulo, description: l.descripcion, images: ["/og-image.jpeg"] },
+    twitter: { card: "summary_large_image", title: l.titulo, description: l.descripcion, images: [OG_IMAGEN] },
   };
 }
 
