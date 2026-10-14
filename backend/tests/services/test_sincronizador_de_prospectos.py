@@ -68,11 +68,11 @@ def test_quien_dio_de_baja_viaja_marcado(leads_db):
     assert p["no_contactar"] is True and p["no_contactar_motivo"] == "baja"
 
 
-def test_el_contacto_previo_viaja_con_su_detalle(leads_db):
+def test_el_historial_de_contacto_de_gael_no_viaja(leads_db):
+    """A quién le escribió leadgen no es asunto de Ubicar (14/10)."""
     conn = abrir_solo_lectura(leads_db)
     p = next(x for x in leer_prospectos(conn, SEGS) if x["nombre"] == "Obras Norte")
-    assert p["contacto_previo"] is True
-    assert "mail 2026-09-12" in p["contacto_previo_detalle"]
+    assert not any("previo" in k for k in p)
 
 
 def test_score_minimo_y_limite(leads_db):

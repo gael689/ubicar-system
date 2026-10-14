@@ -144,7 +144,7 @@ class TestCampanas:
             _item("Con tel", telefono="2914567890"),
             _item("Sin canal"),
             _item("Dio de baja", email="b@b.com.ar", no_contactar=True),
-            _item("Ya contactado", email="c@c.com.ar", contacto_previo=True),
+            _item("Otro con mail", email="c@c.com.ar"),
         ])
         db.add(Cliente(nombre_completo="Ya es cliente", dni_cuit="30700000002",
                        telefono="0", email="d@d.com.ar", tipo="empresa"))
@@ -154,34 +154,35 @@ class TestCampanas:
 
     def test_se_arma_con_el_motivo_de_cada_omitido(self, db, svc):
         ids = self._armar(db, svc)
-        c = svc.crear_campana("Constructoras Bahía", ids, None, False, None)
+        c = svc.crear_campana("Constructoras Bahía", ids, None, None)
         r = svc.resumen_de_campana(c)
         assert r["destinatarios"] == 6
-        assert r["por_estado"]["pendiente"] == 2
+        assert r["por_estado"]["pendiente"] == 3
         assert r["omitidos_por_motivo"] == {
-            "no tiene mail ni teléfono": 1, "pidió que no lo contacten": 1,
-            "ya fue contactado antes": 1, "ya es cliente": 1,
+            "no tiene mail ni teléfono": 1, "pidió que no lo contacten": 1, "ya es cliente": 1,
         }
 
-    def test_se_puede_incluir_a_los_ya_contactados(self, db, svc):
-        ids = self._armar(db, svc)
-        c = svc.crear_campana("Con previos", ids, None, True, None)
-        assert svc.resumen_de_campana(c)["por_estado"]["pendiente"] == 3
+    def test_el_historial_de_leadgen_no_llega_ni_se_guarda(self, db, svc):
+        """Lo que contactó Gael no es de Ubicar (14/10): si viene, se ignora."""
+        svc.importar([_item("Viejo formato", email="v@v.com.ar", contacto_previo=True,
+                            contacto_previo_detalle="Contactado antes (mail 2026-09-12)")])
+        p = db.query(Prospecto).filter(Prospecto.nombre == "Viejo formato").one()
+        assert not hasattr(p, "contacto_previo")
 
     def test_sin_nombre_o_sin_destinatarios_se_rechaza(self, db, svc):
         with pytest.raises(BusinessRuleError):
-            svc.crear_campana("  ", [1], None, False, None)
+            svc.crear_campana("  ", [1], None, None)
         with pytest.raises(BusinessRuleError):
-            svc.crear_campana("X", [], None, False, None)
+            svc.crear_campana("X", [], None, None)
 
     def test_un_prospecto_no_se_repite_en_la_misma_campana(self, db, svc):
         ids = self._armar(db, svc)
-        svc.crear_campana("Una", ids, None, False, None)
+        svc.crear_campana("Una", ids, None, None)
         assert db.query(CampanaDestinatario).count() == len(ids)
 
     def test_preparar_sin_mensaje_se_rechaza(self, db, svc):
         ids = self._armar(db, svc)
-        c = svc.crear_campana("Sin mensaje", ids, None, False, None)
+        c = svc.crear_campana("Sin mensaje", ids, None, None)
         with pytest.raises(BusinessRuleError) as e:
             svc.preparar(c.id)
         assert "campana_sin_mensaje" in str(e.value)
@@ -189,7 +190,7 @@ class TestCampanas:
     def test_preparar_con_el_remitente_de_prueba_se_rechaza(self, db, svc, monkeypatch):
         monkeypatch.setattr(settings, "from_email", "onboarding@resend.dev")
         ids = self._armar(db, svc)
-        c = svc.crear_campana("Con mensaje", ids, None, False, None)
+        c = svc.crear_campana("Con mensaje", ids, None, None)
         svc.actualizar_mensaje(c.id, "Asunto", "Cuerpo")
         with pytest.raises(BusinessRuleError) as e:
             svc.preparar(c.id)
@@ -198,7 +199,7 @@ class TestCampanas:
     def test_con_mensaje_y_dominio_verificado_queda_lista_sin_enviar(self, db, svc, monkeypatch):
         monkeypatch.setattr(settings, "from_email", "noreply@ubicar-rent.com.ar")
         ids = self._armar(db, svc)
-        c = svc.crear_campana("Lista", ids, None, False, None)
+        c = svc.crear_campana("Lista", ids, None, None)
         svc.actualizar_mensaje(c.id, "Asunto", "Cuerpo")
         svc.preparar(c.id)
         assert c.estado == "lista" and c.lanzada_at is None, "preparar no envía"

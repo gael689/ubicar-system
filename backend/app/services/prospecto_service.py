@@ -27,7 +27,7 @@ MAXIMO_POR_SELECCION = 5000
 
 CAMPOS_IMPORTABLES = (
     "nombre", "segmento", "ciudad", "direccion", "telefono", "email", "website",
-    "instagram", "score", "contacto_previo", "contacto_previo_detalle",
+    "instagram", "score",
     "no_contactar", "no_contactar_motivo", "notas",
 )
 
@@ -91,7 +91,7 @@ class ProspectoService:
                     if valor:
                         p.no_contactar = True
                     continue
-                if valor is None and campo != "contacto_previo":
+                if valor is None:
                     continue
                 setattr(p, campo, valor)
             if p.no_contactar:
@@ -185,8 +185,6 @@ class ProspectoService:
             q = q.filter(Prospecto.telefono.isnot(None))
         if f.get("score_min") is not None:
             q = q.filter(Prospecto.score >= f["score_min"])
-        if f.get("contacto_previo") is not None:
-            q = q.filter(Prospecto.contacto_previo.is_(bool(f["contacto_previo"])))
         if f.get("solo_contactables"):
             q = q.filter(
                 Prospecto.no_contactar.is_(False),
@@ -238,8 +236,7 @@ class ProspectoService:
 
     # ── Campañas ────────────────────────────────────────────────────────────
     def crear_campana(
-        self, nombre: str, ids: list[int], filtro: dict | None, incluir_contacto_previo: bool,
-        usuario_id: int | None,
+        self, nombre: str, ids: list[int], filtro: dict | None, usuario_id: int | None,
     ) -> CampanaProspecto:
         nombre = (nombre or "").strip()
         if not nombre:
@@ -253,17 +250,14 @@ class ProspectoService:
                 "una campaña tan grande no se puede revisar.",
             )
         campana = CampanaProspecto(
-            nombre=nombre, filtro=filtro, incluir_contacto_previo=incluir_contacto_previo,
-            creada_por=usuario_id,
+            nombre=nombre, filtro=filtro, creada_por=usuario_id,
         )
         self.db.add(campana)
         self.db.flush()
         for p in self.db.query(Prospecto).filter(Prospecto.id.in_(ids)).all():
             motivo = motivo_para_no_escribir(
-                ya_cliente=p.es_cliente, no_contactar=p.no_contactar,
-                contacto_previo=p.contacto_previo, estado=p.estado,
+                ya_cliente=p.es_cliente, no_contactar=p.no_contactar, estado=p.estado,
                 sin_canal=not (p.email or p.telefono),
-                incluir_contacto_previo=incluir_contacto_previo,
             )
             self.db.add(CampanaDestinatario(
                 campana_id=campana.id, prospecto_id=p.id,

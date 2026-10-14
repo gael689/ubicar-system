@@ -10,7 +10,7 @@ const filas = Array.from({ length: 3 }, (_, i) => ({
   direccion: null, telefono: null, email: `e${i + 1}@x.com`, website: null, instagram: null,
   score: 80, estado: 'nuevo', es_cliente: i === 2, ya_cliente_id: i === 2 ? 9 : null,
   ya_cliente_nombre: i === 2 ? 'Cliente SA' : null, cruce_por: i === 2 ? 'nombre' : null,
-  cruce_descartado: false, contacto_previo: i === 1, contacto_previo_detalle: null,
+  cruce_descartado: false,
   no_contactar: false, no_contactar_motivo: null, notas: null,
 }));
 const mut = { mutate: vi.fn(), isPending: false };
@@ -38,10 +38,11 @@ vi.mock('@/hooks/useProspectos', () => ({
 import { ProspectosPage } from './ProspectosPage';
 
 describe('Prospectos', () => {
-  it('muestra las marcas del cruce y del contacto previo', () => {
+  it('muestra las marcas del cruce y nunca un "contactado antes"', () => {
     render(<ProspectosPage />);
     expect(screen.getByText('¿Es Cliente SA?')).toBeTruthy();
-    expect(screen.getByText('Contactado antes')).toBeTruthy();
+    // Era el historial de leadgen, no de Ubicar (14/10): no se muestra más.
+    expect(screen.queryByText('Contactado antes')).toBeNull();
     expect(screen.getByText(/No es el mismo/)).toBeTruthy();
   });
 

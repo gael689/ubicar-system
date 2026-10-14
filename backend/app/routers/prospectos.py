@@ -35,7 +35,6 @@ class FiltroProspectos(BaseModel):
     con_mail: bool | None = None
     con_telefono: bool | None = None
     score_min: int | None = None
-    contacto_previo: bool | None = None
     solo_contactables: bool | None = None
 
 
@@ -56,8 +55,6 @@ class ProspectoImportado(BaseModel):
     website: str | None = None
     instagram: str | None = None
     score: int | None = None
-    contacto_previo: bool = False
-    contacto_previo_detalle: str | None = None
     no_contactar: bool = False
     no_contactar_motivo: str | None = None
     notas: str | None = None
@@ -73,7 +70,6 @@ class CambiarEstadoRequest(Seleccion):
 
 class CrearCampanaRequest(Seleccion):
     nombre: str
-    incluir_contacto_previo: bool = False
 
 
 class MensajeRequest(BaseModel):
@@ -95,7 +91,6 @@ def _prospecto(p: Prospecto) -> dict:
             (p.ya_cliente.razon_social or p.ya_cliente.nombre_completo) if p.ya_cliente else None
         ),
         "cruce_por": p.cruce_por, "cruce_descartado": p.cruce_descartado,
-        "contacto_previo": p.contacto_previo, "contacto_previo_detalle": p.contacto_previo_detalle,
         "no_contactar": p.no_contactar, "no_contactar_motivo": p.no_contactar_motivo,
         "notas": p.notas,
     }
@@ -105,7 +100,7 @@ def _campana(svc: ProspectoService, c: CampanaProspecto) -> dict:
     return {
         "id": c.id, "nombre": c.nombre, "canal": c.canal, "estado": c.estado,
         "asunto": c.asunto, "cuerpo": c.cuerpo,
-        "incluir_contacto_previo": c.incluir_contacto_previo, "filtro": c.filtro,
+        "filtro": c.filtro,
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "lanzada_at": c.lanzada_at.isoformat() if c.lanzada_at else None,
         **svc.resumen_de_campana(c),
@@ -158,7 +153,7 @@ def importar_archivo(
 def listar(
     q: str | None = None, segmento: str | None = None, ciudad: str | None = None,
     estado: str | None = None, con_mail: bool | None = None, con_telefono: bool | None = None,
-    score_min: int | None = None, contacto_previo: bool | None = None,
+    score_min: int | None = None,
     solo_contactables: bool | None = None,
     pagina: int = Query(1, ge=1), por_pagina: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db), _: Usuario = Depends(get_current_user),
@@ -166,7 +161,7 @@ def listar(
     svc = ProspectoService(db)
     filtro = {k: v for k, v in dict(
         q=q, segmento=segmento, ciudad=ciudad, estado=estado, con_mail=con_mail,
-        con_telefono=con_telefono, score_min=score_min, contacto_previo=contacto_previo,
+        con_telefono=con_telefono, score_min=score_min,
         solo_contactables=solo_contactables,
     ).items() if v not in (None, "", False)}
     items, total = svc.listar(filtro, pagina, por_pagina)
@@ -226,7 +221,7 @@ def crear_campana(
     svc = ProspectoService(db)
     ids = _ids(svc, payload)
     filtro = payload.filtro.model_dump(exclude_none=True) if payload.filtro else None
-    campana = svc.crear_campana(payload.nombre, ids, filtro, payload.incluir_contacto_previo, usuario.id)
+    campana = svc.crear_campana(payload.nombre, ids, filtro, usuario.id)
     return ok(_campana(svc, campana), "Campaña creada en borrador")
 
 

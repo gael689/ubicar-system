@@ -47,9 +47,7 @@ class Prospecto(Base):
     cruce_por: Mapped[str | None] = mapped_column(String(12), nullable=True)
     cruce_descartado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
-    # Si alguien ya le escribió antes (el buscador de Gael lo sabe).
-    contacto_previo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    contacto_previo_detalle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Quien pidió que no lo contacten (viene marcado desde el buscador de Gael).
     no_contactar: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", index=True)
     no_contactar_motivo: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
@@ -83,7 +81,6 @@ class CampanaProspecto(Base):
     estado: Mapped[str] = mapped_column(String(15), nullable=False, default="borrador", server_default="borrador", index=True)
     # Con qué filtro se armó (para saber de dónde salió la selección).
     filtro: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    incluir_contacto_previo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     asunto: Mapped[str | None] = mapped_column(String(200), nullable=True)
     cuerpo: Mapped[str | None] = mapped_column(Text, nullable=True)
     creada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)

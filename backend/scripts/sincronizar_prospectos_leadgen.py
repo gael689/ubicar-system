@@ -18,8 +18,9 @@ Qué garantiza:
   alquilar autos para obra, viajes de trabajo o visitas). Los de "Rent a Car"
   quedan afuera siempre: son la competencia.
 - Quien pidió que no lo contacten viaja **marcado** como `no_contactar`, para que
-  Ubicar tampoco le escriba. Haber sido contactado antes viaja como
-  `contacto_previo`.
+  Ubicar tampoco le escriba.
+- **No manda el historial de contacto de Gael** (14/10): a quién le escribió
+  leadgen es asunto de Gael, no de Ubicar.
 
 Variables de entorno (o argumentos): `UBICAR_API_URL`, `PROSPECTOS_TOKEN`,
 `LEADS_DB`.
@@ -75,20 +76,9 @@ def abrir_solo_lectura(ruta: str) -> sqlite3.Connection:
     return conn
 
 
-def _detalle_contacto_previo(r: sqlite3.Row) -> str | None:
-    partes = []
-    if r["mail_enviado_at"]:
-        partes.append(f"mail {str(r['mail_enviado_at'])[:10]}")
-    if r["wa_enviado_at"]:
-        partes.append(f"WhatsApp {str(r['wa_enviado_at'])[:10]}")
-    if r["respondio_at"]:
-        partes.append(f"respondió {str(r['respondio_at'])[:10]}")
-    return ("Contactado antes (" + ", ".join(partes) + ")") if partes else None
-
 
 def a_prospecto(r: sqlite3.Row) -> dict:
     """Una fila de `leads` convertida en lo que entiende Ubicar."""
-    previo = _detalle_contacto_previo(r)
     return {
         "ref_externa": r["place_id"],
         "nombre": r["nombre"],
@@ -100,8 +90,6 @@ def a_prospecto(r: sqlite3.Row) -> dict:
         "website": r["website"],
         "instagram": r["instagram"],
         "score": r["score"],
-        "contacto_previo": previo is not None,
-        "contacto_previo_detalle": previo,
         "no_contactar": bool(r["no_contactar"]),
         "no_contactar_motivo": r["no_contactar_motivo"] if r["no_contactar"] else None,
     }
@@ -119,8 +107,7 @@ def leer_prospectos(
     filas = conn.execute(
         """
         SELECT place_id, nombre, categoria, localidad, direccion, telefono, email,
-               website, instagram, score, no_contactar, no_contactar_motivo,
-               mail_enviado_at, wa_enviado_at, respondio_at
+               website, instagram, score, no_contactar, no_contactar_motivo
           FROM leads
          WHERE etapa != 'descartado' AND duplicado_de IS NULL
          ORDER BY score DESC, nombre
@@ -191,8 +178,7 @@ def main() -> None:
     print(f"{len(prospectos)} prospectos en {len(por_segmento)} segmentos:")
     for s, n in sorted(por_segmento.items(), key=lambda x: -x[1]):
         print(f"  {n:5d}  {s}")
-    print(f"  marcados 'no contactar': {sum(p['no_contactar'] for p in prospectos)}"
-          f" · contactados antes: {sum(p['contacto_previo'] for p in prospectos)}")
+    print(f"  marcados 'no contactar': {sum(p['no_contactar'] for p in prospectos)}")
 
     if a.archivo:
         with open(a.archivo, "w", encoding="utf-8") as f:

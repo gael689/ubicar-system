@@ -67,7 +67,7 @@ class TestCruce:
 
 
 class TestAQuienNoSeLeEscribe:
-    base = dict(ya_cliente=False, no_contactar=False, contacto_previo=False, estado="nuevo", sin_canal=False)
+    base = dict(ya_cliente=False, no_contactar=False, estado="nuevo", sin_canal=False)
 
     def test_un_prospecto_normal_se_puede_contactar(self):
         assert motivo_para_no_escribir(**self.base) is None
@@ -81,6 +81,3 @@ class TestAQuienNoSeLeEscribe:
     def test_sin_mail_ni_telefono_no_hay_por_donde(self):
         assert motivo_para_no_escribir(**{**self.base, "sin_canal": True}) == "no tiene mail ni teléfono"
 
-    def test_el_contacto_previo_bloquea_salvo_que_se_incluya(self):
-        assert motivo_para_no_escribir(**{**self.base, "contacto_previo": True}) == "ya fue contactado antes"
-        assert motivo_para_no_escribir(**{**self.base, "contacto_previo": True}, incluir_contacto_previo=True) is None

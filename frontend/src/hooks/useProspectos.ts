@@ -9,7 +9,6 @@ export interface FiltroProspectos {
   con_mail?: boolean;
   con_telefono?: boolean;
   score_min?: number;
-  contacto_previo?: boolean;
   solo_contactables?: boolean;
 }
 
@@ -30,8 +29,6 @@ export interface Prospecto {
   ya_cliente_nombre: string | null;
   cruce_por: 'email' | 'telefono' | 'dominio' | 'nombre' | null;
   cruce_descartado: boolean;
-  contacto_previo: boolean;
-  contacto_previo_detalle: string | null;
   no_contactar: boolean;
   no_contactar_motivo: string | null;
   notas: string | null;
@@ -52,7 +49,6 @@ export interface CampanaProspecto {
   estado: 'borrador' | 'lista' | 'enviando' | 'pausada' | 'terminada' | 'cancelada';
   asunto: string | null;
   cuerpo: string | null;
-  incluir_contacto_previo: boolean;
   created_at: string | null;
   destinatarios: number;
   por_estado: Record<string, number>;
@@ -166,7 +162,7 @@ export function useCampanaProspecto(id: number | null) {
 export function useCrearCampanaProspecto() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: Seleccion & { nombre: string; incluir_contacto_previo: boolean }) =>
+    mutationFn: async (p: Seleccion & { nombre: string }) =>
       (await api.post<{ data: CampanaProspecto }>('/prospectos/campanas', p)).data.data,
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY, 'campanas'] }),
   });

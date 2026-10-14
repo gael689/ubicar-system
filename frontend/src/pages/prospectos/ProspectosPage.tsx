@@ -315,7 +315,6 @@ function Fila({ p, marcado, onMarcar, onNoEsCliente }: {
               {p.cruce_por === 'nombre' ? `¿Es ${p.ya_cliente_nombre ?? 'un cliente'}?` : `Ya es cliente (${p.cruce_por})`}
             </Etiqueta>
           )}
-          {p.contacto_previo && <Etiqueta color="ambar">Contactado antes</Etiqueta>}
           {p.no_contactar && <Etiqueta color="rojo">No contactar</Etiqueta>}
           {p.es_cliente && p.cruce_por === 'nombre' && (
             <button onClick={onNoEsCliente} className="text-[11px] text-ubicar-primary underline">
@@ -349,7 +348,6 @@ function NuevaCampana({ seleccion, cantidad, onClose, onCreada }: {
   onClose: () => void; onCreada: () => void;
 }) {
   const [nombre, setNombre] = useState('');
-  const [conPrevios, setConPrevios] = useState(false);
   const crear = useCrearCampanaProspecto();
 
   return (
@@ -368,16 +366,11 @@ function NuevaCampana({ seleccion, cantidad, onClose, onCreada }: {
             <input value={nombre} onChange={e => setNombre(e.target.value)} autoFocus
               placeholder="Constructoras de Bahía Blanca" className="input-base" />
           </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={conPrevios} onChange={e => setConPrevios(e.target.checked)}
-              className="h-4 w-4 accent-primary" />
-            Incluir a los que ya fueron contactados antes
-          </label>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
           <Button disabled={!nombre.trim() || crear.isPending}
-            onClick={() => crear.mutate({ ...seleccion, nombre, incluir_contacto_previo: conPrevios }, {
+            onClick={() => crear.mutate({ ...seleccion, nombre }, {
               onSuccess: c => {
                 toast.success(`Campaña creada: ${c.por_estado.pendiente ?? 0} destinatarios, ${c.por_estado.omitido ?? 0} omitidos`);
                 onCreada();

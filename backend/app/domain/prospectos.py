@@ -133,16 +133,17 @@ class IndiceDeClientes:
 
 
 def motivo_para_no_escribir(
-    *, ya_cliente: bool, no_contactar: bool, contacto_previo: bool, estado: str,
-    sin_canal: bool, incluir_contacto_previo: bool = False,
+    *, ya_cliente: bool, no_contactar: bool, estado: str, sin_canal: bool,
 ) -> str | None:
     """
     Por qué **no** se le escribe a un prospecto, o `None` si se puede.
 
     Una campaña de captación no le escribe a quien ya es cliente, a quien pidió
-    que no lo contacten, ni a quien no tiene por dónde. Haber sido contactado
-    antes por otra vía **no bloquea por defecto**, pero se puede excluir: evita
-    mandarle dos pedidos a la misma persona en la misma semana.
+    que no lo contacten, ni a quien no tiene por dónde.
+
+    **El "contactado antes" se sacó** (14/10): era el historial de leadgen —a
+    quién le escribió Gael—, no de Ubicar, que nunca contactó a nadie. Además de
+    mostrarse en pantalla, sacaba de las campañas de Ubicar a esas empresas.
     """
     if no_contactar or estado == "no_contactar":
         return "pidió que no lo contacten"
@@ -152,6 +153,4 @@ def motivo_para_no_escribir(
         return "descartado"
     if sin_canal:
         return "no tiene mail ni teléfono"
-    if contacto_previo and not incluir_contacto_previo:
-        return "ya fue contactado antes"
     return None
