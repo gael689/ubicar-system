@@ -111,6 +111,22 @@ function aMeta(nombre: string, parametros: Parametros = {}): void {
   }
 }
 
+/**
+ * La conversión de Google Ads (14/10). Sólo con permiso de publicidad y sólo si
+ * están cargados el `AW-…` y la etiqueta de la conversión: sin eso, no hace nada.
+ */
+const ADS_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID ?? "";
+const ADS_LABEL_RESERVA = process.env.NEXT_PUBLIC_GOOGLE_ADS_LABEL_RESERVA ?? "";
+
+function aGoogleAds(parametros: Parametros): void {
+  if (typeof window === "undefined" || !ADS_ID || !ADS_LABEL_RESERVA || !aceptaPublicidad()) return;
+  try {
+    window.gtag?.("event", "conversion", { send_to: `${ADS_ID}/${ADS_LABEL_RESERVA}`, ...parametros });
+  } catch {
+    /* medir nunca rompe el flujo */
+  }
+}
+
 function generarEventId(): string {
   try {
     return crypto.randomUUID();
@@ -279,6 +295,11 @@ export function reservaConfirmada(r: DatosReserva): void {
           quantity: 1,
         }]
       : undefined,
+  });
+  aGoogleAds({
+    currency: MONEDA,
+    value: r.valor ?? undefined,
+    transaction_id: r.reservaId ? String(r.reservaId) : undefined,
   });
   aMeta("Purchase", {
     currency: MONEDA,

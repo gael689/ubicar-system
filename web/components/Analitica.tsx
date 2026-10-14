@@ -8,6 +8,8 @@ import { EVENTO, leerConsentimiento } from "@/lib/consentimiento";
 interface Props {
   metaPixelId: string;
   gaId: string;
+  /** Google Ads (`AW-…`). Vacío = apagado: no se carga ni se configura nada. */
+  adsId?: string;
 }
 
 /**
@@ -27,7 +29,7 @@ interface Props {
  * Las dos categorías son independientes: aceptar analíticas y rechazar
  * publicidad carga Google y no carga Meta.
  */
-export function Analitica({ metaPixelId, gaId }: Props) {
+export function Analitica({ metaPixelId, gaId, adsId }: Props) {
   const [publicidad, setPublicidad] = useState(false);
   const [analiticas, setAnaliticas] = useState(false);
 
@@ -58,10 +60,14 @@ export function Analitica({ metaPixelId, gaId }: Props) {
         </Script>
       )}
 
-      {analiticas && (
+      {/* **Google Ads usa el mismo `gtag.js` que Analytics** (14/10), pero
+          cuelga de otro permiso: publicidad. Por eso el script se carga si hay
+          cualquiera de los dos, y cada `config` va sólo con su permiso. Sin
+          `NEXT_PUBLIC_GOOGLE_ADS_ID` cargado, todo esto queda como estaba. */}
+      {(analiticas || (publicidad && !!adsId)) && (
         <>
           <Script
-            src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
+            src={`https://www.googletagmanager.com/gtag/js?id=${analiticas ? gaId : adsId}`}
             strategy="afterInteractive"
           />
           {/* El `consent default` va ANTES del `config`, que es el momento en
@@ -73,19 +79,22 @@ export function Analitica({ metaPixelId, gaId }: Props) {
               aceptó medir y no aceptó publicidad no debe quedar en las
               audiencias de Google Ads. Y dejarlo declarado es lo que permite
               después revocar en caliente con un `consent update`. */}
-          <Script id="ga4" strategy="afterInteractive">
+          {/* El `id` cambia con los permisos: aceptar publicidad después de
+              analíticas vuelve a correr el bloque y suma el `config` de Ads. */}
+          <Script id={`gtag-${analiticas ? 1 : 0}${publicidad ? 1 : 0}`} strategy="afterInteractive">
             {`window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('consent', 'default', {
-              analytics_storage: 'granted',
+              analytics_storage: '${analiticas ? "granted" : "denied"}',
               ad_storage: '${publicidad ? "granted" : "denied"}',
               ad_user_data: '${publicidad ? "granted" : "denied"}',
               ad_personalization: '${publicidad ? "granted" : "denied"}'
             });
             gtag('js', new Date());
-            gtag('config', '${gaId}', { anonymize_ip: true });`}
+            ${analiticas ? `gtag('config', '${gaId}', { anonymize_ip: true });` : ""}
+            ${publicidad && adsId ? `gtag('config', '${adsId}');` : ""}`}
           </Script>
-          <VistasDePagina gaId={gaId} />
+          {analiticas && <VistasDePagina gaId={gaId} />}
         </>
       )}
     </>
