@@ -56,6 +56,29 @@ export function useCalcularPrecio(payload: CalcularPrecioRequest | null) {
 
 // ─── Grilla del calendario ────────────────────────────────────────────────────
 
+export interface CoberturaCategoria {
+  categoria_id: number;
+  categoria_nombre: string;
+  visible_web: boolean;
+  con_flota: boolean;
+  dias_sin_precio: number;
+  primer_dia_sin_precio: string | null;
+  ultimo_dia_sin_precio: string | null;
+}
+
+/**
+ * Qué categorías tienen precio para todo lo que vende la web (14/10). Es el
+ * mismo cálculo que el aviso de la campana: la tabla y la campana no pueden
+ * decir cosas distintas.
+ */
+export function useCoberturaPrecios() {
+  return useQuery({
+    ...CACHE.CATALOGO,
+    queryKey: [KEY, 'cobertura'],
+    queryFn: async () => (await api.get<{ data: CoberturaCategoria[] }>('/precios/cobertura')).data.data,
+  });
+}
+
 export function useCalendarioPrecios(params: {
   desde: string;
   hasta: string;

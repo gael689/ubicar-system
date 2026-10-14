@@ -5,7 +5,6 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/pages/Dashboard';
 import { FlotaList } from '@/pages/flota/FlotaList';
 import { FlotaDetail } from '@/pages/flota/FlotaDetail';
-import { CategoriasPage } from '@/pages/flota/CategoriasPage';
 import { ClientesList } from '@/pages/clientes/ClientesList';
 import { ClienteDetail } from '@/pages/clientes/ClienteDetail';
 import { ReservasList } from '@/pages/reservas/ReservasList';
@@ -46,10 +45,8 @@ export default function App() {
           path="/flota/:id"
           element={<AppLayout title="Flota"><FlotaDetail /></AppLayout>}
         />
-        <Route
-          path="/flota/categorias"
-          element={<AppLayout title="Flota"><CategoriasPage /></AppLayout>}
-        />
+        {/* Categorías se mudó a Precios (14/10): los avisos y links viejos siguen andando. */}
+        <Route path="/flota/categorias" element={<Navigate to="/precios" replace />} />
         <Route
           path="/reservas"
           element={<AppLayout title="Reservas y Alquileres"><ReservasList /></AppLayout>}

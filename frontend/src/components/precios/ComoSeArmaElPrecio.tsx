@@ -52,12 +52,13 @@ export function ComoSeArmaElPrecio({ className }: { className?: string }) {
               </p>
               <p className="mt-1 font-semibold text-foreground">El precio de siempre</p>
               <p className="mt-1">
-                Diaria, semanal y mensual. <strong>Sin fechas</strong>: vale
-                todo el año hasta que la cambien. Se carga en{' '}
-                <Link to="/flota/categorias" className="text-primary underline underline-offset-2">
-                  Flota → Categorías
-                </Link>{' '}
-                o en la ficha de un auto puntual.
+                El <strong>precio por día</strong> de cada categoría.{' '}
+                <strong>Sin fechas</strong>: vale todo el año hasta que lo cambien.
+                Se carga en la tabla de Categorías, arriba de todo en{' '}
+                <Link to="/precios#categorias" className="text-primary underline underline-offset-2">
+                  Precios
+                </Link>
+                .
               </p>
               <p className="mt-1.5 rounded bg-muted px-2 py-1 text-[11px] text-foreground">
                 Es <strong>un solo precio</strong>: vale igual en el mostrador

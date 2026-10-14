@@ -350,7 +350,6 @@ export const NAV_SECTIONS: NavSection[] = [
   // pasar primero por la lista de vehículos.
   { titulo: 'Flota', items: [
     { path: '/flota', label: 'Vehículos', icon: 'Car' },
-    { path: '/flota/categorias', label: 'Categorías y precios', icon: 'Tags' },
     { path: '/multas', label: 'Multas', icon: 'AlertTriangle' },
   ] },
   // **Caja** (antes "Plata" y "Finanzas"). Los sub-módulos van como ítems

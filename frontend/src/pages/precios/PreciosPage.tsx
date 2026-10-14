@@ -13,6 +13,7 @@ import { PanelCargaPrecio, rangoEnPalabras } from '@/components/precios/PanelCar
 import { ComoSeArmaElPrecio } from '@/components/precios/ComoSeArmaElPrecio';
 import { ReglasPrecioPanel } from '@/components/precios/ReglasPrecioPanel';
 import { DescuentosDuracionPanel } from '@/components/precios/DescuentosDuracionPanel';
+import { CategoriasPrecios } from '@/components/precios/CategoriasPrecios';
 import { useCalendarioPrecios, useCalcularPrecio, useReglasPrecio } from '@/hooks/usePrecios';
 import { useFechasEspeciales } from '@/hooks/useFechasEspeciales';
 import { useCategorias } from '@/hooks/useCategorias';
@@ -115,6 +116,11 @@ export function PreciosPage() {
           </Link>
         }
       />
+
+      {/* Arriba de todo, lo de cada categoría (14/10): precio por día, si va en
+          la web, franquicia y si la web la puede vender. Antes vivía en Flota →
+          Categorías, separado del resto del precio. */}
+      <CategoriasPrecios />
 
       <ComoSeArmaElPrecio />
 
@@ -246,11 +252,11 @@ export function PreciosPage() {
             esto, y sin decir de dónde sale el número la pantalla parece rota. */}
         <p className="text-xs text-muted-foreground">
           Las celdas en blanco <strong>no están vacías</strong>: ese día no tiene ninguna
-          regla y se cobra la tarifa por duración, que se carga en{' '}
-          <Link to="/flota/categorias" className="text-primary underline underline-offset-2">
-            Flota → Categorías
-          </Link>
-          . Las rojas sí son un hueco: no hay ni regla ni tarifa, y ese día no se puede cotizar.
+          regla y se cobra el precio por día de la categoría, que se carga en la{' '}
+          <a href="#categorias" className="text-primary underline underline-offset-2">
+            tabla de Categorías
+          </a>
+          {' '}de arriba. Las rojas sí son un hueco: no hay precio, y ese día no se puede cotizar.
         </p>
       </Card>
 

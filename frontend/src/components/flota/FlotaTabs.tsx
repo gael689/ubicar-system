@@ -1,9 +1,11 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Car, Tags, AlertTriangle, type LucideIcon } from 'lucide-react';
+import { Car, AlertTriangle, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * Las pestañas de la sección Flota: Vehículos, Categorías y precios, Multas.
+ * Las pestañas de la sección Flota: Vehículos y Multas. Categorías se mudó a
+ * Precios el 14/10: el precio, la franquicia y si se ofrece en la web van en
+ * una sola tabla.
  *
  * Pedido del mostrador (27/09): *"en flota, que sea una sola página con
  * pestañas grandes"*. Eran tres entradas sueltas en el menú y, como
@@ -14,7 +16,6 @@ import { cn } from '@/lib/utils';
  */
 export const FLOTA_TABS: { path: string; label: string; ayuda: string; icon: LucideIcon }[] = [
   { path: '/flota', label: 'Vehículos', ayuda: 'Los autos, su estado y sus papeles', icon: Car },
-  { path: '/flota/categorias', label: 'Categorías y precios', ayuda: 'Precios base y franquicias', icon: Tags },
   { path: '/multas', label: 'Multas', ayuda: 'Buscar al responsable y cobrarlas', icon: AlertTriangle },
 ];
 
@@ -29,7 +30,7 @@ export function FlotaTabs() {
   const { pathname } = useLocation();
   const activa = pestanaFlotaActiva(pathname);
   return (
-    <nav className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="Secciones de flota">
+    <nav className="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label="Secciones de flota">
       {FLOTA_TABS.map(t => {
         const Icon = t.icon;
         const esActiva = activa === t.path;

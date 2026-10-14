@@ -72,6 +72,11 @@ export function TarifasTab({ vehiculoId }: Props) {
             Esta tarifa es el precio de siempre y <strong>vale para web y mostrador</strong>: para un
             precio distinto en una fecha o en un canal, va una regla en Precios.
           </p>
+          {/* 14/10: la web cotiza por categoría y nunca ve este precio. */}
+          <p className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+            Este precio lo usa sólo el mostrador cuando asigna este auto. <strong>La web cotiza con
+            el precio por día de la categoría</strong>, que se carga en Precios.
+          </p>
         </div>
         <Button size="sm" onClick={() => setFormOpen(true)}>
           <Plus className="h-4 w-4" /> Nueva tarifa
