@@ -21,6 +21,26 @@ export function useCategorias(incluirInactivas = false) {
   });
 }
 
+/** Sube la foto que muestra la tarjeta de la categoría en la web. */
+export function useUploadFotoCategoria() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: number; file: File }) => {
+      const form = new FormData();
+      form.append('file', file);
+      const { data } = await api.post<ApiResponse<Categoria>>(`/categorias/${id}/foto`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [KEY] });
+      toast.success('Foto subida. La web la muestra en unos minutos.');
+    },
+    onError: (err) => toast.error(extractError(err)),
+  });
+}
+
 export function useUpdateCategoria() {
   const qc = useQueryClient();
   return useMutation({

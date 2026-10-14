@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Check, ImageUp, Car } from 'lucide-react';
 import { FlotaTabs } from '@/components/flota/FlotaTabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ComoSeArmaElPrecio } from '@/components/precios/ComoSeArmaElPrecio';
 import { EscaleraDuracion } from '@/components/precios/EscaleraDuracion';
 import { toast } from 'sonner';
-import { useCategorias, useTarifasCategoria, useCreateTarifaCategoria, useUpdateCategoria } from '@/hooks/useCategorias';
+import { useCategorias, useTarifasCategoria, useCreateTarifaCategoria, useUpdateCategoria, useUploadFotoCategoria } from '@/hooks/useCategorias';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { TarifaCreate } from '@/hooks/useTarifas';
 import type { Categoria } from '@/types';
@@ -55,6 +55,72 @@ export function CategoriasPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Si la categoría se ofrece en la web, con un click (14/10).
+ *
+ * La columna existía y no había pantalla para cambiarla: la SUV estaba oculta
+ * y no aparecía en el sitio ni como "sin disponibilidad", sin que nadie
+ * supiera por qué ni dónde se cambiaba.
+ */
+function TildeWebCategoria({ categoria }: { categoria: Categoria }) {
+  const actualizar = useUpdateCategoria();
+  const enWeb = categoria.visible_web !== false;
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={enWeb}
+      disabled={actualizar.isPending}
+      onClick={() => actualizar.mutate({ id: categoria.id, body: { visible_web: !enWeb } })}
+      title={enWeb ? 'Se ofrece en la web. Click para ocultarla.' : 'No aparece en la web. Click para mostrarla.'}
+      className="flex shrink-0 flex-col items-center justify-center gap-1 border-l border-border px-4 text-[11px] font-semibold text-muted-foreground hover:bg-muted/20 disabled:opacity-50"
+    >
+      <span className={
+        enWeb
+          ? 'flex h-6 w-6 items-center justify-center rounded-md border-2 border-primary bg-primary text-white'
+          : 'flex h-6 w-6 items-center justify-center rounded-md border-2 border-slate-300 bg-white text-transparent'
+      }>
+        <Check className="h-4 w-4" strokeWidth={3} />
+      </span>
+      En web
+    </button>
+  );
+}
+
+/**
+ * La foto de la tarjeta en la web. Tocarla abre el selector de archivo.
+ * Antes sólo se podía cambiar subiéndola a mano al bucket.
+ */
+function FotoCategoria({ categoria }: { categoria: Categoria }) {
+  const subir = useUploadFotoCategoria();
+  return (
+    <label
+      className="group relative flex w-24 shrink-0 cursor-pointer items-center justify-center border-r border-border bg-muted/30"
+      title="Cambiar la foto que muestra la web"
+    >
+      {categoria.foto_url ? (
+        <img src={categoria.foto_url} alt="" className="h-full max-h-20 w-full object-contain p-1" />
+      ) : (
+        <Car className="h-6 w-6 text-muted-foreground" />
+      )}
+      <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
+        <ImageUp className="h-5 w-5" />
+      </span>
+      {subir.isPending && <span className="absolute inset-0 animate-pulse bg-white/60" />}
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="sr-only"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) subir.mutate({ id: categoria.id, file });
+          e.target.value = '';
+        }}
+      />
+    </label>
   );
 }
 
@@ -175,11 +241,13 @@ function CategoriaCard({ categoria }: { categoria: Categoria }) {
 
   return (
     <Card className="overflow-hidden">
+      <div className="flex items-stretch">
+      <FotoCategoria categoria={categoria} />
       <button
         onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/20"
+        className="flex-1 min-w-0 flex items-center justify-between px-4 py-4 hover:bg-muted/20"
       >
-        <div className="text-left">
+        <div className="text-left min-w-0">
           <span className="text-sm font-semibold text-foreground">{categoria.nombre}</span>
           <span className="text-xs text-muted-foreground ml-2 font-mono">{categoria.codigo}</span>
           {/* La franquicia, a la vista sin abrir: es el dato que el contrato
@@ -194,6 +262,8 @@ function CategoriaCard({ categoria }: { categoria: Categoria }) {
         </div>
         {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
       </button>
+      <TildeWebCategoria categoria={categoria} />
+      </div>
 
       {expanded && (
         <div className="px-5 pb-5 space-y-3 border-t border-border pt-4">

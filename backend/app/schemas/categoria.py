@@ -17,6 +17,10 @@ class CategoriaUpdate(BaseModel):
     descripcion: str | None = None
     orden: int | None = None
     franquicia_base: Decimal | None = Field(default=None, ge=0)
+    # Si la categoría se ofrece en la web (14/10). La columna existía y no había
+    # pantalla para cambiarla: una categoría oculta no aparecía en el sitio ni
+    # como "sin disponibilidad", y nadie sabía por qué.
+    visible_web: bool | None = None
 
 
 class CategoriaResponse(BaseModel):
@@ -46,5 +50,9 @@ class CategoriaResponse(BaseModel):
     # (`disponibilidad_service.py` la castea a `float`), así que la web y el
     # sistema interno reciben el mismo tipo y el frontend no tiene que adivinar.
     franquicia_base: float | None = None
+    visible_web: bool = True
+    # La foto de la tarjeta de la web, ya resuelta a URL pública. La completa el
+    # router (`_respuesta`): el modelo sólo guarda la clave del storage.
+    foto_url: str | None = None
 
     model_config = {"from_attributes": True}

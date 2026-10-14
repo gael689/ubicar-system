@@ -541,6 +541,10 @@ export interface Categoria {
    * se devuelve. Son cosas distintas y el sistema no las relaciona.
    */
   franquicia_base: number | null;
+  /** Si la categoría se ofrece en la web. Oculta, no aparece ni como agotada. */
+  visible_web?: boolean;
+  /** La foto de la tarjeta de la web, ya como URL pública. */
+  foto_url?: string | null;
 }
 
 export interface CategoriaCreate {
@@ -556,6 +560,7 @@ export interface CategoriaUpdate {
   descripcion?: string | null;
   orden?: number;
   franquicia_base?: number | null;
+  visible_web?: boolean;
 }
 
 // ─── Tarifa ──────────────────────────────────────────────────────────────────
