@@ -18,8 +18,6 @@ import api from '@/lib/api';
 import { codigoDeError, extractError, fechaLocal, formatDate, formatDocumento, formatMiles, hoyLocal, irAlError, redondear2 } from '@/lib/utils';
 import { avisoDiaExtra, diasFacturables } from '@/lib/dias';
 import { InputMoneda } from '@/components/shared/InputMoneda';
-import { CamposUber, UBER_VACIO, type DatosUber } from '@/components/reservas/CamposUber';
-import { totalUber } from '@/lib/uber';
 import { ESTADO_PAGO_LABEL, resumenPago } from '@/lib/pagoReserva';
 import { toast } from 'sonner';
 import type { Adicional, CategoriaConCupo, Reserva, ReservaCreate, ReservaUpdate, Semaforo, SolapeWarning, Tarifa, ApiResponse, PaginatedResponse } from '@/types';
@@ -319,16 +317,6 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
 
   const [precioTotal, setPrecioTotal]   = useState<number | ''>(initialPrecioTotal || '');
   const [precioPorDia, setPrecioPorDia] = useState<number | ''>(initialPrecioPorDia || '');
-  // Contrato de Uber: sólo al crear. Su total sale del valor de la semana.
-  const [uber, setUber] = useState<DatosUber>(UBER_VACIO);
-  const esUber = !reserva && uber.tipo === 'uber';
-  // En Uber el precio sale del valor de la semana: sigue a lo que se carga.
-  useEffect(() => {
-    if (!esUber || uber.valorSemana === '' || duracionDias <= 0) return;
-    const total = totalUber(Number(uber.valorSemana), duracionDias);
-    setPrecioTotal(total);
-    setPrecioPorDia(redondear2(total / duracionDias));
-  }, [esUber, uber.valorSemana, duracionDias]);
   const [conFactura, setConFactura] = useState(reserva?.con_factura ?? false);
   // Cuánto del total va con factura. Vacío = todo (lo de siempre); el resto es caja.
   const [montoFacturado, setMontoFacturado] = useState<number | ''>('');
@@ -907,7 +895,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     if (n === 4 && (precioTotal === '' || Number(precioTotal) <= 0)) {
       return { mensaje: 'Falta el precio.', campo: 'precio' };
     }
-    if (n === 4 && esDescuento && !descuentoMotivo.trim()) {
+    if (n === 4 && pideMotivo && !descuentoMotivo.trim()) {
       return { mensaje: 'El precio es menor al de lista: indicá el motivo.', campo: 'descuento_motivo' };
     }
     if (n === 5 && !isEdit && !condicionPagoAncla) {
@@ -1058,12 +1046,27 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
   // redondeados, que no es lo mismo: $39.999,50 contra $40.000 redondeaba
   // igual acá y el servidor lo rechazaba igual pidiendo un motivo que la
   // pantalla nunca había pedido.
-  const diferenciaCruda = !esUber && precioListaEstimado !== null && precioTotal !== ''
+  const diferenciaCruda = precioListaEstimado !== null && precioTotal !== ''
     ? Number(precioTotal) - precioListaEstimado
     : 0;
   const hayDiferenciaDePrecio = Math.abs(diferenciaCruda) >= TOLERANCIA_DESCUENTO;
   const esDescuento = hayDiferenciaDePrecio && diferenciaCruda < 0;
   const esRecargo = hayDiferenciaDePrecio && !esDescuento;
+  /**
+   * **El campo del motivo aparece también cuando lo pide el servidor.**
+   *
+   * Franco (09/10): *"acá el precio es menor pero no encuentro donde ponerle el
+   * motivo"*, en una reserva nueva. La pantalla decide sola si el precio es un
+   * descuento con la cotización que tiene; si esa cotización no llegó o salió
+   * distinta de la del backend (otro horario, otra fecha de nacimiento), la
+   * pantalla no veía descuento, no mostraba el campo **y además no mandaba el
+   * motivo** — y el servidor rechazaba pidiéndolo. Sin salida. Es el mismo
+   * arreglo que ya tenía el contrato rápido.
+   */
+  const [motivoPedidoPorServidor, setMotivoPedidoPorServidor] = useState(false);
+  // Si cambia el precio, la pantalla vuelve a decidir sola.
+  useEffect(() => { setMotivoPedidoPorServidor(false); }, [precioTotal]);
+  const pideMotivo = !isEdit && (esDescuento || motivoPedidoPorServidor);
   const diferenciaPrecio = hayDiferenciaDePrecio ? redondear2(Math.abs(diferenciaCruda)) : 0;
   const requiereDatosEcheq = formaPagoPrevista === 'echeq' || (estadoPago !== 'pendiente' && anticipoMedioPago === 'echeq');
 
@@ -1115,6 +1118,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
     };
     const codigo = codigoDeError(err);
     const ir = codigo ? destino[codigo] : undefined;
+    if (codigo === 'descuento_sin_motivo') setMotivoPedidoPorServidor(true);
     if (ir) {
       errorEnPaso(mensaje, ir[0], ir[1]);
     } else {
@@ -1182,7 +1186,7 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
       errorEnPaso('Falta el precio: cargá el total o el precio por día.', 4, 'precio');
       return;
     }
-    if (!isEdit && esDescuento && !descuentoMotivo.trim()) {
+    if (pideMotivo && !descuentoMotivo.trim()) {
       errorEnPaso('El precio es menor al de lista: indicá el motivo.', 4, 'descuento_motivo');
       return;
     }
@@ -1340,21 +1344,14 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
           anticipo_medio_pago: estadoPago !== 'pendiente' ? anticipoMedioPago : null,
           con_factura: conFactura,
           ...(conFactura && montoFacturado !== '' ? { monto_facturado: Number(montoFacturado) } : {}),
-          descuento_motivo: hayDiferenciaDePrecio ? (descuentoMotivo.trim() || null) : null,
+          descuento_motivo: (hayDiferenciaDePrecio || pideMotivo) ? (descuentoMotivo.trim() || null) : null,
           condicion_pago: condicionPago,
           // El ancla se manda siempre, también en contado: "en el momento" no
           // dice cuál momento, y entre la entrega y la devolución puede haber
           // semanas. Ver el selector más abajo.
           condicion_pago_ancla: condicionPagoAncla || null,
           condicion_pago_fecha_ancla: condicionPagoAncla === 'fecha_especifica' ? condicionPagoFechaAncla || null : null,
-          condicion_pago_texto: (esUber ? uber.condicion.trim() : condicionPagoTexto.trim()) || null,
-          ...(esUber ? {
-            tipo: 'uber' as const,
-            uber_valor_semana: Number(uber.valorSemana),
-            uber_km_semana: uber.kmSemana === '' ? null : Number(uber.kmSemana),
-            uber_precio_km_extra: uber.precioKmExtra === '' ? null : Number(uber.precioKmExtra),
-            fechas_pago: uber.fechasPago.filter(Boolean),
-          } : {}),
+          condicion_pago_texto: condicionPagoTexto.trim() || null,
           tipo_factura: conFactura ? (tipoFactura || null) : null,
           factura_a_nombre_de: conFactura ? (facturaANombreDe.trim() || null) : null,
           echeq_banco: requiereDatosEcheq ? (echeqBanco.trim() || null) : null,
@@ -2156,10 +2153,10 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
               </div>
             )}
 
-            {/* Alquiler común o Uber. Sólo al crear: el tipo no se cambia después. */}
-            {!reserva && (
-              <CamposUber value={uber} onChange={setUber} fechaInicio={fechaInicio} dias={duracionDias} />
-            )}
+            {/* **El tipo de contrato ya no se pregunta acá** (14/10). Una reserva
+                es siempre un alquiler: el contrato de Uber tiene su propia
+                entrada en "Nueva operación → Contrato Uber", y preguntarlo de
+                nuevo en cada reserva era un paso que nadie usaba. */}
 
             <div className="grid grid-cols-2 gap-4">
               {/* `InputMoneda` y no `type="number"`: es lo que permite el
@@ -2171,7 +2168,6 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <InputMoneda
                   value={precioPorDia}
                   onChange={handlePrecioPorDiaChange}
-                  disabled={esUber}
                   placeholder="35.000"
                   className={`w-full px-3 py-2 rounded-lg border text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                     localError?.includes('cotización') && precioTotal === '' ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white'
@@ -2183,7 +2179,6 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 <InputMoneda
                   value={precioTotal}
                   onChange={handlePrecioTotalChange}
-                  disabled={esUber}
                   placeholder="140.000"
                   className={`w-full px-3 py-2 rounded-lg border text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                     localError?.includes('cotización') && precioTotal === '' ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white'
@@ -2368,11 +2363,15 @@ export function ReservaModal({ reserva, initialVehiculoId, initialFechaInicio, o
                 queda registrado quién lo autorizó.
               </p>
             )}
-            {!isEdit && esDescuento && (
+            {pideMotivo && (
               <div className="space-y-1.5">
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  ⚠ Estás cobrando <strong>${formatMiles(diferenciaPrecio)} menos</strong> que el
-                  precio de lista (${formatMiles(precioListaEstimado)}). Indicá el motivo — queda auditado.
+                  {esDescuento ? (
+                    <>⚠ Estás cobrando <strong>${formatMiles(diferenciaPrecio)} menos</strong> que el
+                    precio de lista (${formatMiles(precioListaEstimado)}). Indicá el motivo — queda auditado.</>
+                  ) : (
+                    <>⚠ El precio es menor al de lista. Indicá el motivo — queda auditado.</>
+                  )}
                 </p>
                 <textarea
                   data-campo="descuento_motivo"
