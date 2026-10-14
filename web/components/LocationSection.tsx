@@ -216,7 +216,7 @@ const LocationSection = () => {
   /**
    * El mapa **no se carga solo**: espera a que alguien lo pida.
    *
-   * Leaflet viene de `unpkg.com` y los mosaicos de `basemaps.cartocdn.com`,
+   * Leaflet viene de `unpkg.com` y los mosaicos de `tile.openstreetmap.org`,
    * o sea que apenas se renderiza esta sección **se le manda la IP del
    * visitante a dos terceros, antes de que haya aceptado nada**. No ponen
    * cookies, pero la política de privacidad promete que sin consentimiento no
@@ -249,13 +249,16 @@ const LocationSection = () => {
       });
       mapObjRef.current = map;
 
-      // Tile CartoDB Positron – limpio, respira bien con paleta blanca
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-        subdomains: "abcd", maxZoom: 19,
+      // Mosaicos de **OpenStreetMap**, sin clave. Eran los de CARTO Positron,
+      // que pasaron a pedir API key: el mapa se llenaba de carteles "API KEY
+      // REQUIRED" (14/10). OSM es gratis con la atribución a la vista; el tono
+      // claro de antes se recupera con el filtro de `.ubicar-mapa-tiles`.
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19, className: "ubicar-mapa-tiles",
       }).addTo(map);
 
       L.control.attribution({ prefix: false })
-        .addAttribution('© <a href="https://carto.com" target="_blank">CARTO</a>')
+        .addAttribution('© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>')
         .addTo(map);
       L.control.zoom({ position: "bottomright" }).addTo(map);
 
@@ -303,8 +306,12 @@ const LocationSection = () => {
     document.head.appendChild(script);
 
     return () => { mapObjRef.current?.remove(); mapObjRef.current = null; };
+    // **Depende de `mapaPedido`** (14/10). Con `[]` corría una sola vez, al
+    // montar —cuando todavía nadie había pedido el mapa— y salía en el
+    // `return` de arriba. Después del clic no volvía a correr: el spinner
+    // quedaba girando para siempre y el mapa no aparecía nunca.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mapaPedido]);
 
   // ── Seleccionar punto ─────────────────────────────────────────────────────
   function handleSelect(id: string) {
@@ -399,6 +406,7 @@ const LocationSection = () => {
           white-space: nowrap !important;
         }
         .ubicar-town::before { display: none !important; }
+        .ubicar-mapa-tiles { filter: grayscale(0.85) brightness(1.06) contrast(0.92); }
         .leaflet-control-zoom a {
           background: ${C.dark} !important; color: #fff !important;
           border: none !important; font-size: 17px !important; line-height: 28px !important;
@@ -676,8 +684,11 @@ const LocationSection = () => {
                 </div>
               </div>
 
-              {/* Loading */}
-              {!mapReady && (
+              {/* Loading — **sólo después del clic**. Antes era `!mapReady` a
+                  secas: el spinner tapaba la tarjeta "Ver el mapa" desde el
+                  principio, el botón no se podía tocar y el mapa no cargaba
+                  nunca (14/10). */}
+              {mapaPedido && !mapReady && (
                 <div className="absolute inset-0 z-[500] flex items-center justify-center"
                   style={{ background: C.bg }}>
                   <div className="flex flex-col items-center gap-3">
