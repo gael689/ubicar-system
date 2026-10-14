@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import api from '@/lib/api';
 import { CACHE } from '@/lib/queryClient';
 import { extractError } from '@/lib/utils';
-import type { ApiResponse, Categoria, CategoriaUpdate } from '@/types';
+import type { ApiResponse, Categoria, CategoriaCreate, CategoriaUpdate } from '@/types';
 import type { Tarifa, TarifaCreate } from '@/hooks/useTarifas';
 
 const KEY = 'categorias';
@@ -38,6 +38,17 @@ export function useUploadFotoCategoria() {
       toast.success('Foto subida. La web la muestra en unos minutos.');
     },
     onError: (err) => toast.error(extractError(err)),
+  });
+}
+
+export function useCreateCategoria() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: CategoriaCreate) => {
+      const { data } = await api.post<ApiResponse<Categoria>>('/categorias', body);
+      return data.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
   });
 }
 

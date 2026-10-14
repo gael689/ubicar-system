@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Car, Plus } from 'lucide-react';
+import { Car, Plus, Tags } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { BajaVehiculoDialog } from '@/components/flota/BajaVehiculoDialog';
 import { VehiculoFilters, type FlotaFilters } from '@/components/flota/VehiculoFilters';
 import { VehiculoTable } from '@/components/flota/VehiculoTable';
 import { VehiculoFormDialog } from '@/components/flota/VehiculoFormDialog';
+import { NuevaCategoriaDialog } from '@/components/flota/NuevaCategoriaDialog';
 
 import {
   useReactivateVehiculo,
@@ -48,6 +49,7 @@ export function FlotaList() {
 
   // ─── Dialogs ──────────────────────────────────────────────────────────────
   const [createOpen, setCreateOpen] = useState(false);
+  const [nuevaCategoria, setNuevaCategoria] = useState(false);
   const [editing, setEditing] = useState<Vehiculo | null>(null);
   const [deactivating, setDeactivating] = useState<Vehiculo | null>(null);
 
@@ -74,10 +76,18 @@ export function FlotaList() {
         title="Vehículos"
         description="Todos los autos de la flota. Los dados de baja no se borran: se ven con el filtro de inactivos, con el motivo."
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Nuevo vehículo
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Al costado y más chico (14/10): desde que Categorías se mudó a
+                Precios, no había dónde crear una. */}
+            <Button variant="outline" size="sm" onClick={() => setNuevaCategoria(true)}>
+              <Tags className="h-3.5 w-3.5" />
+              Nueva categoría
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Nuevo vehículo
+            </Button>
+          </div>
         }
       />
 
@@ -154,6 +164,7 @@ export function FlotaList() {
       </Card>
 
       <VehiculoFormDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <NuevaCategoriaDialog open={nuevaCategoria} onOpenChange={setNuevaCategoria} />
       <VehiculoFormDialog
         open={!!editing}
         onOpenChange={(open) => !open && setEditing(null)}

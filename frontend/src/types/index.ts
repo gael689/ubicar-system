@@ -553,6 +553,7 @@ export interface CategoriaCreate {
   descripcion?: string | null;
   orden?: number;
   franquicia_base?: number | null;
+  visible_web?: boolean;
 }
 
 export interface CategoriaUpdate {

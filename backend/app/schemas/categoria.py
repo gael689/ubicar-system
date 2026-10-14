@@ -10,6 +10,8 @@ class CategoriaCreate(BaseModel):
     descripcion: str | None = None
     orden: int = 0
     franquicia_base: Decimal | None = Field(default=None, ge=0)
+    # Se crea desde Flota con el tilde de la web ya decidido (14/10).
+    visible_web: bool = True
 
 
 class CategoriaUpdate(BaseModel):

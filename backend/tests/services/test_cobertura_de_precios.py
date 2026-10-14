@@ -68,3 +68,14 @@ def test_no_avisa_si_no_esta_en_la_web_o_tiene_precio(db, categoria):
     db.add(Tarifa(categoria_id=categoria.id, tipo="diaria", monto=50000, activo=True))
     db.flush()
     assert not [a for a in categoria_web_sin_precio(db, HOY) if a["entidad_id"] == categoria.id]
+
+
+def test_una_categoria_nueva_puede_nacer_fuera_de_la_web(db):
+    """Alta desde Flota (14/10): sin precio por día, se crea sin publicar."""
+    from app.schemas.categoria import CategoriaCreate
+    from app.services.categoria_service import CategoriaService
+
+    cat = CategoriaService(db).create(CategoriaCreate(codigo="suv-nueva", nombre="SUV nueva", visible_web=False))
+    assert cat.visible_web is False
+    cat2 = CategoriaService(db).create(CategoriaCreate(codigo="furgon-nuevo", nombre="Furgón"))
+    assert cat2.visible_web is True
