@@ -110,9 +110,35 @@ class TestCheckin:
             == EstadoVehiculo.EN_TRANSICION
         )
 
-    def test_checkin_desde_no_alquilado_lanza_error(self):
-        with pytest.raises(ValueError):
-            estado_tras_checkin(EstadoVehiculo.DISPONIBLE, None)
+    def test_checkin_desde_no_alquilado_no_lanza_error(self):
+        """
+        El auto ya volvió: el check-in no puede rechazarse por la etiqueta del
+        vehículo. Antes esto era un `ValueError` → 500 sin CORS → "Se cortó la
+        conexión" en el mostrador (15/10/2026).
+        """
+        for estado in (
+            EstadoVehiculo.DISPONIBLE,
+            EstadoVehiculo.RESERVADO,
+            EstadoVehiculo.EN_TRANSICION,
+        ):
+            assert estado_tras_checkin(estado, None) == EstadoVehiculo.DISPONIBLE
+            assert (
+                estado_tras_checkin(estado, proxima_reserva_en_horas=1.0)
+                == EstadoVehiculo.EN_TRANSICION
+            )
+
+    def test_con_otro_alquiler_abierto_sigue_alquilado(self):
+        for estado in EstadoVehiculo:
+            assert (
+                estado_tras_checkin(estado, None, otro_alquiler_abierto=True)
+                == EstadoVehiculo.ALQUILADO
+            )
+
+    def test_fuera_de_servicio_no_se_reactiva_solo(self):
+        assert (
+            estado_tras_checkin(EstadoVehiculo.FUERA_DE_SERVICIO, None)
+            == EstadoVehiculo.FUERA_DE_SERVICIO
+        )
 
 
 class TestInactivarReactivar:

@@ -250,6 +250,58 @@ for url in (o.strip() for o in settings.cors_extra_origins.split(",")):
     if url and url not in origins:
         origins.append(url)
 
+# ─── Errores inesperados: un 500 que el navegador pueda leer ──────────────────
+# **Va antes que CORS a propósito** (`add_middleware` apila hacia afuera: lo
+# que se agrega primero queda adentro). Sin esto, una excepción no prevista la
+# atrapaba el `ServerErrorMiddleware` de Starlette, que está **por fuera** de
+# CORS: devolvía un 500 sin `Access-Control-Allow-Origin`, el navegador lo
+# descartaba sin mostrárselo a axios, y el mostrador leía "Se cortó la
+# conexión antes de la respuesta" — un error del servidor disfrazado de corte
+# de red (15/10/2026: dos check-ins que fallaban siempre, en las mismas
+# reservas). Acá adentro de CORS el 500 sale con sus cabeceras y con un texto.
+class _ErrorInesperadoLegible:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        respuesta_empezada = False
+
+        async def _send(message):
+            nonlocal respuesta_empezada
+            if message["type"] == "http.response.start":
+                respuesta_empezada = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, _send)
+        except Exception:
+            logger.exception(
+                "Error no previsto en %s %s", scope.get("method"), scope.get("path")
+            )
+            if respuesta_empezada:
+                # Ya salió la respuesta (p. ej. falló una tarea en segundo
+                # plano): no hay nada que contestar, sólo dejar el log.
+                raise
+            respuesta = JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "detail": (
+                        "Error interno del servidor: la operación no se pudo "
+                        "completar. Fijate si quedó hecha antes de repetirla y, "
+                        "si vuelve a pasar, avisá con la hora y la reserva."
+                    ),
+                },
+            )
+            await respuesta(scope, receive, send)
+
+
+app.add_middleware(_ErrorInesperadoLegible)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

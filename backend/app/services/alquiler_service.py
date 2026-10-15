@@ -7,6 +7,7 @@ from datetime import datetime, date, time
 from decimal import Decimal
 from enum import Enum
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ConflictError, BusinessRuleError
@@ -189,6 +190,16 @@ class AlquilerService:
                 "El checkout no puede ser anterior a la fecha de inicio de la reserva",
             )
         vehiculo = reserva.vehiculo
+        # Antes caía en el `ValueError` de `estado_tras_checkout`, ya adentro
+        # de la transacción: un 500 sin CORS que el mostrador leía como "Se
+        # cortó la conexión". Es una decisión de una persona (el auto está en
+        # el taller), así que se dice con palabras y antes de escribir nada.
+        if vehiculo.estado == EstadoVehiculo.FUERA_DE_SERVICIO.value:
+            raise BusinessRuleError(
+                "vehiculo_fuera_de_servicio",
+                f"El auto {vehiculo.patente} figura fuera de servicio. "
+                "Reactivalo desde Flota antes de entregarlo.",
+            )
         if checkout_km < vehiculo.km_actual:
             raise BusinessRuleError(
                 "km_invalidos",
@@ -459,6 +470,28 @@ class AlquilerService:
         alquiler = self.get(alquiler_id)
         reserva = alquiler.reserva
 
+        # **Un check-in a la vez por reserva.** Si el mostrador aprieta dos
+        # veces, o reintenta porque la respuesta se perdió, el segundo pedido
+        # espera acá a que el primero termine y después lee el estado ya
+        # actualizado: cae en el 409 de abajo en vez de registrar el cobro dos
+        # veces. Sin el lock, los dos leían `activa` a la vez y los dos
+        # asentaban el pago. (SQLite lo ignora; en Postgres es un FOR UPDATE.)
+        self.db.execute(
+            select(Reserva.id).where(Reserva.id == reserva.id).with_for_update()
+        )
+        self.db.refresh(reserva)
+        self.db.refresh(alquiler)
+
+        # Reintento de un check-in que ya quedó hecho: se dice eso, con la
+        # fecha, para que nadie lo cargue de nuevo por otro lado.
+        if alquiler.checkin_fecha is not None:
+            hora = alquiler.checkin_hora.strftime("%H:%M") if alquiler.checkin_hora else ""
+            raise ConflictError(
+                "checkin_ya_registrado|El check-in de esta reserva ya quedó registrado "
+                f"({alquiler.checkin_fecha.strftime('%d/%m/%Y')} {hora}). "
+                "No hace falta repetirlo."
+            )
+
         # Acepta 'activa' (checkin dentro de término) y 'vencida' (devolución
         # tardía: la sincronización automática la pasó a vencida porque pasó
         # la hora de fin, pero el auto sigue sin volver). Ver
@@ -504,9 +537,28 @@ class AlquilerService:
             proxima_dt = datetime.combine(proxima.fecha_inicio, proxima.hora_inicio)
             proxima_en_horas = (proxima_dt - checkin_dt).total_seconds() / 3600
 
+        # El mismo auto puede tener otro alquiler entregado y sin devolver: el
+        # mostrador lo permite desde el 06/10 (avisa, no bloquea). Si es así,
+        # el auto sigue afuera aunque este alquiler cierre.
+        otro_alquiler_abierto = (
+            self.db.query(Alquiler.id)
+            .join(Reserva, Alquiler.reserva_id == Reserva.id)
+            .filter(
+                Reserva.vehiculo_id == reserva.vehiculo_id,
+                Alquiler.id != alquiler.id,
+                Alquiler.checkin_fecha.is_(None),
+                Reserva.estado.in_(
+                    (EstadoReserva.ACTIVA.value, EstadoReserva.VENCIDA.value)
+                ),
+            )
+            .first()
+            is not None
+        )
+
         nuevo_estado_vehiculo = estado_tras_checkin(
             EstadoVehiculo(reserva.vehiculo.estado),
             proxima_reserva_en_horas=proxima_en_horas,
+            otro_alquiler_abierto=otro_alquiler_abierto,
         )
 
         with self.db.begin_nested():
