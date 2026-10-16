@@ -702,3 +702,28 @@ describe('Editar una reserva: la plata no se toca desde acá', () => {
     expect(screen.getByTestId('pago-solo-lectura').textContent).toContain('cuenta corriente');
   });
 });
+
+describe('¿Cuánto se factura?', () => {
+  it('"Todo" escribe el total en el campo, no lo deja vacío', async () => {
+    // El bug (16/10): el botón vaciaba el campo —vacío ya significaba "todo"—
+    // y en el mostrador parecía que no había hecho nada, así que lo tipeaban
+    // a mano. Se llega al paso 5 retomando un borrador con precio y factura.
+    const user = userEvent.setup();
+    const { unmount } = abrir();
+    await avanzarHasta(user, 3);
+    unmount();
+    const guardado = JSON.parse(localStorage.getItem('ubicar:borrador-reserva')!);
+    guardado.datos = { ...guardado.datos, paso: 5, precioTotal: 100000, conFactura: true };
+    localStorage.setItem('ubicar:borrador-reserva', JSON.stringify(guardado));
+
+    abrir();
+    await user.click(screen.getByRole('button', { name: /Retomarla/ }));
+    const campo = screen.getByPlaceholderText('Todo el total') as HTMLInputElement;
+    await user.type(campo, '40000');
+    expect(screen.getByText(/El resto \(60\.000\) va sin factura/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Todo' }));
+    expect(campo.value).toBe('100.000');
+    expect(screen.getByText('Se factura el total.')).toBeInTheDocument();
+  });
+});
