@@ -5,7 +5,7 @@ from datetime import date, time
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.domain.enums import DecisionExcedente
 
@@ -47,6 +47,24 @@ class CheckoutCreate(BaseModel):
             if not self.motivo_checkout_tardio or not self.motivo_checkout_tardio.strip():
                 raise ValueError("Cobrar un cargo por checkout tardío requiere un motivo")
         return self
+
+
+class CheckinCorreccion(BaseModel):
+    """
+    Corregir un check-in ya registrado: **sólo los datos, nunca la plata.**
+
+    *"¿Se puede modificar un check-in? Cuando se pone en gris y quedó un dato
+    mal"* — hasta el 28/10 no se podía. El excedente cobrado, los cargos, la
+    garantía y los cobros quedan como estaban (misma regla que editar una
+    reserva, 27/09): si corregir la hora cambia lo que correspondía cobrar, la
+    respuesta lo avisa y lo decide una persona aparte.
+    """
+    checkin_fecha: date
+    checkin_hora: time
+    checkin_km: int
+    checkin_combustible: int = Field(ge=0, le=100)
+    checkin_descripcion: str | None = None
+    checkin_estado_limpieza: str | None = None
 
 
 class CheckinCreate(BaseModel):

@@ -777,6 +777,122 @@ class AlquilerService:
         self.db.refresh(alquiler)
         return alquiler
 
+    # ── Corregir un check-in ya registrado ───────────────────────────────────
+
+    def corregir_checkin(
+        self,
+        alquiler_id: int,
+        checkin_fecha: date,
+        checkin_hora: time,
+        checkin_km: int,
+        checkin_combustible: int,
+        checkin_descripcion: str | None,
+        checkin_estado_limpieza: str | None,
+        usuario_id: int,
+    ) -> tuple[Alquiler, Decimal | None]:
+        """
+        Corrige los datos de un check-in hecho. **No toca la plata.**
+
+        El excedente cobrado, los cargos de cierre, la garantía y los cobros
+        quedan como estaban — misma regla que editar una reserva (27/09). Lo
+        único que se recalcula son las `horas_excedidas`, que son un hecho (a
+        qué hora volvió el auto) y no una decisión de cobro.
+
+        Devuelve el alquiler y, si con la hora corregida correspondía cobrar
+        otra cosa que lo que se cobró, el cargo que correspondía — para que la
+        pantalla lo avise. `None` si no cambia nada.
+        """
+        alquiler = self.get(alquiler_id)
+        reserva = alquiler.reserva
+
+        if alquiler.checkin_fecha is None:
+            raise BusinessRuleError(
+                "checkin_no_registrado",
+                "Este alquiler todavía no tiene check-in: hay que registrarlo, no corregirlo.",
+            )
+
+        checkin_dt = datetime.combine(checkin_fecha, checkin_hora)
+        checkout_dt = datetime.combine(alquiler.checkout_fecha, alquiler.checkout_hora)
+        if checkin_dt <= checkout_dt:
+            raise BusinessRuleError(
+                "checkin_antes_checkout",
+                "El check-in debe ser posterior al check-out",
+            )
+        if checkin_km < alquiler.checkout_km:
+            raise BusinessRuleError(
+                "km_invalidos",
+                f"El km de llegada ({checkin_km}) no puede ser menor al de salida ({alquiler.checkout_km})",
+            )
+
+        antes = {
+            "checkin_fecha": alquiler.checkin_fecha.isoformat(),
+            "checkin_hora": alquiler.checkin_hora.strftime("%H:%M") if alquiler.checkin_hora else None,
+            "checkin_km": alquiler.checkin_km,
+            "checkin_combustible": alquiler.checkin_combustible,
+            "checkin_descripcion": alquiler.checkin_descripcion,
+            "checkin_estado_limpieza": alquiler.checkin_estado_limpieza,
+        }
+        despues = {
+            "checkin_fecha": checkin_fecha.isoformat(),
+            "checkin_hora": checkin_hora.strftime("%H:%M"),
+            "checkin_km": checkin_km,
+            "checkin_combustible": checkin_combustible,
+            "checkin_descripcion": checkin_descripcion,
+            "checkin_estado_limpieza": checkin_estado_limpieza,
+        }
+        cambios = [k for k in antes if antes[k] != despues[k]]
+        if not cambios:
+            return alquiler, None
+
+        resultado = calcular_excedente(
+            _devolucion_acordada(reserva), checkin_dt,
+            self._obtener_tarifa_diaria(reserva), **self._params_excedente(),
+        )
+
+        # El km del auto se corrige sólo si sigue siendo el que dejó este
+        # check-in. Si después salió en otro alquiler, el km de hoy ya es otro
+        # y pisarlo con uno viejo sería romperlo.
+        vehiculo = reserva.vehiculo
+        km_anterior = alquiler.checkin_km
+
+        with self.db.begin_nested():
+            self.alquiler_repo.update(
+                alquiler,
+                checkin_fecha=checkin_fecha,
+                checkin_hora=checkin_hora,
+                checkin_km=checkin_km,
+                checkin_combustible=checkin_combustible,
+                checkin_descripcion=checkin_descripcion,
+                checkin_estado_limpieza=checkin_estado_limpieza,
+                horas_excedidas=Decimal(str(resultado.horas_excedidas)),
+            )
+            if vehiculo is not None and vehiculo.km_actual == km_anterior:
+                vehiculo.km_actual = checkin_km
+
+            auditoria_service.registrar(
+                self.db,
+                usuario_id=usuario_id,
+                accion="editar",
+                entidad_tipo="alquiler",
+                entidad_id=alquiler.id,
+                descripcion=(
+                    f"Corrigió el check-in del alquiler #{alquiler.id} "
+                    f"(reserva #{reserva.id}): {', '.join(cambios)}"
+                ),
+                datos_antes={k: antes[k] for k in cambios},
+                datos_despues={k: despues[k] for k in cambios},
+            )
+
+        self.db.refresh(alquiler)
+
+        # Lo que correspondía con la hora nueva contra lo que se cobró. Si se
+        # bonificó, no hay aviso: se decidió no cobrar, a la hora que sea.
+        correspondia = Decimal(str(resultado.cargo_sugerido))
+        aviso = None
+        if not alquiler.excedente_bonificado and correspondia != (alquiler.cargo_excedente or 0):
+            aviso = correspondia
+        return alquiler, aviso
+
     # ── Extender alquiler (D11) ───────────────────────────────────────────────
 
     def extender(

@@ -15,6 +15,7 @@ import { ReservaModal } from './ReservaModal';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
 import { CheckoutModal } from './CheckoutModal';
 import { CheckinModal } from './CheckinModal';
+import { CorregirCheckinModal } from './CorregirCheckinModal';
 import { ExtenderModal } from './ExtenderModal';
 import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
 import { DaniosResumen } from '@/components/flota/DaniosResumen';
@@ -32,6 +33,7 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   const [editOpen, setEditOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkinOpen, setCheckinOpen] = useState(false);
+  const [corregirCheckinOpen, setCorregirCheckinOpen] = useState(false);
   const [extenderOpen, setExtenderOpen] = useState(false);
   const [cancelarOpen, setCancelarOpen] = useState(false);
   const [asignarOpen, setAsignarOpen] = useState(false);
@@ -132,6 +134,18 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
       />
     );
   }
+  if (corregirCheckinOpen && reserva.alquiler_id) {
+    // Vuelve a la ficha (no la cierra): lo natural es mirar que la
+    // devolución haya quedado bien.
+    return (
+      <CorregirCheckinModal
+        alquilerId={reserva.alquiler_id}
+        reserva={reserva}
+        onClose={() => setCorregirCheckinOpen(false)}
+        onSuccess={() => { setCorregirCheckinOpen(false); refetch(); onActionComplete?.(); }}
+      />
+    );
+  }
   if (extenderOpen && reserva.alquiler_id) {
     return (
       <ExtenderModal
@@ -169,6 +183,8 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
     sinAlquiler && reserva.estado !== 'cancelada' && reserva.estado !== 'finalizada';
   const puedeCheckin = conAlquilerActivo;
   const puedeExtender = conAlquilerActivo;
+  // Cualquier usuario puede corregir un check-in (decisión del 28/10).
+  const puedeCorregirCheckin = !!reserva.alquiler_id && reserva.alquiler_estado === 'finalizado';
 
   const fechaInicio = new Date(`${reserva.fecha_inicio}T${reserva.hora_inicio}`);
   const fechaFin = new Date(`${reserva.fecha_fin}T${reserva.hora_fin}`);
@@ -289,6 +305,9 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
                   {Number(reserva.cargo_late_checkout ?? 0) > 0
                     && ` · cargo $${formatMiles(Number(reserva.cargo_late_checkout))}`}
                 </p>
+              )}
+              {reserva.checkin_fecha && reserva.checkin_hora && (
+                <DevolucionReal reserva={reserva} />
               )}
             </div>
           </div>
@@ -421,6 +440,14 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
               <Flag className="h-4 w-4" /> Registrar Check-in (devolución)
             </button>
           )}
+          {puedeCorregirCheckin && (
+            <button
+              onClick={() => setCorregirCheckinOpen(true)}
+              className="w-full px-4 py-2.5 rounded-lg bg-secondary hover:bg-accent text-foreground text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+            >
+              <Pencil className="h-4 w-4" /> Corregir check-in
+            </button>
+          )}
           {puedeExtender && (
             <button
               onClick={() => setExtenderOpen(true)}
@@ -474,7 +501,34 @@ export function ReservaInfoModal({ reservaId, onClose, onActionComplete }: Props
   );
 }
 
-const ESTADO_PAGO_COLOR_NEUTRO = 'bg-muted text-muted-foreground border-border';
+/**
+ * **Cuándo volvió el auto de verdad.** La ficha mostraba sólo el período
+ * pactado: un auto pactado a las 09:00 y devuelto a las 13:45 se seguía leyendo
+ * "09:00" al volver a abrirla, aunque el check-in tuviera la hora real.
+ */
+function DevolucionReal({ reserva }: { reserva: Reserva }) {
+  const fecha = new Date(`${reserva.checkin_fecha}T12:00:00`).toLocaleDateString('es-AR');
+  const hora = reserva.checkin_hora!.slice(0, 5);
+  const horas = Number(reserva.checkin_horas_excedidas ?? 0);
+  const cargo = Number(reserva.checkin_cargo_excedente ?? 0);
+  const pactada = (reserva.hora_devolucion_acordada ?? reserva.hora_fin).slice(0, 5);
+
+  let excedente = '';
+  if (horas > 0) {
+    excedente = ` · ${formatMiles(horas)} h de más, `
+      + (cargo > 0 ? `cobradas $${formatMiles(cargo)}` : 'sin cargo');
+  }
+
+  return (
+    <p className="text-xs font-medium text-foreground mt-0.5" data-testid="devolucion-real">
+      Devuelto el {fecha} a las {hora}
+      {hora !== pactada && <span className="text-muted-foreground"> (pactado {pactada})</span>}
+      {excedente}
+    </p>
+  );
+}
+
+const ESTADO_PAGO_COLOR_NEUTRO ='bg-muted text-muted-foreground border-border';
 
 const ESTADO_PAGO_COLOR: Record<string, string> = {
   pagado: 'bg-success/15 text-success border-success/30',

@@ -46,7 +46,10 @@ vi.mock('../reservas/ContratoRapidoModal', () => ({ ContratoRapidoModal: () => n
 vi.mock('../reservas/CheckoutModal', () => ({ CheckoutModal: () => null }));
 vi.mock('../reservas/ReservaInfoModal', () => ({ ReservaInfoModal: () => null }));
 vi.mock('@/components/reservas/PanelResolverReserva', () => ({ PanelResolverReserva: () => null }));
-vi.mock('@/components/shared/CalendarioAnual', () => ({ CalendarioAnual: () => null }));
+vi.mock('@/components/shared/CalendarioAnual', () => ({
+  CalendarioAnual: () => null,
+  inicioDeVentana: (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1),
+}));
 
 import { OcupacionPage } from './OcupacionPage';
 
@@ -165,6 +168,34 @@ describe('El horario de devolución', () => {
     await montarTimeline();
 
     expect(barra().textContent).toContain('08:30 +1');
+  });
+
+  it('ya devuelto, muestra la hora real y no la pactada', async () => {
+    // *"Check-in pactado 9 hs, real 13:45 … me salta como que se devolvió a
+    // las 9"* (28/10). El evento no traía el check-in.
+    estado.ocupacion = ocupacion([evento({
+      estado: 'finalizada',
+      hora_fin: '09:00:00',
+      checkin_fecha: enDias(4),
+      checkin_hora: '13:45:00',
+    })]);
+    await montarTimeline();
+
+    expect(barra().textContent).toContain('13:45');
+    expect(barra().textContent).not.toContain('09:00');
+    expect(screen.getByTitle(/Devuelto: Paraguay 241 13:45 \(pactado 09:00\)/)).toBeInTheDocument();
+  });
+
+  it('si volvió otro día, la barra llega hasta ese día y no muestra "+N"', async () => {
+    estado.ocupacion = ocupacion([evento({
+      estado: 'finalizada',
+      checkin_fecha: enDias(5),
+      checkin_hora: '10:00:00',
+    })]);
+    await montarTimeline();
+
+    expect(barra().textContent).toContain('10:00');
+    expect(barra().textContent).not.toContain('+1');
   });
 });
 

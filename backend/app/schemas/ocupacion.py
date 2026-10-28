@@ -62,6 +62,10 @@ class EventoOcupacion(BaseModel):
     late_checkout: bool = False
     hora_devolucion_acordada: time | None = None
     fecha_devolucion_acordada: date | None = None
+    # La devolución **real**, una vez hecho el check-in. Si está, la barra
+    # termina acá y no en lo pactado: el auto estuvo afuera hasta esta hora.
+    checkin_fecha: date | None = None
+    checkin_hora: time | None = None
 
     # ── Canal (Fase 1 de la reestructuración) ────────────────────────────────
     # `origen` ya existía en `Reserva` desde la migración 047, indexado, y

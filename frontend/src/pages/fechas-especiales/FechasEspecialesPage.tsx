@@ -2,7 +2,9 @@ import { useState, useMemo } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card } from '@/components/ui/card';
-import { CalendarioAnual, ymd } from '@/components/shared/CalendarioAnual';
+import {
+  CalendarioAnual, inicioDeVentana, nombreDeLaVentana, rangoDeLaVentana, ymd,
+} from '@/components/shared/CalendarioAnual';
 import { useFechasEspeciales, indexarPorDia } from '@/hooks/useFechasEspeciales';
 import { FechasEspecialesPanel } from '@/components/fechas-especiales/FechasEspecialesPanel';
 import { COLOR_FECHA_ESPECIAL, TIPO_FECHA_ESPECIAL_LABEL } from '@/lib/constants';
@@ -21,15 +23,12 @@ import { cn } from '@/lib/utils';
  */
 export function FechasEspecialesPage() {
   const hoy = new Date();
-  const [anio, setAnio] = useState(hoy.getFullYear());
+  const [inicio, setInicio] = useState(() => inicioDeVentana(hoy));
 
-  const { data: fechas = [] } = useFechasEspeciales({
-    desde: `${anio}-01-01`,
-    hasta: `${anio}-12-31`,
-  });
+  const { data: fechas = [] } = useFechasEspeciales(rangoDeLaVentana(inicio));
   const porDia = useMemo(() => indexarPorDia(fechas), [fechas]);
 
-  const contadorMes = (mes: number): number => {
+  const contadorMes = (anio: number, mes: number): number => {
     const diasEnMes = new Date(anio, mes + 1, 0).getDate();
     let n = 0;
     for (let d = 1; d <= diasEnMes; d++) {
@@ -48,12 +47,12 @@ export function FechasEspecialesPage() {
       <Card className="p-5 space-y-4">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Calendario {anio}</h3>
+          <h3 className="text-sm font-semibold text-foreground">Calendario {nombreDeLaVentana(inicio)}</h3>
         </div>
 
         <CalendarioAnual
-          anio={anio}
-          onAnioChange={setAnio}
+          inicio={inicio}
+          onInicioChange={setInicio}
           hoy={hoy}
           contadorMes={contadorMes}
           renderDia={(fechaISO) => {

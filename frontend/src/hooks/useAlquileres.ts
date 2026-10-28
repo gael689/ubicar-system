@@ -5,6 +5,8 @@ import type {
   Alquiler,
   CheckoutCreate,
   CheckinCreate,
+  CheckinCorreccion,
+  CheckinCorregido,
   PreviewExcedente,
   ExtenderRequest,
   ExtenderResponse,
@@ -127,6 +129,30 @@ export function useAlquileres() {
     [queryClient]
   );
 
+  /** Corrige los datos de un check-in hecho. No toca la plata (ver el backend). */
+  const corregirCheckin = useCallback(
+    async (alquilerID: number, payload: CheckinCorreccion): Promise<CheckinCorregido> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data } = await api.patch<ApiResponse<CheckinCorregido>>(`/alquileres/${alquilerID}/checkin`, payload);
+        queryClient.invalidateQueries({ queryKey: ['vehiculos'] });
+        queryClient.invalidateQueries({ queryKey: ['reservas'] });
+        queryClient.invalidateQueries({ queryKey: ['reserva'] });
+        queryClient.invalidateQueries({ queryKey: ['ocupacion'] });
+        return data.data;
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail;
+        const msg = detail?.message || (typeof detail === 'string' ? detail : 'Error al corregir el check-in');
+        setError(msg);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [queryClient]
+  );
+
   const extender = useCallback(
     async (alquilerID: number, payload: ExtenderRequest): Promise<ExtenderResponse> => {
       setLoading(true);
@@ -154,6 +180,7 @@ export function useAlquileres() {
     checkout,
     previewExcedente,
     checkin,
+    corregirCheckin,
     extender,
   };
 }

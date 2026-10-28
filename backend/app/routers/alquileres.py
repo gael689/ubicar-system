@@ -13,6 +13,7 @@ from app.core.exceptions import ConflictError, NotFoundError, BusinessRuleError
 from app.core.responses import ok, paginated
 from app.models.usuario import Usuario
 from app.schemas.alquiler import (
+    CheckinCorreccion,
     CheckinCreate,
     ExtenderRequest,
     ExtenderResponse,
@@ -164,6 +165,40 @@ def checkin(
     EmailService.avisar_luego(background, "checkin", alquiler)
 
     return ok(AlquilerResponse.model_validate(alquiler), "Checkin registrado")
+
+
+@router.patch("/{alquiler_id}/checkin")
+def corregir_checkin(
+    alquiler_id: int,
+    payload: CheckinCorreccion,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Corrige los datos de un check-in ya hecho, sin tocar la plata. Lo puede
+    hacer cualquier usuario (decisión del 28/10); queda en la auditoría.
+    """
+    svc = AlquilerService(db)
+    try:
+        alquiler, cargo_correspondia = svc.corregir_checkin(
+            alquiler_id=alquiler_id,
+            checkin_fecha=payload.checkin_fecha,
+            checkin_hora=payload.checkin_hora,
+            checkin_km=payload.checkin_km,
+            checkin_combustible=payload.checkin_combustible,
+            checkin_descripcion=payload.checkin_descripcion,
+            checkin_estado_limpieza=payload.checkin_estado_limpieza,
+            usuario_id=current_user.id,
+        )
+        db.commit()
+    except (NotFoundError, BusinessRuleError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    datos = AlquilerResponse.model_validate(alquiler).model_dump(mode="json")
+    datos["cargo_excedente_correspondia"] = (
+        str(cargo_correspondia) if cargo_correspondia is not None else None
+    )
+    return ok(datos, "Check-in corregido")
 
 
 @router.patch("/{alquiler_id}/extender")

@@ -45,12 +45,15 @@ const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', '
 const esBloqueo = (ev: EventoOcupacion) => ev.tipo === 'bloqueo';
 const colorDe = (ev: EventoOcupacion) => (esBloqueo(ev) ? COLOR_BLOQUEO : COLOR_ESTADO[ev.estado] ?? 'bg-slate-400');
 
-/** Cuándo vuelve el auto: la devolución **acordada**, que puede ser otro día. */
+/**
+ * Cuándo vuelve el auto: la devolución **real** si ya volvió, y si no la
+ * **acordada**, que puede ser otro día.
+ */
 function vuelveEl(ev: EventoOcupacion): string {
-  return ev.fecha_devolucion_acordada || ev.fecha_fin;
+  return ev.checkin_fecha || ev.fecha_devolucion_acordada || ev.fecha_fin;
 }
 function vuelveA(ev: EventoOcupacion): string {
-  return (ev.hora_devolucion_acordada || ev.hora_fin).slice(0, 5);
+  return (ev.checkin_hora || ev.hora_devolucion_acordada || ev.hora_fin).slice(0, 5);
 }
 
 /** Lo que falta confirmar: una entrega que ya pasó y nadie registró. */

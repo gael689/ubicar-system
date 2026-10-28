@@ -323,6 +323,13 @@ class ReservaResponse(BaseModel):
     conductores: list[ConductorResumen] = Field(default_factory=list)
     alquiler_id: int | None = None
     alquiler_estado: str | None = None
+    # La devolución real y su excedente, una vez hecho el check-in (ver las
+    # properties en `Reserva`). Antes la ficha sólo podía mostrar lo pactado.
+    checkin_fecha: date | None = None
+    checkin_hora: time | None = None
+    checkin_horas_excedidas: Decimal | None = None
+    checkin_cargo_excedente: Decimal | None = None
+    checkin_excedente_bonificado: bool = False
     # D-34: constancia visible de que el auto salió sin contrato firmado.
     entregado_sin_contrato: bool = False
     # sin_emitir | emitido | firmado — visible en el listado desde que se crea

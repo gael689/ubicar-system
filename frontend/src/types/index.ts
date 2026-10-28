@@ -925,6 +925,12 @@ export interface Reserva {
   conductor?: ConductorAdicional | null;
   alquiler_id?: number | null;
   alquiler_estado?: string | null;
+  /** La devolución real y su excedente, una vez hecho el check-in. */
+  checkin_fecha?: string | null;
+  checkin_hora?: string | null;
+  checkin_horas_excedidas?: string | null;
+  checkin_cargo_excedente?: string | null;
+  checkin_excedente_bonificado?: boolean;
   /** D-34: el auto salió sin contrato firmado y sigue sin firmarse. */
   entregado_sin_contrato?: boolean;
   /** sin_emitir | emitido | firmado — el contrato cuelga de la reserva. */
@@ -1055,6 +1061,7 @@ export interface Alquiler {
   checkin_combustible: number | null;
   checkin_descripcion: string | null;
   checkin_registrado_en_tiempo_real: boolean;
+  checkin_estado_limpieza?: string | null;
   // Excedente
   horas_excedidas: string;
   horas_cobradas: string | null;
@@ -1067,6 +1074,21 @@ export interface Alquiler {
   // Contrato
   contrato_firmado: boolean;
   contrato_url: string | null;
+}
+
+/** Corregir un check-in ya hecho: sólo los datos, nunca la plata. */
+export interface CheckinCorreccion {
+  checkin_fecha: string;
+  checkin_hora: string;
+  checkin_km: number;
+  checkin_combustible: number;
+  checkin_descripcion?: string | null;
+  checkin_estado_limpieza?: string | null;
+}
+
+export interface CheckinCorregido extends Alquiler {
+  /** Si con la hora corregida correspondía cobrar otro excedente. El cobro no se tocó. */
+  cargo_excedente_correspondia: string | null;
 }
 
 export interface PagoInmediato {
@@ -1199,6 +1221,9 @@ export interface EventoOcupacion {
   late_checkout?: boolean;
   hora_devolucion_acordada?: string | null;
   fecha_devolucion_acordada?: string | null;
+  /** La devolución real, una vez hecho el check-in. Si está, manda sobre lo pactado. */
+  checkin_fecha?: string | null;
+  checkin_hora?: string | null;
   /**
    * De dónde vino. Los bloqueos llegan como `'mostrador'`: no tienen canal, y
    * es lo correcto para algo que carga una persona.

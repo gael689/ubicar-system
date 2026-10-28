@@ -1,82 +1,103 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
-import { CalendarioAnual, MESES_NOMBRE, ordenDeMeses } from './CalendarioAnual';
+import {
+  CalendarioAnual, MESES_NOMBRE, inicioDeVentana, mesesDeLaVentana, nombreDeLaVentana, rangoDeLaVentana,
+} from './CalendarioAnual';
 
 /**
- * El cuadro de doce meses arranca por el mes en curso.
+ * El cuadro muestra doce meses seguidos desde el mes en curso, **cruzando el
+ * año** (28/10).
  *
- * Antes empezaba siempre en enero. Nadie abre esta pantalla para mirar febrero
- * pasado: se abre para ver lo que viene, y con el orden fijo eso quedaba en la
- * mitad de abajo, detrás de siete meses muertos.
+ * Antes era un año calendario rotado: en octubre se veía octubre → diciembre
+ * y después enero → septiembre del mismo año, que ya pasaron. Pedido del
+ * mostrador: *"después de diciembre, un enero 2027, y que continúe el año"*.
  */
 
-const AGOSTO_2026 = new Date(2026, 7, 21); // mes 7 = agosto
+const OCTUBRE_2026 = new Date(2026, 9, 28); // mes 9 = octubre
 
-describe('ordenDeMeses', () => {
-  it('en el año en curso arranca por el mes de hoy', () => {
-    expect(ordenDeMeses(2026, AGOSTO_2026)).toEqual([7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6]);
+describe('la ventana de doce meses', () => {
+  it('arranca el 1° del mes en curso', () => {
+    expect(inicioDeVentana(OCTUBRE_2026)).toEqual(new Date(2026, 9, 1));
   });
 
-  it('los meses que ya pasaron van al final, no se esconden', () => {
-    const orden = ordenDeMeses(2026, AGOSTO_2026);
-    expect(orden).toHaveLength(12);
-    expect(new Set(orden).size).toBe(12);
+  it('después de diciembre sigue enero del año que viene', () => {
+    const meses = mesesDeLaVentana(inicioDeVentana(OCTUBRE_2026));
+    expect(meses).toHaveLength(12);
+    expect(meses[0]).toEqual({ anio: 2026, mes: 9 });
+    expect(meses[2]).toEqual({ anio: 2026, mes: 11 });
+    expect(meses[3]).toEqual({ anio: 2027, mes: 0 });
+    expect(meses[11]).toEqual({ anio: 2027, mes: 8 });
   });
 
-  it('en enero no rota nada: el mes en curso ya es el primero', () => {
-    expect(ordenDeMeses(2026, new Date(2026, 0, 15))).toEqual(
-      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    );
+  it('en enero es el año calendario entero', () => {
+    const meses = mesesDeLaVentana(new Date(2027, 0, 1));
+    expect(meses.every(m => m.anio === 2027)).toBe(true);
+    expect(meses.map(m => m.mes)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   });
 
-  it('en diciembre queda diciembre primero y enero segundo', () => {
-    expect(ordenDeMeses(2026, new Date(2026, 11, 3))).toEqual(
-      [11, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    );
+  it('el rango para pedir los datos cubre los doce meses enteros', () => {
+    expect(rangoDeLaVentana(new Date(2026, 9, 1))).toEqual({ desde: '2026-10-01', hasta: '2027-09-30' });
   });
 
-  it('otro año no rota: no hay "mes actual" que poner primero', () => {
-    const derecho = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-    expect(ordenDeMeses(2027, AGOSTO_2026)).toEqual(derecho);
-    expect(ordenDeMeses(2025, AGOSTO_2026)).toEqual(derecho);
+  it('el nombre dice de dónde a dónde', () => {
+    expect(nombreDeLaVentana(new Date(2026, 9, 1))).toBe('Octubre 2026 – Septiembre 2027');
   });
 });
 
 describe('CalendarioAnual', () => {
-  function montar(anio: number) {
+  function montar(inicio = inicioDeVentana(OCTUBRE_2026), onInicioChange = () => {}) {
     return render(
       <CalendarioAnual
-        anio={anio}
-        onAnioChange={() => {}}
-        hoy={AGOSTO_2026}
+        inicio={inicio}
+        onInicioChange={onInicioChange}
+        hoy={OCTUBRE_2026}
         renderDia={() => null}
       />,
     );
   }
 
-  it('dibuja los doce meses, empezando por agosto', () => {
-    const { container } = montar(2026);
-    // Sólo los títulos de mes: el `querySelectorAll` de botones agarra también
-    // los 365 días.
-    const titulos = Array.from(container.querySelectorAll('button'))
-      .map(b => b.textContent?.replace('· ya pasó', '').trim() ?? '')
-      .filter(t => MESES_NOMBRE.includes(t));
+  /** Sólo los títulos de mes: los botones de los días también son botones. */
+  function titulos(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll('button'))
+      .map(b => b.textContent?.trim() ?? '')
+      .filter(t => MESES_NOMBRE.some(m => t.startsWith(m)));
+  }
 
-    expect(titulos).toHaveLength(12);
-    expect(titulos[0]).toBe('Agosto');
-    expect(titulos[4]).toBe('Diciembre');
-    expect(titulos[5]).toBe('Enero');
-    expect(titulos[11]).toBe('Julio');
+  it('dibuja octubre 2026 a septiembre 2027, con el año en cada mes', () => {
+    const t = titulos(montar().container);
+    expect(t).toHaveLength(12);
+    expect(t[0]).toBe('Octubre2026');
+    expect(t[2]).toBe('Diciembre2026');
+    expect(t[3]).toBe('Enero2027');
+    expect(t[11]).toBe('Septiembre2027');
   });
 
-  it('marca los meses de este año que ya pasaron', () => {
-    montar(2026);
-    // Enero quedó después de diciembre por la rotación: sin la marca se lee
-    // como enero del año que viene.
-    expect(screen.getByTitle('Enero de 2026 — ya pasó')).toBeInTheDocument();
-    // Y los que vienen no la llevan.
-    expect(screen.queryByTitle('Septiembre de 2026 — ya pasó')).not.toBeInTheDocument();
+  it('las flechas mueven doce meses y "Hoy" vuelve al mes en curso', () => {
+    const cambio = vi.fn();
+    montar(new Date(2027, 9, 1), cambio);
+    fireEvent.click(screen.getByTitle('12 meses después'));
+    expect(cambio).toHaveBeenLastCalledWith(new Date(2028, 9, 1));
+    fireEvent.click(screen.getByTitle('12 meses antes'));
+    expect(cambio).toHaveBeenLastCalledWith(new Date(2026, 9, 1));
+    fireEvent.click(screen.getByText('Hoy'));
+    expect(cambio).toHaveBeenLastCalledWith(new Date(2026, 9, 1));
+  });
+
+  it('al tocar un mes dice de qué año es', () => {
+    const elegir = vi.fn();
+    const { container } = render(
+      <CalendarioAnual
+        inicio={inicioDeVentana(OCTUBRE_2026)}
+        onInicioChange={() => {}}
+        onSelectMes={elegir}
+        hoy={OCTUBRE_2026}
+        renderDia={() => null}
+      />,
+    );
+    const enero = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Enero2027')!;
+    fireEvent.click(enero);
+    expect(elegir).toHaveBeenCalledWith(2027, 0);
   });
 
   it('el tamaño grande agranda los días y marca hoy más fuerte; el default no cambia', () => {
@@ -84,25 +105,21 @@ describe('CalendarioAnual', () => {
     // más grandes. Fechas especiales usa el default y tiene que quedar igual.
     const hoyEn = (container: HTMLElement) =>
       Array.from(container.querySelectorAll('button')).find(
-        b => b.textContent === '21' && b.className.includes('ring'),
+        b => b.textContent === '28' && b.className.includes('ring'),
       ) as HTMLElement;
 
-    const { container, unmount } = montar(2026);
+    const { container, unmount } = montar();
     expect(hoyEn(container).className).toContain('ring-2');
     expect(hoyEn(container).className).toContain('text-[10px]');
     unmount();
 
     const grande = render(
-      <CalendarioAnual anio={2026} onAnioChange={() => {}} hoy={AGOSTO_2026} renderDia={() => null} tamano="grande" />,
+      <CalendarioAnual
+        inicio={inicioDeVentana(OCTUBRE_2026)} onInicioChange={() => {}}
+        hoy={OCTUBRE_2026} renderDia={() => null} tamano="grande"
+      />,
     );
     expect(hoyEn(grande.container).className).toContain('ring-[3px]');
     expect(hoyEn(grande.container).className).toContain('text-sm');
-  });
-
-  it('en otro año no marca ninguno como pasado', () => {
-    montar(2027);
-    for (const nombre of MESES_NOMBRE) {
-      expect(screen.queryByTitle(`${nombre} de 2027 — ya pasó`)).not.toBeInTheDocument();
-    }
   });
 });

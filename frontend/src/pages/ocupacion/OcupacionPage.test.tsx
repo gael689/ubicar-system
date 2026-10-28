@@ -48,7 +48,10 @@ vi.mock('../reservas/ReservaInfoModal', () => ({ ReservaInfoModal: () => null })
 vi.mock('@/components/reservas/PanelResolverReserva', () => ({
   PanelResolverReserva: () => null,
 }));
-vi.mock('@/components/shared/CalendarioAnual', () => ({ CalendarioAnual: () => null }));
+vi.mock('@/components/shared/CalendarioAnual', () => ({
+  CalendarioAnual: () => null,
+  inicioDeVentana: (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1),
+}));
 
 import { OcupacionPage } from './OcupacionPage';
 

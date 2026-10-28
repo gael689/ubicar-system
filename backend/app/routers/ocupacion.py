@@ -110,6 +110,8 @@ def get_ocupacion(
             late_checkout=r.late_checkout,
             hora_devolucion_acordada=r.hora_devolucion_acordada,
             fecha_devolucion_acordada=r.fecha_devolucion_acordada,
+            checkin_fecha=r.checkin_fecha,
+            checkin_hora=r.checkin_hora,
             origen=r.origen,
             # Sólo para las de mostrador: en una reserva web el `usuario` es el
             # usuario "Sistema", que no le dice nada a nadie. Ahí el front

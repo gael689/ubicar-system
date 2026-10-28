@@ -10,7 +10,7 @@ import { DaniosPreexistentes } from '@/components/flota/DaniosPreexistentes';
 import { DaniosTab } from '@/components/flota/DaniosTab';
 import { BotonesDeEstado, LIMPIEZA_OPTIONS, type OpcionDeEstado } from '@/components/reservas/BotonesDeEstado';
 
-const FUEL_LEVELS = [
+export const FUEL_LEVELS = [
   { value: 0,   label: 'Vacío',  color: 'bg-red-50 border-red-300 text-red-700' },
   { value: 25,  label: '¼',      color: 'bg-orange-50 border-orange-300 text-orange-700' },
   { value: 50,  label: '½',      color: 'bg-yellow-50 border-yellow-300 text-yellow-700' },

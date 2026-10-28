@@ -348,6 +348,36 @@ class Reserva(Base):
             return None
         return "finalizado" if self.alquiler.checkin_fecha is not None else "activo"
 
+    # ── La devolución real ───────────────────────────────────────────────────
+    # **La ficha mostraba sólo lo pactado.** Un auto pactado a las 09:00 que
+    # volvió a las 13:45 se seguía leyendo "09:00" desde el calendario, porque
+    # el check-in quedaba guardado en el alquiler y ninguna pantalla lo leía.
+    # Van como properties, igual que `alquiler_estado`: el dato vive en el
+    # alquiler y la reserva sólo lo trae.
+
+    @property
+    def checkin_fecha(self) -> date | None:
+        return self.alquiler.checkin_fecha if self.alquiler else None
+
+    @property
+    def checkin_hora(self) -> time | None:
+        return self.alquiler.checkin_hora if self.alquiler else None
+
+    @property
+    def checkin_horas_excedidas(self) -> Decimal | None:
+        a = self.alquiler
+        return a.horas_excedidas if a and a.checkin_fecha else None
+
+    @property
+    def checkin_cargo_excedente(self) -> Decimal | None:
+        a = self.alquiler
+        return a.cargo_excedente if a and a.checkin_fecha else None
+
+    @property
+    def checkin_excedente_bonificado(self) -> bool:
+        a = self.alquiler
+        return bool(a and a.checkin_fecha and a.excedente_bonificado)
+
     # ── Índices compuestos ────────────────────────────────────────────────────
     __table_args__ = (
         Index("ix_reservas_vehiculo_fecha_inicio", "vehiculo_id", "fecha_inicio"),

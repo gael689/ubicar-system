@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { cn, extractError, fechaLocal, hoyLocal } from '@/lib/utils';
 import { abreviarLugar } from '@/lib/lugares';
-import { CalendarioAnual } from '@/components/shared/CalendarioAnual';
+import { CalendarioAnual, inicioDeVentana } from '@/components/shared/CalendarioAnual';
 import type { VehiculoOcupacion, EventoOcupacion, Reserva, ApiResponse, DiaResumenAnual } from '@/types';
 import { ReservaModal } from '../reservas/ReservaModal';
 import { ContratoRapidoModal } from '../reservas/ContratoRapidoModal';
@@ -170,6 +170,9 @@ function AsyncCheckoutModal({
  * "08:30" se lee como una devolución más temprano, que es justo al revés.
  */
 function horaDevolucion(ev: EventoOcupacion): string {
+  // Ya devuelto: la hora real. `fecha_fin` ya es la del check-in (ver
+  // `conDevolucionReal`), así que no hay "+N" que calcular.
+  if (ev.checkin_hora) return ev.checkin_hora.slice(0, 5);
   const hora = (ev.hora_devolucion_acordada || ev.hora_fin).slice(0, 5);
   const fecha = ev.fecha_devolucion_acordada;
   if (!fecha || fecha === ev.fecha_fin) return hora;
@@ -195,7 +198,13 @@ function tooltipEvento(ev: EventoOcupacion): string {
   // En el tooltip van los nombres **completos**: acá no hay problema de
   // espacio, y es donde se confirma qué quiere decir la abreviatura de la barra.
   if (ev.lugar_entrega) lineas.push(`Entrega: ${ev.lugar_entrega} ${ev.hora_inicio.slice(0, 5)}`);
-  if (ev.lugar_devolucion) {
+  if (ev.checkin_hora) {
+    const pactada = (ev.hora_devolucion_acordada || ev.hora_fin).slice(0, 5);
+    lineas.push(
+      `Devuelto: ${ev.lugar_devolucion ? `${ev.lugar_devolucion} ` : ''}`
+      + `${ev.checkin_hora.slice(0, 5)} (pactado ${pactada})`,
+    );
+  } else if (ev.lugar_devolucion) {
     const fechaDev = ev.fecha_devolucion_acordada && ev.fecha_devolucion_acordada !== ev.fecha_fin
       ? ` (${ev.fecha_devolucion_acordada.split('-').reverse().join('/')})` : '';
     lineas.push(
@@ -206,6 +215,21 @@ function tooltipEvento(ev: EventoOcupacion): string {
   if (ev.late_checkout) lineas.push('Late check-in acordado');
   if (ev.notas) lineas.push(ev.notas);
   return lineas.join('\n');
+}
+
+/**
+ * Una reserva ya devuelta **termina en la devolución real**, no en lo pactado.
+ *
+ * Pactado a las 09:00 y devuelto a las 13:45: el auto estuvo afuera hasta las
+ * 13:45, y eso es lo que el calendario tiene que decir — también para ver si se
+ * pisó con la reserva siguiente. Si volvió otro día, la barra se estira o se
+ * acorta hasta ese día. Se resuelve una sola vez al cargar, así el resto de la
+ * grilla (colisiones, carriles, el ancho) sigue leyendo `fecha_fin` sin saber
+ * nada de esto. Si el check-in se corrige, el próximo refetch lo mueve solo.
+ */
+function conDevolucionReal(ev: EventoOcupacion): EventoOcupacion {
+  if (!ev.checkin_fecha) return ev;
+  return { ...ev, fecha_fin: ev.checkin_fecha };
 }
 
 function addDays(date: Date, days: number): Date {
@@ -490,7 +514,11 @@ export function OcupacionPage() {
   useEffect(() => {
     if (!ocupacionData) return;
     setVehiculos(ocupacionData.vehiculos);
-    setEventos(ocupacionData.eventos.filter(e => !ESTADO_FUERA_DEL_CALENDARIO.has(e.estado)));
+    setEventos(
+      ocupacionData.eventos
+        .filter(e => !ESTADO_FUERA_DEL_CALENDARIO.has(e.estado))
+        .map(conDevolucionReal),
+    );
     setSinAsignar(ocupacionData.sin_asignar ?? []);
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
@@ -2055,14 +2083,22 @@ function VistaAnualOcupacion({
   onSelectMes: (anio: number, mes: number) => void;
   onSelectDia: (fechaISO: string) => void;
 }) {
-  const [anio, setAnio] = useState(new Date().getFullYear());
-  const { data, isLoading } = useResumenAnual(anio);
+  const [inicio, setInicio] = useState(() => inicioDeVentana(new Date()));
+  // La ventana de doce meses cruza diciembre salvo que arranque en enero, así
+  // que se piden los dos años que toca. Si es uno solo, las dos consultas son
+  // la misma y React Query la hace una vez.
+  const anioDesde = inicio.getFullYear();
+  const anioHasta = new Date(inicio.getFullYear(), inicio.getMonth() + 11, 1).getFullYear();
+  const primero = useResumenAnual(anioDesde);
+  const segundo = useResumenAnual(anioHasta);
+  const isLoading = primero.isLoading || segundo.isLoading;
 
   const porDia = useMemo(() => {
     const m = new Map<string, DiaResumenAnual>();
-    (data?.dias ?? []).forEach(d => m.set(d.fecha, d));
+    (primero.data?.dias ?? []).forEach(d => m.set(d.fecha, d));
+    (segundo.data?.dias ?? []).forEach(d => m.set(d.fecha, d));
     return m;
-  }, [data]);
+  }, [primero.data, segundo.data]);
 
   if (isLoading) {
     return (
@@ -2083,9 +2119,9 @@ function VistaAnualOcupacion({
           especiales, donde el cuadro comparte lugar con un panel. */}
       <CalendarioAnual
         tamano="grande"
-        anio={anio}
-        onAnioChange={setAnio}
-        onSelectMes={mes => onSelectMes(anio, mes)}
+        inicio={inicio}
+        onInicioChange={setInicio}
+        onSelectMes={onSelectMes}
         onSelectDia={onSelectDia}
         renderDia={(fechaISO, dia) => {
           const d = porDia.get(fechaISO);

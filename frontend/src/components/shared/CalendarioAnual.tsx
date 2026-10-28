@@ -11,32 +11,43 @@ export function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Un mes puntual: `mes` va de 0 (enero) a 11. */
+export interface MesDelAnio {
+  anio: number;
+  mes: number;
+}
+
 /**
- * En qué orden se dibujan los doce meses.
+ * **Doce meses seguidos desde el mes en curso, cruzando el año** (28/10).
  *
- * **Arranca por el mes en curso**, no por enero. En agosto, la primera fila
- * empieza en agosto y los meses que ya pasaron se corren al final.
- *
- * El motivo es que nadie abre este cuadro para mirar febrero pasado: se abre
- * para ver lo que viene —qué fechas están tomadas, qué feriados hay que
- * cargar— y con el orden fijo eso quedaba en la mitad de abajo, siempre
- * después de siete meses muertos.
- *
- * **Sólo rota el año en curso.** En 2027 no hay "mes actual" que poner
- * primero, y en 2025 ya pasaron todos: ahí enero → diciembre es el orden
- * correcto y cualquier rotación sería arbitraria.
- *
- * No se convierte en una ventana móvil de doce meses (agosto de este año a
- * julio del que viene) porque las dos pantallas que usan esto piden los datos
- * **de un año calendario exacto** — `?desde=AAAA-01-01&hasta=AAAA-12-31` y
- * `/ocupacion/resumen-anual?anio=`. Una ventana a caballo de dos años obliga a
- * pedir los dos y a mezclarlos, que es otro trabajo y no es lo que se pidió.
+ * Antes era un año calendario rotado: en octubre se veía octubre → diciembre
+ * y después volvía a enero → septiembre **del mismo año**, o sea meses que ya
+ * pasaron. Pedido del mostrador: *"después de diciembre, un enero 2027, y que
+ * continúe el año"*. Lo que se mira acá es lo que viene, y lo que viene cruza
+ * diciembre.
  */
-export function ordenDeMeses(anio: number, hoy: Date): number[] {
-  const todos = Array.from({ length: 12 }, (_, i) => i);
-  if (anio !== hoy.getFullYear()) return todos;
-  const actual = hoy.getMonth();
-  return [...todos.slice(actual), ...todos.slice(0, actual)];
+export function inicioDeVentana(hoy: Date): Date {
+  return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+}
+
+export function mesesDeLaVentana(inicio: Date): MesDelAnio[] {
+  return Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(inicio.getFullYear(), inicio.getMonth() + i, 1);
+    return { anio: d.getFullYear(), mes: d.getMonth() };
+  });
+}
+
+/** Del 1° del primer mes al último día del duodécimo, para pedir los datos. */
+export function rangoDeLaVentana(inicio: Date): { desde: string; hasta: string } {
+  const fin = new Date(inicio.getFullYear(), inicio.getMonth() + 12, 0);
+  return { desde: ymd(inicio), hasta: ymd(fin) };
+}
+
+/** "Octubre 2026 – Septiembre 2027". */
+export function nombreDeLaVentana(inicio: Date): string {
+  const meses = mesesDeLaVentana(inicio);
+  const [a, b] = [meses[0], meses[11]];
+  return `${MESES_NOMBRE[a.mes]} ${a.anio} – ${MESES_NOMBRE[b.mes]} ${b.anio}`;
 }
 
 /**
@@ -103,13 +114,13 @@ export interface CeldaDia {
  * Es la generalización de `MesMini`, que vivía sólo en
  * `FechasEspecialesPage.tsx` y le gustó al dueño ahí. **No se duplica**: acá
  * queda el armado de la grilla (offset del primer día, 7 columnas arrancando
- * en lunes, navegación por año) y quien lo usa decide **qué pinta cada día**
+ * en lunes, navegación de a doce meses) y quien lo usa decide **qué pinta cada día**
  * vía `renderDia` — un feriado se pinta distinto de una celda de ocupación,
  * pero el cuadro de 12 meses es el mismo objeto en las dos pantallas.
  */
 export function CalendarioAnual({
-  anio,
-  onAnioChange,
+  inicio,
+  onInicioChange,
   onSelectMes,
   onSelectDia,
   renderDia,
@@ -117,49 +128,49 @@ export function CalendarioAnual({
   hoy = new Date(),
   tamano = 'compacto',
 }: {
-  anio: number;
-  onAnioChange: (anio: number) => void;
+  /** El 1° del primer mes de los doce que se muestran. */
+  inicio: Date;
+  onInicioChange: (inicio: Date) => void;
   /** Click en el nombre del mes — salta a la vista de ese mes. */
-  onSelectMes?: (mes: number) => void;
+  onSelectMes?: (anio: number, mes: number) => void;
   /** Click en un día — salta a ese día puntual. */
   onSelectDia?: (fechaISO: string) => void;
   renderDia: (fechaISO: string, dia: number, esHoy: boolean) => CeldaDia | null;
   /** Contador chico junto al nombre del mes (ej: "3 días"). */
-  contadorMes?: (mes: number) => number | null;
+  contadorMes?: (anio: number, mes: number) => number | null;
   hoy?: Date;
   tamano?: TamanoCalendario;
 }) {
   const hoyStr = ymd(hoy);
   const estilos = ESTILOS[tamano];
+  // Las flechas mueven la ventana entera: doce meses para atrás o adelante.
+  const mover = (meses: number) =>
+    onInicioChange(new Date(inicio.getFullYear(), inicio.getMonth() + meses, 1));
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end gap-1">
-        <Button variant="outline" size="sm" onClick={() => onAnioChange(anio - 1)}>
+        <Button variant="outline" size="sm" onClick={() => mover(-12)} title="12 meses antes">
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="sm" onClick={() => onAnioChange(hoy.getFullYear())}>
+        <Button variant="outline" size="sm" onClick={() => onInicioChange(inicioDeVentana(hoy))}>
           Hoy
         </Button>
-        <Button variant="outline" size="sm" onClick={() => onAnioChange(anio + 1)}>
+        <Button variant="outline" size="sm" onClick={() => mover(12)} title="12 meses después">
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
 
       <div className={estilos.grilla}>
-        {ordenDeMeses(anio, hoy).map(mes => (
+        {mesesDeLaVentana(inicio).map(({ anio, mes }) => (
           <MesMini
-            key={mes}
+            key={`${anio}-${mes}`}
             anio={anio}
             mes={mes}
             nombre={MESES_NOMBRE[mes]}
             hoyStr={hoyStr}
-            // Un mes de este año que ya pasó queda **después** de diciembre por
-            // la rotación de arriba. Sin marcarlo, "Enero" al final de la
-            // grilla se lee como enero del año que viene.
-            yaPaso={anio === hoy.getFullYear() && mes < hoy.getMonth()}
             renderDia={renderDia}
-            contador={contadorMes ? contadorMes(mes) : null}
+            contador={contadorMes ? contadorMes(anio, mes) : null}
             onSelectMes={onSelectMes}
             onSelectDia={onSelectDia}
             estilos={estilos}
@@ -171,17 +182,15 @@ export function CalendarioAnual({
 }
 
 function MesMini({
-  anio, mes, nombre, hoyStr, yaPaso = false, renderDia, contador, onSelectMes, onSelectDia, estilos,
+  anio, mes, nombre, hoyStr, renderDia, contador, onSelectMes, onSelectDia, estilos,
 }: {
   anio: number;
   mes: number;
   nombre: string;
   hoyStr: string;
-  /** Mes del año en curso que ya terminó: quedó al final por la rotación. */
-  yaPaso?: boolean;
   renderDia: (fechaISO: string, dia: number, esHoy: boolean) => CeldaDia | null;
   contador?: number | null;
-  onSelectMes?: (mes: number) => void;
+  onSelectMes?: (anio: number, mes: number) => void;
   onSelectDia?: (fechaISO: string) => void;
   estilos: EstilosCalendario;
 }) {
@@ -195,23 +204,21 @@ function MesMini({
   ];
 
   return (
-    <div className={cn('rounded-xl border border-border', estilos.mes, yaPaso && 'bg-muted/20')}>
+    <div className={cn('rounded-xl border border-border', estilos.mes)}>
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <button
           type="button"
-          onClick={() => onSelectMes?.(mes)}
+          onClick={() => onSelectMes?.(anio, mes)}
           disabled={!onSelectMes}
-          title={yaPaso ? `${nombre} de ${anio} — ya pasó` : undefined}
           className={cn(
-            estilos.titulo, 'font-semibold',
-            yaPaso ? 'text-muted-foreground' : 'text-foreground',
+            estilos.titulo, 'font-semibold text-foreground',
             onSelectMes && 'hover:text-primary hover:underline',
           )}
         >
           {nombre}
-          {/* Sin esto, un "Enero" que aparece después de diciembre se lee como
-              enero del año que viene. Los datos son de este año. */}
-          {yaPaso && <span className="ml-1 font-normal text-[10px]">· ya pasó</span>}
+          {/* El año en cada mes: la ventana cruza diciembre, y un "Enero" sin
+              año no dice de cuál. */}
+          <span className="ml-1 font-normal text-muted-foreground">{anio}</span>
         </button>
         {contador != null && contador > 0 && (
           <span className="shrink-0 text-[10px] text-muted-foreground">{contador} día{contador !== 1 ? 's' : ''}</span>
