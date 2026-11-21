@@ -22,6 +22,7 @@ import { ProspectosPage } from '@/pages/prospectos/ProspectosPage';
 import { AdicionalesPage } from '@/pages/adicionales/AdicionalesPage';
 import { ReservasWebPage } from '@/pages/reservas/ReservasWebPage';
 import { AuditoriaPage } from '@/pages/auditoria/AuditoriaPage';
+import { UberPage } from '@/pages/uber/UberPage';
 
 export default function App() {
   return (
@@ -59,6 +60,7 @@ export default function App() {
           path="/clientes/:id"
           element={<AppLayout title="Clientes"><ClienteDetail /></AppLayout>}
         />
+        <Route path="/uber" element={<AppLayout title="Uber"><UberPage /></AppLayout>} />
         <Route path="/multas" element={<AppLayout title="Flota"><MultasPage /></AppLayout>} />
         <Route path="/contratos" element={<AppLayout title="Contratos"><ContratosPage /></AppLayout>} />
         <Route path="/cotizador" element={<AppLayout title="Cotizador" fullBleed><CotizadorPage /></AppLayout>} />

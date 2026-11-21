@@ -5,6 +5,7 @@ import {
   X, AlertTriangle, Settings, Bell, CalendarDays, CalendarRange, Package, Globe, CalendarClock,
   ShieldCheck, Store, Inbox, Building2, Landmark, FileSpreadsheet, ListChecks, Lock, Tags, Receipt, Circle,
 } from 'lucide-react';
+import { CarTaxiFront } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { NAV_ITEMS, NAV_SECTIONS, TAB_POR_DEFECTO, type NavItem } from '@/lib/constants';
@@ -15,6 +16,7 @@ export const ICONS: Record<string, React.ComponentType<{ className?: string }>> 
   LayoutDashboard, Car, Calendar, ClipboardList, FileText,
   Users, Calculator, Wallet, BookOpen, CreditCard, BarChart2, AlertTriangle, Settings, Bell,
   CalendarDays, CalendarRange, Package, Globe, CalendarClock, ShieldCheck, Store, Inbox, Building2, Landmark, FileSpreadsheet, ListChecks, Lock, Tags, Receipt,
+  CarTaxiFront,
 };
 
 /**

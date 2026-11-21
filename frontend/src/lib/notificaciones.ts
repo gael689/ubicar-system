@@ -71,6 +71,10 @@ const TIPO_GRUPO: Record<string, string> = {
   // Un solo aviso con el total de lo que falta cargar (categorías, autos,
   // clientes, datos de la empresa).
   datos_por_completar: '📌 Falta completar',
+  uber_semana_vence_hoy: '🚕 Uber',
+  uber_semana_atrasada: '🚕 Uber',
+  uber_km_excedido: '🚕 Uber',
+  uber_contrato_por_terminar: '🚕 Uber',
 };
 
 const GRUPO_OTROS = 'Otros';

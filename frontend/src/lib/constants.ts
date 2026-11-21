@@ -343,6 +343,7 @@ export const NAV_SECTIONS: NavSection[] = [
   { titulo: 'Operación', items: [
     { path: '/ocupacion', label: 'Hoy', icon: 'LayoutDashboard' },
     { path: '/reservas', label: 'Reservas', icon: 'ClipboardList' },
+    { path: '/uber', label: 'Uber', icon: 'CarTaxiFront' },
     { path: '/contratos', label: 'Contratos', icon: 'FileText' },
     { path: '/clientes', label: 'Clientes', icon: 'Users' },
   ] },
