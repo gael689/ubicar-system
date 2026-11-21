@@ -39,6 +39,7 @@ class ReservaRepo:
         q: str | None = None,
         fecha: date | None = None,
         origen: str | None = None,
+        tipo: str | None = None,
         categoria_id: int | None = None,
         contrato: str | None = None,
         fecha_desde: date | None = None,
@@ -67,6 +68,9 @@ class ReservaRepo:
             query = query.filter(Reserva.estado.in_(estados))
         if origen:
             query = query.filter(Reserva.origen.in_([o.strip() for o in origen.split(",") if o.strip()]))
+        if tipo:
+            # `alquiler` | `uber`: el filtro "Solo Uber" del listado.
+            query = query.filter(Reserva.tipo == tipo)
         if categoria_id:
             query = query.filter(Reserva.categoria_id == categoria_id)
         if contrato:

@@ -307,6 +307,24 @@ class TestCobrarSemana:
         assert r.status_code == 422
         assert "no es un contrato de Uber" in r.json()["detail"]
 
+    def test_el_alta_pide_los_ultimos_valores(self, client, db, contratar):
+        assert client.get("/api/v1/uber/ultimos-valores").json()["data"] is None
+        contratar(entregar=False)
+        db.commit()
+        data = client.get("/api/v1/uber/ultimos-valores").json()["data"]
+        assert (data["valor_semana"], data["km_semana"], data["precio_km_extra"]) == (200000, 1500, 150)
+
+    def test_el_listado_de_reservas_filtra_solo_uber(self, client, db, contratar, hacer_reserva):
+        reserva, _ = contratar(entregar=False)
+        hacer_reserva()
+        db.commit()
+        todas = client.get("/api/v1/reservas").json()
+        solo_uber = client.get("/api/v1/reservas?tipo=uber").json()
+        assert todas["total"] == 2
+        assert [r["id"] for r in solo_uber["data"]] == [reserva.id]
+        assert solo_uber["data"][0]["tipo"] == "uber"
+        assert client.get("/api/v1/reservas?tipo=cualquiera").status_code == 422
+
     def test_el_endpoint_del_tablero_responde(self, client, db, contratar):
         contratar(empezo_hace=1)
         db.commit()

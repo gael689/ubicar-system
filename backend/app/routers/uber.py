@@ -65,6 +65,16 @@ def tablero(
     return ok(UberService(db).tablero())
 
 
+@router.get("/ultimos-valores")
+def ultimos_valores(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """Lo que se cargó en el último contrato, para proponerlo en el que sigue.
+    `null` si todavía no hubo ninguno."""
+    return ok(UberService(db).ultimos_valores())
+
+
 @router.post("/contratos/{alquiler_id}/cobrar-semana", status_code=status.HTTP_201_CREATED)
 def cobrar_semana(
     alquiler_id: int,

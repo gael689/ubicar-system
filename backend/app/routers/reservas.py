@@ -5,6 +5,7 @@ Router de Reservas — Fase 3 completo.
 import logging
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import (
     APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status,
@@ -135,6 +136,7 @@ def list_reservas(
     q: str | None = Query(None, description="Buscar por nombre o DNI/CUIT del cliente"),
     fecha: date | None = Query(None, description="Filtrar reservas activas en un día específico"),
     origen: str | None = Query(None, description="sistema | web — de dónde vino la reserva"),
+    tipo: Literal["alquiler", "uber"] | None = Query(None, description="alquiler | uber — el filtro 'Solo Uber'"),
     categoria_id: int | None = Query(None),
     contrato: str | None = Query(None, description="sin_emitir | emitido | sin_firmar"),
     fecha_desde: date | None = Query(None, description="Reservas que terminan a partir de esta fecha"),
@@ -175,6 +177,7 @@ def list_reservas(
         q=q,
         fecha=fecha,
         origen=origen,
+        tipo=tipo,
         categoria_id=categoria_id,
         contrato=contrato,
         fecha_desde=fecha_desde,
