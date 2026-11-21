@@ -1517,6 +1517,31 @@ export interface NotificacionItem {
   leida_at: string | null;
   resuelta_at: string | null;
   created_at: string;
+  /** Módulo al que pertenece (Operación, Cobranzas…). Lo decide el backend:
+   *  `domain/avisos_catalogo.py`. */
+  modulo: string;
+  modulo_label: string;
+  /** Texto del botón: qué hay que hacer ("Entregar el auto"). */
+  accion: string;
+  /** Sólo en las oportunidades: impacto estimado, WhatsApp prearmado, etc. */
+  datos: DatosOportunidad | null;
+}
+
+export interface DatosOportunidad {
+  impacto?: number;
+  impacto_label?: string;
+  accion?: string;
+  whatsapp?: string;
+  /** `op_pedir_resena`: a quiénes pedirle la reseña. */
+  clientes?: { cliente_id?: number; nombre: string; whatsapp: string | null }[];
+  [clave: string]: unknown;
+}
+
+export interface ResumenModulo {
+  modulo: string;
+  label: string;
+  total: number;
+  urgentes: number;
 }
 
 export interface NotificacionesResponse {
@@ -1524,6 +1549,13 @@ export interface NotificacionesResponse {
   total: number;
   criticas: number;
   urgentes: number;
+  por_modulo: ResumenModulo[];
+}
+
+export interface OportunidadesResponse {
+  items: NotificacionItem[];
+  total: number;
+  impacto_total: number;
 }
 
 // ─── Configuración (Fase 3, ítem 40) ─────────────────────────────────────────

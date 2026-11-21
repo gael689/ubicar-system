@@ -366,6 +366,11 @@ export const NAV_SECTIONS: NavSection[] = [
     { path: '/reportes', label: 'Reportes', icon: 'BarChart2' },
   ] },
   { titulo: 'Ventas', items: [
+    // Las sugerencias del sistema (autos parados, clientes para volver a
+    // llamar…). Es una pestaña del Centro de avisos; va antes que el ítem de
+    // Notificaciones en el recorrido del menú para que, con `?tab=oportunidades`,
+    // el activo sea éste y no aquél.
+    { path: '/notificaciones', tab: 'oportunidades', label: 'Oportunidades', icon: 'Lightbulb' },
     { path: '/cotizador', label: 'Cotizador', icon: 'Calculator' },
     // El Simulador se abre desde el botón de la página de Precios.
     { path: '/prospectos', label: 'Prospectos', icon: 'Building2' },
@@ -376,7 +381,7 @@ export const NAV_SECTIONS: NavSection[] = [
     { path: '/reservas-web', label: 'Bandeja de la web', icon: 'Inbox' },
   ] },
   { titulo: 'Sistema', items: [
-    { path: '/notificaciones', label: 'Notificaciones', icon: 'Bell' },
+    { path: '/notificaciones', label: 'Centro de avisos', icon: 'Bell' },
     { path: '/configuracion', label: 'Configuración', icon: 'Settings' },
     { path: '/auditoria', label: 'Auditoría', icon: 'ShieldCheck' },
   ] },

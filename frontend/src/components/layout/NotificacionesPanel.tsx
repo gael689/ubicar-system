@@ -1,50 +1,60 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, X, ChevronRight, RefreshCw, Check, Clock, History } from 'lucide-react';
+import { Bell, CheckCheck, Lightbulb, RefreshCw, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  useNotificaciones,
-  useGenerarNotificaciones,
-  useMarcarLeida,
-  usePosponerNotificacion,
-  useDescartarNotificacion,
+  useGenerarNotificaciones, useLeerTodas, useNotificaciones, useOportunidades,
 } from '@/hooks/useNotificaciones';
-import { extractError } from '@/lib/utils';
-import type { NotificacionItem, UrgenciaNot } from '@/types';
-import { grupoDe } from '@/lib/notificaciones';
+import { AvisoItem } from '@/components/avisos/AvisoItem';
+import { moduloVisual, porUrgencia } from '@/lib/notificaciones';
+import { cn, extractError } from '@/lib/utils';
 
-const URGENCIA_CONFIG: Record<UrgenciaNot, { dot: string }> = {
-  critica: { dot: 'bg-red-600' },
-  alta: { dot: 'bg-red-500' },
-  media: { dot: 'bg-amber-500' },
-  baja: { dot: 'bg-slate-400' },
-};
+interface Props {
+  /**
+   * Dónde vive la campana. En el menú lateral (escritorio) el panel se abre
+   * hacia el costado; en la barra de arriba (celular) baja y ocupa el ancho.
+   */
+  variante?: 'sidebar' | 'header';
+}
 
-
-export function NotificacionesPanel() {
+/**
+ * La campana: qué hay que atender, **separado por área**.
+ *
+ * El reporte (21/11/2026): *"hay demasiadas notificaciones desordenadas, las
+ * modularizaría"*. Antes era una lista larga con quince títulos mezclados. Ahora
+ * arriba hay una pestaña por módulo —Operación, Cobranzas, Flota…— con su
+ * contador, y cada aviso trae un botón que dice qué hacer.
+ *
+ * Las oportunidades 💡 no entran acá: son sugerencias, no pendientes. Abajo
+ * hay un acceso a su pestaña cuando hay alguna.
+ */
+export function NotificacionesPanel({ variante = 'sidebar' }: Props) {
   const [open, setOpen] = useState(false);
+  const [modulo, setModulo] = useState<string | null>(null);
   const { data, isLoading, isFetching } = useNotificaciones();
+  const { data: oportunidades } = useOportunidades();
   const generar = useGenerarNotificaciones();
+  const leerTodas = useLeerTodas();
   const navigate = useNavigate();
 
   const total = data?.total ?? 0;
   const criticas = data?.criticas ?? 0;
   const urgentes = data?.urgentes ?? 0;
-  const items = data?.items ?? [];
+  const porModulo = data?.por_modulo ?? [];
+  // Si el módulo elegido se vació (se leyó todo), se vuelve a "Todo".
+  const moduloActivo = modulo && porModulo.some(m => m.modulo === modulo) ? modulo : null;
 
-  const grupos = items.reduce<Record<string, NotificacionItem[]>>((acc, item) => {
-    const grupo = grupoDe(item.tipo);
-    if (!acc[grupo]) acc[grupo] = [];
-    acc[grupo].push(item);
-    return acc;
-  }, {});
+  const visibles = useMemo(() => {
+    const items = data?.items ?? [];
+    return (moduloActivo ? items.filter(i => i.modulo === moduloActivo) : items).slice().sort(porUrgencia);
+  }, [data, moduloActivo]);
 
-  function handleNavigate(url: string) {
+  function ir(url: string) {
     navigate(url);
     setOpen(false);
   }
 
-  async function handleActualizar() {
+  async function actualizar() {
     try {
       await generar.mutateAsync();
     } catch (err) {
@@ -52,12 +62,29 @@ export function NotificacionesPanel() {
     }
   }
 
+  async function marcarTodo() {
+    try {
+      await leerTodas.mutateAsync(moduloActivo);
+    } catch (err) {
+      toast.error(extractError(err));
+    }
+  }
+
+  const etiquetaActiva = moduloActivo ? moduloVisual(moduloActivo).label : null;
+  const cuantasOportunidades = oportunidades?.total ?? 0;
+
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className="relative flex items-center justify-center w-9 h-9 rounded-xl hover:bg-white/10 transition-colors text-slate-400 hover:text-white"
-        title={total > 0 ? `${total} alerta(s), ${urgentes} urgente(s)` : 'Notificaciones'}
+        className={cn(
+          'relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors',
+          variante === 'sidebar'
+            ? 'text-ubicar-primary hover:bg-white hover:text-ubicar-dark'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+        )}
+        title={total > 0 ? `${total} aviso(s), ${urgentes} urgente(s)` : 'Avisos'}
+        aria-label="Avisos"
       >
         <Bell className="h-5 w-5" />
         {/* **El número es lo urgente** (críticas y altas), no todo lo activo.
@@ -66,86 +93,125 @@ export function NotificacionesPanel() {
             deja de decir algo. Lo demás sigue en la lista; acá sólo un
             puntito avisa que hay algo sin mirar. */}
         {urgentes > 0 ? (
-          <span className={`absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full text-[10px] font-bold flex items-center justify-center px-1 ${
-            criticas > 0 ? 'bg-red-600 text-white' : 'bg-red-500 text-white'
-          }`}>
+          <span className={cn(
+            'absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white',
+            criticas > 0 ? 'bg-red-600' : 'bg-red-500',
+          )}>
             {urgentes > 99 ? '99+' : urgentes}
           </span>
         ) : total > 0 ? (
-          <span className="absolute top-0.5 right-0.5 h-2.5 w-2.5 rounded-full bg-amber-500" />
+          <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500" />
         ) : null}
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-12 bottom-0 z-50 w-96 max-h-[80vh] rounded-2xl bg-background border border-border shadow-xl shadow-black/10 flex flex-col overflow-hidden">
-
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 bg-muted/50">
+          <div
+            role="dialog"
+            aria-label="Avisos"
+            className={cn(
+              'z-50 flex flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/10',
+              variante === 'sidebar'
+                ? 'absolute bottom-0 left-12 max-h-[80vh] w-[26rem]'
+                // En el celular ocupa el ancho de la pantalla, debajo de la barra.
+                : 'fixed inset-x-2 top-14 max-h-[calc(100dvh-9rem)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-11 sm:w-[26rem]',
+            )}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/50 px-4 py-3">
               <div className="flex items-center gap-2">
                 <Bell className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold text-foreground">Alertas del sistema</span>
+                <span className="text-sm font-semibold text-foreground">Para atender</span>
                 {total > 0 && <span className="text-xs text-muted-foreground">({total})</span>}
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={handleActualizar}
+                  onClick={actualizar}
                   disabled={isFetching || generar.isPending}
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title="Actualizar (vuelve a evaluar todas las reglas)"
+                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="Actualizar (vuelve a revisar todo)"
+                  aria-label="Actualizar"
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isFetching || generar.isPending ? 'animate-spin' : ''}`} />
-                </button>
-                <button
-                  onClick={() => handleNavigate('/notificaciones')}
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title="Ver todas las notificaciones"
-                >
-                  <History className="h-3.5 w-3.5" />
+                  <RefreshCw className={cn('h-4 w-4', (isFetching || generar.isPending) && 'animate-spin')} />
                 </button>
                 <button
                   onClick={() => setOpen(false)}
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  aria-label="Cerrar"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            <div className="overflow-y-auto flex-1 p-3 space-y-3">
+            {/* Una pestaña por módulo, sólo los que tienen algo. */}
+            {porModulo.length > 0 && (
+              <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-border px-3 py-2" role="tablist" aria-label="Módulos">
+                <Chip activo={moduloActivo === null} onClick={() => setModulo(null)} label="Todo" total={total} />
+                {porModulo.map(m => {
+                  const v = moduloVisual(m.modulo, m.label);
+                  return (
+                    <Chip
+                      key={m.modulo}
+                      activo={moduloActivo === m.modulo}
+                      onClick={() => setModulo(m.modulo)}
+                      label={m.label}
+                      total={m.total}
+                      urgente={m.urgentes > 0}
+                      icono={<v.icono className={cn('h-3.5 w-3.5', moduloActivo === m.modulo ? '' : v.color)} />}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex-1 space-y-1.5 overflow-y-auto p-3">
               {isLoading && (
-                <div className="text-center py-6 text-muted-foreground text-sm">Cargando alertas...</div>
+                <div className="py-6 text-center text-sm text-muted-foreground">Cargando avisos…</div>
               )}
 
               {!isLoading && total === 0 && (
-                <div className="text-center py-8">
-                  <Bell className="h-10 w-10 mx-auto mb-2 text-muted-foreground opacity-30" />
-                  <p className="text-sm text-foreground font-medium">Sin alertas activas</p>
-                  <p className="text-xs text-muted-foreground mt-1">Todo en orden 👌</p>
+                <div className="py-8 text-center">
+                  <Bell className="mx-auto mb-2 h-10 w-10 text-muted-foreground opacity-30" />
+                  <p className="text-sm font-medium text-foreground">Nada para atender</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Todo en orden 👌</p>
                 </div>
               )}
 
-              {Object.entries(grupos).map(([grupo, groupItems]) => (
-                <div key={grupo}>
-                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 px-1">
-                    {grupo}
-                  </div>
-                  <div className="space-y-1">
-                    {groupItems.map(item => (
-                      <NotifCard key={item.id} item={item} onNavigate={handleNavigate} />
-                    ))}
-                  </div>
-                </div>
+              {visibles.map(item => (
+                <AvisoItem key={item.id} item={item} onIr={ir} compacto />
               ))}
             </div>
 
-            {total > 0 && (
-              <div className="px-4 py-2.5 border-t border-border shrink-0 bg-muted/30">
-                <p className="text-[10px] text-muted-foreground text-center">
-                  Actualización automática cada 60 segundos
-                </p>
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 py-2">
+              {total > 0 ? (
+                <button
+                  onClick={marcarTodo}
+                  disabled={leerTodas.isPending}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  {etiquetaActiva ? `Marcar ${etiquetaActiva} como leído` : 'Marcar todo como leído'}
+                </button>
+              ) : <span />}
+              <div className="flex items-center gap-1">
+                {cuantasOportunidades > 0 && (
+                  <button
+                    onClick={() => ir('/notificaciones?tab=oportunidades')}
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50"
+                  >
+                    <Lightbulb className="h-3.5 w-3.5" />
+                    {cuantasOportunidades} oportunidad{cuantasOportunidades !== 1 ? 'es' : ''}
+                  </button>
+                )}
+                <button
+                  onClick={() => ir('/notificaciones')}
+                  className="rounded-lg px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent"
+                >
+                  Ver todo
+                </button>
               </div>
-            )}
+            </div>
           </div>
         </>
       )}
@@ -153,70 +219,34 @@ export function NotificacionesPanel() {
   );
 }
 
-function NotifCard({ item, onNavigate }: { item: NotificacionItem; onNavigate: (url: string) => void }) {
-  const cfg = URGENCIA_CONFIG[item.urgencia];
-  const marcarLeida = useMarcarLeida();
-  const posponer = usePosponerNotificacion();
-  const descartar = useDescartarNotificacion();
-
-  // Se pospone de a varios días, no "mañana": lo que se posterga es lo que hoy
-  // no se puede resolver, y recordarlo al día siguiente era el mismo aviso otra vez.
-  function enDias(n: number): string {
-    const d = new Date();
-    d.setDate(d.getDate() + n);
-    d.setHours(8, 0, 0, 0);
-    return d.toISOString();
-  }
-
-  async function accion(e: React.MouseEvent, fn: () => Promise<unknown>) {
-    e.stopPropagation();
-    try {
-      await fn();
-    } catch (err) {
-      toast.error(extractError(err));
-    }
-  }
-
+function Chip({
+  activo, onClick, label, total, urgente = false, icono,
+}: {
+  activo: boolean;
+  onClick: () => void;
+  label: string;
+  total: number;
+  urgente?: boolean;
+  icono?: React.ReactNode;
+}) {
   return (
-    <div className="group rounded-xl border border-transparent hover:border-border hover:bg-muted transition-colors">
-      <button onClick={() => onNavigate(item.url_destino)} className="w-full text-left px-3 py-2.5">
-        <div className="flex items-start gap-2.5">
-          <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${cfg.dot}`} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 justify-between">
-              <p className="text-xs font-semibold text-foreground truncate">{item.titulo}</p>
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{item.descripcion}</p>
-          </div>
-        </div>
-      </button>
-      <div className="flex items-center gap-1 px-3 pb-2 pl-8 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={e => accion(e, () => marcarLeida.mutateAsync(item.id))}
-          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-success px-1.5 py-0.5 rounded"
-          title="Marcar como leída"
-        >
-          <Check className="h-3 w-3" /> Leída
-        </button>
-        {[3, 7].map(n => (
-          <button
-            key={n}
-            onClick={e => accion(e, () => posponer.mutateAsync({ id: item.id, hasta: enDias(n) }))}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-warning px-1.5 py-0.5 rounded"
-            title={`Recordarme en ${n} días`}
-          >
-            <Clock className="h-3 w-3" /> {n} días
-          </button>
-        ))}
-        <button
-          onClick={e => accion(e, () => descartar.mutateAsync(item.id))}
-          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-danger px-1.5 py-0.5 rounded"
-          title="Descartar"
-        >
-          <X className="h-3 w-3" /> Descartar
-        </button>
-      </div>
-    </div>
+    <button
+      role="tab"
+      aria-selected={activo}
+      onClick={onClick}
+      className={cn(
+        'relative inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+        activo
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'border-border bg-card text-foreground hover:border-primary/50',
+      )}
+    >
+      {icono}
+      {label}
+      <span className={cn('tabular-nums', activo ? 'opacity-90' : 'text-muted-foreground')}>{total}</span>
+      {urgente && (
+        <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-danger ring-2 ring-background" title="Tiene urgentes" />
+      )}
+    </button>
   );
 }

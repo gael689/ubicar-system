@@ -1,5 +1,6 @@
 import { Menu, Search } from 'lucide-react';
 import { UserButton, useUser } from '@clerk/react';
+import { NotificacionesPanel } from '@/components/layout/NotificacionesPanel';
 
 interface HeaderProps {
   title: string;
@@ -49,6 +50,11 @@ export function Header({ title, onMenuClick, onSearchClick }: HeaderProps) {
         >
           <Search className="h-5 w-5" />
         </button>
+        {/* En el celular el menú lateral está cerrado, y con él la campana:
+            sin esto, los avisos no existían en el teléfono. */}
+        <div className="md:hidden">
+          <NotificacionesPanel variante="header" />
+        </div>
         <span className="hidden sm:block text-sm text-muted-foreground">{identidad}</span>
         {/* El destino tras cerrar sesión lo define `afterSignOutUrl` del
             ClerkProvider (main.tsx): acá ya no es una prop válida. */}

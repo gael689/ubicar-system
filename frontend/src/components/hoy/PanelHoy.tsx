@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Key, ArrowDownToLine, AlertTriangle, ChevronDown, Globe, Store, Calendar,
+  Key, ArrowDownToLine, AlertTriangle, ChevronDown, Globe, Store, Calendar, Lightbulb,
 } from 'lucide-react';
+import { useOportunidades } from '@/hooks/useNotificaciones';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useReservasPendientes } from '@/hooks/useReservasWeb';
 import { PanelResolverReserva } from '@/components/reservas/PanelResolverReserva';
@@ -62,6 +63,9 @@ export function PanelHoy() {
   const [resolviendo, setResolviendo] = useState<Reserva | null>(null);
 
   const { data: stats, isLoading } = useDashboardStats(dia);
+  // Discreto a propósito: es una sugerencia, no un pendiente del día.
+  const { data: oportunidades } = useOportunidades();
+  const cuantasOportunidades = oportunidades?.total ?? 0;
   const { data: pendientesData } = useReservasPendientes();
   const pendientes = pendientesData ?? [];
 
@@ -118,6 +122,17 @@ export function PanelHoy() {
               <span className="text-xs text-muted-foreground">Sin movimientos</span>
             )}
           </button>
+
+          {cuantasOportunidades > 0 && (
+            <button
+              onClick={() => navigate('/notificaciones?tab=oportunidades')}
+              className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"
+              title="Ver las oportunidades"
+            >
+              <Lightbulb className="mr-1 inline h-3.5 w-3.5 align-[-2px]" />
+              {cuantasOportunidades}<span className="hidden sm:inline"> oportunidad{cuantasOportunidades !== 1 ? 'es' : ''}</span>
+            </button>
+          )}
 
           {/* Ir a otro día sin perder el calendario de vista */}
           <div className="flex shrink-0 items-center gap-1">
