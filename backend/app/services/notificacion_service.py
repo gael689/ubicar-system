@@ -46,6 +46,7 @@ TIPOS_DE_ESTADO_CONTINUO = frozenset({
     # Un contrato sin firmar es un aviso por reserva, que sube de urgencia a
     # medida que se acerca la entrega: el motor le actualiza texto y urgencia.
     "contrato_no_firmado",
+    "uber_semana_atrasada",
 })
 REAVISO_DIAS = 7
 

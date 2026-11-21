@@ -395,6 +395,7 @@ def cc_vencimiento_proximo(db: Session, hoy: date) -> list[dict]:
         )
         .all()
     )
+    movs = _sin_cuotas_uber(db, movs)
     # Con condición `contado` el vencimiento es el mismo día del movimiento
     # (`calcular_vencimiento`), así que sin este filtro el check-out cobrado
     # íntegro disparaba "vence hoy" el mismo día que se cobró.
@@ -441,6 +442,7 @@ def cc_vencida(db: Session, hoy: date) -> list[dict]:
         )
         .all()
     )
+    movs = _sin_cuotas_uber(db, movs)
     grupos = _por_cliente(
         movs, cobranza.alquileres_con_saldo_pendiente(db), cobranza.clientes_con_deuda(db)
     )
@@ -1491,6 +1493,181 @@ def datos_por_completar(db: Session, hoy: date) -> list[dict]:
     }]
 
 
+# ── Uber ─────────────────────────────────────────────────────────────────────
+#
+# Los contratos de Uber se pagan por semana, y lo que hay que saber de ellos no
+# es "este cliente tiene deuda vencida hace +7 días" sino "hoy paga Fulano la
+# semana 3" y "Mengano debe dos semanas". Las cuentas son las mismas del tablero
+# (`UberService`), así la campana y la pantalla nunca dicen cosas distintas.
+# Todas llevan a `/uber`, que es donde se cobra.
+
+URL_UBER = "/uber"
+DIAS_AVISO_FIN_UBER = 3
+
+
+def _contratos_uber(db: Session, hoy: date) -> list:
+    # Import local: `uber_service` importa `cobranza` y los modelos de pagos.
+    from app.services.uber_service import UberService
+
+    return UberService(db).contratos_vigentes(hoy)
+
+
+def _sin_cuotas_uber(db: Session, movs: list) -> list:
+    """
+    Saca las cuotas de los contratos de Uber **vigentes** de los avisos
+    genéricos de cuenta corriente: de ésas avisan las reglas de abajo, con la
+    semana y el chofer, y la misma deuda no tiene que aparecer dos veces.
+
+    Sólo lo que se identifica sin adivinar: el débito cuelga de un alquiler,
+    ese alquiler es de una reserva `tipo="uber"`, el auto sigue afuera, y la
+    naturaleza es la de una cuota. Cuando el auto vuelve, lo que haya quedado
+    impago deja de estar en el tablero y lo retoman `cc_vencida` y compañía.
+    """
+    ids = {m.alquiler_id for m in movs if m.alquiler_id is not None}
+    if not ids:
+        return movs
+    de_uber = {
+        aid for (aid,) in db.query(Alquiler.id)
+        .join(Reserva, Reserva.id == Alquiler.reserva_id)
+        .filter(
+            Alquiler.id.in_(ids),
+            Reserva.tipo == "uber",
+            Alquiler.checkin_fecha.is_(None),
+        )
+        .all()
+    }
+    return [
+        m for m in movs
+        if not (m.alquiler_id in de_uber and m.naturaleza in ("alquiler", "extension"))
+    ]
+
+
+def _auto_uber(reserva) -> str:
+    v = reserva.vehiculo
+    return f"{v.marca} {v.modelo} {v.patente}" if v else "el auto"
+
+
+def uber_semana_vence_hoy(db: Session, hoy: date) -> list[dict]:
+    """Hoy le vence la semana a un chofer que viene al día."""
+    avisos = []
+    for c in _contratos_uber(db, hoy):
+        if c.estado != "vence_hoy":
+            continue
+        cuota = c.cuenta.cuota_a_cobrar
+        chofer = _cliente_nombre(c.reserva.cliente)
+        avisos.append({
+            "tipo": "uber_semana_vence_hoy",
+            "titulo": f"Hoy paga {chofer} la semana {cuota.numero} — {_monto(cuota.saldo)}",
+            "descripcion": f"{_auto_uber(c.reserva)} — contrato de Uber, semana {cuota.numero} de {len(c.cuotas)}",
+            "urgencia": "alta",
+            "entidad_tipo": "alquiler",
+            "entidad_id": c.alquiler.id,
+            "url_destino": URL_UBER,
+            "fecha_objetivo": hoy,
+        })
+    return avisos
+
+
+def uber_semana_atrasada(db: Session, hoy: date) -> list[dict]:
+    """
+    Un chofer debe una o más semanas. **Una sola fila por contrato**, que se
+    actualiza sola (`TIPOS_DE_ESTADO_CONTINUO`): al día siguiente dice un día
+    más y, si se suma otra semana, la cuenta nueva.
+
+    Crítica con una semana entera de atraso o dos semanas adeudadas: a esa
+    altura el auto está trabajando gratis.
+    """
+    avisos = []
+    for c in _contratos_uber(db, hoy):
+        if c.estado != "atrasado":
+            continue
+        cuenta = c.cuenta
+        n = cuenta.semanas_adeudadas
+        chofer = _cliente_nombre(c.reserva.cliente)
+        grave = cuenta.dias_atraso >= 7 or n >= 2
+        avisos.append({
+            "tipo": "uber_semana_atrasada",
+            "titulo": f"{chofer} debe {n} {'semana' if n == 1 else 'semanas'} — {_monto(cuenta.adeudado)}",
+            "descripcion": (
+                f"{_auto_uber(c.reserva)} — contrato de Uber, "
+                f"{cuenta.dias_atraso} {'día' if cuenta.dias_atraso == 1 else 'días'} de atraso"
+            ),
+            "urgencia": "critica" if grave else "alta",
+            "entidad_tipo": "alquiler",
+            "entidad_id": c.alquiler.id,
+            "url_destino": URL_UBER,
+            "fecha_objetivo": hoy,
+        })
+    return avisos
+
+
+def uber_km_excedido(db: Session, hoy: date) -> list[dict]:
+    """
+    La última lectura del odómetro pasa el tope prorrateado en más de un 10 %.
+
+    El excedente se cobra recién al cierre: el aviso es para hablar con el
+    chofer **antes** de que la cuenta del final sea impagable.
+    """
+    from app.services.uber_service import TOLERANCIA_KM
+
+    avisos = []
+    for c in _contratos_uber(db, hoy):
+        consumo = (c.km or {}).get("consumo")
+        if not consumo or not consumo["permitidos"]:
+            continue
+        if Decimal(consumo["recorridos"]) <= consumo["permitidos"] * TOLERANCIA_KM:
+            continue
+        ultima = c.km["ultima"]
+        chofer = _cliente_nombre(c.reserva.cliente)
+        costo = f" (≈ {_monto(consumo['costo_estimado'])} al cierre)" if consumo["costo_estimado"] > 0 else ""
+        avisos.append({
+            "tipo": "uber_km_excedido",
+            "titulo": f"{chofer} viene pasado de kilómetros",
+            "descripcion": (
+                f"{_auto_uber(c.reserva)} — lleva {consumo['recorridos']} km de "
+                f"{int(consumo['permitidos'])} permitidos a la fecha: "
+                f"{int(consumo['excedidos'])} km de más{costo}"
+            ),
+            "urgencia": "media",
+            "entidad_tipo": "alquiler",
+            "entidad_id": c.alquiler.id,
+            "url_destino": URL_UBER,
+            # Una fila por lectura: la de la semana que viene es otro aviso.
+            "fecha_objetivo": ultima.fecha,
+        })
+    return avisos
+
+
+def uber_contrato_por_terminar(db: Session, hoy: date) -> list[dict]:
+    """
+    El contrato termina en 3 días o menos (o ya terminó y el auto sigue
+    afuera). Renovarlo corre la fecha de fin y el aviso se resuelve solo.
+    """
+    avisos = []
+    for c in _contratos_uber(db, hoy):
+        faltan = (c.reserva.fecha_fin - hoy).days
+        if faltan > DIAS_AVISO_FIN_UBER:
+            continue
+        chofer = _cliente_nombre(c.reserva.cliente)
+        if faltan < 0:
+            cuando = f"terminó hace {-faltan} {'día' if faltan == -1 else 'días'}"
+        elif faltan == 0:
+            cuando = "termina hoy"
+        else:
+            cuando = f"termina en {faltan} {'día' if faltan == 1 else 'días'}"
+        avisos.append({
+            "tipo": "uber_contrato_por_terminar",
+            "titulo": f"El contrato de {chofer} {cuando}",
+            "descripcion": f"{_auto_uber(c.reserva)} — Renovar o coordinar la devolución",
+            "urgencia": "media",
+            "entidad_tipo": "alquiler",
+            "entidad_id": c.alquiler.id,
+            "url_destino": URL_UBER,
+            "fecha_objetivo": c.reserva.fecha_fin,
+        })
+    return avisos
+
+
 # Fuera del catálogo a propósito (limpieza de la campana): `entregas_hoy` y
 # `devoluciones_hoy` (ya están en la agenda), `echeq_rechazado` y
 # `contrato_firmado_sin_ver` (los avisa el evento instantáneo),
@@ -1528,6 +1705,10 @@ REGLAS = [
     contrato_sin_emitir,
     categoria_web_sin_precio,
     datos_por_completar,
+    uber_semana_vence_hoy,
+    uber_semana_atrasada,
+    uber_km_excedido,
+    uber_contrato_por_terminar,
 ]
 
 

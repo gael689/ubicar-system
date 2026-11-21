@@ -35,6 +35,7 @@ from app.models.busqueda_sin_resultado import BusquedaSinResultado
 from app.models.solicitud_contacto import SolicitudContacto
 from app.models.prospecto import Prospecto, CampanaProspecto, CampanaDestinatario
 from app.models.caja_socios import Socio, Reparto, MovimientoPropio
+from app.models.uber_lectura_km import UberLecturaKm
 
 __all__ = [
     "Categoria", "Comprobante", "Configuracion", "Notificacion", "NotificacionVista", "EmailEnviado", "Recibo",
@@ -49,4 +50,5 @@ __all__ = [
     "TarifaCalendario", "DescuentoDuracion",
     "Adicional", "ReservaAdicional", "BloqueoVehiculo",
     "Pagare",
+    "UberLecturaKm",
 ]

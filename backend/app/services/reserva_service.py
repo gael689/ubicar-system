@@ -779,6 +779,18 @@ class ReservaService:
             precio_lista = precio_total
             if not fechas_pago:
                 fechas_pago = uber_dominio.fechas_de_pago(fecha_inicio, duracion)
+            else:
+                # **Una fecha por semana, ni más ni menos.** El check-out reparte
+                # el total entre las fechas que haya: con una de menos, cada
+                # cuota sale más cara que el valor de la semana pactado y la
+                # cuenta corriente deja de coincidir con el contrato. La pantalla
+                # ya no deja llegar a eso; esto frena al que entre por API.
+                fechas_pago = [
+                    f if isinstance(f, date) else date.fromisoformat(str(f)) for f in fechas_pago
+                ]
+                problema = uber_dominio.validar_fechas_de_pago(fechas_pago, duracion)
+                if problema:
+                    raise BusinessRuleError("uber_fechas_desalineadas", problema)
         else:
             uber_valor_semana = uber_km_semana = uber_precio_km_extra = fechas_pago = None
 

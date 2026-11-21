@@ -1061,7 +1061,44 @@ class AlquilerService:
             # ── La diferencia, al libro ──────────────────────────────────────
             diferencia = Decimal(str(nuevo_precio or 0)) - Decimal(str(precio_anterior or 0))
             hoy = date.today()
-            if diferencia > 0:
+            if diferencia > 0 and reserva.tipo == "uber":
+                # **Contrato de Uber: la extensión también se paga por semana.**
+                # Antes caía en el débito único de abajo, que vence el día que
+                # se carga: renovar cuatro semanas le ponía al chofer las cuatro
+                # juntas como deuda de hoy, y ninguna pantalla sabía cuál era
+                # "la de esta semana". Ahora nace una cuota por semana agregada,
+                # con su fecha, siguiendo el ritmo en que venía pagando.
+                fechas_previas = [date.fromisoformat(str(f)) for f in (reserva.fechas_pago or [])]
+                dias_agregados = max((nueva_fecha_fin - fecha_fin_anterior).days, 1)
+                semanas_nuevas = uber_dominio.cantidad_de_semanas(dias_agregados)
+                fechas_nuevas = uber_dominio.fechas_de_renovacion(
+                    reserva.fecha_inicio, fecha_fin_anterior, fechas_previas, semanas_nuevas,
+                )
+                cuotas = uber_dominio.repartir_en_cuotas(diferencia, len(fechas_nuevas))
+                total_semanas = len(fechas_previas) + len(fechas_nuevas)
+                for n, (fecha_cuota, monto_cuota) in enumerate(
+                    zip(fechas_nuevas, cuotas), start=len(fechas_previas) + 1
+                ):
+                    self.cc_service.registrar_movimiento(
+                        cliente_id=reserva.cliente_id,
+                        tipo="debito",
+                        naturaleza="extension",
+                        concepto=(
+                            f"Alquiler #{reserva.id} — semana {n} de {total_semanas} "
+                            f"({reserva.vehiculo.patente if reserva.vehiculo else ''}) — renovación"
+                        ),
+                        monto=monto_cuota,
+                        fecha=hoy,
+                        creado_por=usuario_id,
+                        condicion=reserva.condicion_pago,
+                        fecha_vencimiento=fecha_cuota,
+                        alquiler_id=alquiler.id,
+                        reserva_id=reserva.id,
+                    )
+                # Lista nueva y no `.append`: una columna JSON no detecta un
+                # cambio hecho adentro de la misma lista.
+                reserva.fechas_pago = [f.isoformat() for f in fechas_previas + fechas_nuevas]
+            elif diferencia > 0:
                 self.cc_service.registrar_movimiento(
                     cliente_id=reserva.cliente_id,
                     tipo="debito",
