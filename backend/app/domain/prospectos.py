@@ -27,7 +27,19 @@ DOMINIOS_COMPARTIDOS = frozenset({
     "yahoo.com", "yahoo.com.ar", "live.com", "icloud.com", "msn.com", "proton.me",
     "protonmail.com", "wixsite.com", "linktr.ee", "facebook.com", "instagram.com",
     "wa.me", "google.com", "sites.google.com", "blogspot.com", "webnode.com",
+    # Portales donde muchas empresas ponen su "web" (21/11): un hotel cuya web
+    # es su ficha de Booking no es el mismo que otro con la misma web.
+    "booking.com", "tripadvisor.com", "tripadvisor.com.ar", "despegar.com.ar", "airbnb.com",
+    "airbnb.com.ar", "mercadolibre.com.ar", "mercadoshops.com.ar", "linkedin.com",
+    "youtube.com", "tiktok.com", "x.com", "twitter.com", "bit.ly", "paginasamarillas.com.ar",
 })
+
+_MAIL_VALIDO = re.compile(r"^[^@\s,;<>]+@[a-z0-9-]+(\.[a-z0-9-]+)+$")
+
+
+def mail_valido(valor: str | None) -> bool:
+    """Suficiente para no mandarle a `info@empresa` o a dos mails pegados con coma."""
+    return bool(_MAIL_VALIDO.match((valor or "").strip().lower()))
 
 _SUFIJOS_SOCIETARIOS = re.compile(
     r"\b(s\.?\s?a\.?|s\.?\s?r\.?\s?l\.?|s\.?\s?a\.?\s?s\.?|s\.?\s?c\.?\s?a\.?|"
@@ -153,4 +165,35 @@ def motivo_para_no_escribir(
         return "descartado"
     if sin_canal:
         return "no tiene mail ni teléfono"
+    return None
+
+
+def motivo_para_no_mandar_mail(
+    *, ya_cliente: bool, no_contactar: bool, estado: str, email: str | None,
+    recibio_hace_poco: bool = False, en_otra_campana: bool = False, mail_repetido: bool = False,
+) -> str | None:
+    """
+    Por qué **no** le sale un mail de campaña a un prospecto, o `None` si sale.
+
+    Suma a `motivo_para_no_escribir` lo que es propio del mail: que tenga uno
+    bien escrito, que no esté dos veces en la lista, y que no se le haya
+    escrito hace poco. Quien ya respondió tampoco entra: a esa empresa le
+    contesta una persona, no una campaña.
+    """
+    base = motivo_para_no_escribir(
+        ya_cliente=ya_cliente, no_contactar=no_contactar, estado=estado, sin_canal=False)
+    if base:
+        return base
+    if estado == "respondio":
+        return "ya respondió"
+    if not (email or "").strip():
+        return "no tiene mail"
+    if not mail_valido(email):
+        return "el mail está mal escrito"
+    if mail_repetido:
+        return "mismo mail que otra empresa de la lista"
+    if en_otra_campana:
+        return "ya está en otra campaña en curso"
+    if recibio_hace_poco:
+        return "recibió un mail nuestro en los últimos 30 días"
     return None

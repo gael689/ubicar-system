@@ -1,72 +1,112 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Ban, Megaphone, RefreshCw, Search, Upload, UserCheck } from 'lucide-react';
+import { Ban, Megaphone, Plus, RefreshCw, Search, Upload, UserCheck } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import {
-  useCambiarEstadoProspectos, useCampanaProspecto, useCampanasProspecto, useContarSeleccion,
-  useCrearCampanaProspecto, useCruzarProspectos, useGuardarMensajeCampana, useImportarArchivoProspectos,
-  useNoEsClienteProspecto, usePrepararCampana, useProspectos, useResumenProspectos,
-  type FiltroProspectos, type Prospecto,
+  useAgregarProspecto, useCambiarEstadoProspectos, useContarSeleccion, useCruzarProspectos,
+  useImportarArchivoProspectos, useNoEsClienteProspecto, usePanelProspeccion, useProspectos,
+  useResumenProspectos, useSimularImportacion,
+  type FiltroProspectos, type Prospecto, type ProspectoNuevo, type Seleccion, type TotalesDeImportacion,
 } from '@/hooks/useProspectos';
-import { cn, extractError, formatDate } from '@/lib/utils';
+import { leerProspectos } from '@/lib/leerProspectos';
+import { cn, extractError } from '@/lib/utils';
+import { CampanasTab } from './CampanasTab';
+import { CasillasTab } from './CasillasTab';
+import { NuevaCampana } from './NuevaCampana';
 
 const POR_PAGINA = 50;
 const ESTADO_LABEL: Record<string, string> = {
   nuevo: 'Nuevo', contactado: 'Contactado', respondio: 'Respondió', cliente: 'Cliente',
   descartado: 'Descartado', no_contactar: 'No contactar',
 };
-const CAMPANA_LABEL: Record<string, string> = {
-  borrador: 'Borrador', lista: 'Lista', enviando: 'Enviando', pausada: 'Pausada',
-  terminada: 'Terminada', cancelada: 'Cancelada',
-};
+
+type Pestana = 'empresas' | 'campanas' | 'casillas';
+const PESTANAS: { id: Pestana; texto: string }[] = [
+  { id: 'empresas', texto: 'Empresas' }, { id: 'campanas', texto: 'Campañas' }, { id: 'casillas', texto: 'Casillas' },
+];
 
 /**
  * Prospectos de Ubicar: empresas que podrían alquilar, cruzadas contra los
- * clientes que ya tiene. Se filtran, se seleccionan en masa (las de la página,
- * o **todas las que cumplen el filtro**) y se arma una campaña.
+ * clientes que ya tiene, y las campañas de mail que se les mandan.
  *
- * Los mensajes todavía no están escritos: la campaña se arma y se prepara, el
- * envío está apagado.
+ * Tres pestañas: **Empresas** (la base: filtrar, cargar, importar),
+ * **Campañas** (lo que salió y lo que pasó) y **Casillas** (desde dónde sale).
+ * "Nueva campaña" se abre desde cualquiera y es un asistente de una pantalla.
  */
 export function ProspectosPage() {
-  const [vista, setVista] = useState<'prospectos' | 'campanas'>('prospectos');
+  const [vista, setVista] = useState<Pestana>('empresas');
+  // El asistente vive acá y no en la tabla: se abre desde Empresas (con o sin
+  // selección) y desde Campañas, y su cartel "sin casilla" cambia de pestaña.
+  const [nueva, setNueva] = useState<{ seleccion: Seleccion | null; cantidad: number } | null>(null);
+  const [alCrear, setAlCrear] = useState<(() => void) | null>(null);
+
+  const abrirNueva = (seleccion: Seleccion | null = null, cantidad = 0, despues?: () => void) => {
+    setNueva({ seleccion, cantidad });
+    setAlCrear(() => despues ?? null);
+  };
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Prospectos"
-        description="Empresas que podrían alquilar, cruzadas con tus clientes. Elegí un grupo y armá una campaña."
+        description="Empresas que podrían alquilar, cruzadas con tus clientes, y las campañas de mail que les mandás."
       />
-      <div className="inline-flex w-fit overflow-hidden rounded-lg border border-ubicar-border bg-white">
-        {(['prospectos', 'campanas'] as const).map(v => (
-          <button
-            key={v}
-            onClick={() => setVista(v)}
-            className={cn(
-              'px-4 py-2 text-sm font-medium transition-colors',
-              vista === v ? 'bg-ubicar-primary text-white' : 'text-ubicar-text hover:bg-surface',
-            )}
-          >
-            {v === 'prospectos' ? 'Prospectos' : 'Campañas'}
-          </button>
-        ))}
+      <Resumen />
+      <div className="flex flex-wrap items-center gap-3">
+        <div role="tablist" className="inline-flex w-fit overflow-hidden rounded-lg border border-ubicar-border bg-white">
+          {PESTANAS.map(t => (
+            <button key={t.id} role="tab" aria-selected={vista === t.id} onClick={() => setVista(t.id)}
+              className={cn(
+                'px-4 py-2 text-sm font-medium transition-colors',
+                vista === t.id ? 'bg-ubicar-primary text-white' : 'text-ubicar-text hover:bg-surface',
+              )}>
+              {t.texto}
+            </button>
+          ))}
+        </div>
+        <Button size="lg" className="ml-auto" onClick={() => abrirNueva()}>
+          <Megaphone className="h-5 w-5" /> Nueva campaña
+        </Button>
       </div>
-      {vista === 'prospectos' ? <ListaDeProspectos /> : <ListaDeCampanas />}
+      {vista === 'empresas' && <ListaDeProspectos onNuevaCampana={abrirNueva} />}
+      {vista === 'campanas' && <CampanasTab onNueva={() => abrirNueva()} />}
+      {vista === 'casillas' && <CasillasTab />}
+
+      {nueva && (
+        <NuevaCampana seleccion={nueva.seleccion} cantidadSeleccionada={nueva.cantidad}
+          onClose={() => setNueva(null)}
+          onCreada={() => { alCrear?.(); setVista('campanas'); }}
+          onIrACasillas={() => setVista('casillas')} />
+      )}
+    </div>
+  );
+}
+
+/** Los cuatro números que importan, arriba de todo. */
+function Resumen() {
+  const { data } = usePanelProspeccion();
+  return (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <Dato titulo="Se les puede escribir" valor={data?.contactables} destacado />
+      <Dato titulo="Enviados esta semana" valor={data?.enviados_semana} />
+      <Dato titulo="Respondieron" valor={data?.respuestas} />
+      <Dato titulo="Se dieron de baja" valor={data?.bajas} />
     </div>
   );
 }
 
 // ─── Prospectos ──────────────────────────────────────────────────────────────
 
-function ListaDeProspectos() {
+function ListaDeProspectos({ onNuevaCampana }: {
+  onNuevaCampana: (seleccion: Seleccion, cantidad: number, despues: () => void) => void;
+}) {
   const { data: resumen } = useResumenProspectos();
   const [q, setQ] = useState('');
   const qDebounced = useDebouncedValue(q, 300);
@@ -112,16 +152,17 @@ function ListaDeProspectos() {
     setTodosElFiltro(false);
   };
 
-  const seleccion = todosElFiltro ? { filtro } : { ids: [...ids] };
+  const seleccion: Seleccion = todosElFiltro ? { filtro } : { ids: [...ids] };
   const cambiarEstado = useCambiarEstadoProspectos();
   const noEsCliente = useNoEsClienteProspecto();
   const cruzar = useCruzarProspectos();
-  const importar = useImportarArchivoProspectos();
   const archivo = useRef<HTMLInputElement>(null);
-  const [armando, setArmando] = useState(false);
+  const [aImportar, setAImportar] = useState<{ nombre: string; lista: unknown[] } | null>(null);
+  const [agregando, setAgregando] = useState(false);
+  const limpiar = () => { setIds(new Set()); setTodosElFiltro(false); };
 
-  /** El archivo que arma `sincronizar_prospectos_leadgen --archivo`: `{ prospectos: [...] }` o la lista sola. */
-  async function subirArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+  /** Un `.json` (el del sincronizador o una lista investigada) o un `.csv` de planilla. */
+  async function elegirArchivo(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
@@ -132,27 +173,20 @@ function ListaDeProspectos() {
         lector.onerror = () => mal(lector.error);
         lector.readAsText(f);
       });
-      const datos = JSON.parse(texto);
-      const lista: unknown[] = Array.isArray(datos) ? datos : datos.prospectos;
-      if (!Array.isArray(lista) || lista.length === 0) throw new Error('vacío');
-      importar.mutate(lista, {
-        onSuccess: t => toast.success(
-          `${t.nuevos} nuevos, ${t.actualizados} actualizados · ${t.ya_clientes} ya son clientes`),
-        onError: err => toast.error(extractError(err)),
-      });
-    } catch {
-      toast.error('No pude leer ese archivo: tiene que ser el .json que arma el sincronizador.');
+      setAImportar({ nombre: f.name, lista: leerProspectos(texto, f.name) });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No pude leer ese archivo.');
     }
   }
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Dato titulo="En la base" valor={resumen?.total} />
-        <Dato titulo="Se les puede escribir" valor={resumen?.contactables} destacado />
-        <Dato titulo="Ya son clientes" valor={resumen?.por_estado?.cliente ?? 0} />
-        <Dato titulo="No contactar" valor={resumen?.por_estado?.no_contactar ?? 0} />
-      </div>
+      <p className="-mt-1 text-xs text-muted-foreground">
+        {resumen ? <>
+          {resumen.total.toLocaleString('es-AR')} empresas en la base · {(resumen.por_estado?.cliente ?? 0).toLocaleString('es-AR')} ya
+          son clientes · {(resumen.por_estado?.no_contactar ?? 0).toLocaleString('es-AR')} pidieron que no las contacten
+        </> : ' '}
+      </p>
 
       <Card className="flex flex-wrap items-end gap-3 p-4">
         <label className="flex min-w-[200px] flex-1 flex-col gap-1">
@@ -178,11 +212,13 @@ function ListaDeProspectos() {
           onClick={() => cruzar.mutate(undefined, { onSuccess: () => toast.success('Cruce actualizado con tus clientes') })}>
           <RefreshCw className={cn('h-4 w-4', cruzar.isPending && 'animate-spin')} /> Volver a cruzar
         </Button>
-        <input ref={archivo} type="file" accept=".json,application/json" className="hidden"
-          data-testid="archivo-prospectos" onChange={subirArchivo} />
-        <Button variant="outline" size="sm" disabled={importar.isPending}
-          onClick={() => archivo.current?.click()}>
-          <Upload className="h-4 w-4" /> {importar.isPending ? 'Importando…' : 'Importar archivo'}
+        <input ref={archivo} type="file" accept=".json,.csv,application/json,text/csv" className="hidden"
+          data-testid="archivo-prospectos" onChange={elegirArchivo} />
+        <Button variant="outline" size="sm" onClick={() => archivo.current?.click()}>
+          <Upload className="h-4 w-4" /> Importar archivo
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setAgregando(true)}>
+          <Plus className="h-4 w-4" /> Agregar prospecto
         </Button>
       </Card>
 
@@ -202,17 +238,18 @@ function ListaDeProspectos() {
             )}
           </p>
           <div className="ml-auto flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => setArmando(true)} disabled={!!conteo?.supera_el_maximo}>
+            <Button size="sm" disabled={!!conteo?.supera_el_maximo}
+              onClick={() => onNuevaCampana(seleccion, cantidadSeleccionada, limpiar)}>
               <Megaphone className="h-4 w-4" /> Crear campaña
             </Button>
             <Button size="sm" variant="outline"
               onClick={() => cambiarEstado.mutate({ ...seleccion, estado: 'descartado' }, {
-                onSuccess: () => { toast.success('Descartados'); setIds(new Set()); setTodosElFiltro(false); },
+                onSuccess: () => { toast.success('Descartados'); limpiar(); },
                 onError: e => toast.error(extractError(e)),
               })}>
               <Ban className="h-4 w-4" /> Descartar
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setIds(new Set()); setTodosElFiltro(false); }}>
+            <Button size="sm" variant="ghost" onClick={limpiar}>
               Limpiar
             </Button>
           </div>
@@ -262,11 +299,8 @@ function ListaDeProspectos() {
         </div>
       </Card>
 
-      {armando && (
-        <NuevaCampana seleccion={seleccion} cantidad={cantidadSeleccionada} onClose={() => {
-          setArmando(false);
-        }} onCreada={() => { setIds(new Set()); setTodosElFiltro(false); }} />
-      )}
+      {aImportar && <VistaPreviaImportacion {...aImportar} onClose={() => setAImportar(null)} />}
+      {agregando && <AgregarProspecto onClose={() => setAgregando(false)} />}
     </>
   );
 }
@@ -343,42 +377,51 @@ function Etiqueta({ color, children }: { color: 'verde' | 'ambar' | 'rojo'; chil
   return <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', c)}>{children}</span>;
 }
 
-function NuevaCampana({ seleccion, cantidad, onClose, onCreada }: {
-  seleccion: { ids?: number[]; filtro?: FiltroProspectos }; cantidad: number;
-  onClose: () => void; onCreada: () => void;
-}) {
-  const [nombre, setNombre] = useState('');
-  const crear = useCrearCampanaProspecto();
+// ─── Importar y agregar ──────────────────────────────────────────────────────
+
+/**
+ * Antes de importar se muestra qué va a pasar: el servidor lo cuenta con
+ * `simular` (las mismas reglas de "ya estaba" que al guardar de verdad), así
+ * nadie importa a ciegas una lista que en realidad repite media base.
+ */
+function VistaPreviaImportacion({ nombre, lista, onClose }: { nombre: string; lista: unknown[]; onClose: () => void }) {
+  const simular = useSimularImportacion();
+  const importar = useImportarArchivoProspectos();
+  const [previa, setPrevia] = useState<TotalesDeImportacion | null>(null);
+  const { mutate } = simular;
+  useEffect(() => {
+    mutate(lista, { onSuccess: setPrevia, onError: e => toast.error(extractError(e)) });
+  }, [lista, mutate]);
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nueva campaña</DialogTitle>
+          <DialogTitle>Importar {nombre}</DialogTitle>
           <DialogDescription>
-            {cantidad.toLocaleString('es-AR')} prospectos. A los que ya son clientes, a los que pidieron
-            que no los contacten y a los que no tienen mail ni teléfono no se les va a escribir.
+            {lista.length.toLocaleString('es-AR')} {lista.length === 1 ? 'fila' : 'filas'}. Las empresas que ya estaban
+            (mismo mail, teléfono o web) se completan, no se duplican. Nunca se borra un dato ni se vuelve a escribir
+            a quien pidió la baja.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-sm font-medium">Nombre de la campaña</span>
-            <input value={nombre} onChange={e => setNombre(e.target.value)} autoFocus
-              placeholder="Constructoras de Bahía Blanca" className="input-base" />
-          </label>
-        </div>
+        {!previa ? <Skeleton className="h-16 w-full" /> : (
+          <div className="grid grid-cols-3 gap-2 text-center" data-testid="vista-previa-importacion">
+            <Cifra titulo="Nuevas" valor={previa.nuevos} />
+            <Cifra titulo="Ya estaban" valor={previa.actualizados} />
+            <Cifra titulo="Sin nombre (no entran)" valor={previa.invalidos} />
+          </div>
+        )}
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button disabled={!nombre.trim() || crear.isPending}
-            onClick={() => crear.mutate({ ...seleccion, nombre }, {
-              onSuccess: c => {
-                toast.success(`Campaña creada: ${c.por_estado.pendiente ?? 0} destinatarios, ${c.por_estado.omitido ?? 0} omitidos`);
-                onCreada();
+          <Button disabled={!previa || previa.nuevos + previa.actualizados === 0 || importar.isPending}
+            onClick={() => importar.mutate(lista, {
+              onSuccess: t => {
+                toast.success(`${t.nuevos} nuevas, ${t.actualizados} actualizadas · ${t.ya_clientes} ya son clientes`);
                 onClose();
               },
               onError: e => toast.error(extractError(e)),
             })}>
-            {crear.isPending ? 'Creando…' : 'Crear campaña'}
+            {importar.isPending ? 'Importando…' : 'Importar'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -386,99 +429,63 @@ function NuevaCampana({ seleccion, cantidad, onClose, onCreada }: {
   );
 }
 
-// ─── Campañas ────────────────────────────────────────────────────────────────
-
-function ListaDeCampanas() {
-  const { data: campanas = [], isLoading } = useCampanasProspecto();
-  const [abierta, setAbierta] = useState<number | null>(null);
-
-  if (isLoading) return <Skeleton className="h-24 w-full" />;
-  if (campanas.length === 0) {
-    return (
-      <Card className="p-8 text-center text-sm text-muted-foreground">
-        Todavía no armaste ninguna campaña. Elegí prospectos en la otra pestaña y apretá «Crear campaña».
-      </Card>
-    );
-  }
+function Cifra({ titulo, valor }: { titulo: string; valor: number }) {
   return (
-    <>
-      <div className="grid gap-3 md:grid-cols-2">
-        {campanas.map(c => (
-          <Card key={c.id} className="cursor-pointer p-4 transition-colors hover:bg-surface" onClick={() => setAbierta(c.id)}>
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold text-foreground">{c.nombre}</p>
-                <p className="text-xs text-muted-foreground">{c.created_at ? formatDate(c.created_at) : ''}</p>
-              </div>
-              <span className="rounded bg-ubicar-primary/10 px-2 py-0.5 text-xs font-semibold text-ubicar-dark">
-                {CAMPANA_LABEL[c.estado]}
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-foreground">
-              <strong>{c.por_estado.pendiente ?? 0}</strong> a contactar · {c.por_estado.omitido ?? 0} omitidos
-            </p>
-            {!c.asunto && <p className="mt-1 text-xs text-amber-700">Falta escribir el mensaje.</p>}
-          </Card>
-        ))}
-      </div>
-      {abierta !== null && <DetalleDeCampana id={abierta} onClose={() => setAbierta(null)} />}
-    </>
+    <div className="rounded-lg bg-muted p-3">
+      <p className="text-2xl font-bold tabular-nums text-ubicar-dark">{valor.toLocaleString('es-AR')}</p>
+      <p className="text-xs text-muted-foreground">{titulo}</p>
+    </div>
   );
 }
 
-function DetalleDeCampana({ id, onClose }: { id: number; onClose: () => void }) {
-  const { data: c } = useCampanaProspecto(id);
-  const guardar = useGuardarMensajeCampana();
-  const preparar = usePrepararCampana();
-  const [asunto, setAsunto] = useState('');
-  const [cuerpo, setCuerpo] = useState('');
-  useEffect(() => { if (c) { setAsunto(c.asunto ?? ''); setCuerpo(c.cuerpo ?? ''); } }, [c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+const CAMPOS_ALTA: { campo: keyof ProspectoNuevo; texto: string; ejemplo?: string }[] = [
+  { campo: 'nombre', texto: 'Empresa', ejemplo: 'Constructora Sur S.A.' },
+  { campo: 'segmento', texto: 'Rubro', ejemplo: 'Constructoras' },
+  { campo: 'ciudad', texto: 'Ciudad', ejemplo: 'Bahía Blanca' },
+  { campo: 'email', texto: 'Mail' },
+  { campo: 'telefono', texto: 'Teléfono' },
+  { campo: 'website', texto: 'Web' },
+];
 
-  if (!c) return null;
-  const puedeEditar = c.estado === 'borrador' || c.estado === 'lista';
+function AgregarProspecto({ onClose }: { onClose: () => void }) {
+  const agregar = useAgregarProspecto();
+  const [datos, setDatos] = useState<ProspectoNuevo>({ nombre: '' });
+  const poner = (campo: keyof ProspectoNuevo, valor: string) => setDatos(d => ({ ...d, [campo]: valor }));
+
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>{c.nombre}</DialogTitle>
-          <DialogDescription>
-            {CAMPANA_LABEL[c.estado]} · {c.destinatarios} prospectos · {c.por_estado.pendiente ?? 0} a contactar
-          </DialogDescription>
+          <DialogTitle>Agregar prospecto</DialogTitle>
+          <DialogDescription>Una empresa a mano. Si ya estaba, se completan sus datos.</DialogDescription>
         </DialogHeader>
-
-        {Object.keys(c.omitidos_por_motivo).length > 0 && (
-          <div className="rounded-lg bg-muted p-3 text-sm">
-            <p className="mb-1 font-medium">No se les escribe:</p>
-            <ul className="space-y-0.5 text-muted-foreground">
-              {Object.entries(c.omitidos_por_motivo).map(([motivo, n]) => (
-                <li key={motivo}><strong className="text-foreground">{n}</strong> · {motivo}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Mensaje</p>
-          <input value={asunto} onChange={e => setAsunto(e.target.value)} disabled={!puedeEditar}
-            placeholder="Asunto" className="input-base" />
-          <Textarea value={cuerpo} onChange={e => setCuerpo(e.target.value)} disabled={!puedeEditar}
-            rows={8} placeholder="Todavía sin escribir." />
+        <div className="grid gap-3 sm:grid-cols-2">
+          {CAMPOS_ALTA.map(c => (
+            <label key={c.campo} className="flex flex-col gap-1">
+              <span className="text-sm font-medium">{c.texto}</span>
+              <input value={datos[c.campo] ?? ''} onChange={e => poner(c.campo, e.target.value)}
+                placeholder={c.ejemplo} className="input-base" aria-label={c.texto}
+                autoFocus={c.campo === 'nombre'} />
+            </label>
+          ))}
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="text-sm font-medium">Nota interna</span>
+            <input value={datos.notas ?? ''} onChange={e => poner('notas', e.target.value)}
+              placeholder="Por qué nos interesa. No va en ningún mail." className="input-base" aria-label="Nota interna" />
+          </label>
         </div>
-
         <DialogFooter>
-          <Button variant="outline" disabled={!puedeEditar || guardar.isPending}
-            onClick={() => guardar.mutate({ id, asunto, cuerpo }, {
-              onSuccess: () => toast.success('Mensaje guardado'),
-              onError: e => toast.error(extractError(e)),
-            })}>
-            Guardar mensaje
-          </Button>
-          <Button disabled={!puedeEditar || preparar.isPending}
-            onClick={() => preparar.mutate(id, {
-              onSuccess: () => toast.success('Campaña lista. El envío todavía no está encendido.'),
-              onError: e => toast.error(extractError(e)),
-            })}>
-            Preparar campaña
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button disabled={!datos.nombre.trim() || agregar.isPending}
+            onClick={() => agregar.mutate(
+              Object.fromEntries(Object.entries(datos).filter(([, v]) => v?.trim())) as unknown as ProspectoNuevo, {
+                onSuccess: p => {
+                  toast.success(p.era_nuevo ? 'Empresa agregada' : 'Esa empresa ya estaba: se completaron sus datos');
+                  onClose();
+                },
+                onError: e => toast.error(extractError(e)),
+              })}>
+            {agregar.isPending ? 'Guardando…' : 'Agregar'}
           </Button>
         </DialogFooter>
       </DialogContent>

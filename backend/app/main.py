@@ -21,6 +21,7 @@ from app.routers import (
     comprobantes, configuracion, busqueda, danios, fechas_especiales,
     precios, adicionales, bloqueos, reservas_web, auditoria,
     emails, solicitudes_contacto, disponibilidad, pagares, usuarios, prospectos, caja_socios,
+    prospeccion_publica,
 )
 from app.routers import uber
 
@@ -116,6 +117,35 @@ def _correr_motor_notificaciones() -> None:
         db.close()
 
 
+def _correr_motor_de_prospeccion() -> None:
+    """
+    Job del scheduler: una vuelta del motor de envío de campañas
+    (`ProspeccionService.despachar`).
+
+    **Cada 2 minutos y manda poco**: como mucho un mail por casilla por vuelta,
+    y sólo en días hábiles de 9 a 13 y de 15 a 18. El goteo es a propósito —un
+    dominio nuevo que manda de a cientos es lo que hace un spammer— y es lo que
+    hace que una campaña de 180 mails tarde unos días en vez de unos segundos.
+
+    Si el contenedor se reinicia en el medio no se pierde ni se duplica nada:
+    cada envío se toma con un estado intermedio y viaja con una clave de
+    idempotencia.
+    """
+    from app.services.prospeccion_service import correr_motor
+
+    try:
+        stats = correr_motor()
+        if stats["enviados"] or stats["errores"]:
+            logger.info(
+                "[Scheduler] Prospección: %s enviados, %s omitidos, %s con error, %s seguimientos programados",
+                stats["enviados"], stats["omitidos"], stats["errores"], stats["seguimientos_programados"],
+            )
+    except Exception:
+        # Un fallo acá no puede tumbar el scheduler: lo que quedó en la cola
+        # sale en la próxima vuelta.
+        logger.exception("[Scheduler] Falló la vuelta del motor de prospección")
+
+
 def _verificar_configuracion_segura() -> None:
     """
     Cortafuegos de arranque.
@@ -198,6 +228,16 @@ async def lifespan(app: FastAPI):
         IntervalTrigger(minutes=5),
         id="sincronizar_estados_por_horario",
         replace_existing=True,
+    )
+    # Las campañas de prospección. `max_instances=1`: si una vuelta se demora
+    # (Resend lento), la siguiente no se le monta encima.
+    scheduler.add_job(
+        _correr_motor_de_prospeccion,
+        IntervalTrigger(minutes=2),
+        id="motor_de_prospeccion",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     scheduler.start()
     logger.info(
@@ -385,6 +425,7 @@ app.include_router(busqueda.router, prefix=API_PREFIX)
 app.include_router(auditoria.router, prefix=API_PREFIX)
 app.include_router(usuarios.router, prefix=API_PREFIX)
 app.include_router(prospectos.router, prefix=API_PREFIX)
+app.include_router(prospeccion_publica.router, prefix=API_PREFIX)
 app.include_router(caja_socios.router, prefix=API_PREFIX)
 app.include_router(uber.router, prefix=API_PREFIX)
 

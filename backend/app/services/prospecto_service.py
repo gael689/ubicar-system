@@ -6,8 +6,9 @@ Tres cosas, en este orden: **importar** lo que trae el buscador (sin duplicar),
 y **armar campañas** sobre una selección — a mano, o "todos los que cumplen este
 filtro" — dejando anotado a quién no se le escribe y por qué.
 
-El envío todavía no existe a propósito: falta el mensaje y el remitente
-verificado, y `preparar` se niega hasta que estén.
+El envío vive aparte, en `prospeccion_service.py` (plantillas, casillas, el
+motor y los seguimientos). Acá queda la base: los datos y las campañas armadas
+a mano, que siguen funcionando igual.
 """
 from __future__ import annotations
 
@@ -17,7 +18,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.exceptions import BusinessRuleError, NotFoundError
 from app.domain.prospectos import (
-    DatosDeContacto, IndiceDeClientes, motivo_para_no_escribir,
+    DatosDeContacto, IndiceDeClientes, dominio_propio, motivo_para_no_escribir,
+    normalizar_email, normalizar_nombre, normalizar_telefono,
 )
 from app.models.cliente import DNI_CLIENTE_GENERICO, Cliente, ClienteContacto
 from app.models.prospecto import CampanaDestinatario, CampanaProspecto, Prospecto
@@ -54,17 +56,80 @@ def _a_la_medida(campo: str, valor):
     return valor[:largo] if largo else valor
 
 
+class _IndiceDeProspectos:
+    """
+    Los prospectos que ya están, indexados por cada forma de reconocerlos.
+
+    Orden de confianza: la ref del buscador, el mail, el teléfono y, por último,
+    el dominio propio. **El dominio solo no alcanza**: dos hoteles distintos
+    pueden tener de "web" el mismo portal, así que además se pide que el nombre
+    comparta alguna palabra.
+    """
+
+    def __init__(self, prospectos: list[Prospecto]) -> None:
+        self.por_ref: dict[str, Prospecto] = {}
+        self.por_email: dict[str, Prospecto] = {}
+        self.por_telefono: dict[str, Prospecto] = {}
+        self.por_dominio: dict[str, list[Prospecto]] = {}
+        for p in prospectos:
+            self.agregar(p)
+
+    def agregar(self, p: Prospecto) -> None:
+        if p.ref_externa:
+            self.por_ref.setdefault(p.ref_externa, p)
+        if (e := normalizar_email(p.email)):
+            self.por_email.setdefault(e, p)
+        if (t := normalizar_telefono(p.telefono)):
+            self.por_telefono.setdefault(t, p)
+        if (d := dominio_propio(p.website) or dominio_propio(p.email)):
+            lista = self.por_dominio.setdefault(d, [])
+            if p not in lista:
+                lista.append(p)
+
+    def ref_en_uso(self, ref: str) -> bool:
+        return ref in self.por_ref
+
+    @staticmethod
+    def _palabras(nombre: str | None) -> set[str]:
+        return {w for w in (normalizar_nombre(nombre) or "").split() if len(w) >= 4}
+
+    def buscar(self, *, ref, nombre, email, telefono, website) -> Prospecto | None:
+        if ref and ref in self.por_ref:
+            return self.por_ref[ref]
+        if (e := normalizar_email(email)) and e in self.por_email:
+            return self.por_email[e]
+        if (t := normalizar_telefono(telefono)) and t in self.por_telefono:
+            return self.por_telefono[t]
+        d = dominio_propio(website) or dominio_propio(email)
+        if d:
+            palabras = self._palabras(nombre)
+            for p in self.por_dominio.get(d, []):
+                if palabras & self._palabras(p.nombre):
+                    return p
+        return None
+
+
 class ProspectoService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
     # ── Importar ────────────────────────────────────────────────────────────
-    def importar(self, items: list[dict]) -> dict:
+    def importar(self, items: list[dict], *, simular: bool = False) -> dict:
         """
-        Alta o actualización por `ref_externa`. Nunca pisa un dato con vacío, y
-        **nunca revive a quien pidió que no lo contacten**: `no_contactar` sólo
-        puede encenderse desde acá, no apagarse.
+        Alta o actualización. Nunca pisa un dato con vacío, y **nunca revive a
+        quien pidió que no lo contacten**: `no_contactar` sólo puede encenderse
+        desde acá, no apagarse.
+
+        **Cómo se reconoce que ya estaba.** Primero por `ref_externa` (el id del
+        buscador de Gael). Si la ref no coincide —una lista armada a mano, u
+        otra fuente— se busca por **mail, teléfono o dominio propio**: sin eso,
+        importar una lista nueva duplicaba a media base, y una empresa
+        duplicada recibe dos veces la misma campaña.
+
+        `simular=True` no escribe nada: sólo cuenta, para la vista previa de la
+        pantalla ("12 nuevos, 68 que ya estaban, 2 sin nombre").
         """
+        indice = _IndiceDeProspectos(self.db.query(Prospecto).all())
         nuevos = actualizados = invalidos = 0
         for item in items:
             nombre = _limpio(item.get("nombre"))
@@ -72,16 +137,29 @@ class ProspectoService:
                 invalidos += 1
                 continue
             ref = _limpio(item.get("ref_externa"))
-            p = (
-                self.db.query(Prospecto).filter(Prospecto.ref_externa == ref).first()
-                if ref else None
-            )
+            if isinstance(ref, str):
+                ref = _a_la_medida("ref_externa", ref)
+            p = indice.buscar(ref=ref, nombre=nombre, email=item.get("email"),
+                              telefono=item.get("telefono"), website=item.get("website"))
             if p is None:
-                p = Prospecto(nombre=nombre, ref_externa=ref)
-                self.db.add(p)
                 nuevos += 1
+                p = Prospecto(nombre=_a_la_medida("nombre", nombre), ref_externa=ref)
+                if simular:
+                    # No se guarda, pero se anota en el índice: dos filas del
+                    # mismo archivo que son la misma empresa cuentan como una
+                    # nueva y una repetida, igual que al importar de verdad.
+                    p.email, p.telefono, p.website = (
+                        _limpio(item.get("email")), _limpio(item.get("telefono")),
+                        _limpio(item.get("website")))
+                    indice.agregar(p)
+                    continue
+                self.db.add(p)
             else:
                 actualizados += 1
+                if simular:
+                    continue
+                if ref and not p.ref_externa and not indice.ref_en_uso(ref):
+                    p.ref_externa = ref
             for campo in CAMPOS_IMPORTABLES:
                 if campo not in item:
                     continue
@@ -93,13 +171,48 @@ class ProspectoService:
                     continue
                 if valor is None:
                     continue
+                if campo == "score":
+                    try:
+                        valor = int(round(float(valor)))
+                    except (TypeError, ValueError):
+                        continue
                 setattr(p, campo, valor)
+            # De dónde salió el dato (una lista investigada a mano lo trae): es
+            # una nota interna, nunca entra en un mail.
+            fuente = _limpio(item.get("fuente"))
+            if fuente and f"Fuente: {fuente}" not in (p.notas or ""):
+                p.notas = f"{p.notas}\nFuente: {fuente}" if p.notas else f"Fuente: {fuente}"
             if p.no_contactar:
                 p.estado = "no_contactar"
+            indice.agregar(p)
+        if simular:
+            return {"nuevos": nuevos, "actualizados": actualizados, "invalidos": invalidos,
+                    "ya_clientes": 0}
         self.db.flush()
         cruzados = self.cruzar()
         return {"nuevos": nuevos, "actualizados": actualizados, "invalidos": invalidos,
                 "ya_clientes": cruzados}
+
+    def agregar(self, datos: dict) -> tuple[Prospecto, bool]:
+        """
+        Alta a mano de **una** empresa, desde la pantalla. Pasa por el mismo
+        camino que la importación, así que si ya estaba (mismo mail, teléfono o
+        dominio) se completa la que había en vez de duplicarla.
+
+        Devuelve `(prospecto, era_nuevo)`.
+        """
+        nombre = _limpio(datos.get("nombre"))
+        if not nombre:
+            raise BusinessRuleError("prospecto_sin_nombre", "Poné el nombre de la empresa.")
+        antes = {i for (i,) in self.db.query(Prospecto.id).all()}
+        self.importar([datos])
+        indice = _IndiceDeProspectos(self.db.query(Prospecto).all())
+        p = indice.buscar(ref=None, nombre=nombre, email=datos.get("email"),
+                          telefono=datos.get("telefono"), website=datos.get("website"))
+        if p is None:   # sin mail, teléfono ni web: es la última con ese nombre
+            p = (self.db.query(Prospecto).filter(Prospecto.nombre == _a_la_medida("nombre", nombre))
+                 .order_by(Prospecto.id.desc()).first())
+        return p, p.id not in antes
 
     # ── Cruce con los clientes ──────────────────────────────────────────────
     def _indice_de_clientes(self) -> IndiceDeClientes:
@@ -185,6 +298,18 @@ class ProspectoService:
             q = q.filter(Prospecto.telefono.isnot(None))
         if f.get("score_min") is not None:
             q = q.filter(Prospecto.score >= f["score_min"])
+        if f.get("segmentos"):
+            q = q.filter(Prospecto.segmento.in_(f["segmentos"]))
+        if f.get("nunca_contactados"):
+            # "Nunca les escribimos": siguen en `nuevo` y no hay ningún mail
+            # nuestro que les haya salido.
+            from app.models.prospecto import CampanaEnvio
+            q = q.filter(
+                Prospecto.estado == "nuevo",
+                ~Prospecto.id.in_(
+                    self.db.query(CampanaEnvio.prospecto_id).filter(CampanaEnvio.enviado_at.isnot(None))
+                ),
+            )
         if f.get("solo_contactables"):
             q = q.filter(
                 Prospecto.no_contactar.is_(False),

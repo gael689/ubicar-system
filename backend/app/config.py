@@ -72,6 +72,41 @@ class Settings(BaseSettings):
     # sesión) empuja prospectos a `/prospectos/importar`. Vacío = la
     # importación está apagada.
     prospectos_token: str = ""
+    # ── Prospección: las campañas en frío a empresas (docs/PROSPECCION.md) ──
+    # Todo esto tiene un default que funciona: lo único que hace falta cargar
+    # en producción para que salgan mails es `PROSPECCION_WEBHOOK_SECRET` (y
+    # tener una casilla con su dominio verificado).
+    #
+    # El dominio de la empresa, del que **nunca** sale un mail en frío. Vacío =
+    # se deduce de `FROM_EMAIL`. Las casillas tienen que ser de un subdominio.
+    prospeccion_dominio_raiz: str = ""
+    # API key de Resend para prospección. Vacía = usa `RESEND_API_KEY`. Para
+    # crear y verificar el dominio desde la pantalla tiene que ser de acceso
+    # completo; con una de sólo-envío la pantalla muestra los pasos a mano.
+    prospeccion_resend_api_key: str = ""
+    # Región de Resend del subdominio (sólo se usa al crearlo).
+    prospeccion_resend_region: str = "sa-east-1"
+    # Clave con la que se firman los links de baja. Vacía = se deriva de
+    # `CLERK_SECRET_KEY` (o, si tampoco está, de `DATABASE_URL`), que son
+    # secretos y estables. **Cambiarla invalida los links de los mails ya
+    # enviados**, así que conviene fijarla una vez y no tocarla.
+    prospeccion_secreto: str = ""
+    # El "Signing Secret" (`whsec_…`) del webhook de Resend. Vacío = el
+    # endpoint del webhook responde 404 y no se entera de rebotes ni quejas.
+    prospeccion_webhook_secret: str = ""
+    # Tope de mails de prospección por día, entre todas las casillas.
+    prospeccion_tope_diario: int = 150
+    # Lista blanca para probar en producción: con direcciones acá (separadas
+    # por coma), **sólo a ésas** les sale un mail de verdad; el resto queda
+    # registrado como simulado. Vacía = sale a todos.
+    prospeccion_solo_a: str = ""
+    # La firma que se propone en una campaña nueva (se puede cambiar ahí).
+    prospeccion_firma_nombre: str = ""
+    prospeccion_firma_telefono: str = "291 418-0554"
+    prospeccion_web: str = "www.ubicar-rent.com.ar"
+    # Adónde llegan los reportes de DMARC que se recomiendan en la pantalla.
+    prospeccion_dmarc_reportes: str = ""
+
     # **Sin uso desde el 27/09/2026**: era a quién le llegaba el resumen de las
     # 08:00 y los avisos internos por mail, que se sacaron (al equipo no se le
     # manda mail, todo queda en la campana). Se deja declarada para que un
