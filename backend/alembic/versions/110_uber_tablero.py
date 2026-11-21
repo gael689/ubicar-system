@@ -9,14 +9,13 @@ Aditiva: una tabla nueva, sin tocar nada de lo que existe ni ningún ENUM. No
 cobra ni asienta nada; el excedente se sigue cobrando en el check-in.
 
 Revision ID: 110_uber_tablero
-Revises: 108_notificacion_datos (temporal, ver TODO de integración)
+Revises: 109_campanas_envio
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "110_uber_tablero"
-# TODO integración: pasa a "109_campanas_envio" cuando entre la rama de prospectos
-down_revision = "108_notificacion_datos"
+down_revision = "109_campanas_envio"
 branch_labels = None
 depends_on = None
 
