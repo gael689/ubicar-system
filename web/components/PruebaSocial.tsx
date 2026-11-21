@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { clicExterno } from "@/lib/analitica";
 import { INSTAGRAM } from "@/lib/constants";
-import { RESENAS_GOOGLE, puntajeTexto, resenasTextoAccesible } from "@/lib/resenas";
+import { RESENAS_GOOGLE, cantidadTexto, puntajeTexto, resenasTextoAccesible } from "@/lib/resenas";
 import { cn } from "@/lib/utils";
 
 /**
@@ -37,11 +37,8 @@ function LogoGoogle({ className }: { className?: string }) {
 const ESTRELLA =
   "M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96L12 2.5z";
 
-/**
- * Cinco estrellas, pintadas hasta el puntaje (4,9 deja la quinta casi llena).
- * El ancho es fijo, así que no mueven nada al cargar.
- */
-function Estrellas({ tono }: { tono: Tono }) {
+/** Cinco estrellas doradas de Google, pintadas hasta el puntaje. Ancho fijo. */
+function Estrellas() {
   const lleno = Math.max(0, Math.min(100, (RESENAS_GOOGLE.puntaje / 5) * 100));
   const fila = (
     <>
@@ -54,9 +51,7 @@ function Estrellas({ tono }: { tono: Tono }) {
   );
   return (
     <span className="relative inline-flex w-20 shrink-0" aria-hidden="true">
-      <span className={cn("flex", tono === "oscuro" ? "text-white/25" : "text-[#1B3F6B]/15")}>
-        {fila}
-      </span>
+      <span className="flex text-[#DADCE0]">{fila}</span>
       <span
         className="absolute inset-y-0 left-0 flex overflow-hidden text-[#FBBC04]"
         style={{ width: `${lleno}%` }}
@@ -67,11 +62,27 @@ function Estrellas({ tono }: { tono: Tono }) {
   );
 }
 
+/** "Google" con los colores de la marca. Decorativo: el aria-label ya lo dice. */
+function PalabraGoogle() {
+  const letras: [string, string][] = [
+    ["G", "#4285F4"], ["o", "#EA4335"], ["o", "#FBBC05"],
+    ["g", "#4285F4"], ["l", "#34A853"], ["e", "#EA4335"],
+  ];
+  return (
+    <span className="text-[15px] font-semibold tracking-tight" aria-hidden="true">
+      {letras.map(([l, c], i) => (
+        <span key={i} style={{ color: c }}>{l}</span>
+      ))}
+    </span>
+  );
+}
+
 /**
- * La insignia de reseñas de Google: estrellas, puntaje y cantidad, y lleva a
- * la ficha para que cualquiera las pueda leer.
+ * La insignia de reseñas de Google: siempre en tarjeta blanca (como la de
+ * Google), con la "G", la palabra Google en sus colores, el puntaje, las
+ * estrellas y la cantidad. Lleva a la ficha para leerlas.
  *
- * **Sin cantidad cargada no muestra ningún número** (ver `lib/resenas.ts`).
+ * `tono` sólo cambia la sombra y el anillo de foco según el fondo.
  */
 export function InsigniaResenas({
   origen, tono = "oscuro", className,
@@ -81,51 +92,44 @@ export function InsigniaResenas({
   tono?: Tono;
   className?: string;
 }) {
-  const { cantidad, url } = RESENAS_GOOGLE;
+  const cantidad = cantidadTexto();
   const oscuro = tono === "oscuro";
 
   return (
     <a
-      href={url}
+      href={RESENAS_GOOGLE.url}
       target="_blank"
       rel="noopener noreferrer"
       onClick={() => clicExterno("resenas_google", origen)}
       aria-label={resenasTextoAccesible()}
       className={cn(
-        "group inline-flex min-h-[48px] items-center gap-2.5 rounded-xl border px-3 py-1.5 text-left transition-colors",
+        "group inline-flex min-h-[52px] items-center gap-3 rounded-xl bg-white px-3.5 py-2 text-left transition-all hover:-translate-y-px",
         FOCO,
         oscuro
-          ? "border-white/20 bg-white/10 backdrop-blur-sm hover:bg-white/[0.16] focus-visible:ring-offset-[#0B1422]"
-          : "border-border bg-white hover:border-[#407EC9]/50 hover:bg-[#407EC9]/[0.04] focus-visible:ring-offset-white",
+          ? "shadow-lg shadow-black/25 hover:shadow-xl focus-visible:ring-offset-[#0B1422]"
+          : "border border-[#DADCE0] shadow-sm hover:shadow-md focus-visible:ring-offset-white",
         className,
       )}
     >
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white">
-        <LogoGoogle className="h-4 w-4" />
-      </span>
+      <LogoGoogle className="h-7 w-7 shrink-0" />
       <span className="flex flex-col gap-0.5 leading-tight">
         <span className="flex items-center gap-1.5">
-          <Estrellas tono={tono} />
-          {cantidad !== null && (
-            <span className={cn("text-sm font-bold tabular-nums", oscuro ? "text-white" : "text-[#1B3F6B]")}>
-              {puntajeTexto(true)}
-            </span>
-          )}
-        </span>
-        <span className={cn("text-xs", oscuro ? "text-white/80" : "text-[#1B3F6B]/75")}>
-          {cantidad !== null
-            ? `${cantidad.toLocaleString("es-AR")} reseñas en Google`
-            : `${puntajeTexto()} estrellas en Google`}
-          <span aria-hidden="true"> · </span>
-          <span className="underline underline-offset-2">
-            Ver reseñas
+          <span className="text-[15px] font-bold tabular-nums text-[#202124]">
+            {puntajeTexto(true)}
           </span>
+          <Estrellas />
+        </span>
+        <span className="flex items-center gap-1 text-xs text-[#5F6368]">
+          {cantidad ? <span className="font-semibold text-[#202124]">{cantidad}</span> : null}
+          <span>reseñas en</span>
+          <PalabraGoogle />
         </span>
       </span>
     </a>
   );
 }
 
+/** El glifo de Instagram (cámara), en blanco para ir sobre el degradé. */
 function LogoInstagram({ className }: { className?: string }) {
   return (
     <svg
@@ -139,10 +143,13 @@ function LogoInstagram({ className }: { className?: string }) {
   );
 }
 
+/** El degradé oficial de Instagram (amarillo → naranja → magenta → violeta). */
+const DEGRADE_INSTAGRAM =
+  "radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285AEB 90%)";
+
 /**
- * El botón de Instagram. **Secundario a propósito**: contorno, sin relleno,
- * para que no le dispute el clic al botón de reservar. En pantallas angostas
- * queda sólo el ícono (con su `aria-label`) y entra al lado de la insignia.
+ * El botón de Instagram, con los colores reales de la marca. En pantallas
+ * angostas queda sólo el ícono (con su `aria-label`) al lado de la insignia.
  */
 export function BotonInstagram({
   origen, tono = "oscuro", className,
@@ -159,12 +166,13 @@ export function BotonInstagram({
       rel="noopener noreferrer"
       onClick={() => clicExterno("instagram", origen)}
       aria-label="Seguinos en Instagram (se abre en otra pestaña)"
+      style={{ background: DEGRADE_INSTAGRAM }}
       className={cn(
-        "inline-flex h-12 min-w-12 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors sm:px-4",
+        "inline-flex h-[52px] min-w-[52px] items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold text-white transition-all hover:-translate-y-px hover:brightness-110 sm:px-4",
         FOCO,
         oscuro
-          ? "border-white/20 text-white/90 hover:bg-white/10 hover:text-white focus-visible:ring-offset-[#0B1422]"
-          : "border-border text-[#1B3F6B] hover:border-[#407EC9]/50 hover:text-[#407EC9] focus-visible:ring-offset-white",
+          ? "shadow-lg shadow-black/25 focus-visible:ring-offset-[#0B1422]"
+          : "shadow-sm hover:shadow-md focus-visible:ring-offset-white",
         className,
       )}
     >

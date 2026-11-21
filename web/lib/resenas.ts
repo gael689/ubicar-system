@@ -30,10 +30,15 @@ export const RESENAS_GOOGLE: {
   actualizado: string | null;
 } = {
   puntaje: 5,
-  cantidad: null, // ← cargar acá el número real de la ficha de Google
+  // Piso redondo: la ficha tiene más de 200, y se muestra como "+200".
+  cantidad: 200,
   url: "https://www.google.com/maps/search/?api=1&query=Ubicar+Rent+Bah%C3%ADa+Blanca",
-  actualizado: null,
+  actualizado: "2026-11-21",
 };
+
+/** "+200": la cantidad es un piso, así que va con el "+" adelante. */
+export const cantidadTexto = () =>
+  RESENAS_GOOGLE.cantidad ? `+${RESENAS_GOOGLE.cantidad.toLocaleString("es-AR")}` : null;
 
 /** "5" o "4,9": con coma decimal, y sin el ",0" cuando es entero. */
 export const puntajeTexto = (conDecimal = false) =>
@@ -45,5 +50,5 @@ export const puntajeTexto = (conDecimal = false) =>
 /** El texto completo, para `aria-label` y para donde no hay estrellas. */
 export const resenasTextoAccesible = () =>
   RESENAS_GOOGLE.cantidad
-    ? `${puntajeTexto(true)} de 5 estrellas, ${RESENAS_GOOGLE.cantidad} reseñas en Google. Ver las reseñas`
+    ? `${puntajeTexto(true)} de 5 estrellas, más de ${RESENAS_GOOGLE.cantidad} reseñas en Google. Ver las reseñas`
     : `${puntajeTexto()} estrellas en Google. Ver las reseñas`;
