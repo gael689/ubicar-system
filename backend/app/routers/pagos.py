@@ -581,62 +581,17 @@ def create_pago(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    # Desde la migración 043 un pago puede no tener alquiler (pago a cuenta,
-    # seña de una reserva sin alquiler todavía, cancelación de deuda vieja).
-    # Lo que no puede faltar es el cliente: siempre se le cobra a alguien.
-    cliente_id = payload.cliente_id
-    alquiler = None
-    if payload.alquiler_id is not None:
-        alquiler = db.query(Alquiler).filter(Alquiler.id == payload.alquiler_id).first()
-        if not alquiler:
-            raise HTTPException(status_code=404, detail="Alquiler no encontrado")
-        reserva = db.get(Reserva, alquiler.reserva_id)
-        if reserva:
-            cliente_id = cliente_id or reserva.cliente_id
+    # El cobro en sí vive en `pago_service.registrar_pago`: lo comparte con el
+    # tablero de Uber ("Cobrar semana"), y así los dos asientan lo mismo.
+    from app.core.exceptions import NotFoundError
+    from app.services.pago_service import registrar_pago
 
-    if cliente_id is None:
-        raise HTTPException(
-            status_code=422,
-            detail="El pago necesita un cliente, o un alquiler del que deducirlo",
-        )
-
-    pago = Pago(
-        **payload.model_dump(exclude={"cliente_id"}),
-        cliente_id=cliente_id,
-        cobrado_por=current_user.id,
-    )
-    db.add(pago)
-    db.flush()  # asegurar pago.id antes de enlazarlo al movimiento
-
-    # Ledger completo: todo alquiler factura un débito automático en el
-    # checkout (ver AlquilerService.checkout). Cualquier cobro posterior,
-    # sea cual sea el medio de pago, genera el CRÉDITO que lo cancela.
-    from decimal import Decimal
-    from app.services.cuenta_corriente_service import CuentaCorrienteService
-
-    concepto = (
-        f"Cobro alquiler #{payload.alquiler_id} ({payload.medio_pago})"
-        if payload.alquiler_id is not None
-        else f"Cobro a cuenta ({payload.medio_pago})"
-    )
-    # `cuenta_corriente` no cancela la deuda: significa "se lo anotamos en la
-    # cuenta", o sea que la plata no entró. El `Pago` queda como constancia de
-    # la decisión; el saldo, sin tocar. Ver `caja_service.es_plata_que_entro`.
-    if es_plata_que_entro(payload.medio_pago):
-        CuentaCorrienteService(db).registrar_movimiento(
-            cliente_id=cliente_id,
-            tipo="credito",
-            # Un cobro suelto siempre es contra una deuda que ya existe: es un
-            # `pago`, no un `anticipo`. La seña de una reserva sin alquiler entra
-            # por `ReservaService.registrar_cobro`, que sí la asienta como anticipo.
-            naturaleza="pago",
-            concepto=concepto,
-            monto=Decimal(str(payload.monto)),
-            fecha=payload.fecha,
-            creado_por=current_user.id,
-            alquiler_id=payload.alquiler_id,
-            pago_id=pago.id,
-        )
+    try:
+        pago = registrar_pago(db, payload, current_user.id)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Alquiler no encontrado")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     db.commit()
     db.refresh(pago)

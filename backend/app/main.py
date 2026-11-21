@@ -22,6 +22,7 @@ from app.routers import (
     precios, adicionales, bloqueos, reservas_web, auditoria,
     emails, solicitudes_contacto, disponibilidad, pagares, usuarios, prospectos, caja_socios,
 )
+from app.routers import uber
 
 logger = logging.getLogger(__name__)
 
@@ -385,6 +386,7 @@ app.include_router(auditoria.router, prefix=API_PREFIX)
 app.include_router(usuarios.router, prefix=API_PREFIX)
 app.include_router(prospectos.router, prefix=API_PREFIX)
 app.include_router(caja_socios.router, prefix=API_PREFIX)
+app.include_router(uber.router, prefix=API_PREFIX)
 
 
 # ─── Archivos estáticos ───────────────────────────────────────────────────────

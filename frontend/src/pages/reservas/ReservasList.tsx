@@ -121,6 +121,9 @@ export function ReservasList() {
   const [estados, setEstados] = useState<EstadoReserva[]>([]);
   const [search, setSearch] = useState('');
   const [fechaFiltro, setFechaFiltro] = useState('');
+  // Filtro rápido: sólo los contratos de Uber. Va a la vista (no adentro de
+  // "Filtros") porque es una forma de mirar la lista, no una búsqueda.
+  const [soloUber, setSoloUber] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showContratoRapido, setShowContratoRapido] = useState(false);
   const [tipoContrato, setTipoContrato] = useState<'alquiler' | 'uber'>('alquiler');
@@ -175,12 +178,13 @@ export function ReservasList() {
       // El backend ya aceptaba `origen` (lo usa el banner de arriba); lo que
       // faltaba era que el listado principal pudiera pasarlo.
       origen: canal === 'todas' ? undefined : canal,
+      tipo: soloUber ? 'uber' : undefined,
       page,
       page_size: pageSize,
     });
     setReservas(resp.data);
     setTotal(resp.total);
-  }, [listReservas, estados, search, fechaFiltro, canal, page]);
+  }, [listReservas, estados, search, fechaFiltro, canal, soloUber, page]);
 
   useEffect(() => {
     loadReservas().catch(() => {});
@@ -256,6 +260,18 @@ export function ReservasList() {
                 <Rows3 className="w-4 h-4" />
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => { setSoloUber(v => !v); setPage(1); }}
+              aria-pressed={soloUber}
+              title={soloUber ? 'Ver todas las reservas' : 'Ver sólo los contratos de Uber'}
+              className={cn(
+                'px-3 py-2 rounded-lg border text-sm font-medium transition-colors',
+                soloUber ? 'bg-primary border-primary text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50',
+              )}
+            >
+              Solo Uber
+            </button>
             <button
               onClick={() => setFiltersOpen(v => !v)}
               className={cn(
@@ -508,6 +524,12 @@ export function ReservasList() {
                 <tr key={r.id} className="hover:bg-slate-50 transition-colors group">
                   <td className={cn(cellPad, 'text-slate-500 font-mono font-medium border-r border-slate-200')}>
                     #{r.id}
+                    {r.tipo === 'uber' && (
+                      <span className="ml-1.5 inline-block rounded bg-foreground px-1.5 py-0.5 align-middle font-sans text-[10px] font-bold uppercase tracking-wide text-background"
+                        title="Contrato de Uber: se paga por semana">
+                        Uber
+                      </span>
+                    )}
                   </td>
                   <td className={cn(cellPad, 'border-r border-slate-200')}>
                     <div className="flex justify-between items-start">

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import axios from 'axios';
 
 import { InputMoneda } from '@/components/shared/InputMoneda';
-import { CamposUber, UBER_VACIO, type DatosUber } from '@/components/reservas/CamposUber';
+import { CamposUber, UBER_VACIO, type DatosUber, type SugeridosUber } from '@/components/reservas/CamposUber';
 import { ContratoPanel } from '@/components/alquileres/ContratoPanel';
 import { SelectorConductores } from '@/components/clientes/SelectorConductores';
 import { useReservas } from '@/hooks/useReservas';
@@ -21,7 +21,7 @@ import {
   mensajeSinRespuesta, redondear2, sinRespuesta,
 } from '@/lib/utils';
 import { avisoDiaExtra, diasFacturables } from '@/lib/dias';
-import { totalUber } from '@/lib/uber';
+import { armarCondicion, totalUber, validarFechasDePago } from '@/lib/uber';
 import type { ApiResponse, Cliente, Reserva, ReservaCreate } from '@/types';
 
 interface Props {
@@ -34,7 +34,9 @@ interface Props {
   onCreada: () => void;
 }
 
-const LUGARES_FALLBACK = ['Paraguay 241', 'Alsina 350', 'Aeropuerto Comandante Espora'];
+const SEMANAS_UBER_POR_DEFECTO = 4;
+
+const LUGARES_FALLBACK =['Paraguay 241', 'Alsina 350', 'Aeropuerto Comandante Espora'];
 
 // Hoy en hora local (`toISOString()` es UTC: después de las 21:00 ya es mañana).
 function hoy() { return hoyLocal(); }
@@ -92,7 +94,11 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
   const [vehiculoId, setVehiculoId] = useState(initialVehiculoId?.toString() ?? '');
   const [fechaInicio, setFechaInicio] = useState(initialFecha ?? hoy());
   const [horaInicio, setHoraInicio] = useState('10:00');
-  const [fechaFin, setFechaFin] = useState(sumarDias(initialFecha ?? hoy(), 1));
+  // Un contrato de Uber arranca en cuatro semanas, que es lo habitual; un
+  // alquiler común, en un día. Las dos se cambian con la fecha de siempre.
+  const [fechaFin, setFechaFin] = useState(
+    sumarDias(initialFecha ?? hoy(), tipo === 'uber' ? SEMANAS_UBER_POR_DEFECTO * 7 : 1),
+  );
   // La hora de devolución es libre. Mientras no se toque, acompaña a la de
   // retiro (`null`); así el caso de siempre no agrega ningún paso y el del
   // mismo día —retira 07:30, devuelve 18:40— se puede cargar.
@@ -136,6 +142,21 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
   // Alquiler común o contrato de Uber (valor semanal, km, fechas de pago).
   const [uber, setUber] = useState<DatosUber>({ ...UBER_VACIO, tipo });
   const esUber = uber.tipo === 'uber';
+  // Lo que se cargó en el último contrato de Uber, para no tipear siempre lo
+  // mismo. Sólo se pide si el contrato es de Uber, y si falla no pasa nada: el
+  // formulario queda vacío como antes.
+  const [sugeridosUber, setSugeridosUber] = useState<SugeridosUber | null>(null);
+  useEffect(() => {
+    if (tipo !== 'uber') return;
+    let vigente = true;
+    (async () => {
+      try {
+        const r = await api.get<ApiResponse<SugeridosUber | null>>('/uber/ultimos-valores');
+        if (vigente) setSugeridosUber(r?.data?.data ?? null);
+      } catch { /* sin sugerencia */ }
+    })();
+    return () => { vigente = false; };
+  }, [tipo]);
   const [cobertura, setCobertura] = useState<number | ''>('');
   // El motivo de cobrar menos que el de lista. **Antes esta pantalla no lo
   // pedía ni lo mandaba**, y el backend lo exige: bajar el precio en el
@@ -245,6 +266,9 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
         fallar('Falta el valor de la semana del contrato de Uber.', 'uber_valor_semana');
         return;
       }
+      // Una fecha de pago por semana: es lo que después son las cuotas.
+      const problemaFechas = validarFechasDePago(uber.fechasPago, duracionDias);
+      if (problemaFechas) { fallar(problemaFechas, 'uber_fechas_pago'); return; }
     } else if (!precioTotal || Number(precioTotal) <= 0) { fallar('Falta el precio.', 'precio'); return; }
     if (pideMotivo && !descuentoMotivo.trim()) {
       fallar('El precio es menor al de lista: indicá el motivo.', 'descuento_motivo');
@@ -290,8 +314,10 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
           uber_valor_semana: Number(uber.valorSemana),
           uber_km_semana: uber.kmSemana === '' ? null : Number(uber.kmSemana),
           uber_precio_km_extra: uber.precioKmExtra === '' ? null : Number(uber.precioKmExtra),
-          fechas_pago: uber.fechasPago.filter(Boolean),
-          condicion_pago_texto: uber.condicion.trim() || null,
+          fechas_pago: uber.fechasPago,
+          // El mismo campo de texto de siempre, ahora con una frase armada:
+          // "Semanal por adelantado — por transferencia". Sale así en el PDF.
+          condicion_pago_texto: armarCondicion(uber.modalidad, uber.nota),
         } : {}),
         adicionales: cobertura === '' ? [] : [{ adicional_id: Number(cobertura), cantidad: 1 }],
         descuento_motivo: descuentoMotivo.trim() || null,
@@ -513,7 +539,8 @@ export function ContratoRapidoModal({ tipo = 'alquiler', initialVehiculoId, init
               </div>
 
               {/* Alquiler común o Uber: el contrato decide el destino del auto. */}
-              <CamposUber value={uber} onChange={setUber} fechaInicio={fechaInicio} dias={duracionDias} ocultarTipo />
+              <CamposUber value={uber} onChange={setUber} fechaInicio={fechaInicio} dias={duracionDias} ocultarTipo
+                sugeridos={sugeridosUber} />
 
               {/* Fechas */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
