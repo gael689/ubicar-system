@@ -15,6 +15,12 @@ const filas = Array.from({ length: 3 }, (_, i) => ({
 }));
 const mut = { mutate: vi.fn(), isPending: false };
 const importar = { mutate: vi.fn(), isPending: false };
+const simular = {
+  mutate: vi.fn((_l: unknown, o: { onSuccess: (t: unknown) => void }) =>
+    o.onSuccess({ nuevos: 1, actualizados: 0, invalidos: 0, ya_clientes: 0 })),
+  isPending: false,
+};
+const agregar = { mutate: vi.fn(), isPending: false };
 
 vi.mock('@/hooks/useProspectos', () => ({
   // 120 en total, pero la página trae 3: para que aparezca "seleccionar todos".
@@ -28,11 +34,23 @@ vi.mock('@/hooks/useProspectos', () => ({
   useNoEsClienteProspecto: () => mut,
   useCruzarProspectos: () => mut,
   useImportarArchivoProspectos: () => importar,
+  useSimularImportacion: () => simular,
+  useAgregarProspecto: () => agregar,
+  usePanelProspeccion: () => ({ data: {
+    contactables: 120, enviados_semana: 40, respuestas: 3, bajas: 1, envio: { listo: false },
+  } }),
   useCampanasProspecto: () => ({ data: [], isLoading: false }),
   useCampanaProspecto: () => ({ data: undefined }),
-  useCrearCampanaProspecto: () => mut,
   useGuardarMensajeCampana: () => mut,
-  usePrepararCampana: () => mut,
+  useAccionCampana: () => mut,
+  useMarcarRespondio: () => mut,
+  useCasillas: () => ({ isLoading: false, data: {
+    casillas: [], raiz: 'ubicar-rent.com.ar', modo: 'manual', aviso: 'La API key es de sólo-envío.', dominios: [],
+    envio: { listo: false },
+  } }),
+  useAccionCasilla: () => mut,
+  useDominio: () => mut,
+  useGuardarCasilla: () => mut,
 }));
 
 import { ProspectosPage } from './ProspectosPage';
@@ -61,21 +79,69 @@ describe('Prospectos', () => {
     expect(screen.queryByRole('button', { name: /Crear campaña/ })).toBeNull();
   });
 
-  it('importar archivo manda la lista del .json', async () => {
+  it('importar muestra la vista previa y recién después guarda', async () => {
     const user = userEvent.setup();
     render(<ProspectosPage />);
-    const archivo = new File([JSON.stringify({ prospectos: [{ nombre: 'Constructora Sur' }] })], 'p.json', { type: 'application/json' });
+    const archivo = new File([JSON.stringify({ prospectos: [{ nombre: 'Constructora Sur', fuente: 'web' }] })], 'p.json', { type: 'application/json' });
     await user.upload(screen.getByTestId('archivo-prospectos'), archivo);
-    await vi.waitFor(() => expect(importar.mutate).toHaveBeenCalled());
-    expect(importar.mutate.mock.calls[0][0]).toEqual([{ nombre: 'Constructora Sur' }]);
+    const previa = await screen.findByTestId('vista-previa-importacion');
+    expect(simular.mutate.mock.calls[0][0]).toEqual([{ nombre: 'Constructora Sur', fuente: 'web' }]);
+    expect(previa.textContent).toMatch(/1Nuevas/);
+    expect(importar.mutate).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Importar' }));
+    expect(importar.mutate.mock.calls[0][0]).toEqual([{ nombre: 'Constructora Sur', fuente: 'web' }]);
   });
 
-  it('un archivo que no es el del sincronizador no se manda', async () => {
-    importar.mutate.mockClear();
+  it('acepta un CSV de planilla con los nombres de columna de la gente', async () => {
+    simular.mutate.mockClear();
     const user = userEvent.setup();
     render(<ProspectosPage />);
-    await user.upload(screen.getByTestId('archivo-prospectos'), new File(['hola'], 'x.json', { type: 'application/json' }));
+    const csv = 'Empresa;Mail;Rubro\n"Sur; S.A.";compras@sur.com.ar;Constructoras\n';
+    await user.upload(screen.getByTestId('archivo-prospectos'), new File([csv], 'lista.csv', { type: 'text/csv' }));
+    await screen.findByTestId('vista-previa-importacion');
+    expect(simular.mutate.mock.calls[0][0]).toEqual([
+      { nombre: 'Sur; S.A.', email: 'compras@sur.com.ar', segmento: 'Constructoras' },
+    ]);
+  });
+
+  it('un archivo que no se puede leer no se manda', async () => {
+    simular.mutate.mockClear();
+    const user = userEvent.setup();
+    render(<ProspectosPage />);
+    await user.upload(screen.getByTestId('archivo-prospectos'), new File(['{hola'], 'x.json', { type: 'application/json' }));
     await new Promise(r => setTimeout(r, 50));
-    expect(importar.mutate).not.toHaveBeenCalled();
+    expect(simular.mutate).not.toHaveBeenCalled();
+  });
+
+  it('agregar prospecto a mano', async () => {
+    const user = userEvent.setup();
+    render(<ProspectosPage />);
+    await user.click(screen.getByRole('button', { name: /Agregar prospecto/ }));
+    await user.type(screen.getByLabelText('Empresa'), 'Montajes Norte');
+    await user.type(screen.getByLabelText('Mail'), 'info@norte.com.ar');
+    await user.click(screen.getByRole('button', { name: 'Agregar' }));
+    expect(agregar.mutate.mock.calls[0][0]).toEqual({ nombre: 'Montajes Norte', email: 'info@norte.com.ar' });
+  });
+
+  it('el resumen de arriba y las tres pestañas', async () => {
+    const user = userEvent.setup();
+    render(<ProspectosPage />);
+    expect(screen.getByText('Enviados esta semana')).toBeTruthy();
+    expect(screen.getByText('40')).toBeTruthy();
+    await user.click(screen.getByRole('tab', { name: 'Campañas' }));
+    expect(screen.getByText(/Todavía no mandaste ninguna campaña/)).toBeTruthy();
+    await user.click(screen.getByRole('tab', { name: 'Casillas' }));
+    expect(screen.getByText(/Modo manual/)).toBeTruthy();
+  });
+
+  it('una casilla en la raíz del dominio se rechaza explicando por qué', async () => {
+    const user = userEvent.setup();
+    render(<ProspectosPage />);
+    await user.click(screen.getByRole('tab', { name: 'Casillas' }));
+    await user.click(screen.getByRole('button', { name: /Agregar casilla/ }));
+    await user.type(screen.getByLabelText('Dirección'), 'franco@ubicar-rent.com.ar');
+    await user.type(screen.getByLabelText('Nombre visible'), 'Franco');
+    expect(screen.getByRole('alert').textContent).toMatch(/confirmaciones de reserva/);
+    expect((screen.getByRole('button', { name: 'Guardar' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
