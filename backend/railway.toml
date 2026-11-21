@@ -58,6 +58,34 @@
 #                                     RECHAZA una preferencia que apunte a
 #                                     localhost, asi que sin esto el boton de
 #                                     pagar tira error y no se llega al checkout
+#
+# Prospeccion: campañas de mail en frio a empresas (docs/PROSPECCION.md).
+# Se agregaron el 21/11. Todas tienen un default que anda; la unica que hace
+# falta para que el sistema se entere de rebotes, quejas y respuestas es el
+# secreto del webhook.
+#
+#   PROSPECCION_WEBHOOK_SECRET    whsec_...  (Resend > Webhooks > Signing Secret)
+#                                 <-- vacia: el webhook responde 404, no se ven
+#                                     rebotes ni quejas y el freno automatico
+#                                     de las casillas queda ciego
+#   PROSPECCION_SECRETO           un token largo al azar  <-- firma los links de
+#                                     baja. Fijarlo UNA vez: cambiarlo rompe los
+#                                     links de los mails ya enviados
+#   PROSPECCION_RESEND_API_KEY    re_...  OPCIONAL: vacia usa RESEND_API_KEY.
+#                                 <-- de "Full access" para que la pantalla
+#                                     Casillas cree y verifique el subdominio;
+#                                     con una de solo-envio pasa a modo manual
+#   PROSPECCION_DOMINIO_RAIZ      ubicar-rent.com.ar  OPCIONAL (se deduce de FROM_EMAIL)
+#   PROSPECCION_RESEND_REGION     sa-east-1  OPCIONAL
+#   PROSPECCION_TOPE_DIARIO       150  OPCIONAL: tope entre todas las casillas
+#   PROSPECCION_SOLO_A            OPCIONAL: mails separados por coma. Con algo
+#                                     aca, SOLO a esos les sale de verdad (para
+#                                     la primera prueba en produccion). Vaciarla
+#                                     para mandar en serio
+#   PROSPECCION_FIRMA_NOMBRE      OPCIONAL: la firma que se propone (ej. Franco)
+#   PROSPECCION_FIRMA_TELEFONO    291 418-0554  OPCIONAL
+#   PROSPECCION_WEB               www.ubicar-rent.com.ar  OPCIONAL
+#   PROSPECCION_DMARC_REPORTES    OPCIONAL: adonde llegan los reportes DMARC
 
 [build]
 builder = "DOCKERFILE"
