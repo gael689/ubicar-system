@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import BuscadorReserva from "@/components/BuscadorReserva";
+import { BotonInstagram, InsigniaResenas } from "@/components/PruebaSocial";
 
 const PASOS = ["Elegí fechas", "Elegí tu vehículo", "Sumá extras", "Reservá"];
 
@@ -30,7 +31,7 @@ const Hero = () => {
         src="/img/hero.jpg"
         alt=""
         fill
-        priority
+        preload
         sizes="100vw"
         className="object-cover object-[65%_center]"
       />
@@ -85,6 +86,21 @@ const Hero = () => {
               reservá. Cuatro pasos y el auto queda a tu nombre — sin llamar a
               nadie ni esperar respuesta.
             </p>
+
+            {/* La prueba social va **antes** del formulario: en el teléfono es
+                lo último que se lee antes de llegar a "Lugar de retiro", y en
+                la computadora queda a la altura del botón. Las reseñas
+                contestan "¿son de confiar?", que es la duda de quien no nos
+                conoce. Instagram va al lado y en contorno: es una salida, no
+                puede pesar más que reservar. Alto fijo: no mueve nada al
+                cargar. */}
+            <div
+              className="mt-6 flex flex-wrap items-center gap-2.5 opacity-0 animate-fade-up"
+              style={{ animationDelay: "0.24s" }}
+            >
+              <InsigniaResenas origen="hero" />
+              <BotonInstagram origen="hero" />
+            </div>
 
           </div>
 

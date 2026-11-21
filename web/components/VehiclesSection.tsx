@@ -216,7 +216,7 @@ export default function VehiclesSection() {
           <div className="vh-grid">
             {VEHICLES.map((v, i) => (
               <div key={v.title} className={`vh-item vh-reveal vh-d${i + 1}`}>
-                <Image src={v.image} alt={v.alt} width={1408} height={768} sizes="(max-width: 768px) 100vw, 25vw" />
+                <Image src={v.image} alt={v.alt} width={1408} height={768} sizes="(max-width: 640px) 100vw, (max-width: 1328px) 50vw, 640px" />
                 <div className="vh-overlay">
                   <p className="vh-item-title">{v.title}</p>
                   <p className="vh-item-desc">{v.description}</p>

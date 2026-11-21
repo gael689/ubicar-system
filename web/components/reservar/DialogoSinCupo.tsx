@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -70,7 +70,7 @@ export function DialogoSinCupo({ categoria, rango, onCerrar }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+      <div role="dialog" aria-modal="true" className="max-h-full w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-bold text-[#1B3F6B]">
@@ -113,9 +113,9 @@ export function DialogoSinCupo({ categoria, rango, onCerrar }: Props) {
               </p>
             )}
 
-            <Campo etiqueta="Nombre y apellido" valor={nombre} onChange={setNombre} />
-            <Campo etiqueta="Email" valor={email} onChange={setEmail} type="email" />
-            <Campo etiqueta="Teléfono" valor={telefono} onChange={setTelefono} type="tel" />
+            <Campo etiqueta="Nombre y apellido" valor={nombre} onChange={setNombre} name="name" autoComplete="name" autoCapitalize="words" />
+            <Campo etiqueta="Email" valor={email} onChange={setEmail} type="email" name="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} />
+            <Campo etiqueta="Teléfono" valor={telefono} onChange={setTelefono} type="tel" name="tel" autoComplete="tel" inputMode="tel" />
 
             <Button
               onClick={enviar}
@@ -142,24 +142,30 @@ export function DialogoSinCupo({ categoria, rango, onCerrar }: Props) {
 }
 
 function Campo({
-  etiqueta, valor, onChange, type = "text",
+  etiqueta, valor, onChange, type = "text", ...rest
 }: {
   etiqueta: string;
   valor: string;
   onChange: (v: string) => void;
   type?: string;
-}) {
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "value" | "type">) {
+  // `htmlFor` + `id`: tocar la etiqueta enfoca el campo y el lector de
+  // pantalla sabe qué se pide. `autoComplete` deja que el teléfono complete
+  // nombre, teléfono y mail de un toque — son tres campos menos que tipear.
+  const id = useId();
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-muted-foreground">
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-foreground">
         {etiqueta}
       </label>
       <input
+        {...rest}
+        id={id}
         type={type}
         value={valor}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          "w-full rounded-md border border-border bg-white px-3 py-2.5 text-sm",
+          "w-full rounded-md border border-border bg-white px-3 py-2.5 text-base sm:text-sm",
           "outline-none transition-colors focus:border-primary focus:ring-4 focus:ring-primary/15",
         )}
       />

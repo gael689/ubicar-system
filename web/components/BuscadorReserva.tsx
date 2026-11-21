@@ -294,6 +294,7 @@ export default function BuscadorReserva({ lugarInicial }: { lugarInicial?: strin
                       <input
                         value={otroRetiro}
                         onChange={(e) => setOtroRetiro(e.target.value)}
+                        aria-label="¿Dónde querés retirarlo?"
                         placeholder="¿Dónde querés retirarlo?"
                         className="h-[46px] w-full rounded-lg border border-border bg-white px-3.5 text-sm text-[#1B3F6B] outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
                       />
@@ -354,6 +355,7 @@ export default function BuscadorReserva({ lugarInicial }: { lugarInicial?: strin
                         if (e.target.value) setFaltaEdad(false);
                       }}
                       aria-invalid={faltaEdad}
+                      aria-describedby={faltaEdad ? "hero-edad-error" : undefined}
                       className={cn(
                         "h-[52px] w-full cursor-pointer appearance-none rounded-lg border bg-white pl-11 pr-9 text-base font-semibold text-[#1B3F6B] outline-none transition-colors focus:border-primary focus:ring-4 focus:ring-primary/15",
                         faltaEdad ? "border-destructive" : "border-border",
@@ -370,7 +372,7 @@ export default function BuscadorReserva({ lugarInicial }: { lugarInicial?: strin
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   </div>
                   {faltaEdad && (
-                    <p className="mt-1.5 text-xs font-medium text-destructive">
+                    <p id="hero-edad-error" role="alert" className="mt-1.5 text-xs font-medium text-destructive">
                       Necesitamos la edad de quien va a alquilar.
                     </p>
                   )}
@@ -404,6 +406,7 @@ export default function BuscadorReserva({ lugarInicial }: { lugarInicial?: strin
                     <input
                       value={otraDevolucion}
                       onChange={(e) => setOtraDevolucion(e.target.value)}
+                      aria-label="¿Dónde querés devolverlo?"
                       placeholder="¿Dónde querés devolverlo?"
                       className="h-[46px] w-full rounded-lg border border-border bg-white px-3.5 text-sm text-[#1B3F6B] outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
                     />
@@ -487,6 +490,13 @@ function CampoFecha({
           <PopoverTrigger asChild>
             <button
               type="button"
+              // El `label` de arriba no está atado al botón: sin esto un
+              // lector de pantalla anuncia "Fecha" a secas, dos veces.
+              aria-label={
+                fecha
+                  ? `${etiqueta}: ${format(fecha, "d 'de' MMMM", { locale: es })}. Cambiar fecha`
+                  : `Elegir fecha de ${etiqueta.toLowerCase()}`
+              }
               className={cn(
                 "flex h-[52px] flex-1 items-center gap-2 rounded-lg border border-border bg-white px-3 text-left text-sm font-semibold outline-none transition-colors focus:border-primary focus:ring-4 focus:ring-primary/15",
                 fecha ? "text-[#1B3F6B]" : "text-muted-foreground",

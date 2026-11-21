@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { InsigniaResenas } from "@/components/PruebaSocial";
 
 /**
  * El Hero de las subpáginas: **el mismo fondo que el de la portada** (la foto
@@ -21,7 +22,7 @@ export function FondoHero({ priority = false }: { priority?: boolean }) {
         src="/img/hero.jpg"
         alt=""
         fill
-        priority={priority}
+        preload={priority}
         sizes="100vw"
         className="object-cover object-[65%_center]"
       />
@@ -93,6 +94,14 @@ export default function HeroSub({
                 {acciones}
               </div>
             )}
+            {/* Quien entra por una de estas páginas viene de un buscador o de
+                un anuncio y no nos conoce: las reseñas van acá también. */}
+            <div
+              className="mt-5 opacity-0 animate-fade-up"
+              style={{ animationDelay: "0.3s" }}
+            >
+              <InsigniaResenas origen="landing:hero" />
+            </div>
           </div>
 
           <div

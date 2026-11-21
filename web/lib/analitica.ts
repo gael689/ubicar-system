@@ -386,6 +386,22 @@ export function intencionDeReserva(origen: string): void {
   aGoogle("select_promotion", { promotion_name: origen, destino: "/reservar" });
 }
 
+/**
+ * Click en un enlace que **saca** del sitio sin ser un contacto: el Instagram
+ * y las reseñas de Google.
+ *
+ * **No manda `Lead` ni nada a Meta**, por el mismo motivo que
+ * `intencionDeReserva`: quien va a mirar las reseñas todavía no hizo nada que
+ * valga como conversión, y declararlo como tal le enseña al algoritmo a buscar
+ * curiosos. A GA4 va como `select_content` —el evento recomendado para "tocó
+ * este contenido"—, con `origen` para saber desde qué bloque salió (hero, pie,
+ * cierre). Sirve para contestar si la insignia de reseñas se usa, y si el
+ * botón de Instagram se lleva gente que iba a reservar.
+ */
+export function clicExterno(destino: "instagram" | "resenas_google", origen: string): void {
+  aGoogle("select_content", { content_type: destino, content_id: origen, origen });
+}
+
 // ─── Derivación comercial (§3.9) ─────────────────────────────────────────────
 
 /**

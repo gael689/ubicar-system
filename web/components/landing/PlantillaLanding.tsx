@@ -1,6 +1,7 @@
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import FloatingWhatsApp from "@/components/FloatingWhatsApp";
+import CtaFijoMobile from "@/components/CtaFijoMobile";
 import BuscadorReserva from "@/components/BuscadorReserva";
 import HeroSub from "@/components/landing/HeroSub";
 import { BotonWhatsApp } from "@/components/landing/BotonWhatsApp";
@@ -170,6 +171,7 @@ export default function PlantillaLanding({ landing }: { landing: Landing }) {
       </main>
 
       <Footer />
+      {reservaOnline && <CtaFijoMobile />}
       <FloatingWhatsApp />
     </>
   );

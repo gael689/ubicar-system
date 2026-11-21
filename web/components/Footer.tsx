@@ -6,6 +6,8 @@ import { CONTACTO } from "@/lib/contacto";
 import { WHATSAPP_GENERAL } from "@/lib/constants";
 import { LANDINGS, esDeZona } from "@/lib/landings";
 import { MAQUINAS } from "@/lib/maquinas";
+import { EnlaceSocial, LogoInstagram } from "@/components/PruebaSocial";
+import { Star } from "lucide-react";
 
 const logo = "/img/logo.png";
 
@@ -58,6 +60,7 @@ const Footer = () => {
                 alt="Ubicar Rent"
                 width={1358}
                 height={649}
+                sizes="126px"
                 style={{ height: 60, width: "auto", display: "block" }}
               />
             </Link>
@@ -80,6 +83,18 @@ const Footer = () => {
               <li className="inline-flex items-center gap-2.5">
                 <MapPin className="h-4 w-4" aria-hidden="true" />
                 Paraguay 241, Bahía Blanca
+              </li>
+              <li>
+                <EnlaceSocial destino="instagram" origen="pie" className="inline-flex items-center gap-2.5 hover:text-[#407EC9]">
+                  <LogoInstagram className="h-4 w-4" />
+                  Instagram
+                </EnlaceSocial>
+              </li>
+              <li>
+                <EnlaceSocial destino="resenas_google" origen="pie" className="inline-flex items-center gap-2.5 hover:text-[#407EC9]">
+                  <Star className="h-4 w-4" aria-hidden="true" />
+                  Reseñas en Google
+                </EnlaceSocial>
               </li>
             </ul>
           </div>
@@ -115,7 +130,7 @@ const Footer = () => {
 
       {/* Fila inferior: copyright, legales y crédito */}
       <div className="border-t border-[#407EC9]/25">
-        <div className="container flex flex-col gap-2 px-4 py-4 text-[0.8rem] text-black/45 sm:flex-row sm:items-center sm:justify-between">
+        <div className="container flex flex-col gap-2 px-4 py-4 text-[0.8rem] text-black/60 sm:flex-row sm:items-center sm:justify-between">
           <span>
             © {new Date().getFullYear()} Ubicar Rent · Bahía Blanca, Argentina
             {" · "}

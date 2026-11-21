@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { WHATSAPP_GENERAL } from "@/lib/constants";
 import { trackLeadEvent } from "@/lib/meta-pixel";
+import { intencionDeReserva } from "@/lib/analitica";
+import { InsigniaResenas } from "@/components/PruebaSocial";
 
 function useReveal<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -86,7 +88,7 @@ export default function FinalCTA() {
         .fc-note {
           margin-top: 1rem;
           font-size: 0.8rem;
-          color: #B0C4D4;
+          color: #5F7890;
         }
       `}</style>
 
@@ -119,7 +121,9 @@ export default function FinalCTA() {
                 no tenerlo. */}
             <a
               href="/#reservar"
-              onClick={() => trackLeadEvent("cta-final:reservar")}
+              // Es navegación interna, no un contacto: se mide como intención
+              // de reserva. Antes mandaba `Lead` a Meta por cada clic.
+              onClick={() => intencionDeReserva("cta-final:reservar")}
               className="fc-btn"
             >
               Ver disponibilidad
@@ -145,6 +149,12 @@ export default function FinalCTA() {
                 Escribinos por WhatsApp
               </a>
             </p>
+
+            {/* La última duda antes de volver al buscador suele ser "¿y estos
+                quiénes son?": las reseñas van pegadas al botón. */}
+            <div style={{ marginTop: "1.75rem" }}>
+              <InsigniaResenas origen="cta-final" tono="claro" />
+            </div>
           </div>
 
         </div>

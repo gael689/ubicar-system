@@ -3,6 +3,8 @@ import { DM_Sans } from "next/font/google";
 import { Analitica } from "@/components/Analitica";
 import { AvisoCookies } from "@/components/AvisoCookies";
 import { OG_IMAGEN, SITE } from "@/lib/sitio";
+import { CONTACTO } from "@/lib/contacto";
+import { RESENAS_GOOGLE } from "@/lib/resenas";
 import "./globals.css";
 
 // Se auto-hostea: elimina el request bloqueante a fonts.googleapis.com que
@@ -124,7 +126,22 @@ const JSON_LD = {
         { "@type": "City", name: "Bahía Blanca" },
         { "@type": "AdministrativeArea", name: "Sur de la Provincia de Buenos Aires" },
       ],
-      sameAs: ["https://www.instagram.com/ubicar_rent/"],
+      sameAs: [CONTACTO.instagram],
+      // **Sólo con la cantidad cargada y verificada** (`lib/resenas.ts`). Con
+      // `cantidad: null` no se emite nada: un `aggregateRating` sin
+      // `reviewCount` es inválido, y uno con un número que no es el de la
+      // ficha es structured data falso, que Google penaliza.
+      ...(RESENAS_GOOGLE.cantidad
+        ? {
+            aggregateRating: {
+              "@type": "AggregateRating",
+              ratingValue: RESENAS_GOOGLE.puntaje,
+              bestRating: 5,
+              worstRating: 1,
+              reviewCount: RESENAS_GOOGLE.cantidad,
+            },
+          }
+        : {}),
       // Los puntos de retiro, para las busquedas por cercania.
       location: [
         {

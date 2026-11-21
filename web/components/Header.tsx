@@ -7,7 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 const logo = "/img/logo.png";
-import { WHATSAPP_GENERAL } from "@/lib/constants";
+import { intencionDeReserva } from "@/lib/analitica";
 
 // ─── Nav links ────────────────────────────────────────────────────────────────
 
@@ -59,6 +59,19 @@ const Header = () => {
     return () => { document.body.style.overflow = ""; };
   }, [mobileOpen]);
 
+  /**
+   * "Reservar": al buscador de esta página si lo tiene (la portada y las
+   * páginas de servicio), y si no al de la portada. Nunca a `/reservar` a
+   * secas, que sin fechas ni edad rebota.
+   */
+  const irAReservar = (origen: string) => {
+    intencionDeReserva(origen);
+    setMobileOpen(false);
+    const buscador = document.getElementById("reservar");
+    if (buscador) buscador.scrollIntoView({ behavior: "smooth" });
+    else router.push("/#reservar");
+  };
+
   const handleNavClick = (href: string) => {
     setMobileOpen(false);
     if (href.startsWith("/#")) {
@@ -109,7 +122,11 @@ const Header = () => {
               src={logo}
               alt="Ubicar Rent"
               width={1358} height={649}
-              priority
+              // Sin `sizes` pedía el logo a 1920/3840 px para mostrarlo a 163.
+              // Y `eager` en vez de precargarlo: la precarga es para la foto
+              // del hero, que es el LCP, y el logo le competía.
+              sizes="165px"
+              loading="eager"
               style={{
                 height: 78,
                 width: "auto",
@@ -163,6 +180,16 @@ const Header = () => {
                 </motion.div>
               );
             })}
+            {/* El único botón relleno de la barra: desde cualquier punto de
+                cualquier página, reservar queda a un clic. Desde `lg`, que es
+                donde entra sin apretar el menú. */}
+            <button
+              onClick={() => irAReservar("header")}
+              className="hidden rounded-lg px-4 py-2.5 text-sm font-bold text-white transition-colors hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7FB3E8] lg:inline-flex"
+              style={{ background: PRIMARY }}
+            >
+              Reservar
+            </button>
           </nav>
 
           {/* Mobile burger */}
@@ -213,7 +240,7 @@ const Header = () => {
                 className="flex items-center justify-between px-6 py-5"
                 style={{ borderBottom: "1px solid rgba(27,63,107,0.08)" }}
               >
-                <Image src={logo} alt="Ubicar Rent" width={1358} height={649} style={{ height: 34, width: "auto" }} />
+                <Image src={logo} alt="Ubicar Rent" width={1358} height={649} sizes="72px" style={{ height: 34, width: "auto" }} />
                 <button
                   onClick={() => setMobileOpen(false)}
                   aria-label="Cerrar menú"
@@ -262,6 +289,17 @@ const Header = () => {
                   );
                 })}
               </nav>
+
+              {/* El menú terminaba en "Contacto": ahora cierra con la acción. */}
+              <div className="px-6 pb-6 pt-3" style={{ borderTop: "1px solid rgba(27,63,107,0.08)" }}>
+                <button
+                  onClick={() => irAReservar("menu-mobile")}
+                  className="h-[52px] w-full rounded-xl text-[15px] font-bold text-white"
+                  style={{ background: PRIMARY }}
+                >
+                  Ver disponibilidad y precio
+                </button>
+              </div>
             </motion.aside>
           </>
         )}

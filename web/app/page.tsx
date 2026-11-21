@@ -12,6 +12,7 @@ import FinalCTA from "@/components/FinalCTA";
 import ContactSection from "@/components/ContactSection";
 import FloatingWhatsApp from "@/components/FloatingWhatsApp";
 import Footer from "@/components/Footer";
+import CtaFijoMobile from "@/components/CtaFijoMobile";
 
 // El SEO de la home vive en `app/layout.tsx` — lo hereda tal cual.
 
@@ -31,9 +32,10 @@ import Footer from "@/components/Footer";
  * llamar a nadie. El último movimiento ahora es volver al buscador, con el
  * canal humano al lado como alternativa.
  *
- * Falta un bloque de prueba social entre los vehículos y las preguntas — es lo
- * de mayor impacto que queda pendiente, y depende de que Franco y Martín
- * decidan qué reseñas se publican.
+ * La prueba social hoy es la insignia de reseñas de Google del hero y del
+ * cierre (`PruebaSocial`, datos en `lib/resenas.ts`). Sigue faltando un bloque
+ * con reseñas **textuales** entre los vehículos y las preguntas — depende de
+ * que Franco y Martín decidan cuáles se publican.
  */
 export default function Home() {
   return (
@@ -53,6 +55,7 @@ export default function Home() {
         <ContactSection />
       </main>
       <Footer />
+      <CtaFijoMobile />
       <FloatingWhatsApp />
     </>
   );

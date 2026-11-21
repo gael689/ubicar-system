@@ -14,7 +14,10 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ["DM Sans", "system-ui", "sans-serif"],
+        // La variable la define `next/font` en `app/layout.tsx` y trae también
+        // "DM Sans Fallback", la fuente de sistema con las métricas ajustadas:
+        // con el nombre a secas el texto saltaba al terminar de cargar.
+        sans: ["var(--font-dm-sans)", "DM Sans", "system-ui", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",

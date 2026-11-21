@@ -53,14 +53,18 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
           valor={datos.nombre}
           error={errores.nombre}
           onChange={(v) => set("nombre", v)}
+          name="given-name"
           autoComplete="given-name"
+          autoCapitalize="words"
         />
         <Campo
           etiqueta="Apellido"
           valor={datos.apellido}
           error={errores.apellido}
           onChange={(v) => set("apellido", v)}
+          name="family-name"
           autoComplete="family-name"
+          autoCapitalize="words"
         />
         <Campo
           etiqueta={esConsumidorFinal ? "DNI" : "CUIT"}
@@ -68,6 +72,7 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
           error={errores.dni}
           onChange={(v) => set("dni", v)}
           inputMode="numeric"
+          autoComplete="off"
         />
         <Campo
           etiqueta="Teléfono"
@@ -75,7 +80,9 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
           error={errores.telefono}
           onChange={(v) => set("telefono", v)}
           type="tel"
+          name="tel"
           autoComplete="tel"
+          inputMode="tel"
           ayuda="Para coordinar la entrega"
         />
         <div className="sm:col-span-2">
@@ -85,7 +92,11 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
             error={errores.email}
             onChange={(v) => set("email", v)}
             type="email"
+            name="email"
             autoComplete="email"
+            inputMode="email"
+            autoCapitalize="none"
+            spellCheck={false}
             ayuda="Te mandamos la confirmación acá"
           />
         </div>
@@ -96,6 +107,8 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
             error={errores.fechaNacimiento}
             onChange={(v) => set("fechaNacimiento", v)}
             type="date"
+            name="bday"
+            autoComplete="bday"
           />
         </div>
 
@@ -144,6 +157,8 @@ export function Paso3Datos({ datos, errores, onCambiar }: Props) {
               error={errores.razonSocial}
               onChange={(v) => set("razonSocial", v)}
               ayuda="Como figura en ARCA"
+              name="organization"
+              autoComplete="organization"
             />
           </div>
         )}
@@ -218,12 +233,13 @@ function Campo({
         aria-describedby={error || ayuda ? idAyuda : undefined}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          "w-full rounded-md border bg-white px-3 py-2.5 text-sm text-foreground outline-none transition-colors focus:ring-2 focus:ring-primary/30",
+          // 16 px en el teléfono: con menos, iOS hace zoom al enfocar el campo.
+          "w-full rounded-md border bg-white px-3 py-2.5 text-base text-foreground outline-none transition-colors focus:ring-2 focus:ring-primary/30 sm:text-sm",
           error ? "border-destructive" : "border-border",
         )}
       />
       {error ? (
-        <p id={idAyuda} className="mt-1 text-xs text-destructive">{error}</p>
+        <p id={idAyuda} role="alert" className="mt-1 text-xs text-destructive">{error}</p>
       ) : ayuda ? (
         <p id={idAyuda} className="mt-1 text-xs text-muted-foreground">{ayuda}</p>
       ) : null}

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Mail, ShieldCheck, Clock, MapPin } from "lucide-react";
 import { WHATSAPP_GENERAL, EMAIL } from "@/lib/constants";
 import { IconoWhatsApp } from "@/components/IconoWhatsApp";
+import { contactoIniciado } from "@/lib/analitica";
 
 /**
  * Pie del flujo de reserva.
@@ -50,6 +51,7 @@ export function PieReserva() {
               src="/img/logo.png"
               alt="Ubicar Rent"
               width={1358} height={649}
+              sizes="110px"
               style={{ height: 52, width: "auto", display: "block" }}
             />
           </Link>
@@ -59,6 +61,9 @@ export function PieReserva() {
               href={WHATSAPP_GENERAL}
               target="_blank"
               rel="noopener noreferrer"
+              // No se medía: era el único WhatsApp del sitio que no contaba, y
+              // es justo el de quien duda en mitad de la reserva.
+              onClick={() => contactoIniciado("reserva:pie-whatsapp")}
               className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#1B3F6B] transition-colors hover:text-[#407EC9]"
             >
               <IconoWhatsApp className="h-4 w-4" /> WhatsApp

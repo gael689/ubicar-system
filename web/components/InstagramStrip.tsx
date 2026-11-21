@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { INSTAGRAM } from "@/lib/constants";
+import { clicExterno } from "@/lib/analitica";
 
 function useReveal<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -84,6 +85,7 @@ export default function InstagramStrip() {
             target="_blank"
             rel="noopener noreferrer"
             className="ig-link"
+            onClick={() => clicExterno("instagram", "franja")}
             aria-label="Seguinos en Instagram"
           >
             <span className="ig-text">Seguinos en Instagram</span>

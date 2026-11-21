@@ -402,12 +402,16 @@ export function Cierre({
         <p className="mx-auto mt-3 max-w-lg text-white/75">{detalle}</p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           {reservar && (
-            <Link
-              href="/reservar"
+            // Al buscador de esta misma página, **no a `/reservar`**: sin
+            // fechas ni edad el flujo rebota a la portada y la persona pierde
+            // la página en la que estaba (lo mismo que ya hacen las tarjetas
+            // de categoría de arriba).
+            <a
+              href="#reservar"
               className="inline-flex items-center rounded-lg bg-primary px-6 py-3 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
             >
-              Reservar online
-            </Link>
+              Ver disponibilidad y precio
+            </a>
           )}
           <BotonWhatsApp mensaje={mensaje} origen={origen} claro />
         </div>
