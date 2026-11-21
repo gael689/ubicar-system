@@ -36,6 +36,8 @@ interface ListReservasParams {
   q?: string;
   fecha?: string;
   origen?: string;
+  /** `uber` para ver sólo los contratos de Uber. */
+  tipo?: 'alquiler' | 'uber';
   categoria_id?: number;
   /** sin_emitir | emitido | sin_firmar */
   contrato?: string;

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Flag, Wrench, AlertTriangle } from 'lucide-react';
 import { useAlquileres } from '@/hooks/useAlquileres';
-import { extractError } from '@/lib/utils';
+import { cn, extractError, formatMiles } from '@/lib/utils';
+import { consumoKm } from '@/lib/uber';
 import { useCreateGasto } from '@/hooks/useGastos';
 import type { CheckinCreate, DecisionExcedente, PreviewExcedente, Reserva } from '@/types';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -191,6 +192,17 @@ export function CheckinModal({
 
   const [realKmCheckout, setRealKmCheckout] = useState(kmCheckout);
   const [loadingAlquiler, setLoadingAlquiler] = useState(true);
+  // Sólo en un contrato de Uber con tope de km, y con una lectura creíble.
+  // `fecha: fecha_fin` porque al cierre el tope es el del contrato entero.
+  const kmUber = reserva.tipo === 'uber' && reserva.uber_km_semana && !loadingAlquiler
+    && km !== '' && parseInt(km) >= realKmCheckout
+    ? consumoKm({
+      kmLectura: parseInt(km), kmInicial: realKmCheckout,
+      kmSemana: Number(reserva.uber_km_semana),
+      precioKmExtra: reserva.uber_precio_km_extra ? Number(reserva.uber_precio_km_extra) : null,
+      fechaInicio: reserva.fecha_inicio, fecha: reserva.fecha_fin, fechaFin: reserva.fecha_fin,
+    })
+    : null;
 
   const debouncedFecha = useDebounce(fecha, 500);
   const debouncedHora  = useDebounce(hora,  500);
@@ -663,6 +675,23 @@ export function CheckinModal({
               className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               required
             />
+            {/* Contrato de Uber: los km de todo el contrato contra el tope
+                pactado. El cargo lo asienta el servidor al guardar; esto es
+                para que quien recibe el auto lo vea antes y se lo diga al chofer. */}
+            {kmUber && (
+              <p data-testid="resumen-km-uber" className={cn(
+                'rounded-lg px-3 py-2 text-xs',
+                kmUber.excedidos > 0 ? 'bg-warning-bg text-warning' : 'bg-success-bg text-success',
+              )}>
+                Contrato de Uber: recorrió <strong>{formatMiles(kmUber.recorridos, 0)}</strong> de{' '}
+                {formatMiles(kmUber.permitidos, 0)} km permitidos en todo el contrato.
+                {kmUber.excedidos > 0
+                  ? <> Se pasó {formatMiles(kmUber.excedidos, 0)} km{kmUber.costoEstimado > 0
+                    ? <>: se le cargan <strong>${formatMiles(kmUber.costoEstimado, 0)}</strong> de km extra al guardar</>
+                    : null}.</>
+                  : ' No hay km extra.'}
+              </p>
+            )}
           </div>
 
           {/* Combustible */}
