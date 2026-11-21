@@ -68,6 +68,12 @@ class Notificacion(Base):
     # cada corrida del motor.
     escalada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Datos estructurados que acompañan al texto (migración 108). Los usan las
+    # oportunidades (`domain/oportunidades_reglas.py`): el impacto estimado en
+    # pesos, el texto del botón, el link de WhatsApp prearmado. JSON y no
+    # columnas porque cada regla trae lo suyo. `None` en los avisos comunes.
+    datos: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
 
 class NotificacionVista(Base):
     """

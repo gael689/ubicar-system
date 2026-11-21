@@ -21,7 +21,13 @@ from sqlalchemy import case, exists, extract, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
+from app.domain import avisos_catalogo as catalogo
 from app.domain.notificaciones_reglas import evaluar_todas
+from app.domain.oportunidades_reglas import (
+    TIPOS_OPORTUNIDAD,
+    evaluar_oportunidades,
+    reaviso_dias as _reaviso_de_oportunidad,
+)
 from app.models.notificacion import Notificacion, NotificacionVista
 
 ESTADOS_ACTIVOS = ("pendiente", "enviada", "pospuesta")
@@ -46,8 +52,22 @@ TIPOS_DE_ESTADO_CONTINUO = frozenset({
     # Un contrato sin firmar es un aviso por reserva, que sube de urgencia a
     # medida que se acerca la entrega: el motor le actualiza texto y urgencia.
     "contrato_no_firmado",
-})
+    # Las oportunidades (`domain/oportunidades_reglas.py`) también: un auto
+    # parado es una sola sugerencia mientras siga parado, con el texto al día.
+}) | TIPOS_OPORTUNIDAD
 REAVISO_DIAS = 7
+
+
+def reaviso_dias(tipo: str) -> int:
+    """
+    Cada cuántos días se vuelve a avisar de algo que se descartó o se resolvió.
+    Los avisos, a la semana; las oportunidades tardan más y cada una tiene lo
+    suyo (ver `REAVISO_DIAS_POR_TIPO`): una sugerencia que vuelve todas las
+    semanas después de un "no me sirve" deja de ser una sugerencia.
+    """
+    if tipo in TIPOS_OPORTUNIDAD:
+        return _reaviso_de_oportunidad(tipo)
+    return REAVISO_DIAS
 
 # Estado continuo **que escala**: el mismo asunto sube de urgencia a medida que
 # se acerca una fecha (el contrato sin firmar: `media` a 2-3 días de la
@@ -120,6 +140,53 @@ def _lista(valor: str) -> list[str]:
     return [v.strip() for v in valor.split(",") if v.strip()]
 
 
+# Las oportunidades se reconocen por el prefijo del tipo (`op_`).
+_ES_OPORTUNIDAD = Notificacion.tipo.startswith(catalogo.PREFIJO_OPORTUNIDAD, autoescape=True)
+
+
+def _filtrar_por_modulo(q, modulo: str | None):
+    """
+    Filtra por módulo del catálogo. El módulo no es una columna: se traduce a
+    la lista de `tipo` que lo componen. Los tipos que nadie catalogó caen en el
+    módulo por defecto, igual que al mostrarlos.
+    """
+    pedidos = _lista(modulo or "")
+    if not pedidos:
+        return q
+    tipos: set[str] = set()
+    for m in pedidos:
+        tipos |= catalogo.tipos_de_modulo(m)
+    condicion = Notificacion.tipo.in_(tipos)
+    if catalogo.MODULO_POR_DEFECTO in pedidos:
+        condicion = or_(condicion, Notificacion.tipo.notin_(set(catalogo.CATALOGO)))
+    return q.filter(condicion)
+
+
+def impacto_de(n) -> float:
+    """El impacto estimado en pesos de una oportunidad, o 0 si no trae."""
+    try:
+        return float((n.datos or {}).get("impacto") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def resumen_por_modulo(items) -> list[dict]:
+    """
+    Cuántos avisos hay por módulo y cuántos de esos son urgentes (críticas y
+    altas). Sólo los módulos con algo, en el orden del catálogo.
+    """
+    cuentas: dict[str, dict] = {}
+    for n in items:
+        modulo = catalogo.modulo_de(n.tipo)
+        c = cuentas.setdefault(modulo, {
+            "modulo": modulo, "label": catalogo.etiqueta_de(modulo), "total": 0, "urgentes": 0,
+        })
+        c["total"] += 1
+        if n.urgencia in ("critica", "alta"):
+            c["urgentes"] += 1
+    return sorted(cuentas.values(), key=lambda c: catalogo.orden_de(c["modulo"]))
+
+
 def _clave_dedupe(c: dict) -> str:
     clave = f"{c['tipo']}:{c['entidad_tipo']}:{c['entidad_id']}:{c['fecha_objetivo'] or ''}"
     # Los escalonados suman el escalón, así cada uno es un aviso propio. Sólo si
@@ -141,6 +208,10 @@ class NotificacionService:
         el caller (router o scheduler)."""
         hoy = hoy or date.today()
         candidatos = self._sin_repetir_reserva_web(evaluar_todas(self.db, hoy), hoy)
+        # Las oportunidades corren en el mismo motor, pero aisladas: una regla
+        # que falla se saltea (y no se auto-resuelve lo suyo), no tumba los avisos.
+        oportunidades, tipos_fallidos = evaluar_oportunidades(self.db, hoy)
+        candidatos = candidatos + oportunidades
 
         claves_generadas = {_clave_dedupe(c) for c in candidatos}
         existentes = {
@@ -176,10 +247,11 @@ class NotificacionService:
                 fecha_objetivo=c["fecha_objetivo"],
                 clave_dedupe=clave,
                 estado="pendiente",
+                datos=c.get("datos"),
             ))
             creadas += 1
 
-        resueltas = self._auto_resolver(candidatos)
+        resueltas = self._auto_resolver(candidatos, sin_tocar=tipos_fallidos)
         self.db.flush()
         self._refrescar_texto(candidatos)
         colapsadas = self._colapsar_duplicadas()
@@ -282,6 +354,7 @@ class NotificacionService:
             fecha_objetivo=c["fecha_objetivo"],
             clave_dedupe=clave,
             estado="pendiente",
+            datos=c.get("datos"),
         ))
         # Sin flush, dos candidatos iguales en la misma corrida no se verían.
         self.db.flush()
@@ -293,25 +366,44 @@ class NotificacionService:
         """
         Los (tipo, entidad) de estado continuo que **no hay que volver a
         avisar hoy**: tienen una fila activa, o se avisó hace menos de
-        `REAVISO_DIAS`. Lo segundo es lo que evita que descartar un aviso lo
-        haga reaparecer mañana.
+        `reaviso_dias(tipo)`. Lo segundo es lo que evita que descartar un aviso
+        lo haga reaparecer mañana.
+
+        El plazo se cuenta desde que nació el aviso — salvo en una
+        **descartada**, que cuenta desde el descarte (`resuelta_at`). Sin eso,
+        un "No me sirve" sobre un auto que ya llevaba un mes parado no callaba
+        nada: la fila era vieja y al día siguiente nacía otra.
         """
         tipos = {c["tipo"] for c in candidatos if c["tipo"] in TIPOS_DE_ESTADO_CONTINUO}
         if not tipos:
             return set()
-        limite = datetime.combine(hoy - timedelta(days=REAVISO_DIAS), time.min)
+        plazos = {t: reaviso_dias(t) for t in tipos}
+        mas_lejos = datetime.combine(hoy - timedelta(days=max(plazos.values())), time.min)
         filas = (
-            self.db.query(Notificacion.tipo, Notificacion.entidad_tipo, Notificacion.entidad_id)
+            self.db.query(
+                Notificacion.tipo, Notificacion.entidad_tipo, Notificacion.entidad_id,
+                Notificacion.estado, Notificacion.created_at, Notificacion.resuelta_at,
+            )
             .filter(
                 Notificacion.tipo.in_(tipos),
                 or_(
                     Notificacion.estado.in_(ESTADOS_ACTIVOS),
-                    Notificacion.created_at >= limite,
+                    Notificacion.created_at >= mas_lejos,
+                    Notificacion.resuelta_at >= mas_lejos,
                 ),
             )
             .all()
         )
-        return {(t, et, eid) for t, et, eid in filas}
+        ya: set[tuple] = set()
+        for t, et, eid, estado, creada, cerrada in filas:
+            if estado in ESTADOS_ACTIVOS:
+                ya.add((t, et, eid))
+                continue
+            limite = datetime.combine(hoy - timedelta(days=plazos[t]), time.min)
+            referencia = cerrada if (estado == "descartada" and cerrada) else creada
+            if referencia and referencia >= limite:
+                ya.add((t, et, eid))
+        return ya
 
     def _refrescar_texto(self, candidatos: list[dict]) -> None:
         """
@@ -340,6 +432,11 @@ class NotificacionService:
             n.titulo = c["titulo"]
             n.descripcion = c["descripcion"]
             n.urgencia = c["urgencia"]
+            # Las oportunidades además traen el monto y los links, que cambian
+            # con los días (un auto parado "pierde" más cada día que pasa).
+            if "datos" in c:
+                n.datos = c["datos"]
+                n.url_destino = c["url_destino"]
 
     def _colapsar_duplicadas(self) -> int:
         """
@@ -418,6 +515,7 @@ class NotificacionService:
             estado="resuelta" if solo_historial else "pendiente",
             resuelta_at=datetime.utcnow() if solo_historial else None,
             autoresoluble=False,
+            datos=candidato.get("datos"),
         )
         self.db.add(notif)
         self.db.flush()
@@ -527,7 +625,7 @@ class NotificacionService:
             "fecha_objetivo": solicitud.fecha_inicio,
         })
 
-    def _auto_resolver(self, candidatos: list[dict]) -> int:
+    def _auto_resolver(self, candidatos: list[dict], sin_tocar: set[str] | None = None) -> int:
         """Si una notificación activa ya no aparece entre los candidatos
         actuales para su (tipo, entidad_tipo, entidad_id) — sin importar la
         fecha_objetivo, que puede haber cambiado de umbral — la condición que
@@ -540,7 +638,12 @@ class NotificacionService:
         catálogo—, así que barrerlas acá era el bug: se resolvían solas en la
         primera corrida sin que nadie las hubiera visto. Esas se resuelven a
         mano o vía `resolver_por_entidad`.
+
+        `sin_tocar` son los tipos cuya regla **falló** en esta corrida: que no
+        haya candidatos no quiere decir que el problema se arregló, así que sus
+        avisos quedan como estaban hasta la próxima.
         """
+        sin_tocar = sin_tocar or set()
         activas_por_entidad: dict[tuple, set] = {}
         for c in candidatos:
             key = (c["tipo"], c["entidad_tipo"], c["entidad_id"])
@@ -554,6 +657,8 @@ class NotificacionService:
         resueltas = 0
         for n in pendientes:
             key = (n.tipo, n.entidad_tipo, n.entidad_id)
+            if n.tipo in sin_tocar:
+                continue
             if key not in activas_por_entidad:
                 n.estado = "resuelta"
                 n.resuelta_at = datetime.utcnow()
@@ -598,6 +703,8 @@ class NotificacionService:
         tipo: str | None = None,
         entidad_tipo: str | None = None,
         usuario_id: int | None = None,
+        modulo: str | None = None,
+        solo_oportunidades: bool = False,
     ) -> list[Notificacion]:
         """
         Las notificaciones activas, **ordenadas por urgencia y no por fecha**.
@@ -616,6 +723,13 @@ class NotificacionService:
         esconde para Martín, sólo para Franco. Sin `usuario_id` (llamadas
         internas) devuelve todo lo activo, sin filtrar por lectura de
         nadie.
+
+        `modulo` (uno o varios por coma) filtra por el módulo del catálogo
+        (`domain/avisos_catalogo.py`). **Las oportunidades no entran** salvo
+        que se pida `modulo=oportunidades` a propósito: son sugerencias, no
+        pendientes, y mezcladas en la campana volverían a llenarla de cosas que
+        no hay que atender hoy. `solo_oportunidades` es la otra cara: todas las
+        `op_*`, sean del módulo que sean (lo usa `GET /oportunidades`).
         """
         ahora = datetime.utcnow()
 
@@ -626,6 +740,11 @@ class NotificacionService:
                 q = q.filter(Notificacion.tipo.in_(_lista(tipo)))
             if entidad_tipo:
                 q = q.filter(Notificacion.entidad_tipo.in_(_lista(entidad_tipo)))
+            q = _filtrar_por_modulo(q, modulo)
+            if solo_oportunidades:
+                q = q.filter(_ES_OPORTUNIDAD)
+            elif catalogo.MODULO_OPORTUNIDADES not in _lista(modulo or ""):
+                q = q.filter(~_ES_OPORTUNIDAD)
             if usuario_id is not None:
                 vista = exists().where(
                     NotificacionVista.notificacion_id == Notificacion.id,
@@ -646,6 +765,33 @@ class NotificacionService:
         ).all()
         return items + pospuestas
 
+    def list_oportunidades(self, usuario_id: int | None = None) -> list[Notificacion]:
+        """
+        Las oportunidades activas, **la que más plata mueve primero**. Las que
+        no traen monto van después, por urgencia.
+        """
+        items = self.list_activas(usuario_id=usuario_id, solo_oportunidades=True)
+        return sorted(
+            items,
+            key=lambda n: (-impacto_de(n), -RANGO_URGENCIA.get(n.urgencia, 0), -n.id),
+        )
+
+    def leer_todas(self, usuario_id: int, modulo: str | None = None) -> int:
+        """
+        "Marcar todo como leído": el acuse **de este usuario** para todo lo que
+        tiene a la vista, opcionalmente de un solo módulo. No cambia el estado
+        de nada — para el resto del equipo sigue todo igual (ver `marcar_leida`).
+        """
+        ahora = datetime.utcnow()
+        pendientes = self.list_activas(usuario_id=usuario_id, modulo=modulo)
+        for n in pendientes:
+            self.db.add(NotificacionVista(notificacion_id=n.id, usuario_id=usuario_id))
+            if n.leida_at is None:
+                n.leida_at = ahora
+        if pendientes:
+            self.db.flush()
+        return len(pendientes)
+
     def list_historial(
         self,
         page: int = 1,
@@ -657,6 +803,7 @@ class NotificacionService:
         tipo: str | None = None,
         urgencia: str | None = None,
         entidad_tipo: str | None = None,
+        modulo: str | None = None,
     ) -> tuple[list[Notificacion], int]:
         """Historial de notificaciones. `solo_resueltas=True` (default) mantiene
         el comportamiento de siempre (leída/descartada/resuelta, usado por el
@@ -679,6 +826,7 @@ class NotificacionService:
             q = q.filter(Notificacion.urgencia.in_(_lista(urgencia)))
         if entidad_tipo:
             q = q.filter(Notificacion.entidad_tipo.in_(_lista(entidad_tipo)))
+        q = _filtrar_por_modulo(q, modulo)
         total = q.count()
         # El historial sí va por fecha: acá se busca "qué pasó tal día", no
         # "qué atiendo primero".
@@ -730,5 +878,8 @@ class NotificacionService:
     def descartar(self, id: int) -> Notificacion:
         n = self.get(id)
         n.estado = "descartada"
+        # Desde cuándo está cerrada: el reaviso de los avisos de estado continuo
+        # se cuenta desde acá (ver `_ya_avisados_de_estado_continuo`).
+        n.resuelta_at = datetime.utcnow()
         self.db.flush()
         return n

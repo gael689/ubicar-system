@@ -14,11 +14,13 @@ from app.core.responses import ok, paginated
 from app.models.usuario import Usuario
 from app.schemas.notificacion import (
     GenerarNotificacionesResponse,
+    LeerTodasRequest,
     NotificacionesListResponse,
     NotificacionResponse,
+    OportunidadesListResponse,
     PosponerNotificacionRequest,
 )
-from app.services.notificacion_service import NotificacionService
+from app.services.notificacion_service import NotificacionService, impacto_de, resumen_por_modulo
 
 router = APIRouter(tags=["Notificaciones"])
 
@@ -32,6 +34,7 @@ def list_notificaciones(
     urgencia: str | None = Query(None, description="Una o varias separadas por coma"),
     tipo: str | None = Query(None, description="Una o varias separadas por coma"),
     entidad_tipo: str | None = Query(None, description="reserva, vehiculo, cliente, echeq…"),
+    modulo: str | None = Query(None, description="Uno o varios módulos separados por coma"),
     service: NotificacionService = Depends(_service),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -44,8 +47,20 @@ def list_notificaciones(
     (`?urgencia=critica,alta`). Los contadores `criticas`/`urgentes` se
     calculan sobre lo filtrado, así que el número del badge siempre coincide
     con lo que se ve en la lista.
+
+    Cada aviso trae su `modulo` (Operación, Cobranzas, Flota…) y la `accion`
+    sugerida, y `por_modulo` resume cuántos hay en cada uno. `?modulo=` filtra
+    la lista; `por_modulo` se cuenta sin ese filtro, para que los contadores de
+    las pestañas no se muevan al entrar a una.
+
+    **Las oportunidades (`op_*`) no vienen acá** —ni en la lista ni en los
+    contadores— salvo `?modulo=oportunidades`: tienen `GET /oportunidades`.
     """
     items = service.list_activas(
+        urgencia=urgencia, tipo=tipo, entidad_tipo=entidad_tipo,
+        usuario_id=current_user.id, modulo=modulo,
+    )
+    todos = items if not modulo else service.list_activas(
         urgencia=urgencia, tipo=tipo, entidad_tipo=entidad_tipo, usuario_id=current_user.id,
     )
     criticas = sum(1 for i in items if i.urgencia == "critica")
@@ -55,7 +70,45 @@ def list_notificaciones(
         total=len(items),
         criticas=criticas,
         urgentes=urgentes,
+        por_modulo=resumen_por_modulo(todos),
     ).model_dump())
+
+
+@router.get("/oportunidades", response_model=None)
+def list_oportunidades(
+    service: NotificacionService = Depends(_service),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Las oportunidades 💡 activas para este usuario, **la que más plata mueve
+    primero**. Respeta lo mismo que la campana: las que marcó vistas no vuelven
+    y las pospuestas reaparecen cuando se cumple el plazo.
+
+    Se leen, posponen y descartan con los mismos endpoints que cualquier aviso
+    (`/notificaciones/{id}/leer|posponer|descartar`).
+    """
+    items = service.list_oportunidades(usuario_id=current_user.id)
+    return ok(OportunidadesListResponse(
+        items=[NotificacionResponse.model_validate(i) for i in items],
+        total=len(items),
+        impacto_total=sum(impacto_de(i) for i in items),
+    ).model_dump())
+
+
+@router.post("/notificaciones/leer-todas")
+def leer_todas(
+    payload: LeerTodasRequest | None = None,
+    db: Session = Depends(get_db),
+    service: NotificacionService = Depends(_service),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    "Marcar todo como leído", de todo o de un módulo. Es el acuse de quien lo
+    aprieta: al resto del equipo no le esconde nada.
+    """
+    marcadas = service.leer_todas(current_user.id, modulo=payload.modulo if payload else None)
+    db.commit()
+    return ok({"marcadas": marcadas}, "Avisos marcados como leídos")
 
 
 @router.get("/notificaciones/historial")
@@ -69,13 +122,14 @@ def historial_notificaciones(
     tipo: str | None = Query(None, description="Una o varias separadas por coma"),
     urgencia: str | None = Query(None, description="Una o varias separadas por coma"),
     entidad_tipo: str | None = Query(None),
+    modulo: str | None = Query(None, description="Uno o varios módulos separados por coma"),
     service: NotificacionService = Depends(_service),
     _: Usuario = Depends(get_current_user),
 ):
     items, total = service.list_historial(
         page=page, page_size=page_size, solo_resueltas=solo_resueltas,
         fecha=fecha, anio=anio, mes=mes,
-        tipo=tipo, urgencia=urgencia, entidad_tipo=entidad_tipo,
+        tipo=tipo, urgencia=urgencia, entidad_tipo=entidad_tipo, modulo=modulo,
     )
     return paginated([NotificacionResponse.model_validate(i) for i in items], total, page, page_size)
 
@@ -88,7 +142,8 @@ def generar_notificaciones(
 ):
     """Dispara el motor de reglas manualmente (además de la corrida diaria
     del scheduler a las 08:00 ART). Lo usa el botón 'actualizar' de la
-    campana para no depender únicamente del cron."""
+    campana para no depender únicamente del cron. Corre también las reglas de
+    oportunidades: van por el mismo motor."""
     resultado = service.generar(hoy=date.today())
     db.commit()
     return ok(GenerarNotificacionesResponse(**resultado).model_dump(), "Motor de notificaciones ejecutado")
